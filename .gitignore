@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Claude Code / agent config — keep local, never track
+CLAUDE.md
+AGENTS.md
+.claude/
