@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Cadence — Панель врача</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="design-system/colors_and_type.css" />
+<style>
+  html, body { margin: 0; background: var(--cream); }
+  body { font-family: var(--font-body); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--bone); border-radius: 999px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  .ds-scroll::-webkit-scrollbar { height: 7px; }
+  button { font-family: var(--font-body); }
+  input::placeholder { color: var(--ink-400); }
+  @keyframes scrim { from { opacity: 0.001; } to { opacity: 1; } }
+  @keyframes drawerIn { from { transform: translateX(40px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
+  .scrim { animation: scrim 200ms ease-out; }
+  .drawer { animation: drawerIn 320ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+  .stat-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .lower-grid { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 28px; align-items: start; }
+  .roster-scroll { overflow-x: auto; }
+  .triage-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .schedule-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px 32px; }
+  @media (max-width: 980px) {
+    .schedule-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  }
+  @media (max-width: 720px) {
+    .triage-grid { grid-template-columns: 1fr; }
+    .schedule-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 1180px) {
+    .lower-grid { grid-template-columns: 1fr; }
+    .right-rail { position: static !important; }
+    .msg-context { display: none; }
+  }
+  @media (max-width: 860px) {
+    .msg-list { width: 264px !important; }
+  }
+  @keyframes fadeIn { from { opacity: 0.001; } to { opacity: 1; } }
+  .fade-in { animation: fadeIn 240ms ease-out; }
+  @keyframes msgIn { from { transform: translateY(7px); } to { transform: translateY(0); } }
+  .msg-in { animation: msgIn 240ms var(--ease-out); }
+  @media (max-width: 1080px) {
+    .stat-strip { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 620px) {
+    .stat-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script src="design-system/heroicons.js"></script>
+  <script type="text/babel" src="design-system/cadence-components.jsx"></script>
+
+  <script type="text/babel" src="dd-data.jsx"></script>
+  <script type="text/babel" src="dd-components.jsx"></script>
+  <script type="text/babel" src="dd-chat-data.jsx"></script>
+  <script type="text/babel" src="dd-chat.jsx"></script>
+  <script type="text/babel" src="dd-app.jsx"></script>
+</body>
+</html>
