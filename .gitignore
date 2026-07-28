@@ -221,3 +221,11 @@ __marimo__/
 CLAUDE.md
 AGENTS.md
 .claude/
+
+# Go (api/)
+api/bin/
+api/coverage.out
+*.test
+
+# Local environment
+.env.local

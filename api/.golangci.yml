@@ -1,0 +1,24 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - noctx
+  settings:
+    errcheck:
+      check-type-assertions: true
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gofumpt:
+      extra-rules: true
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/SimonOsipov/cadence-app/api)
