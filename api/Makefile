@@ -1,4 +1,4 @@
-.PHONY: build run test lint fmt tidy migrate-up migrate-down migrate-new docker-up docker-down
+.PHONY: build run test gate fmt tidy migrate-up migrate-down migrate-new docker-up docker-down
 
 APP_NAME = cadence-api
 BUILD_DIR = bin
@@ -10,13 +10,14 @@ build:
 run: build
 	./$(BUILD_DIR)/$(APP_NAME)
 
+# A convenience subset. `gate` is the authority on whether this module is green.
 test:
 	go test ./... -race -count=1
 
-lint:
-	@test -z "$$(gofmt -l .)" || { echo "gofmt: files need formatting:"; gofmt -l .; exit 1; }
-	go vet ./...
-	golangci-lint run ./...
+# gofmt -> build -> vet -> golangci-lint -> test -race. The same script CI and
+# the Ralph loop run, so there is one definition of green and not three.
+gate:
+	../scripts/gate/go.sh
 
 fmt:
 	gofumpt -w .

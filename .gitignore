@@ -240,3 +240,10 @@ local.properties
 xcuserdata/
 DerivedData/
 *.xcuserstate
+
+# Ralph loop runtime state (prd.json.example stays tracked; prd.json is
+# generated per run by /ralph-prd)
+scripts/ralph/prd.json
+scripts/ralph/progress.txt
+scripts/ralph/.last-branch
+scripts/ralph/archive/

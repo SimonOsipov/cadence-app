@@ -10,17 +10,19 @@ import kotlin.test.Test
 @OptIn(ExperimentalTestApi::class)
 class AppTest {
     @Test
-    fun appShowsTheBrand() = runComposeUiTest {
-        setContent { App() }
+    fun appShowsTheBrand() =
+        runComposeUiTest {
+            setContent { App() }
 
-        onNodeWithText("Cadence").assertIsDisplayed()
-    }
+            onNodeWithText("Cadence").assertIsDisplayed()
+        }
 
     @Test
-    fun appShowsThePlatformItRunsOn() = runComposeUiTest {
-        setContent { App() }
+    fun appShowsThePlatformItRunsOn() =
+        runComposeUiTest {
+            setContent { App() }
 
-        // Proves :shared is linked into the UI, not just into the module graph.
-        onNodeWithText(currentPlatform().name).assertIsDisplayed()
-    }
+            // Proves :shared is linked into the UI, not just into the module graph.
+            onNodeWithText(currentPlatform().name).assertIsDisplayed()
+        }
 }

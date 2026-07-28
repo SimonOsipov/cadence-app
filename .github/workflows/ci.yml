@@ -1,0 +1,193 @@
+name: CI
+
+# One workflow, one gate per stack. Every job runs the same scripts/gate/*.sh
+# that a developer and the Ralph loop run locally — CI never grows its own,
+# slightly different, definition of "green".
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Superseded pull-request runs are cancelled; runs on main are not, so every
+  # merge commit ends up with a gate result of its own.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Changed stacks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      kmp: ${{ steps.filter.outputs.kmp }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A pull request only pays for the stacks it touches; a push to main
+      # gates everything, because that is the branch releases come from.
+      - id: filter
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          else
+            changed=$(git ls-files)
+          fi
+          echo "changed files:"
+          echo "$changed" | sed 's/^/  /'
+          matches() { echo "$changed" | grep -qE "$1" && echo true || echo false; }
+          {
+            echo "api=$(matches '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
+            echo "kmp=$(matches '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
+            echo "scripts=$(matches '^(scripts/|\.github/workflows/)')"
+          } >> "$GITHUB_OUTPUT"
+
+  scripts:
+    name: Shell gate
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # The gate scripts and the Ralph loop run unattended, the loop with
+      # permissions skipped. They get linted like any other code.
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          # Preinstalled on the standard runner image; install only if that changes.
+          command -v shellcheck >/dev/null 2>&1 || {
+            sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          }
+          shellcheck --version
+          shellcheck -x scripts/gate/*.sh scripts/ralph/*.sh
+
+  tests-not-weakened:
+    name: Tests not weakened
+    # The rule against skipping a test to reach a green gate is written into the
+    # Ralph prompt, but prose does not stop anything. The signal lives in the
+    # delta, not in the tree, so this checks what the branch *adds*: a skip that
+    # predates the branch stays quiet forever.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No newly skipped tests
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          added=$(git diff -U0 "origin/$BASE_REF...HEAD" \
+            -- '*_test.go' '*Test.kt' '*Tests.kt' '*.spec.ts' '*.test.ts' '*.test.tsx' \
+            | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+          offenders=$(echo "$added" | grep -E 't\.Skip\(|@Ignore|@Disabled|\.skip\(|xit\(|xdescribe\(' || true)
+          if [ -n "$offenders" ]; then
+            echo "this branch adds skipped tests:"
+            echo "$offenders" | sed 's/^/  /'
+            echo
+            echo "a skip may well be right — but it is a decision a human makes in review,"
+            echo "not something an unattended loop reaches for to turn a gate green."
+            exit 1
+          fi
+          echo "no skipped tests added"
+
+  api:
+    name: Go gate
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      # Pinned and built from source rather than piped from an install script.
+      - name: Install golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: gofmt, build, vet, lint, test -race
+        run: ./scripts/gate/go.sh
+
+  kmp-android:
+    name: KMP gate (Android)
+    needs: changes
+    if: needs.changes.outputs.kmp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: ktlint, detekt, unit tests, assembleDebug
+        run: ./scripts/gate/kmp.sh
+
+  kmp-ios:
+    name: KMP gate (iOS)
+    needs: changes
+    if: needs.changes.outputs.kmp == 'true'
+    # macOS runners bill at ten times the Linux rate, which is why the Android
+    # half runs separately on Linux, this job only starts when kmp/ changed, and
+    # the timeout is deliberately tight.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Pinned to the version the committed iosApp.xcodeproj was generated by:
+      # the gate compares the regenerated project byte for byte, and a different
+      # XcodeGen reorders objects and rewrites its own version markers.
+      - name: Install XcodeGen
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < kmp/iosApp/.xcodegen-version)
+          curl -fsSL -o /tmp/xcodegen.zip \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${version}/xcodegen.zip"
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen
+          chmod +x /tmp/xcodegen/xcodegen/bin/xcodegen
+          # bin/ and share/ stay siblings: XcodeGen resolves its SettingPresets
+          # relative to the binary.
+          echo "/tmp/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: iOS tests, project drift check, xcodebuild
+        run: ./scripts/gate/ios.sh
+
+  # web/ has no job yet on purpose: the Vite dashboard does not exist until
+  # SKL-09, and web/prototype is a frozen visual spec that is never built.

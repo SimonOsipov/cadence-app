@@ -8,8 +8,8 @@ plugins {
 }
 
 kotlin {
-    // iosApp links this framework; its search paths point at the output of
-    // embedAndSignAppleFrameworkForXcode.
+    // The iOS app links this framework; iosApp/project.yml points its search
+    // paths at the output of embedAndSignAppleFrameworkForXcode.
     listOf(
         iosArm64(),
         iosSimulatorArm64(),
@@ -20,7 +20,7 @@ kotlin {
         }
     }
 
-    androidLibrary {
+    android {
         namespace = "app.cadence.ui"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -37,7 +37,7 @@ kotlin {
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
         }
-        // No host-test builder on androidLibrary here on purpose: a Compose UI
+        // No host-test builder on the Android target on purpose: a Compose UI
         // test needs a real (or Robolectric) Android runtime, so these run on
         // the iOS simulator target only. The Android side gets its own Compose
         // UI tests on a device once there are screens to test.

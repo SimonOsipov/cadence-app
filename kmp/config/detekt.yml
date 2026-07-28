@@ -1,0 +1,40 @@
+# Detekt overrides on top of the default ruleset (buildUponDefaultConfig).
+# Only deviations are listed; everything unmentioned keeps detekt's default.
+#
+# detekt 1.23.8 is the newest stable release and it embeds a Kotlin 1.9 front
+# end, while this codebase compiles with Kotlin 2.4.10. If detekt one day fails
+# to parse a file that compiles fine, that mismatch is why — the fix is a newer
+# detekt, not a change to the code.
+
+build:
+  maxIssues: 0
+
+# The `formatting` ruleset is deliberately absent: it ships in
+# detekt-formatting, which is a repackaged ktlint. ktlint runs on its own here,
+# so adding it would only duplicate every finding.
+
+complexity:
+  LongParameterList:
+    # Compose screens legitimately take many small parameters — that is how
+    # state is hoisted, not a smell.
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    ignoreAnnotatedFunctions: ['Composable']
+
+naming:
+  FunctionNaming:
+    # @Composable functions are PascalCase by convention.
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][_A-Za-z0-9]*'
+
+style:
+  MagicNumber:
+    # Composables carry layout literals; property declarations do not get the
+    # same pass. In a product whose domain is doses and titration thresholds, an
+    # unnamed number in a property is exactly the case worth catching.
+    ignoreAnnotated: ['Composable']
+  MaxLineLength:
+    maxLineLength: 120
+  ReturnCount:
+    max: 3

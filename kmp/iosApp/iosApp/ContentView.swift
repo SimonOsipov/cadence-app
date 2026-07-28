@@ -6,7 +6,7 @@ import UIKit
 /// no UI of its own — everything a user sees is built once in :composeApp.
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
-        MainViewControllerKt.MainViewController()
+        MainViewControllerKt.mainViewController()
     }
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
