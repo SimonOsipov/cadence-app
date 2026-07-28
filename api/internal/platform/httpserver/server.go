@@ -134,7 +134,8 @@ func recoverer(logger *slog.Logger) func(next http.Handler) http.Handler {
 					panic(recovered)
 				}
 
-				logger.Error("panic recovered",
+				logger.Error(
+					"panic recovered",
 					"error", fmt.Sprint(recovered),
 					"method", r.Method,
 					"path", r.URL.Path,
@@ -166,7 +167,8 @@ func requestLogger(logger *slog.Logger) func(next http.Handler) http.Handler {
 
 			next.ServeHTTP(ww, r)
 
-			logger.Info("request",
+			logger.Info(
+				"request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),

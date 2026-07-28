@@ -1,14 +1,35 @@
 version: "2"
 
+run:
+  # The integration suite is behind this tag, so `go build ./...` and `go vet`
+  # never look at it. The linter does: tagged code that does not compile has to
+  # fail the fast gate, not wait for the one job that has a Docker daemon.
+  build-tags:
+    - integration
+
 linters:
   default: standard
   enable:
     - bodyclose
+    - depguard
     - errorlint
     - noctx
   settings:
     errcheck:
       check-type-assertions: true
+    depguard:
+      rules:
+        # testsupport builds databases, mints keys and will grow token helpers.
+        # A build tag already keeps it out of a normal build; this keeps it out
+        # of production code even when someone builds with the tag. The rule
+        # against an authentication bypass in the application is then a
+        # mechanism rather than an intention.
+        no-test-harness-in-production:
+          files:
+            - "!$test"
+          deny:
+            - pkg: github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport
+              desc: the test harness is reachable from _test.go files only
 
 formatters:
   enable:

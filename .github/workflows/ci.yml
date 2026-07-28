@@ -133,6 +133,31 @@ jobs:
       - name: gofmt, build, vet, lint, test -race
         run: ./scripts/gate/go.sh
 
+  api-integration:
+    name: Go integration suite
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Separate from the Go gate because it needs a Docker daemon, which a
+    # developer's machine may not have running. Required all the same: this is
+    # where the migration chain, the separation of the three roles and the
+    # forced-RLS invariant are actually proven. A green fast gate says the code
+    # compiles; only this job says the database enforces anything.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      # testcontainers reaches Docker through the standard socket, which is
+      # present on the runner image.
+      - name: Integration tests against a real Postgres
+        working-directory: api
+        run: make test-integration
+
   kmp-android:
     name: KMP gate (Android)
     needs: changes

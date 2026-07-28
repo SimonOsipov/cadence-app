@@ -36,9 +36,8 @@ type ServerConfig struct {
 // the reminder sweep, invitations, push fan-out — each of which writes to the
 // audit log. It stays empty until the first such job exists.
 type DatabaseConfig struct {
-	URL            string
-	ServiceURL     string
-	MigrationsPath string
+	URL        string
+	ServiceURL string
 }
 
 // CORSConfig lists the origins allowed to call the API from a browser.
@@ -83,13 +82,39 @@ func Load() (*Config, error) {
 			IdleTimeout:  idleTimeout,
 		},
 		Database: DatabaseConfig{
-			URL:            databaseURL,
-			ServiceURL:     getEnv("DATABASE_SERVICE_URL", ""),
-			MigrationsPath: getEnv("MIGRATIONS_PATH", "migrations"),
+			URL:        databaseURL,
+			ServiceURL: getEnv("DATABASE_SERVICE_URL", ""),
 		},
 		CORS: CORSConfig{
 			AllowedOrigins: allowedOrigins,
 		},
+	}, nil
+}
+
+// MigrationConfig is what the migration command needs, and nothing else.
+//
+// It is deliberately not part of Config: the API process must not be able to
+// reach the owner role, and the migration command must not require the request
+// path's variables to run.
+type MigrationConfig struct {
+	URL  string
+	Path string
+}
+
+// LoadMigration reads the configuration of the migration command.
+//
+// DATABASE_MIGRATION_URL has no fallback to DATABASE_URL on purpose. The chain
+// is applied by the role that owns the schema; the request path's role owns
+// nothing and could not create a table if it tried.
+func LoadMigration() (*MigrationConfig, error) {
+	url := getEnv("DATABASE_MIGRATION_URL", "")
+	if url == "" {
+		return nil, errors.New("DATABASE_MIGRATION_URL is required")
+	}
+
+	return &MigrationConfig{
+		URL:  url,
+		Path: getEnv("MIGRATIONS_PATH", "migrations"),
 	}, nil
 }
 

@@ -12,7 +12,7 @@ func clearEnv(t *testing.T) {
 	t.Helper()
 
 	for _, key := range []string{
-		"DATABASE_URL", "DATABASE_SERVICE_URL", "MIGRATIONS_PATH",
+		"DATABASE_URL", "DATABASE_SERVICE_URL", "DATABASE_MIGRATION_URL", "MIGRATIONS_PATH",
 		"SERVER_PORT", "SERVER_READ_TIMEOUT", "SERVER_WRITE_TIMEOUT", "SERVER_IDLE_TIMEOUT",
 		"CORS_ALLOWED_ORIGINS",
 	} {
@@ -40,9 +40,6 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	}
 	if cfg.Server.IdleTimeout != 60*time.Second {
 		t.Errorf("Server.IdleTimeout = %v, want 60s", cfg.Server.IdleTimeout)
-	}
-	if cfg.Database.MigrationsPath != "migrations" {
-		t.Errorf("Database.MigrationsPath = %q, want migrations", cfg.Database.MigrationsPath)
 	}
 	if cfg.Database.ServiceURL != "" {
 		t.Errorf("Database.ServiceURL = %q, want empty by default", cfg.Database.ServiceURL)
@@ -86,13 +83,55 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	if cfg.Server.IdleTimeout != 45*time.Second {
 		t.Errorf("Server.IdleTimeout = %v, want 45s", cfg.Server.IdleTimeout)
 	}
-	if cfg.Database.MigrationsPath != "db/migrations" {
-		t.Errorf("Database.MigrationsPath = %q", cfg.Database.MigrationsPath)
-	}
 
 	want := []string{"https://dash.example.com", "https://admin.example.com"}
 	if got := cfg.CORS.AllowedOrigins; !slices.Equal(got, want) {
 		t.Errorf("CORS.AllowedOrigins = %v, want %v", got, want)
+	}
+}
+
+func TestLoadMigrationReadsEnvironment(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DATABASE_MIGRATION_URL", "postgres://owner@db/cadence")
+	t.Setenv("MIGRATIONS_PATH", "db/migrations")
+
+	cfg, err := LoadMigration()
+	if err != nil {
+		t.Fatalf("LoadMigration: %v", err)
+	}
+
+	if cfg.URL != "postgres://owner@db/cadence" {
+		t.Errorf("URL = %q", cfg.URL)
+	}
+	if cfg.Path != "db/migrations" {
+		t.Errorf("Path = %q", cfg.Path)
+	}
+}
+
+func TestLoadMigrationAppliesDefaultPath(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DATABASE_MIGRATION_URL", "postgres://owner@db/cadence")
+
+	cfg, err := LoadMigration()
+	if err != nil {
+		t.Fatalf("LoadMigration: %v", err)
+	}
+
+	if cfg.Path != "migrations" {
+		t.Errorf("Path = %q, want migrations", cfg.Path)
+	}
+}
+
+// The migration URL is a role of its own — the owner of the schema, not the
+// request path. Falling back to DATABASE_URL would apply the chain under the
+// low-privilege role, which cannot create anything, and the failure would look
+// like a permissions bug rather than a missing variable.
+func TestLoadMigrationRequiresItsOwnURL(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("DATABASE_URL", "postgres://app@db/cadence")
+
+	if _, err := LoadMigration(); err == nil {
+		t.Fatal("LoadMigration: want error when DATABASE_MIGRATION_URL is unset, got nil")
 	}
 }
 
