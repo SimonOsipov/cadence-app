@@ -36,6 +36,7 @@ kotlin {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
+            implementation(libs.compose.ui.backhandler)
         }
         // No host-test builder on the Android target on purpose: a Compose UI
         // test needs a real (or Robolectric) Android runtime, so these run on
