@@ -18,7 +18,7 @@ func Health(probe func(context.Context) error, logger *slog.Logger) http.Handler
 		if probe != nil {
 			if err := probe(r.Context()); err != nil {
 				logger.Error("health probe failed", "error", err)
-				Error(w, http.StatusServiceUnavailable, "service unhealthy", "UNHEALTHY")
+				WriteProblem(w, r, Problem{Status: http.StatusServiceUnavailable, Type: ProblemUnhealthy})
 
 				return
 			}

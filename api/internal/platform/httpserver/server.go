@@ -45,6 +45,9 @@ func New(cfg Config, logger *slog.Logger) *Server {
 	router := chi.NewRouter()
 
 	router.Use(chimw.RequestID)
+	// Before anything that can fail: the error writer reads the logger from the
+	// request context in order to record what it withholds from the caller.
+	router.Use(withLogger(logger))
 	// No RealIP middleware: it rewrites RemoteAddr from headers any client can
 	// forge (GHSA-3fxj-6jh8-hvhx). The day the client IP has to be trusted —
 	// rate limiting, audit — it gets derived from an explicit allowlist of the
@@ -63,11 +66,11 @@ func New(cfg Config, logger *slog.Logger) *Server {
 
 	// Routing failures answer in the same shape as everything else, so a
 	// generated client can decode one error type on every path.
-	router.NotFound(func(w http.ResponseWriter, _ *http.Request) {
-		Error(w, http.StatusNotFound, "not found", "NOT_FOUND")
+	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		WriteProblem(w, r, Problem{Status: http.StatusNotFound, Type: ProblemNotFound})
 	})
-	router.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
-		Error(w, http.StatusMethodNotAllowed, "method not allowed", "METHOD_NOT_ALLOWED")
+	router.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		WriteProblem(w, r, Problem{Status: http.StatusMethodNotAllowed, Type: ProblemMethodNotAllowed})
 	})
 
 	return &Server{
@@ -149,7 +152,7 @@ func recoverer(logger *slog.Logger) func(next http.Handler) http.Handler {
 					return
 				}
 
-				Error(w, http.StatusInternalServerError, "internal error", "INTERNAL")
+				WriteProblem(w, r, Problem{Status: http.StatusInternalServerError, Type: ProblemInternal})
 			}()
 
 			next.ServeHTTP(w, r)

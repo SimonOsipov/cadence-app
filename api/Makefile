@@ -1,4 +1,4 @@
-.PHONY: build run test test-integration gate dev-up fmt tidy migrate-up migrate-down migrate-new docker-up docker-down
+.PHONY: build run test test-integration gate openapi dev-up fmt tidy migrate-up migrate-down migrate-new docker-up docker-down
 
 APP_NAME = cadence-api
 BUILD_DIR = bin
@@ -25,6 +25,12 @@ test-integration:
 # the Ralph loop run, so there is one definition of green and not three.
 gate:
 	../scripts/gate/go.sh
+
+# Regenerate the committed contract. A test fails when this has not been run
+# after a type changed, because openapi.json is what the Kotlin client and the
+# dashboard client are generated from — a stale one renames their fields.
+openapi:
+	go run ./cmd/openapi -out openapi.json
 
 fmt:
 	gofumpt -w .

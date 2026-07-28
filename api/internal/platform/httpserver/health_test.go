@@ -64,12 +64,8 @@ func TestHealthWithFailingProbeReportsUnavailable(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 	}
 
-	var body ErrorResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body: %v", err)
-	}
-	if body.Code != "UNHEALTHY" {
-		t.Errorf("Code = %q, want UNHEALTHY", body.Code)
+	if body := decodeProblem(t, w); body["type"] != ProblemUnhealthy {
+		t.Errorf("type = %v, want %q", body["type"], ProblemUnhealthy)
 	}
 	// The endpoint is unauthenticated: it must not describe the failure to the
 	// caller. The detail belongs in the log.

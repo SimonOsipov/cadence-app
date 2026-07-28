@@ -14,6 +14,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/config"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
+	"github.com/SimonOsipov/cadence-app/api/internal/router"
 )
 
 const (
@@ -73,7 +74,11 @@ func run(logger *slog.Logger) error {
 		return database.HealthCheck(ctx, pool)
 	}, logger))
 
-	// The bounded contexts mount their routers under /v1 from here.
+	// Operations register their full /v1/... paths on the root mux, so the
+	// document describes the paths it actually serves and stays reachable
+	// without a token. What guards /v1 is middleware on the prefix, added in the
+	// next step, with /healthz and the document itself excluded by name.
+	router.Register(httpserver.NewAPI(srv.Router))
 
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("running server: %w", err)

@@ -1,11 +1,11 @@
 package httpserver
 
 import (
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,7 +22,7 @@ func testServer(t *testing.T) *Server {
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
-func TestUnknownRouteAnswersErrorResponse(t *testing.T) {
+func TestUnknownRouteAnswersProblemJSON(t *testing.T) {
 	srv := testServer(t)
 	w := httptest.NewRecorder()
 
@@ -31,17 +31,12 @@ func TestUnknownRouteAnswersErrorResponse(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
-
-	var body ErrorResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body %q: %v", w.Body.String(), err)
-	}
-	if body.Code != "NOT_FOUND" {
-		t.Errorf("Code = %q, want NOT_FOUND", body.Code)
+	if body := decodeProblem(t, w); body["type"] != ProblemNotFound {
+		t.Errorf("type = %v, want %q", body["type"], ProblemNotFound)
 	}
 }
 
-func TestWrongMethodAnswersErrorResponse(t *testing.T) {
+func TestWrongMethodAnswersProblemJSON(t *testing.T) {
 	srv := testServer(t)
 	srv.Router.Get("/thing", func(w http.ResponseWriter, _ *http.Request) { JSON(w, http.StatusOK, nil) })
 
@@ -51,17 +46,12 @@ func TestWrongMethodAnswersErrorResponse(t *testing.T) {
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
 	}
-
-	var body ErrorResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body %q: %v", w.Body.String(), err)
-	}
-	if body.Code != "METHOD_NOT_ALLOWED" {
-		t.Errorf("Code = %q, want METHOD_NOT_ALLOWED", body.Code)
+	if body := decodeProblem(t, w); body["type"] != ProblemMethodNotAllowed {
+		t.Errorf("type = %v, want %q", body["type"], ProblemMethodNotAllowed)
 	}
 }
 
-func TestPanicBecomesErrorResponse(t *testing.T) {
+func TestPanicBecomesProblemJSON(t *testing.T) {
 	srv := testServer(t)
 	srv.Router.Get("/boom", func(http.ResponseWriter, *http.Request) { panic("handler exploded") })
 
@@ -72,15 +62,12 @@ func TestPanicBecomesErrorResponse(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
 
-	var body ErrorResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal body %q: %v", w.Body.String(), err)
-	}
-	if body.Code != "INTERNAL" {
-		t.Errorf("Code = %q, want INTERNAL", body.Code)
+	body := decodeProblem(t, w)
+	if body["type"] != ProblemInternal {
+		t.Errorf("type = %v, want %q", body["type"], ProblemInternal)
 	}
 	// The panic value must not reach the caller.
-	if body.Error == "handler exploded" {
+	if strings.Contains(w.Body.String(), "handler exploded") {
 		t.Errorf("response leaks the panic value: %s", w.Body.String())
 	}
 }
