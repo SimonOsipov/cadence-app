@@ -229,3 +229,14 @@ api/coverage.out
 
 # Local environment
 .env.local
+
+# Gradle / Kotlin Multiplatform (kmp/)
+.gradle/
+.kotlin/
+local.properties
+*.hprof
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
