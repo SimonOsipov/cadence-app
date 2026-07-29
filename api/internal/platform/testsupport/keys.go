@@ -63,9 +63,10 @@ func NewRS256Key(t *testing.T, kid string) *SigningKey {
 
 // NewES256Key generates an ECDSA P-256 key pair for signing test tokens.
 //
-// Both algorithms exist in the fixtures because Supabase issues either one
-// depending on when the project was created, and the allowlist has to be proven
-// to accept both rather than whichever one was written first.
+// Both algorithms exist in the fixtures because the allowlist declares both,
+// and a list has to be proven to accept everything on it rather than whichever
+// entry happened to be written first. Our GoTrue signs ES256; RS256 is the one
+// that would otherwise go untested until the day somebody reconfigures it.
 func NewES256Key(t *testing.T, kid string) *SigningKey {
 	t.Helper()
 

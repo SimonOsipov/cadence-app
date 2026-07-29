@@ -28,11 +28,12 @@ var (
 
 // permittedAlgorithms is a closed list, on purpose.
 //
-// Supabase issues ES256 for projects created from mid-2025 and RS256 for older
-// ones; which one cadence-dev uses is confirmed in SKL-01 and does not change
-// this list. Accepting anything else is how the algorithm-confusion attack
-// works: HS256 over the published public key verifies, because a public key is
-// a perfectly good HMAC secret.
+// The identity provider is our own GoTrue, configured to sign ES256 through
+// GOTRUE_JWT_KEYS. RS256 stays on the list because the provider can be
+// reconfigured, and because a list of one is a list nobody notices is a list.
+// What must never join them is HS256: a shared secret both verifies *and*
+// mints tokens, which is a different threat model, and it is also how the
+// algorithm-confusion attack lands when a public key is fed in as the secret.
 var permittedAlgorithms = []string{jwt.SigningMethodRS256.Alg(), jwt.SigningMethodES256.Alg()}
 
 const (
@@ -72,9 +73,9 @@ const (
 	//
 	// It has to cover a real round trip to the provider, TLS handshake
 	// included. At 100 ms — enough for a localhost fixture and for nothing else
-	// — the on-demand refresh never completes against Supabase, and a key
-	// rotation produces blanket 401s until the next scheduled refresh an hour
-	// later.
+	// — the on-demand refresh never completes against a provider across the
+	// network, and a key rotation produces blanket 401s until the next
+	// scheduled refresh an hour later.
 	defaultKeyFetchBudget = 3 * time.Second
 
 	// defaultKeyWaitMax is the single deadline jwkset accepts. It covers the
@@ -98,9 +99,9 @@ type VerifierConfig struct {
 
 	// Audience is compared against `aud`.
 	//
-	// Supabase sets it to "authenticated" in every project, so this check
-	// isolates nothing between projects — the issuer and the identity of the
-	// keys do that. It is enforced because the contract declares it, and said
+	// GoTrue sets it to "authenticated" for every user, so this check
+	// isolates nothing between deployments — the issuer and the identity of
+	// the keys do that. It is enforced because the contract declares it, and said
 	// plainly here so it is not mistaken for tenant isolation.
 	Audience string
 

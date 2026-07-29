@@ -1,8 +1,8 @@
 // Package config loads the API configuration from the process environment.
 //
 // Everything the API needs to run comes from environment variables: secrets
-// never live in the repository, and dev and prod differ only by what Railway
-// injects. Required variables are missing at startup, not at first use.
+// never live in the repository, and dev and prod differ only by what the
+// platform injects. Required variables are missing at startup, not at first use.
 package config
 
 import (
@@ -60,8 +60,10 @@ type AuthConfig struct {
 }
 
 // jwksSuffix is where an OAuth 2.0 authorisation server publishes its keys
-// (RFC 8414). Supabase follows it: an issuer of https://<ref>.supabase.co/auth/v1
-// serves its JWK Set at that path underneath.
+// (RFC 8414). GoTrue follows it: an issuer of https://<host>/auth/v1 serves its
+// JWK Set at that path underneath. Deriving rather than configuring is what
+// makes the key source and the issuer check impossible to point at two
+// different providers.
 const jwksSuffix = "/.well-known/jwks.json"
 
 // Load reads the configuration from the environment and validates it.
@@ -116,29 +118,29 @@ func Load() (*Config, error) {
 	}, nil
 }
 
-// loadAuth reads the two Supabase variables and derives the JWKS address from
-// the issuer.
+// loadAuth reads the two authentication variables and derives the JWKS address
+// from the issuer.
 //
 // The issuer is kept exactly as configured — it is compared byte for byte
 // against the `iss` claim, so normalising it here would quietly widen what the
 // check accepts. Only the copy used to build the JWKS address is trimmed.
 func loadAuth() (*AuthConfig, error) {
-	issuer := getEnv("SUPABASE_JWT_ISSUER", "")
+	issuer := getEnv("AUTH_JWT_ISSUER", "")
 	if issuer == "" {
-		return nil, errors.New("SUPABASE_JWT_ISSUER is required")
+		return nil, errors.New("AUTH_JWT_ISSUER is required")
 	}
 
-	audience := getEnv("SUPABASE_JWT_AUDIENCE", "")
+	audience := getEnv("AUTH_JWT_AUDIENCE", "")
 	if audience == "" {
-		return nil, errors.New("SUPABASE_JWT_AUDIENCE is required")
+		return nil, errors.New("AUTH_JWT_AUDIENCE is required")
 	}
 
 	parsed, err := url.Parse(issuer)
 	if err != nil {
-		return nil, fmt.Errorf("parsing SUPABASE_JWT_ISSUER: %w", err)
+		return nil, fmt.Errorf("parsing AUTH_JWT_ISSUER: %w", err)
 	}
 	if parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		return nil, fmt.Errorf("SUPABASE_JWT_ISSUER must be an absolute http(s) URL, got %q", issuer)
+		return nil, fmt.Errorf("AUTH_JWT_ISSUER must be an absolute http(s) URL, got %q", issuer)
 	}
 
 	return &AuthConfig{

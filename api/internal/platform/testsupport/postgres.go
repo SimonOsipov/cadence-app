@@ -26,10 +26,11 @@ const (
 	superuserRole = "postgres"
 	superuserPass = "postgres"
 
-	// bootstrapRole is deliberately not a superuser. On Supabase the role that
-	// applies migrations is `postgres`, which has CREATEROLE and CREATEDB and is
-	// *not* a superuser — a chain that quietly needs superuser passes here and
-	// fails in the one environment that matters.
+	// bootstrapRole is deliberately not a superuser. Managed Postgres does not
+	// hand out superuser — not on Timeweb, not on Supabase — and the role that
+	// applies the chain has CREATEROLE and CREATEDB and nothing beyond. A chain
+	// that quietly needs superuser passes here and fails in the one environment
+	// that matters.
 	bootstrapRole = "cadence_migrator"
 	bootstrapPass = "cadence_migrator"
 

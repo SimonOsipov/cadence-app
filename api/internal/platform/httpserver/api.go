@@ -77,7 +77,7 @@ func NewAPI(router *chi.Mux) huma.API {
 			Type:         "http",
 			Scheme:       "bearer",
 			BearerFormat: "JWT",
-			Description:  "A Supabase access token. Verified against the project's JWKS on every request.",
+			Description:  "An access token from the project's identity provider. Verified against its JWK Set on every request.",
 		},
 	}
 

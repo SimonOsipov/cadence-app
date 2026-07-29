@@ -15,7 +15,7 @@ func clearEnv(t *testing.T) {
 		"DATABASE_URL", "DATABASE_SERVICE_URL", "DATABASE_MIGRATION_URL", "MIGRATIONS_PATH",
 		"SERVER_PORT", "SERVER_READ_TIMEOUT", "SERVER_WRITE_TIMEOUT", "SERVER_IDLE_TIMEOUT",
 		"CORS_ALLOWED_ORIGINS",
-		"SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE",
+		"AUTH_JWT_ISSUER", "AUTH_JWT_AUDIENCE",
 	} {
 		t.Setenv(key, "")
 	}
@@ -28,8 +28,8 @@ func setRequired(t *testing.T) {
 	t.Helper()
 
 	t.Setenv("DATABASE_URL", "postgres://cadence@localhost:5432/cadence")
-	t.Setenv("SUPABASE_JWT_ISSUER", "https://ref.supabase.co/auth/v1")
-	t.Setenv("SUPABASE_JWT_AUDIENCE", "authenticated")
+	t.Setenv("AUTH_JWT_ISSUER", "https://auth.cadence.example/auth/v1")
+	t.Setenv("AUTH_JWT_AUDIENCE", "authenticated")
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {
@@ -159,16 +159,17 @@ func TestLoadDerivesJWKSURL(t *testing.T) {
 		want   string
 	}{
 		{
-			name:   "supabase issuer",
-			issuer: "https://ref.supabase.co/auth/v1",
-			want:   "https://ref.supabase.co/auth/v1/.well-known/jwks.json",
+			name:   "issuer with a path",
+			issuer: "https://auth.cadence.example/auth/v1",
+			want:   "https://auth.cadence.example/auth/v1/.well-known/jwks.json",
 		},
 		{
-			// Supabase prints the issuer with the slash in some places and
-			// without it in others; a copy-paste must not produce a doubled one.
+			// The issuer gets copied between a deployment variable and a
+			// provider's settings page, and one of them will have the slash.
+			// A copy-paste must not produce a doubled one.
 			name:   "trailing slash is not doubled",
-			issuer: "https://ref.supabase.co/auth/v1/",
-			want:   "https://ref.supabase.co/auth/v1/.well-known/jwks.json",
+			issuer: "https://auth.cadence.example/auth/v1/",
+			want:   "https://auth.cadence.example/auth/v1/.well-known/jwks.json",
 		},
 		{
 			name:   "issuer at the root",
@@ -181,7 +182,7 @@ func TestLoadDerivesJWKSURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			clearEnv(t)
 			setRequired(t)
-			t.Setenv("SUPABASE_JWT_ISSUER", tt.issuer)
+			t.Setenv("AUTH_JWT_ISSUER", tt.issuer)
 
 			cfg, err := Load()
 			if err != nil {
@@ -201,15 +202,15 @@ func TestLoadDerivesJWKSURL(t *testing.T) {
 func TestLoadKeepsIssuerVerbatim(t *testing.T) {
 	clearEnv(t)
 	setRequired(t)
-	t.Setenv("SUPABASE_JWT_ISSUER", "https://ref.supabase.co/auth/v1")
-	t.Setenv("SUPABASE_JWT_AUDIENCE", "authenticated")
+	t.Setenv("AUTH_JWT_ISSUER", "https://auth.cadence.example/auth/v1")
+	t.Setenv("AUTH_JWT_AUDIENCE", "authenticated")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if cfg.Auth.Issuer != "https://ref.supabase.co/auth/v1" {
+	if cfg.Auth.Issuer != "https://auth.cadence.example/auth/v1" {
 		t.Errorf("Auth.Issuer = %q", cfg.Auth.Issuer)
 	}
 	if cfg.Auth.Audience != "authenticated" {
@@ -232,22 +233,22 @@ func TestLoadRejectsBadInput(t *testing.T) {
 			// difference between a deployment that does not come up and a
 			// deployment that comes up open.
 			name: "missing JWT issuer",
-			env:  map[string]string{"SUPABASE_JWT_ISSUER": ""},
+			env:  map[string]string{"AUTH_JWT_ISSUER": ""},
 		},
 		{
 			name: "missing JWT audience",
-			env:  map[string]string{"SUPABASE_JWT_AUDIENCE": ""},
+			env:  map[string]string{"AUTH_JWT_AUDIENCE": ""},
 		},
 		{
 			// A relative or malformed issuer cannot produce a JWKS address, and
 			// the failure has to happen here rather than as a fetch error on the
 			// first request of the day.
 			name: "issuer is not an absolute URL",
-			env:  map[string]string{"SUPABASE_JWT_ISSUER": "ref.supabase.co/auth/v1"},
+			env:  map[string]string{"AUTH_JWT_ISSUER": "auth.cadence.example/auth/v1"},
 		},
 		{
 			name: "issuer is not http",
-			env:  map[string]string{"SUPABASE_JWT_ISSUER": "postgres://ref.supabase.co/auth/v1"},
+			env:  map[string]string{"AUTH_JWT_ISSUER": "postgres://auth.cadence.example/auth/v1"},
 		},
 		{
 			name: "unparsable read timeout",

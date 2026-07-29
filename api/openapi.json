@@ -92,7 +92,7 @@
     "securitySchemes": {
       "bearer": {
         "bearerFormat": "JWT",
-        "description": "A Supabase access token. Verified against the project's JWKS on every request.",
+        "description": "An access token from the project's identity provider. Verified against its JWK Set on every request.",
         "scheme": "bearer",
         "type": "http"
       }
