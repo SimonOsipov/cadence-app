@@ -15,14 +15,26 @@ func clearEnv(t *testing.T) {
 		"DATABASE_URL", "DATABASE_SERVICE_URL", "DATABASE_MIGRATION_URL", "MIGRATIONS_PATH",
 		"SERVER_PORT", "SERVER_READ_TIMEOUT", "SERVER_WRITE_TIMEOUT", "SERVER_IDLE_TIMEOUT",
 		"CORS_ALLOWED_ORIGINS",
+		"SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE",
 	} {
 		t.Setenv(key, "")
 	}
 }
 
+// setRequired fills in everything Load refuses to start without, so that a test
+// about one variable is not really a test about the first one Load happens to
+// check.
+func setRequired(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("DATABASE_URL", "postgres://cadence@localhost:5432/cadence")
+	t.Setenv("SUPABASE_JWT_ISSUER", "https://ref.supabase.co/auth/v1")
+	t.Setenv("SUPABASE_JWT_AUDIENCE", "authenticated")
+}
+
 func TestLoadAppliesDefaults(t *testing.T) {
 	clearEnv(t)
-	t.Setenv("DATABASE_URL", "postgres://cadence@localhost:5432/cadence")
+	setRequired(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -51,6 +63,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 
 func TestLoadReadsEnvironment(t *testing.T) {
 	clearEnv(t)
+	setRequired(t)
 	t.Setenv("DATABASE_URL", "postgres://low@db/cadence")
 	t.Setenv("DATABASE_SERVICE_URL", "postgres://service@db/cadence")
 	t.Setenv("SERVER_PORT", "9090")
@@ -135,6 +148,75 @@ func TestLoadMigrationRequiresItsOwnURL(t *testing.T) {
 	}
 }
 
+// TestLoadDerivesJWKSURL pins the rule that the JWKS address is not a variable
+// of its own. A separate knob is a knob that can point somewhere else than the
+// issuer being enforced, which is an authentication bypass that looks like a
+// deployment setting.
+func TestLoadDerivesJWKSURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		issuer string
+		want   string
+	}{
+		{
+			name:   "supabase issuer",
+			issuer: "https://ref.supabase.co/auth/v1",
+			want:   "https://ref.supabase.co/auth/v1/.well-known/jwks.json",
+		},
+		{
+			// Supabase prints the issuer with the slash in some places and
+			// without it in others; a copy-paste must not produce a doubled one.
+			name:   "trailing slash is not doubled",
+			issuer: "https://ref.supabase.co/auth/v1/",
+			want:   "https://ref.supabase.co/auth/v1/.well-known/jwks.json",
+		},
+		{
+			name:   "issuer at the root",
+			issuer: "https://auth.example.com",
+			want:   "https://auth.example.com/.well-known/jwks.json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearEnv(t)
+			setRequired(t)
+			t.Setenv("SUPABASE_JWT_ISSUER", tt.issuer)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+
+			if cfg.Auth.JWKSURL != tt.want {
+				t.Errorf("Auth.JWKSURL = %q, want %q", cfg.Auth.JWKSURL, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoadKeepsIssuerVerbatim guards the other half of the derivation: the
+// string compared against the token's `iss` claim is the one that was
+// configured, not the normalised one used to build the JWKS address.
+func TestLoadKeepsIssuerVerbatim(t *testing.T) {
+	clearEnv(t)
+	setRequired(t)
+	t.Setenv("SUPABASE_JWT_ISSUER", "https://ref.supabase.co/auth/v1")
+	t.Setenv("SUPABASE_JWT_AUDIENCE", "authenticated")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Auth.Issuer != "https://ref.supabase.co/auth/v1" {
+		t.Errorf("Auth.Issuer = %q", cfg.Auth.Issuer)
+	}
+	if cfg.Auth.Audience != "authenticated" {
+		t.Errorf("Auth.Audience = %q", cfg.Auth.Audience)
+	}
+}
+
 func TestLoadRejectsBadInput(t *testing.T) {
 	tests := []struct {
 		name string
@@ -142,43 +224,55 @@ func TestLoadRejectsBadInput(t *testing.T) {
 	}{
 		{
 			name: "missing database URL",
-			env:  map[string]string{},
+			env:  map[string]string{"DATABASE_URL": ""},
+		},
+		{
+			// Unset means "no authentication configured", and the one thing it
+			// must never mean is "no authentication". Failing at startup is the
+			// difference between a deployment that does not come up and a
+			// deployment that comes up open.
+			name: "missing JWT issuer",
+			env:  map[string]string{"SUPABASE_JWT_ISSUER": ""},
+		},
+		{
+			name: "missing JWT audience",
+			env:  map[string]string{"SUPABASE_JWT_AUDIENCE": ""},
+		},
+		{
+			// A relative or malformed issuer cannot produce a JWKS address, and
+			// the failure has to happen here rather than as a fetch error on the
+			// first request of the day.
+			name: "issuer is not an absolute URL",
+			env:  map[string]string{"SUPABASE_JWT_ISSUER": "ref.supabase.co/auth/v1"},
+		},
+		{
+			name: "issuer is not http",
+			env:  map[string]string{"SUPABASE_JWT_ISSUER": "postgres://ref.supabase.co/auth/v1"},
 		},
 		{
 			name: "unparsable read timeout",
-			env: map[string]string{
-				"DATABASE_URL":        "postgres://cadence@localhost/cadence",
-				"SERVER_READ_TIMEOUT": "ten seconds",
-			},
+			env:  map[string]string{"SERVER_READ_TIMEOUT": "ten seconds"},
 		},
 		{
 			name: "unparsable write timeout",
-			env: map[string]string{
-				"DATABASE_URL":         "postgres://cadence@localhost/cadence",
-				"SERVER_WRITE_TIMEOUT": "-",
-			},
+			env:  map[string]string{"SERVER_WRITE_TIMEOUT": "-"},
 		},
 		{
 			name: "unparsable idle timeout",
-			env: map[string]string{
-				"DATABASE_URL":        "postgres://cadence@localhost/cadence",
-				"SERVER_IDLE_TIMEOUT": "forever",
-			},
+			env:  map[string]string{"SERVER_IDLE_TIMEOUT": "forever"},
 		},
 		{
 			// Falling back to the localhost default here would silently grant a
 			// dev origin access to a production deployment.
 			name: "allowed origins set but empty",
-			env: map[string]string{
-				"DATABASE_URL":         "postgres://cadence@localhost/cadence",
-				"CORS_ALLOWED_ORIGINS": " , ,",
-			},
+			env:  map[string]string{"CORS_ALLOWED_ORIGINS": " , ,"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearEnv(t)
+			setRequired(t)
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}

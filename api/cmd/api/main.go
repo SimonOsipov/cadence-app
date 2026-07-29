@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/config"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
@@ -58,6 +59,21 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// Started before the listener so the key set is already being fetched when
+	// the first request arrives. A provider that is unreachable right now does
+	// not stop the process: every request is refused while that lasts, which is
+	// correct, and a startup failure would turn a provider blip into a deploy
+	// that needs a human.
+	verifier, err := auth.NewVerifier(ctx, auth.VerifierConfig{
+		Issuer:   cfg.Auth.Issuer,
+		Audience: cfg.Auth.Audience,
+		JWKSURL:  cfg.Auth.JWKSURL,
+		Logger:   logger,
+	})
+	if err != nil {
+		return fmt.Errorf("building the token verifier: %w", err)
+	}
+
 	srv := httpserver.New(httpserver.Config{
 		Port:           cfg.Server.Port,
 		ReadTimeout:    cfg.Server.ReadTimeout,
@@ -66,19 +82,19 @@ func run(logger *slog.Logger) error {
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 	}, logger)
 
-	// Unauthenticated by design: the external uptime monitor polls it.
-	srv.Router.Get("/healthz", httpserver.Health(func(ctx context.Context) error {
-		ctx, cancel := context.WithTimeout(ctx, healthProbeTimeout)
-		defer cancel()
+	// One assembly, shared with the test that walks it: everything mounted is
+	// guarded unless it is on the exemption list, and the list lives with the
+	// transport paths it names.
+	router.Mount(srv.Router, router.Options{
+		Verifier: verifier,
+		Probe: func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, healthProbeTimeout)
+			defer cancel()
 
-		return database.HealthCheck(ctx, pool)
-	}, logger))
-
-	// Operations register their full /v1/... paths on the root mux, so the
-	// document describes the paths it actually serves and stays reachable
-	// without a token. What guards /v1 is middleware on the prefix, added in the
-	// next step, with /healthz and the document itself excluded by name.
-	router.Register(httpserver.NewAPI(srv.Router))
+			return database.HealthCheck(ctx, pool)
+		},
+		Logger: logger,
+	})
 
 	if err := srv.Run(ctx); err != nil {
 		return fmt.Errorf("running server: %w", err)

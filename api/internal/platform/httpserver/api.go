@@ -21,9 +21,32 @@ const APIVersion = "0.1.0"
 // monitor, and the document and its viewer have to be readable by whoever is
 // generating a client.
 const (
+	HealthPath  = "/healthz"
 	OpenAPIPath = "/openapi"
 	DocsPath    = "/docs"
 )
+
+// UnauthenticatedPaths lists every path that answers without a bearer token.
+//
+// It is the exemption list the authentication middleware is given, and it is
+// exhaustive: anything not on it is refused. The four document paths are what
+// huma mounts for a single OpenAPIPath — the current version and the 3.0
+// downgrade, each as JSON and as YAML — and all four have to be readable by
+// whoever is generating a client, or the contract is only reachable by someone
+// who already has a token.
+//
+// The list is a function rather than a package variable so that a caller cannot
+// append to it and open a path from the other side of the module.
+func UnauthenticatedPaths() []string {
+	return []string{
+		HealthPath,
+		OpenAPIPath + ".json",
+		OpenAPIPath + ".yaml",
+		OpenAPIPath + "-3.0.json",
+		OpenAPIPath + "-3.0.yaml",
+		DocsPath,
+	}
+}
 
 // NewAPI builds the huma API on top of an existing chi router.
 //

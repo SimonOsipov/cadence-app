@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
 	CORS     CORSConfig
+	Auth     AuthConfig
 }
 
 // ServerConfig holds the HTTP listener settings.
@@ -44,6 +46,23 @@ type DatabaseConfig struct {
 type CORSConfig struct {
 	AllowedOrigins []string
 }
+
+// AuthConfig is everything the token check needs.
+//
+// Issuer and Audience are both required: unset has to mean "this process does
+// not start", never "this process accepts anything". JWKSURL is derived rather
+// than read, so that there is no variable capable of pointing the key source at
+// one identity provider while the issuer check names another.
+type AuthConfig struct {
+	Issuer   string
+	Audience string
+	JWKSURL  string
+}
+
+// jwksSuffix is where an OAuth 2.0 authorisation server publishes its keys
+// (RFC 8414). Supabase follows it: an issuer of https://<ref>.supabase.co/auth/v1
+// serves its JWK Set at that path underneath.
+const jwksSuffix = "/.well-known/jwks.json"
 
 // Load reads the configuration from the environment and validates it.
 // It returns an error if a required variable is unset or a duration is
@@ -74,6 +93,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	auth, err := loadAuth()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Server: ServerConfig{
 			Port:         getEnv("SERVER_PORT", "8080"),
@@ -88,6 +112,39 @@ func Load() (*Config, error) {
 		CORS: CORSConfig{
 			AllowedOrigins: allowedOrigins,
 		},
+		Auth: *auth,
+	}, nil
+}
+
+// loadAuth reads the two Supabase variables and derives the JWKS address from
+// the issuer.
+//
+// The issuer is kept exactly as configured — it is compared byte for byte
+// against the `iss` claim, so normalising it here would quietly widen what the
+// check accepts. Only the copy used to build the JWKS address is trimmed.
+func loadAuth() (*AuthConfig, error) {
+	issuer := getEnv("SUPABASE_JWT_ISSUER", "")
+	if issuer == "" {
+		return nil, errors.New("SUPABASE_JWT_ISSUER is required")
+	}
+
+	audience := getEnv("SUPABASE_JWT_AUDIENCE", "")
+	if audience == "" {
+		return nil, errors.New("SUPABASE_JWT_AUDIENCE is required")
+	}
+
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return nil, fmt.Errorf("parsing SUPABASE_JWT_ISSUER: %w", err)
+	}
+	if parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return nil, fmt.Errorf("SUPABASE_JWT_ISSUER must be an absolute http(s) URL, got %q", issuer)
+	}
+
+	return &AuthConfig{
+		Issuer:   issuer,
+		Audience: audience,
+		JWKSURL:  strings.TrimSuffix(issuer, "/") + jwksSuffix,
 	}, nil
 }
 

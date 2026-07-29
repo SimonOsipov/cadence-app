@@ -1,13 +1,17 @@
-// Package testsupport brings up real infrastructure for the integration suite:
-// a Postgres container, a throwaway database per test with the migration chain
-// applied, and the connection strings of each role involved.
+// Package testsupport is the test harness: a Postgres container with a
+// throwaway database per test and the migration chain applied, and the signing
+// keys, local JWK Set and token minting the authentication tests are written
+// against.
 //
-// Everything in it is behind the `integration` build tag, so this file is all
-// that remains in a normal build. That is deliberate — the package must exist
-// for tooling, and must contain nothing that could be linked into the API.
+// The two halves are gated differently, on purpose. The Postgres side is behind
+// the `integration` build tag, because it needs a Docker daemon and belongs to
+// the job that has one. The key side is not, because the authentication tests
+// need no daemon and have to run in the fast gate — a tag there would mean a
+// plain `go test ./...` silently compiles none of them, and a silently skipped
+// authentication test is worse than a slow one.
 //
-// Two mechanisms keep it out of production, because a comment is not a
-// mechanism: the build tag above, and a depguard rule that forbids importing
-// this package from anywhere but a _test.go file. A helper that weakens
-// authentication for convenience cannot reach the binary through either.
+// What keeps the whole package out of production is therefore depguard, not the
+// tag: importing testsupport from anything other than a _test.go file fails the
+// linter. A helper that mints a valid token cannot reach the binary, and the
+// rule is a mechanism rather than an intention.
 package testsupport

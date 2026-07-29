@@ -119,6 +119,25 @@ func (p *Problem) GetStatus() int {
 	return p.Status
 }
 
+// GetHeaders satisfies huma.HeadersError.
+//
+// It exists so that a 401 raised inside a handler is byte-for-byte the same
+// response as a 401 raised by the authentication middleware, headers included.
+// RFC 7235 requires the challenge on every 401, and a challenge present on one
+// path and absent on another is itself a distinction — on a status whose whole
+// design is that the caller learns nothing from it.
+//
+// Bare "Bearer": no realm, and above all no error parameter. `error=
+// "invalid_token"` would put in a header exactly the reason normalise removes
+// from the body.
+func (p *Problem) GetHeaders() http.Header {
+	if p.Status != http.StatusUnauthorized {
+		return nil
+	}
+
+	return http.Header{"Www-Authenticate": []string{"Bearer"}}
+}
+
 // ContentType satisfies huma.ContentTypeFilter, which is how huma learns to
 // send problem+json rather than plain JSON for this body.
 func (p *Problem) ContentType(ct string) string {
