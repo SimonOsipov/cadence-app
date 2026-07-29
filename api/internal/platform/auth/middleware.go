@@ -86,12 +86,11 @@ func bearerToken(r *http.Request) (string, error) {
 // The reason travels in Problem.Detail on purpose: httpserver logs it and then
 // removes it on the way to the wire, so passing the real cause is how it
 // reaches the log. Sanitising here would delete the only copy.
+//
+// The RFC 7235 challenge is not set here. It belongs to the status rather than
+// to this caller, so httpserver puts it on every 401 it writes — including the
+// ones huma raises, which this function never sees.
 func refuse(w http.ResponseWriter, r *http.Request, cause error) {
-	// RFC 7235 requires a challenge on a 401. Bare "Bearer", with no realm and
-	// no error parameter: an error code here would tell the caller apart from
-	// the body, which is the distinction this whole path exists to remove.
-	w.Header().Set("WWW-Authenticate", "Bearer")
-
 	httpserver.WriteProblem(w, r, httpserver.Problem{
 		Status: http.StatusUnauthorized,
 		Type:   httpserver.ProblemUnauthorized,

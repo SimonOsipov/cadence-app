@@ -377,7 +377,12 @@ func TestRateLimitedUnknownKeyIDIsStillTheCallersProblem(t *testing.T) {
 func TestVerifyPicksUpRotatedKeysOverANetwork(t *testing.T) {
 	old := testsupport.NewRS256Key(t, "old")
 	set := testsupport.StartJWKS(t, old)
-	set.Delay(300 * time.Millisecond)
+
+	// A slow but entirely ordinary round trip: a mobile network, a cold TLS
+	// handshake, a provider having a bad minute. The number is chosen to be
+	// larger than any budget that would only ever have worked on localhost, so
+	// that shrinking the budget fails this test rather than squeaking past it.
+	set.Delay(800 * time.Millisecond)
 
 	// Deliberately the production defaults: the budget under test is one of them.
 	verifier := newVerifier(t, set)

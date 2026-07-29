@@ -149,6 +149,42 @@ func TestUnauthorizedDoesNotDistinguishTheReason(t *testing.T) {
 	}
 }
 
+// The challenge belongs to the status, not to the caller that happened to
+// remember it. RFC 7235 requires it on every 401, and there are two writers of
+// this type — this one and huma's error path — so a rule enforced at the call
+// site is a rule one of them will eventually skip.
+func TestUnauthorizedCarriesTheChallenge(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+
+	WriteProblem(w, r, Problem{Status: http.StatusUnauthorized, Type: ProblemUnauthorized})
+
+	if got := w.Header().Get("WWW-Authenticate"); got != "Bearer" {
+		t.Errorf("WWW-Authenticate = %q, want Bearer", got)
+	}
+}
+
+// ...and only to that status. A challenge on a 404 would invite a client to
+// retry with credentials against a path that does not exist.
+func TestOtherStatusesCarryNoChallenge(t *testing.T) {
+	for _, status := range []int{
+		http.StatusNotFound,
+		http.StatusMethodNotAllowed,
+		http.StatusUnprocessableEntity,
+		http.StatusInternalServerError,
+		http.StatusServiceUnavailable,
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+
+		WriteProblem(w, r, Problem{Status: status})
+
+		if got := w.Header().Get("WWW-Authenticate"); got != "" {
+			t.Errorf("status %d carries WWW-Authenticate = %q, want none", status, got)
+		}
+	}
+}
+
 // The fifth path. A payload that cannot be marshalled used to answer in a
 // hand-written literal that bypassed the error writer entirely — right shape by
 // coincidence, and the coincidence would not have survived this change.

@@ -160,6 +160,15 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, p Problem) {
 	p.Instance = r.URL.Path
 	p.RequestID = requestID
 
+	// The same headers huma's error path takes from GetHeaders, applied through
+	// the same method rather than repeated here. One rule, one place: a caller
+	// that writes a 401 gets the challenge without knowing it had to.
+	for name, values := range p.GetHeaders() {
+		for _, value := range values {
+			w.Header().Add(name, value)
+		}
+	}
+
 	body, err := json.Marshal(p)
 	if err != nil {
 		// Problem has no field that can fail to marshal, so this is unreachable

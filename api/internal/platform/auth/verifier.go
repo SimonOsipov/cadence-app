@@ -52,24 +52,41 @@ const (
 	// us and takes authentication down for everyone.
 	defaultUnknownKIDInterval = 5 * time.Minute
 
-	// defaultKeyWaitMax is the deadline on the whole on-demand key lookup: the
-	// wait for that budget *and*, once it is granted, the fetch itself. jwkset
+	// defaultKeyWaitAllowance is the most a request will park waiting for the
+	// refresh budget to come free.
+	//
+	// It is what makes the deadline below two guarantees instead of one. The
+	// limiter sleeps whenever the wait fits inside the deadline, so without a
+	// separate allowance a request arriving late in the interval would be
+	// granted the refresh with almost none of the deadline left for it — and
+	// would fail the fetch and burn the budget, which is the defect the
+	// deadline exists to prevent, recurring at the end of every window.
+	//
+	// At most one request is ever parked: the limiter reserves the token before
+	// sleeping, so anything arriving beside it sees a wait of minutes, larger
+	// than the deadline, and is refused immediately.
+	defaultKeyWaitAllowance = 250 * time.Millisecond
+
+	// defaultKeyFetchBudget is what an on-demand fetch is guaranteed, after the
+	// wait above has taken its worst case.
+	//
+	// It has to cover a real round trip to the provider, TLS handshake
+	// included. At 100 ms — enough for a localhost fixture and for nothing else
+	// — the on-demand refresh never completes against Supabase, and a key
+	// rotation produces blanket 401s until the next scheduled refresh an hour
+	// later.
+	defaultKeyFetchBudget = 3 * time.Second
+
+	// defaultKeyWaitMax is the single deadline jwkset accepts. It covers the
+	// wait for the refresh budget *and*, once granted, the fetch — jwkset
 	// derives one context from it and passes that context into the refresh, so
 	// a value chosen only to bound the wait silently becomes the HTTP timeout.
-	//
-	// It therefore has to cover a real round trip to the provider, TLS
-	// handshake included. At 100 ms — enough for a localhost fixture and for
-	// nothing else — the on-demand refresh never completes against Supabase,
-	// and a key rotation produces blanket 401s until the next scheduled
-	// refresh an hour later.
-	//
-	// This does not reintroduce the stall it is written against. With one token
-	// per defaultUnknownKIDInterval, a rate-limited request needs to wait
-	// minutes, which exceeds this deadline, so the limiter refuses immediately
-	// rather than sleeping. Only the one permitted refresh spends the budget.
-	defaultKeyWaitMax = 3 * time.Second
+	// Summing the two above is how each gets its own guarantee anyway.
+	defaultKeyWaitMax = defaultKeyWaitAllowance + defaultKeyFetchBudget
 
-	// defaultHTTPTimeout bounds one fetch of the key set.
+	// defaultHTTPTimeout bounds a scheduled fetch of the key set — the one at
+	// startup and the ones on the refresh interval. The on-demand path is
+	// bounded by defaultKeyWaitMax instead.
 	defaultHTTPTimeout = 5 * time.Second
 )
 
