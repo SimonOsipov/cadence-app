@@ -53,7 +53,10 @@ jobs:
           {
             echo "api=$(matches '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
             echo "kmp=$(matches '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
-            echo "scripts=$(matches '^(scripts/|\.github/workflows/)')"
+            # The whole of .github/, not just workflows/: the shell gate below
+            # also verifies the committed ruleset, and a change to the ruleset
+            # alone has to reach the job that checks it.
+            echo "scripts=$(matches '^(scripts/|\.github/)')"
           } >> "$GITHUB_OUTPUT"
 
   scripts:
@@ -76,6 +79,13 @@ jobs:
           }
           shellcheck --version
           shellcheck -x scripts/gate/*.sh scripts/ralph/*.sh
+
+      # Checks the committed ruleset against this file. It has to run here
+      # rather than anywhere else, because this is the job whose own name the
+      # ruleset requires — and a workflow that renames its jobs without
+      # updating the ruleset blocks every pull request that follows it.
+      - name: Ruleset matches this workflow
+        run: ./scripts/gate/ruleset.sh
 
   tests-not-weakened:
     name: Tests not weakened

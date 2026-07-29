@@ -10,6 +10,14 @@ here="$(dirname "$0")"
 ran=()
 skipped=()
 
+# First because it is the cheapest. What it proves is narrow and worth stating
+# exactly: every job in ci.yml appears in the committed ruleset, and nothing in
+# the ruleset names a job that does not exist. Whether that ruleset is actually
+# in force on GitHub is not knowable from here — applying it needs admin, which
+# nobody running this script has.
+"$here/ruleset.sh"
+ran+=("ruleset")
+
 "$here/go.sh"
 ran+=("go")
 
