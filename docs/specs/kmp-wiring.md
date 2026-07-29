@@ -8,8 +8,8 @@ todoist_parent: "6h8xwxQ2mQWC4Mpq"
 components: [kmp-app]
 proposal: "[[20-Projects/cadence/architecture/proposals/api-openapi-code-first|architecture/proposals/api-openapi-code-first]]"
 ---
-<!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/kmp-wiring.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
+<!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/kmp-wiring.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 # Обвязка KMP
 
 ## Описание
@@ -184,4 +184,4 @@ todoist: "6h8xx8cjPvPr5PXq"
 
 ## Открытые вопросы
 
-> [!question] Отладочный экран проверяет ровно один вызов сгенерированного клиента — `GET /v1/me`, потому что `/healthz` в контракт не входит намеренно. Значит на момент закрытия блока сгенерированный клиент будет доказан одним эндпоинтом. Достаточно ли этого, или стоит дождаться первого эндпоинта M2 и проверить клиент на нём — то есть закрывать шаг 3 уже внутри M2?
+> [!decision] 29.07.2026 — **одного эндпоинта достаточно, шаг 3 закрывается здесь.** Экран доказывает конвейер: генерацию, заголовок `Authorization`, десериализацию и форму ошибки. Второй эндпоинт не скажет о конвейере ничего нового — он скажет об эндпоинте. Ждать M2 значит держать весь блок KMP открытым целый майлстоун ради утверждения, которое уже доказано.
