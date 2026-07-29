@@ -144,6 +144,37 @@ type Database struct {
 
 var databaseCounter atomic.Uint64
 
+// NewEmptyDatabase creates a database with no migrations applied and returns
+// the bootstrap connection string.
+//
+// It exists for tests about the chain itself — what it does to a database it
+// has never touched — as opposed to the far more common tests about what the
+// chain has already produced, which take NewDatabase.
+func (c *Cluster) NewEmptyDatabase(t *testing.T) string {
+	t.Helper()
+
+	ctx := t.Context()
+	name := fmt.Sprintf("cadence_empty_%d", databaseCounter.Add(1))
+
+	bootstrapDSN := c.DSN(bootstrapRole, bootstrapPass, "postgres")
+	if err := c.exec(ctx, bootstrapDSN, fmt.Sprintf("CREATE DATABASE %s", pgIdent(name))); err != nil {
+		t.Fatalf("creating database %s: %v", name, err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		adminDSN := c.DSN(superuserRole, superuserPass, "postgres")
+		if err := c.exec(
+			cleanupCtx, adminDSN,
+			fmt.Sprintf("DROP DATABASE %s WITH (FORCE)", pgIdent(name)),
+		); err != nil {
+			t.Errorf("dropping database %s: %v", name, err)
+		}
+	})
+
+	return c.DSN(bootstrapRole, bootstrapPass, name)
+}
+
 // NewDatabase creates a database, applies the whole migration chain under the
 // non-superuser bootstrap role, gives cadence_app a password so the test can
 // connect as the request path, and registers cleanup.

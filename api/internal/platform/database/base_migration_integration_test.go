@@ -562,9 +562,18 @@ func TestForceClearsTheDirtyFlag(t *testing.T) {
 	ctx := t.Context()
 	path := testsupport.MigrationsPath(t)
 
+	// The chain's own bookkeeping, not golang-migrate's default name: GoTrue
+	// shares this database and claims `schema_migrations` for its own migrator.
 	conn := testsupport.Connect(t, db.MigrationURL)
-	if _, err := conn.Exec(ctx, `UPDATE schema_migrations SET dirty = true`); err != nil {
+	tag, err := conn.Exec(ctx, `UPDATE cadence_schema_migrations SET dirty = true`)
+	if err != nil {
 		t.Fatalf("marking the chain dirty: %v", err)
+	}
+	// Asserted rather than assumed: an UPDATE that matched nothing would leave
+	// the chain clean, and every assertion below would then be testing the
+	// happy path under a name that says otherwise.
+	if tag.RowsAffected() == 0 {
+		t.Fatal("no version row to mark dirty — the chain recorded nothing")
 	}
 
 	if err := database.RunMigrations(db.MigrationURL, path); err == nil {

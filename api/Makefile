@@ -63,8 +63,9 @@ docker-up:
 docker-down:
 	docker compose down
 
-# One command for a usable local database. Requires DATABASE_MIGRATION_URL —
-# see .env.example.
+# One command for a usable local stack: Postgres, GoTrue, the chain applied and
+# a password on the request-path role. Requires DATABASE_MIGRATION_URL — see
+# .env.example.
 #
 # The last step exists because the chain creates cadence_app without a password
 # on purpose: the credential is provisioned outside the repository, in Railway
@@ -76,3 +77,10 @@ dev-up: docker-up
 	$(MAKE) migrate-up
 	docker compose exec -T postgres psql -q -U cadence -d cadence \
 		-c "ALTER ROLE cadence_app PASSWORD 'cadence_app'"
+	@until curl -fsS http://localhost:9999/health >/dev/null 2>&1; do sleep 1; done
+	@echo
+	@echo "local stack ready:"
+	@echo "  postgres  localhost:5433"
+	@echo "  gotrue    localhost:9999  (JWKS at /.well-known/jwks.json)"
+	@echo
+	@echo "the API needs AUTH_JWT_ISSUER=http://localhost:9999 — see .env.example"

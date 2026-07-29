@@ -3,6 +3,7 @@ package database
 import (
 	"errors"
 	"fmt"
+	"net/url"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres" // registers the postgres driver
@@ -85,11 +86,30 @@ func MigrateForce(databaseURL, migrationsPath string, version int) error {
 	})
 }
 
+// migrationsTable is where this chain records what it has applied.
+//
+// Not golang-migrate's default `schema_migrations`, and the reason is a
+// collision rather than a preference: GoTrue shares this database — its `auth`
+// schema is what `profiles` references, so the two cannot be separated — and it
+// brings its own migrator, which claims exactly that name with a single
+// `version` column. golang-migrate then reads it and fails with
+// `column "dirty" does not exist`, and which of the two wins depends on the
+// order two containers happened to start in.
+//
+// Set here rather than in the connection string so that it cannot be forgotten
+// by whoever writes the next DATABASE_MIGRATION_URL.
+const migrationsTable = "cadence_schema_migrations"
+
 // withChain opens the chain, hands it to fn and closes it, so that the two
 // entry points cannot drift on how the source and the advisory lock are
 // released.
 func withChain(databaseURL, migrationsPath string, fn func(*migrate.Migrate) error) (err error) {
-	m, err := migrate.New("file://"+migrationsPath, databaseURL)
+	target, err := withMigrationsTable(databaseURL)
+	if err != nil {
+		return err
+	}
+
+	m, err := migrate.New("file://"+migrationsPath, target)
 	if err != nil {
 		return fmt.Errorf("opening migration chain at %s: %w", migrationsPath, err)
 	}
@@ -104,4 +124,23 @@ func withChain(databaseURL, migrationsPath string, fn func(*migrate.Migrate) err
 	}()
 
 	return fn(m)
+}
+
+// withMigrationsTable puts migrationsTable into the connection string.
+//
+// It overwrites rather than defers to a value already there: a URL that names
+// a different table is a URL that would split this chain's history in two, and
+// silently — the second table simply looks like a database with nothing
+// applied, and the chain runs from the beginning against a populated schema.
+func withMigrationsTable(databaseURL string) (string, error) {
+	parsed, err := url.Parse(databaseURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing the migration database URL: %w", err)
+	}
+
+	query := parsed.Query()
+	query.Set("x-migrations-table", migrationsTable)
+	parsed.RawQuery = query.Encode()
+
+	return parsed.String(), nil
 }
