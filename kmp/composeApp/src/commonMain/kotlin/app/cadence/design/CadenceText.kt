@@ -8,7 +8,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -40,16 +39,14 @@ fun CadenceTitle(
     text: String,
     modifier: Modifier = Modifier,
     size: TextUnit = CadenceTitleSize,
-    italic: Boolean = false,
     color: Color = Cadence.palette.ink,
     maxLines: Int = Int.MAX_VALUE,
 ) {
-    val base = if (italic) Cadence.typography.titleEmphasis else Cadence.typography.title
     BasicText(
         text = text,
         modifier = modifier,
         // Leading and tracking are stored as ratios, so they follow the size.
-        style = base.copy(color = color, fontSize = size),
+        style = Cadence.typography.title.copy(color = color, fontSize = size),
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
     )
@@ -88,30 +85,40 @@ fun CadenceTitle(
  * one paragraph. Three siblings in a Row would neither wrap together nor be
  * reachable by the whole sentence.
  *
- * Prefix, emphasis and suffix rather than a general builder because that is the
- * shape of all five uses in the frozen prototype. A second emphasised run has
- * no call site yet, and inventing the API for it now would mean guessing.
+ * Emphasis first, prefix and suffix optional: of the 12 uses across 6 files in
+ * the frozen prototype, 11 are prefix + emphasis (+ optional suffix) and one —
+ * the dose in VialDetailSheet — is the emphasis alone. An earlier count put it
+ * at five, which is why the first shape made the prefix mandatory.
+ *
+ * Not a general builder, because a second emphasised run has no call site to
+ * design against. What breaks first is nesting, and that replaces this
+ * signature rather than extending it — fixed arity does not grow a fourth part.
  */
 @Composable
 fun cadenceEmphasisedTitle(
-    prefix: String,
     emphasis: String,
+    prefix: String = "",
     suffix: String = "",
     emphasisColor: Color = CadenceColors.forest700,
 ): AnnotatedString {
-    val style = Cadence.typography.titleEmphasis
+    val style =
+        Cadence.typography.titleEmphasis
+            .toSpanStyle()
+            // Everything the emphasis style carries, not a hand-picked three:
+            // naming fontFamily, weight and slant by hand happened to be enough
+            // only because title and titleEmphasis share their metrics today,
+            // and the first time the italic wants its own tracking the emphasis
+            // would silently keep the upright's.
+            //
+            // The size is the exception, and it has to be: the style carries the
+            // scale's default 28sp, while the call site chooses the size on
+            // CadenceTitle. Leaving it set would put a 28sp word inside a 22sp
+            // line.
+            .copy(fontSize = TextUnit.Unspecified, color = emphasisColor)
+
     return buildAnnotatedString {
         append(prefix)
-        withStyle(
-            SpanStyle(
-                color = emphasisColor,
-                fontFamily = style.fontFamily,
-                fontWeight = style.fontWeight,
-                fontStyle = style.fontStyle,
-            ),
-        ) {
-            append(emphasis)
-        }
+        withStyle(style) { append(emphasis) }
         append(suffix)
     }
 }

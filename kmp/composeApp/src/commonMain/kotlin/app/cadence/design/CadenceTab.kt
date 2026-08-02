@@ -1,34 +1,42 @@
 package app.cadence.design
 
-import androidx.compose.ui.graphics.Color
-
 /**
- * The five destinations of the patient app, ported from `TABS` in
+ * The four destinations of the patient app, ported from `TABS` in
  * mobile/src/components/shared.tsx.
  *
- * The labels are product copy and stay Russian. The icon names index
- * [CadenceIcons].
+ * Four, not five: the prototype's list carries the centre action alongside them
+ * behind a `primary` flag, but an action is not a place. Keeping it in the same
+ * set made "which destination is current" answerable with the action — a bar
+ * with nothing highlighted, which is the state the prototype expressed as
+ * `TabId | null` and which this port had claimed was impossible while leaving
+ * it reachable. The showcase reached it on the first tap.
+ *
+ * Icons are the path data rather than a key into [CadenceIcons.byName]: the set
+ * is closed and known at compile time, so a lookup that can miss has no reason
+ * to exist here. `byName` is the adapter for the prototype's kebab strings, and
+ * a destination is not a string from outside.
+ *
+ * Labels are product copy and stay Russian.
  */
-enum class CadenceTab(
-    val icon: String,
+enum class CadenceDestination(
+    val icon: List<String>,
     val label: String,
 ) {
-    TODAY("home", "Сегодня"),
-    INVENTORY("beaker", "Аптечка"),
-    LOG("plus", "Записать"),
-    TRENDS("chart-bar", "Тренды"),
-    NUTRITION("cake", "Питание"),
+    TODAY(CadenceIcons.home, "Сегодня"),
+    INVENTORY(CadenceIcons.beaker, "Аптечка"),
+    TRENDS(CadenceIcons.chartBar, "Тренды"),
+    NUTRITION(CadenceIcons.cake, "Питание"),
 }
 
 /**
- * The tint a destination is drawn in.
+ * The centre action: logging a dose.
  *
- * A colour cannot be queried from the composed tree, so the one rule worth
- * asserting — that the active destination looks different from the rest —
- * lives here where a test can reach it.
+ * Not a destination — it pushes a wizard rather than switching tabs — so it
+ * carries only what drawing it needs. Its label is never displayed; it exists
+ * so a screen reader can name a circle that holds no text.
  */
-internal fun cadenceTabTint(
-    tab: CadenceTab,
-    active: CadenceTab,
-    subtle: Color,
-): Color = if (tab == active) CadenceColors.forest700 else subtle
+object CadenceLogAction {
+    val icon: List<String> = CadenceIcons.plus
+
+    const val ACCESSIBILITY_LABEL: String = "Записать"
+}

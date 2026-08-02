@@ -61,3 +61,61 @@ token port (`dashboard-skeleton`, step 2).
 
 Verified name by name on 2026-08-03: `CadenceColors.kt` and `theme/index.ts`
 agree on every value, and the icon sets match at 41 each.
+
+## The sparkline is drawn, not vectored
+
+**What the prototype does:** `Spark` in `shared.tsx` is an SVG `<Path>`.
+**What we do:** a Compose `Canvas` with the same geometry — the padding, the
+2dp stroke, the 3dp trailing dot, the 0.4 fill alpha are the prototype's values.
+**Why:** Compose has no SVG. The numbers moved across as `Dp` rather than raw
+floats, because a `DrawScope` measures in physical pixels and the prototype's
+viewBox units are density-independent; passed straight through, the line would
+be a third as thick on a 3x screen and different on each platform.
+
+## A degenerate series is centred, not pinned to the top
+
+**What the prototype does:** `(max - v) / (max - min || 1)` — with no span, the
+`|| 1` sends every point to `y = pad`, the top edge. A single point lands at the
+top-left corner.
+**What we do:** a flat series sits on the centre line; a single measurement sits
+in the middle of the box.
+**Why:** the prototype never renders either, because all of its data is
+hardcoded ascending — its `|| 1` is faithful to a path it never walks. Pinned to
+the top with a fill, a flat series fills ~86% of the box and reads as "at
+maximum", and «110, 110, 110» draws identically to «0,5 · 0,5 · 0,5»: the
+vertical axis stops meaning anything while still looking like it does. A single
+point in the top-left reads as an old, high reading, when the trailing dot marks
+"now" at the right everywhere else. For adherence and biomarkers this is read
+clinically, so "no change" is drawn as no change.
+
+## An empty series draws a baseline, not nothing
+
+**What the prototype does:** nothing — an empty `data` array yields an empty
+`<Svg>`.
+**What we do:** a hairline rule across the centre.
+**Why:** an empty box beside a caption and an axis reads as "failed to load",
+and a patient waits and retries instead of going and measuring. A rule says
+"there is a scale here and no values on it".
+
+## Non-finite values are dropped
+
+**What the prototype does:** nothing — JavaScript propagates `NaN` silently.
+**What we do:** filter them out of the series before any arithmetic.
+**Why:** one `NaN` makes `max`, `min` and every coordinate `NaN`, and the whole
+chart vanishes with nothing raised. A measurement pipeline that divides — a
+ratio with a zero denominator, a unit conversion — produces them.
+
+## The tab bar has four destinations and one action, not five tabs
+
+**What the prototype does:** `TABS` is one list of five, with the centre entry
+flagged `primary`, and `active` typed `TabId | null`.
+**What we do:** `CadenceDestination` holds the four places; the centre action is
+separate, with its own callback.
+**Why:** an action is not a place. Keeping them in one set made "which
+destination is current" answerable with the action, which draws a bar with
+nothing highlighted — the state `TabId | null` expressed and this port had
+claimed impossible while leaving it reachable. The showcase reached it on the
+first tap of the centre button.
+
+Also renamed: the prototype's `insights` is `TRENDS` here, matching the screen's
+own name («Тренды») rather than its route key.

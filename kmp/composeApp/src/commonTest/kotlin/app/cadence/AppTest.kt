@@ -2,6 +2,9 @@ package app.cadence
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -46,17 +49,30 @@ class AppTest {
             ).forEach { (text, _) ->
                 onNodeWithText(text).assertIsDisplayed()
             }
+
+            // The sparkline draws no text, so without a handle deleting it from
+            // the showcase leaves this whole suite green — which it did.
+            onNodeWithTag(SHOWCASE_SPARK_TAG).assertIsDisplayed()
         }
 
     @Test
-    fun theShowcaseTabBarReportsTheDestinationTapped() =
+    fun theShowcaseTabBarReportsBothADestinationAndTheAction() =
         runComposeUiTest {
             setContent { App() }
 
-            // Not decoration: the bar holds state here, so a tap that did not
-            // arrive would leave the previous destination tinted and nothing
-            // else would say so.
+            // The previous version of this test clicked a tab and asserted the
+            // tab's own label was displayed — which it is either way, because
+            // the bar renders every label unconditionally. It passed against
+            // `onSelect = {}`. The showcase now shows its state, so the
+            // assertion has something a tap can actually change.
+            onNodeWithText("Сегодня · записей: 0").assertIsDisplayed()
+
             onNodeWithText("Тренды").performClick()
-            onNodeWithText("Тренды").assertIsDisplayed()
+            onNodeWithText("Тренды · записей: 0").assertIsDisplayed()
+
+            onNodeWithContentDescription("Записать").performClick()
+            onNodeWithText("Тренды · записей: 1").assertIsDisplayed()
+            // And it did not double as a destination change.
+            onNodeWithText("Тренды").assertIsSelected()
         }
 }

@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
@@ -16,11 +17,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontListFontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnitType
+import androidx.compose.ui.unit.isUnspecified
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -201,7 +202,7 @@ class DesignSystemTest {
                 CadenceTheme {
                     // As the prototype writes it: «Кому напишем?», with only the
                     // middle word in the italic display face.
-                    CadenceTitle(cadenceEmphasisedTitle("Кому ", "напишем", "?"))
+                    CadenceTitle(cadenceEmphasisedTitle(prefix = "Кому ", emphasis = "напишем", suffix = "?"))
                 }
             }
 
@@ -213,18 +214,24 @@ class DesignSystemTest {
     @Test
     fun theEmphasisedRunTakesTheDrawnItalicFaceAndNothingElseDoes() =
         runComposeUiTest {
-            var annotated: AnnotatedString? = null
             var italicFace: FontFamily? = null
             var uprightFace: FontFamily? = null
             setContent {
                 CadenceTheme {
-                    annotated = cadenceEmphasisedTitle("Ваша ", "аптечка")
                     italicFace = Cadence.typography.titleEmphasis.fontFamily
                     uprightFace = Cadence.typography.title.fontFamily
+                    CadenceTitle(cadenceEmphasisedTitle(prefix = "Ваша ", emphasis = "аптечка"))
                 }
             }
 
-            val text = assertNotNull(annotated, "no annotated title was built")
+            // Read back out of the composed tree, not out of the builder. Read
+            // from the builder, this passed even when the title overload threw
+            // the spans away before drawing.
+            val text =
+                onNodeWithText("Ваша аптечка")
+                    .fetchSemanticsNode()
+                    .config[SemanticsProperties.Text]
+                    .single()
             val spans = text.spanStyles
             assertEquals(1, spans.size, "an emphasised title carries exactly one span")
 
@@ -235,6 +242,14 @@ class DesignSystemTest {
             // emphasis synthetically instead of using the drawn italic file.
             assertEquals(italicFace, spans[0].item.fontFamily, "the emphasis is not the italic face")
             assertNotEquals(uprightFace, spans[0].item.fontFamily, "the emphasis shares the upright face")
+            // The rest of the span, which a hand-picked three properties lost:
+            // the accent colour, and the weight without which Cormorant falls
+            // back to its own Light default instance.
+            assertEquals(CadenceColors.forest700, spans[0].item.color, "the emphasis lost its accent")
+            assertEquals(FontWeight.Medium, spans[0].item.fontWeight, "the emphasis lost its weight")
+            // Unspecified on purpose: the size belongs to the call site, and a
+            // baked 28sp would sit a fat word inside a 22sp line.
+            assertTrue(spans[0].item.fontSize.isUnspecified, "the emphasis pins its own size")
         }
 
     @Test
