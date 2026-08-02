@@ -7,7 +7,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 
 // The text primitives, ported from mobile/src/components/primitives.tsx.
@@ -49,6 +53,67 @@ fun CadenceTitle(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+/**
+ * A title carrying styled runs, for [cadenceEmphasisedTitle].
+ *
+ * Separate overload rather than one function taking AnnotatedString: a plain
+ * title is what almost every call site wants, and making them all wrap a
+ * String would be noise for the sake of the rarer case.
+ */
+@Composable
+fun CadenceTitle(
+    text: AnnotatedString,
+    modifier: Modifier = Modifier,
+    size: TextUnit = CadenceTitleSize,
+    color: Color = Cadence.palette.ink,
+    maxLines: Int = Int.MAX_VALUE,
+) {
+    BasicText(
+        text = text,
+        modifier = modifier,
+        style = Cadence.typography.title.copy(color = color, fontSize = size),
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/**
+ * A title with one word set in the italic display face — «Кому *напишем*?»,
+ * «Ваша *аптечка*», «Что *прибыло?*».
+ *
+ * One string with a span, not three composables in a row: in the prototype the
+ * emphasis is a `Text` nested inside a `Text`, which flows inline and wraps as
+ * one paragraph. Three siblings in a Row would neither wrap together nor be
+ * reachable by the whole sentence.
+ *
+ * Prefix, emphasis and suffix rather than a general builder because that is the
+ * shape of all five uses in the frozen prototype. A second emphasised run has
+ * no call site yet, and inventing the API for it now would mean guessing.
+ */
+@Composable
+fun cadenceEmphasisedTitle(
+    prefix: String,
+    emphasis: String,
+    suffix: String = "",
+    emphasisColor: Color = CadenceColors.forest700,
+): AnnotatedString {
+    val style = Cadence.typography.titleEmphasis
+    return buildAnnotatedString {
+        append(prefix)
+        withStyle(
+            SpanStyle(
+                color = emphasisColor,
+                fontFamily = style.fontFamily,
+                fontWeight = style.fontWeight,
+                fontStyle = style.fontStyle,
+            ),
+        ) {
+            append(emphasis)
+        }
+        append(suffix)
+    }
 }
 
 @Composable

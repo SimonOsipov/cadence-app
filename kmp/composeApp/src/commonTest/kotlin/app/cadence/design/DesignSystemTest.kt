@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontListFontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -24,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -190,6 +192,49 @@ class DesignSystemTest {
 
             onNodeWithText("0,25").assertIsDisplayed()
             onNodeWithText("мг").assertIsDisplayed()
+        }
+
+    @Test
+    fun anEmphasisedTitleIsOneRunOfTextRatherThanThreePieces() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    // As the prototype writes it: «Кому напишем?», with only the
+                    // middle word in the italic display face.
+                    CadenceTitle(cadenceEmphasisedTitle("Кому ", "напишем", "?"))
+                }
+            }
+
+            // One node, not three. Three side-by-side composables would neither
+            // wrap as a paragraph nor be found by the whole string.
+            onNodeWithText("Кому напишем?").assertIsDisplayed()
+        }
+
+    @Test
+    fun theEmphasisedRunTakesTheDrawnItalicFaceAndNothingElseDoes() =
+        runComposeUiTest {
+            var annotated: AnnotatedString? = null
+            var italicFace: FontFamily? = null
+            var uprightFace: FontFamily? = null
+            setContent {
+                CadenceTheme {
+                    annotated = cadenceEmphasisedTitle("Ваша ", "аптечка")
+                    italicFace = Cadence.typography.titleEmphasis.fontFamily
+                    uprightFace = Cadence.typography.title.fontFamily
+                }
+            }
+
+            val text = assertNotNull(annotated, "no annotated title was built")
+            val spans = text.spanStyles
+            assertEquals(1, spans.size, "an emphasised title carries exactly one span")
+
+            // The span covers the emphasis word and nothing around it.
+            assertEquals("аптечка", text.text.substring(spans[0].start, spans[0].end))
+
+            // Sharing the upright family would leave Compose to slant the
+            // emphasis synthetically instead of using the drawn italic file.
+            assertEquals(italicFace, spans[0].item.fontFamily, "the emphasis is not the italic face")
+            assertNotEquals(uprightFace, spans[0].item.fontFamily, "the emphasis shares the upright face")
         }
 
     @Test
