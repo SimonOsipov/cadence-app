@@ -99,8 +99,14 @@ private fun monoFace(): FontFamily =
  * That applies to the styles that set a `lineHeight` — title, titleEmphasis,
  * body and number. The single-line styles (eyebrow, meta, label, numberUnit)
  * take their leading from the font's own metrics, which already scale.
+ *
+ * The constructor is internal, and ConsistentCopyVisibility carries that to the
+ * generated `copy()`: a scale assembled anywhere but [cadenceTypography] can
+ * hold a platform family, which is the fallback this design system exists to
+ * prevent.
  */
 @Immutable
+@ConsistentCopyVisibility
 data class CadenceTypography internal constructor(
     val eyebrow: TextStyle,
     val title: TextStyle,
