@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -15,9 +16,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontListFontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnitType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -106,13 +111,39 @@ class DesignSystemTest {
         }
 
     @Test
-    fun titleLeadingAndTrackingFollowTheSize() {
-        // Stored as ratios, so an override rescales them. Absolute sp leading
-        // would leave a 34sp title with 30sp leading, and its lines overlap.
-        val style = CadenceDefaultTypography.title
-        assertEquals(TextUnitType.Em, style.lineHeight.type, "line height is not a ratio")
-        assertEquals(TextUnitType.Em, style.letterSpacing.type, "tracking is not a ratio")
-    }
+    fun leadingAndTrackingFollowTheSizeOnEveryStyleThatSetsThem() =
+        // The scale resolves inside composition, so it is read through the theme.
+        runComposeUiTest {
+            val typography = themedTypography()
+
+            // Stored as ratios, so an override rescales them. Absolute sp leading
+            // would leave a 34sp title with 30sp leading, and its lines overlap.
+            //
+            // `number` is checked too, and not for symmetry: CadenceNumber
+            // overrides its fontSize on every call site, so it is the second
+            // style where this contract is actually exercised.
+            listOf(
+                "title" to typography.title,
+                "titleEmphasis" to typography.titleEmphasis,
+                "body" to typography.body,
+                "number" to typography.number,
+            ).forEach { (role, style) ->
+                assertEquals(
+                    TextUnitType.Em,
+                    style.lineHeight.type,
+                    "$role line height is not a ratio",
+                )
+            }
+
+            listOf("title" to typography.title, "number" to typography.number)
+                .forEach { (role, style) ->
+                    assertEquals(
+                        TextUnitType.Em,
+                        style.letterSpacing.type,
+                        "$role tracking is not a ratio",
+                    )
+                }
+        }
 
     @Test
     fun sheetComposesNothingWhileClosed() =
@@ -189,6 +220,112 @@ class DesignSystemTest {
             assertEquals(Color(0xFFFBF8F3), palette.paper, "paper drifted from the prototype")
             assertEquals(Color(0xFF142C1F), palette.forestDeep, "forest900 drifted from the prototype")
         }
+
+    @Test
+    fun everyRoleIsSetInABundledFaceRatherThanASystemOne() =
+        runComposeUiTest {
+            val typography = themedTypography()
+
+            // Asserted positively, as a type. A blacklist of the generic
+            // singletons would have to name all five — Default, SansSerif,
+            // Serif, Monospace, Cursive — and FontFamily.Default is the one a
+            // careless revert produces, so the blacklist that names three is
+            // exactly the one that lets the likeliest regression through.
+            //
+            // The cast also gives the weight and the resource to assert below.
+            allRoles(typography).forEach { (role, family) ->
+                assertNotNull(family, "the $role role has no family at all")
+                assertTrue(
+                    family is FontListFontFamily,
+                    "the $role role is set in a system family — Cyrillic would fall back",
+                )
+            }
+        }
+
+    @Test
+    fun theFourFacesStayBoundToTheRolesTheyWereChosenFor() =
+        runComposeUiTest {
+            val typography = themedTypography()
+
+            // Every role above is a bundled face, which says nothing about
+            // *which* one. Pointing the mono face at Golos would set every dose
+            // and weight in a proportional face — the column of numbers on the
+            // inventory screen stops lining up, and no assertion above notices.
+            val distinct =
+                listOf(
+                    typography.title.fontFamily,
+                    typography.body.fontFamily,
+                    typography.number.fontFamily,
+                    typography.numberUnit.fontFamily,
+                )
+            assertEquals(
+                distinct.size,
+                distinct.toSet().size,
+                "two roles collapsed onto one face",
+            )
+
+            // The display family carries one weight and the prototype pins it at
+            // Medium. Cormorant Garamond's own default instance is Light, so a
+            // dropped weight renders every title lighter than the design with
+            // nothing failing.
+            val display = typography.title.fontFamily as FontListFontFamily
+            assertEquals(
+                FontWeight.Medium,
+                display.fonts.single().weight,
+                "the display face lost its weight and falls back to the file's Light default",
+            )
+
+            // The body family carries three, so `fontWeight` still selects
+            // rather than being synthesized over a single member.
+            val body = typography.body.fontFamily as FontListFontFamily
+            assertEquals(
+                listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold),
+                body.fonts.map { it.weight },
+                "the body family stopped offering the weights the prototype uses",
+            )
+        }
+
+    @Test
+    fun typographyReadOutsideTheThemeFailsInsteadOfServingAFallback() =
+        runComposeUiTest {
+            // The contract this guards is the reason the local has no default.
+            // Without a test, the next person whose composable reads a token
+            // outside the theme restores a default value, and the Cyrillic
+            // fallback comes back silently.
+            assertFailsWith<IllegalStateException> {
+                setContent { Cadence.typography }
+                waitForIdle()
+            }
+        }
+
+    /**
+     * The scale as the theme publishes it.
+     *
+     * Every typography assertion needs the same seven lines — the scale resolves
+     * inside composition now, so it cannot be read from a constant.
+     */
+    private fun ComposeUiTest.themedTypography(): CadenceTypography {
+        var seen: CadenceTypography? = null
+        setContent {
+            CadenceTheme {
+                seen = Cadence.typography
+            }
+        }
+        return assertNotNull(seen, "CadenceTheme did not publish a typography")
+    }
+
+    /** All eight roles, so a new one cannot be added without being checked. */
+    private fun allRoles(typography: CadenceTypography): List<Pair<String, FontFamily?>> =
+        listOf(
+            "eyebrow" to typography.eyebrow.fontFamily,
+            "title" to typography.title.fontFamily,
+            "titleEmphasis" to typography.titleEmphasis.fontFamily,
+            "body" to typography.body.fontFamily,
+            "meta" to typography.meta.fontFamily,
+            "number" to typography.number.fontFamily,
+            "numberUnit" to typography.numberUnit.fontFamily,
+            "label" to typography.label.fontFamily,
+        )
 
     @Test
     fun everyPrototypeIconParses() {

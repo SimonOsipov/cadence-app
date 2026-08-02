@@ -122,7 +122,7 @@ The generator parses `:root`, resolves aliases to final values, and separately e
 
 **The smoke test.** A test against the deployed environment's URL is a detector, not a gate: by the time it goes red, the bad build is already serving traffic. The rollback is what makes it a gate. Plus the SHA check: Railway deploys asynchronously, and a test started right after the merge will hit the previous build and pass.
 
-**Fonts — a decision shared with the mobile app.** `--font-display` already has a Cyrillic fallback in the CSS, and the display font is already chosen in the mobile app. Only the body text face is unresolved: DM Sans has no Cyrillic. The mechanism is built here, and the files are added once the decision lands — the same substitution point as `CadenceFonts` in KMP.
+**Fonts — a decision shared with the mobile app.** `--font-display` already has a Cyrillic fallback in the CSS, and the display font is already chosen in the mobile app. Only the body text face is unresolved: DM Sans has no Cyrillic. The mechanism is built here, and the files are added once the decision lands — the same single substitution point KMP has in `cadenceTypography()`.
 
 **Files:**
 
@@ -209,7 +209,7 @@ todoist: "6h8w89CJJWM2x3cH"
 
 > [!decision] 2026-07-28 — the body text face: **Golos Text** instead of DM Sans, on both surfaces.
 > Reason: DM Sans has no Cyrillic (`latin`, `latin-ext`), and all product copy is Russian. In the prototype this check was done for the display face (Instrument Serif → Cormorant Garamond) and not done for the text face. Golos Text was designed for Cyrillic rather than extended into it, has an open licence, and is close to DM Sans in width and tone — the prototype's layouts will not shift.
-> Consequences: in the dashboard `--font-body` changes during the port (the only value edit); in the mobile app `CadenceFonts.body` changes, and the files have to be placed in `composeApp` — a separate task, since BST-05 is already closed.
+> Consequences: in the dashboard `--font-body` changes during the port (the only value edit); in the mobile app the body face changes, and the files have to be placed in `composeApp` — a separate task, since BST-05 is already closed. (Done 2026-08-03: the three faces are bundled and the scale is built by `cadenceTypography()`; the `CadenceFonts` object that once held them no longer exists.)
 
 > [!decision] 2026-07-28 — the side menu shows only "Обзор" and "Сообщения".
 > The prototype's four items that fall outside MVP scope are removed rather than shown disabled. Invariant 4 of the component note forbids dead controls by M10; honouring it immediately is cheaper than fixing it later, and a doctor at a demo will not see promises the MVP does not keep. The roster in the Overview *is* the patient list — a separate "Пациенты" item is unnecessary per the same note.

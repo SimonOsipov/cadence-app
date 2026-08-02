@@ -37,6 +37,7 @@ kotlin {
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
             implementation(libs.compose.ui.backhandler)
+            implementation(libs.compose.resources)
         }
         // No host-test builder on the Android target on purpose: a Compose UI
         // test needs a real (or Robolectric) Android runtime, so these run on
@@ -47,4 +48,11 @@ kotlin {
             implementation(libs.compose.ui.test)
         }
     }
+}
+
+compose.resources {
+    // Internal — the generated accessor is how the design system reaches its
+    // own files, not part of the module's surface.
+    publicResClass = false
+    packageOfResClass = "app.cadence.design.generated"
 }
