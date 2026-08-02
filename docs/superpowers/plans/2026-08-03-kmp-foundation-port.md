@@ -440,7 +440,45 @@ git commit -m "feat(kmp): a title can emphasise one word without italicising the
 
 ---
 
-### Task 4: `CadenceSection` and `CadenceListRow`
+## Revision, 2026-08-03: Tasks 4 and 5 dropped, Task 6 halved
+
+Written after Task 3, when checking call sites before implementing became the
+rule. Measured across the 25 prototype screens:
+
+| Component | Task | Uses in screens |
+|---|---|---|
+| `Section` | 4 | **0** |
+| `ListRow` | 4 | **0** |
+| `AppHeader` | 5 | **0** |
+| `ScreenHeader` | 5 | **0** |
+| `CycleRing` | 6 | **0** |
+| `Spark` | 6 | 4, across 3 files |
+| `CadenceTabBar` | 7 | 4, across 4 files |
+
+`Section`, `ListRow` and `Card` are dead exports of `primitives.tsx` — no
+screen imports them. `AppHeader`, `ScreenHeader` and `Grabber` appear nowhere
+outside `shared.tsx` itself. `CycleRing`'s only mention is a comment in
+`ProfileScreen` explaining that the shared one draws its track in the wrong
+tones, so that screen draws its own.
+
+What screens actually use is `SectionHead`, `GroupCard` and `NavRow`, declared
+locally in `SettingsScreen.tsx` and imported by exactly one file — the profile.
+
+So the specification is what the prototype *draws*, not what it exports.
+Building an API against zero call sites is guessing, and Task 3 had already
+paid for that once: its planned shape was a standalone composable, while all
+five real uses are inline runs inside a title.
+
+**Decision (the user's, on the measurement above): build only what is called.**
+Tasks 4 and 5 are dropped. Task 6 keeps `CadenceSpark` and drops
+`CadenceCycleRing`. Task 7 stands. Task 8 shrinks to what exists.
+
+The header and row shapes get extracted from the screens once the repetition
+is visible — block steps 4–10 — rather than invented now.
+
+---
+
+### ~~Task 4: `CadenceSection` and `CadenceListRow`~~ — DROPPED, see the revision above
 
 The two layout primitives every screen repeats. `Section` is an eyebrow with an optional trailing action; `ListRow` is a tinted icon tile, a title with an optional subtitle, and an optional right-hand value with its own subtitle.
 
@@ -723,7 +761,7 @@ git commit -m "feat(kmp): sections and list rows, the two shapes every screen re
 
 ---
 
-### Task 5: `CadenceAppHeader` and `CadenceScreenHeader`
+### ~~Task 5: `CadenceAppHeader` and `CadenceScreenHeader`~~ — DROPPED, see the revision above
 
 The two headers. The app header is the home screen's greeting, large serif name, bell, and avatar; the screen header is the back chevron with an eyebrow and title used by every pushed screen.
 
@@ -968,7 +1006,7 @@ git commit -m "feat(kmp): the two headers every screen lands under"
 
 ---
 
-### Task 6: `CadenceSpark` and `CadenceCycleRing`
+### Task 6: `CadenceSpark` (CycleRing dropped, see the revision above)
 
 The two drawn shapes in the foundation. Both are `Canvas` — the prototype uses SVG, which has no Compose equivalent, so the geometry is ported as drawing commands. `ScrubChart` is *not* here: it belongs to step 7 of the block, and it needs a gesture as well as a canvas.
 
