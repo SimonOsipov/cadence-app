@@ -1,128 +1,127 @@
-# Защита ветки `main`
+# Protecting the `main` branch
 
-`main.json` — конфигурация защиты ветки. Она лежит в репозитории, а не в
-настройках GitHub, по той же причине, по которой там же лежит цепочка
-миграций: изменение видно в диффе и обсуждается, а не происходит.
+`main.json` is the branch protection configuration. It lives in the repository
+rather than in GitHub's settings for the same reason the migration chain does:
+a change to it shows up in a diff and gets discussed, instead of just happening.
 
-Применить её может **только владелец репозитория**. У репозиториев в личном
-аккаунте GitHub ровно два уровня доступа — владелец и коллаборатор с правом
-записи; роли `admin` и `maintain` существуют только у репозиториев
-организации. Это ограничение платформы, а не настройка, которую забыли
-включить.
+**Only the repository owner can apply it.** Repositories under a personal GitHub
+account have exactly two access levels — owner, and collaborator with write
+access; the `admin` and `maintain` roles exist only on organization
+repositories. That is a platform limitation, not a setting somebody forgot to
+turn on.
 
 ---
 
-## Порядок. Он важен
+## Order. It matters
 
-1. **Эта ветка сливается в `main`.** До слияния файла `main.json` на `main`
-   нет, и команда ниже, выполняемая из свежего клона, не найдёт его.
-2. **CI отрабатывает хотя бы раз, и имена проверок сверяются с фактическими.**
-   Семь имён в `main.json` выведены из `ci.yml`, но ни одна проверка на этом
-   репозитории ещё никогда не запускалась, то есть имена *выведены, а не
-   наблюдались*. Обязательная проверка, имени которой GitHub никогда не
-   присылал, остаётся в `Pending` навсегда и блокирует все pull request'ы —
-   поэтому сверка обязательна и делается до передачи команды владельцу:
+1. **This branch merges into `main`.** Until it does, `main.json` does not exist
+   on `main`, and the command below — run from a fresh clone — will not find it.
+2. **CI runs at least once, and the check names are reconciled against the real
+   ones.** The seven names in `main.json` were derived from `ci.yml`, but no
+   check has ever run on this repository, which means the names were *derived,
+   not observed*. A required check whose name GitHub has never reported stays
+   `Pending` forever and blocks every pull request — so the reconciliation is
+   mandatory, and it happens before the command is handed to the owner:
 
    ```bash
    gh run list --limit 1 --json databaseId --jq '.[0].databaseId' \
      | xargs -I{} gh api repos/SimonOsipov/cadence-app/actions/runs/{}/jobs \
          --jq '.jobs[].name' | sort
-   # вывод должен совпасть с:
+   # the output must match:
    jq -r '.rules[] | select(.type=="required_status_checks")
           | .parameters.required_status_checks[].context' \
      .github/rulesets/main.json | sort
    ```
-3. Только после этого — команда владельцу.
+3. Only then — the command for the owner.
 
-## Что нужно сделать владельцу — одна команда
+## What the owner has to do — one command
 
 ```bash
 gh api --method POST repos/SimonOsipov/cadence-app/rulesets \
   --input .github/rulesets/main.json
 ```
 
-Из корня склонированного репозитория. Нужен [`gh`](https://cli.github.com/),
-авторизованный аккаунтом-владельцем.
+From the root of a cloned repository. Requires [`gh`](https://cli.github.com/),
+authenticated as the owner account.
 
-## Приёмка — за нами, и она не «применилось», а «работает»
+## Acceptance is ours, and it is not "applied" but "works"
 
-`gh api .../rulesets --jq '.[].name'` напечатает `main` и для правила в режиме
-`evaluate`, и с непустым `bypass_actors`, и с устаревшим списком проверок —
-то есть для всех трёх состояний, против которых написан локальный скрипт.
-Поэтому проверяется поведение, а не наличие:
+`gh api .../rulesets --jq '.[].name'` prints `main` for a rule in `evaluate`
+mode, for a rule with a non-empty `bypass_actors`, and for one with a stale
+check list — that is, for all three states the local script was written against.
+So behaviour is what gets verified, not presence:
 
 ```bash
-# 1. прямой push в main должен быть отклонён
-git push origin HEAD:main            # ожидаем отказ от сервера
+# 1. a direct push to main must be rejected
+git push origin HEAD:main            # expect the server to refuse
 
-# 2. слияние с красной проверкой должно быть отклонено
-#    (ветка с заведомо падающим гейтом, PR, попытка слить)
+# 2. merging with a red check must be rejected
+#    (a branch with a deliberately failing gate, a PR, an attempt to merge)
 ```
 
-`write`-доступа хватает на обе проверки — это и есть причина, по которой
-приёмка осталась у нас, хотя применение ушло владельцу.
+`write` access is enough for both checks — which is precisely why acceptance
+stayed with us even though applying the rule went to the owner.
 
-## Что это включает
+## What this turns on
 
-- **Прямой push в `main` перестаёт проходить.** Изменения приезжают только
-  через pull request. Это касается и владельца — исключений нет, и это не
-  недосмотр: гейт с исключением защищает от всех, кроме того, кто чаще всего
-  торопится.
-- **Слияние возможно только при зелёных проверках.** Семь проверок CI, полный
-  список — в `main.json`. Ветка обязана быть свежей относительно `main`.
-- **Историю `main` нельзя переписать и её нельзя удалить.**
-- **Апрув не требуется.** Разработчик один, и правило, которое некому
-  выполнить, — это правило, которое начнут обходить. Обязателен pull request и
-  зелёный CI, а не подпись второго человека.
+- **Direct pushes to `main` stop working.** Changes arrive only through a pull
+  request. That includes the owner — there are no exceptions, and that is not an
+  oversight: a gate with an exception protects against everyone except the
+  person most likely to be in a hurry.
+- **Merging requires green checks.** Seven CI checks; the full list is in
+  `main.json`. The branch must be up to date with `main`.
+- **`main`'s history cannot be rewritten, and the branch cannot be deleted.**
+- **No approval is required.** There is one developer, and a rule nobody can
+  satisfy is a rule people start routing around. A pull request and green CI are
+  mandatory; a second person's signature is not.
 
-## Что после этого изменится в привычках
+## What changes in day-to-day habits
 
-- Всё, что раньше делалось как `git push` в `main`, теперь делается веткой и
-  pull request'ом. Свой же PR можно слить самому, как только CI зелёный.
-- **Все обсуждения в PR должны быть помечены resolved перед слиянием.** Это
-  действует независимо от того, что апрувы не требуются: оставленный без
-  ответа комментарий блокирует кнопку.
-- Ветка должна быть свежей относительно `main` — если `main` уехал вперёд,
-  PR придётся обновить перед слиянием.
+- Everything that used to be a `git push` to `main` is now a branch and a pull
+  request. You can merge your own PR as soon as CI is green.
+- **Every conversation in a PR must be marked resolved before merging.** This
+  holds regardless of approvals not being required: an unanswered comment blocks
+  the button.
+- The branch must be up to date with `main` — if `main` has moved ahead, the PR
+  has to be updated before it can merge.
 
-## Как откатить
+## How to roll back
 
 ```bash
-# найти id
+# find the id
 gh api repos/SimonOsipov/cadence-app/rulesets --jq '.[] | "\(.id) \(.name)"'
-# удалить
+# delete
 gh api --method DELETE repos/SimonOsipov/cadence-app/rulesets/<id>
 ```
 
-Или временно ослабить, не удаляя: в `main.json` заменить
-`"enforcement": "active"` на `"evaluate"` и обновить правило через
-`--method PUT .../rulesets/<id>`. В режиме `evaluate` нарушения записываются,
-но ничего не блокируют.
+Or weaken it temporarily without deleting: in `main.json`, replace
+`"enforcement": "active"` with `"evaluate"` and update the rule via
+`--method PUT .../rulesets/<id>`. In `evaluate` mode violations are recorded but
+nothing is blocked.
 
 ---
 
-## Почему список проверок нельзя править руками
+## Why the check list must not be edited by hand
 
-`scripts/gate/ruleset.sh` сверяет `main.json` с `.github/workflows/ci.yml` и
-падает, если они разошлись. Проверка входит в общий гейт и в CI, и ловит две
-ошибки, каждая из которых тихая и дорогая:
+`scripts/gate/ruleset.sh` reconciles `main.json` against
+`.github/workflows/ci.yml` and fails when they diverge. The check is part of the
+shared gate and of CI, and it catches two mistakes, each of them quiet and
+expensive:
 
-- **Обязательная проверка, не соответствующая ни одной джобе, никогда не
-  отчитается.** GitHub оставит её в состоянии `Pending`, и ни один pull request
-  больше не сольётся — из-за опечатки в имени.
-- **Джоба, которая работает, но не обязательна, не гейтит ничего.** Ветка
-  выглядит защищённой и не является таковой, а это хуже, чем незащищённая
-  явно.
+- **A required check matching no job will never report.** GitHub leaves it
+  `Pending`, and no pull request merges again — because of a typo in a name.
+- **A job that runs but is not required gates nothing.** The branch looks
+  protected and is not, which is worse than being openly unprotected.
 
-Записано осознанно не сделанное: у обязательных проверок не пришпилен
-`integration_id`, поэтому проверка считается выполненной по имени от любого
-источника, а не только от GitHub Actions. Пришпиливание требует магического
-числа, которое мы не проверяли на живом прогоне, — а вся эта страница про то,
-чтобы владелец не получил на руки команду с непроверенным утверждением внутри.
-Вернуться к этому после первой сверки имён из пункта 2.
+Recorded as deliberately not done: the required checks have no `integration_id`
+pinned, so a check counts as satisfied by name from any source, not only from
+GitHub Actions. Pinning requires a magic number we have not verified against a
+live run — and this entire page exists so the owner is never handed a command
+with an unverified claim inside it. Revisit after the first name reconciliation
+in item 2.
 
-Отдельно проверяется, что у `on:` в `ci.yml` нет фильтра по путям. Джоба,
-пропущенная по `if:`, отчитывается как успешная и слияние не блокирует;
-workflow, пропущенный фильтром путей, не отчитывается вовсе — и все
-обязательные проверки повисают. Поэтому фильтрация по путям в этом репозитории
-живёт внутри, в джобе `changes`, и должна там оставаться.
+Separately, the script verifies that `on:` in `ci.yml` carries no path filter. A
+job skipped by `if:` reports as successful and does not block the merge; a
+workflow skipped by a path filter does not report at all — and every required
+check hangs. That is why path filtering in this repository lives inside, in the
+`changes` job, and must stay there.

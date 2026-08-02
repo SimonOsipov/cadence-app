@@ -10,178 +10,179 @@ proposal: "[[20-Projects/cadence/architecture/proposals/api-openapi-code-first|a
 ---
 
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/kmp-wiring.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
-# Обвязка KMP
 
-## Описание
+# KMP Wiring
 
-Научить мобильное приложение разговаривать: типизированный клиент к нашему API, вход через Supabase Auth, сессия в защищённом хранилище платформы и скрытый отладочный экран, показывающий живые ответы развёрнутого dev API.
+## Summary
 
-Сегодня `kmp/` умеет рисовать заглушку и ничего больше — сети в нём нет вовсе. После этого блока экраны M2 и M3 добавляются как вызовы готового клиента.
+Teach the mobile app to talk: a typed client for our API, sign-in through Supabase Auth, the session in the platform's secure storage, and a hidden debug screen showing live responses from the deployed dev API.
 
-Первая редакция получила от судьи NEEDS-REWORK, и три находки изменили её по существу: заявленный способ выкинуть отладочный экран из релиза в этом проекте физически не существует; шаг, объявленный незаблокированным, требовал тестовой инфраструктуры, которой нет; а поверх собственного обновления токена в `supabase-kt` вводилось второе, что при ротации refresh-токенов означает молчаливый разлогин. Эта редакция написана после проверки механизмов, а не только версий.
+Today `kmp/` can draw a placeholder and nothing else — there is no networking in it at all. After this block, the M2 and M3 screens are added as calls against a finished client.
+
+The first draft got NEEDS-REWORK from the judge, and three findings changed it substantively: the stated mechanism for keeping the debug screen out of release does not physically exist in this project; a step declared unblocked required test infrastructure that does not exist; and a second token refresh was being introduced on top of the one `supabase-kt` already owns, which under refresh-token rotation means a silent sign-out. This draft was written after verifying mechanisms, not just versions.
 
 ## User Story
 
-**As a** разработчик, начинающий переносить экраны входа (M2) и логирования дозы (M3)
-**I want** типизированный клиент, рабочий вход и сессию, которая переживает перезапуск и лежит там, где ей положено
-**So that** экран — это вызов метода и отрисовка ответа, а не разбирательство с транспортом, токенами и хранением
+**As a** developer about to port the sign-in (M2) and dose-logging (M3) screens
+**I want** a typed client, working sign-in, and a session that survives a restart and lives where it belongs
+**So that** a screen is a method call and a rendered response, not a negotiation with transport, tokens, and storage
 
 ## Acceptance Criteria
 
-**Защищённое хранилище**
-- [ ] Сессия и кэш верификатора PKCE лежат в защищённом хранилище платформы. На iOS — Keychain с `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` и `kSecAttrSynchronizable = false`: иначе сессия пациента уезжает в зашифрованный бэкап и переносится на новое устройство
-- [ ] На Android — собственное шифрование ключом из Keystore (AES/GCM) поверх файла: `androidx.security:security-crypto` задепрекейчен без прямой замены, и полагаться на него нельзя
-- [ ] Keychain переживает удаление приложения — на первом запуске после переустановки хранилище вычищается по маркеру, иначе воскресает чужая сессия
-- [ ] Нечитаемое хранилище (смена экрана блокировки, повреждение, переустановка) трактуется как «сессии нет», а не как падение
-- [ ] Приёмка исполняется гейтом: заведена инфраструктура Android-тестов с рантаймом (Robolectric либо `androidDeviceTest` с эмулятором в CI), и `scripts/gate/kmp.sh` её гоняет. Новые source set добавлены в белый список detekt в `kmp/build.gradle.kts` — иначе он их молча не анализирует
-- [ ] Проведён спайк: работает ли Keychain из `iosSimulatorArm64Test`. Если нет (ожидаемо `errSecMissingEntitlement`) — тест переезжает в XCTest-хост в `iosApp/`, и это записано
+**Secure storage**
+- [ ] The session and the PKCE verifier cache live in the platform's secure storage. On iOS — Keychain with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` and `kSecAttrSynchronizable = false`: otherwise the patient's session goes into an encrypted backup and travels to a new device
+- [ ] On Android — our own encryption with a Keystore key (AES/GCM) over a file: `androidx.security:security-crypto` is deprecated with no direct replacement, and cannot be relied on
+- [ ] The Keychain survives app deletion — on the first launch after a reinstall the storage is wiped via a marker, otherwise somebody else's session comes back to life
+- [ ] Unreadable storage (a changed lock screen, corruption, a reinstall) is treated as "no session", not as a crash
+- [ ] Acceptance is enforced by the gate: Android test infrastructure with a runtime is created (Robolectric or `androidDeviceTest` with an emulator in CI), and `scripts/gate/kmp.sh` runs it. The new source sets are added to the detekt allow-list in `kmp/build.gradle.kts` — otherwise it silently does not analyse them
+- [ ] A spike is done: does the Keychain work from `iosSimulatorArm64Test`? If not (`errSecMissingEntitlement` is expected) the test moves to an XCTest host in `iosApp/`, and that is written down
 
-**Клиент**
-- [ ] База API берётся из конфигурации сборки **названным механизмом**: у модулей на `com.android.kotlin.multiplatform.library` нет ни `buildConfig`, ни вариантов сборки, поэтому нужна Gradle-задача, генерирующая Kotlin-файл в зарегистрированный `srcDir`, либо `BuildKonfig`
-- [ ] Релизная сборка с dev-адресом **падает**, и это исполняемое правило, а не намерение
-- [ ] Клиент генерируется из `openapi.json` инструментом `openapi-generator`; в репозиторий попадают только `apis/`, `models/`, `infrastructure/` — генератор выдаёт целый standalone Gradle-проект с врапперами, тестами в невалидном для KMP source set и **без** `androidTarget()`, поэтому подключать его как есть нельзя
-- [ ] Сгенерированный код исключён из ktlint и осознанно решён по detekt (его белый список путей `generated/` не содержит — молчаливая слепота хуже красного гейта)
-- [ ] Гейт падает, если перегенерация меняет закоммиченный результат
-- [ ] Версия Ktor выровнена в version catalog. Сегодня обе стороны на 3.5.1 буквально, но пара разъедется на первом же обновлении любой из них
-- [ ] Отображение типов проверено на дозе: решено, что huma отдаёт в схему, чтобы сгенерированный Kotlin был точен. Генератор мапит `BigDecimal` → `Double`, `UUID` → `String`; для `{value, unit}` это решается здесь, а не обнаруживается в M3
+**Client**
+- [ ] The API base is taken from the build configuration through a **named mechanism**: modules on `com.android.kotlin.multiplatform.library` have neither `buildConfig` nor build variants, so this requires a Gradle task generating a Kotlin file into a registered `srcDir`, or `BuildKonfig`
+- [ ] A release build with a dev address **fails**, and that is an enforced rule, not an intention
+- [ ] The client is generated from `openapi.json` with `openapi-generator`; only `apis/`, `models/`, and `infrastructure/` land in the repository — the generator emits an entire standalone Gradle project with wrappers, tests in a source set invalid for KMP, and **no** `androidTarget()`, so it cannot be wired in as-is
+- [ ] Generated code is excluded from ktlint and deliberately decided for detekt (its path allow-list does not contain `generated/` — silent blindness is worse than a red gate)
+- [ ] The gate fails if regeneration changes the committed output
+- [ ] The Ktor version is aligned in the version catalog. Today both sides are literally on 3.5.1, but the pair will diverge on the first update to either
+- [ ] Type mapping is verified on the dose: what huma emits into the schema is decided so that the generated Kotlin is precise. The generator maps `BigDecimal` → `Double` and `UUID` → `String`; for `{value, unit}` this gets settled here rather than discovered in M3
 
-**Токен и обновление**
-- [ ] Владелец обновления токена **один** — модуль Auth `supabase-kt`. Собственного обновления в транспорте нет: два независимых механизма при ротации refresh-токенов означают отзыв сессии
-- [ ] Обновление сериализовано: несколько параллельных 401 дают **ровно один** вызов обновления и успешный повтор каждого запроса. Доказано тестом на `MockEngine` с тремя и более параллельными 401
-- [ ] Токен подставляется транспортным слоем, а не каждым вызовом; только заголовком, никогда в query-строке
-- [ ] Если поставлен плагин логирования Ktor — у него `sanitizeHeader` на `Authorization`, проверенный тестом с перехватывающим логгером
-- [ ] Типы, несущие токен, не печатают его в `toString()` — проверено тестом
+**Token and refresh**
+- [ ] There is **one** owner of token refresh — the `supabase-kt` Auth module. There is no separate refresh in the transport: two independent mechanisms under refresh-token rotation mean a revoked session
+- [ ] Refresh is serialized: several concurrent 401s produce **exactly one** refresh call and a successful retry of every request. Proven by a `MockEngine` test with three or more concurrent 401s
+- [ ] The token is attached by the transport layer, not by each call; only as a header, never in the query string
+- [ ] If the Ktor logging plugin is installed — it has `sanitizeHeader` on `Authorization`, verified by a test with an intercepting logger
+- [ ] Types carrying a token do not print it in `toString()` — verified by a test
 
-**Отладочный экран**
-- [ ] Экран живёт в **отдельном Gradle-модуле** `:debugTools`, а не в исходном наборе варианта сборки: у `composeApp` вариантов нет, и незарегистрированная директория игнорируется Gradle молча — экран не попал бы никуда, а приёмка прошла бы вхолостую
-- [ ] На Android модуль подключается через `debugImplementation` из `:androidApp`, где варианты настоящие; на iOS — по свойству сборки, и релизная сборка собирается без него
-- [ ] Приёмка — **греп релизного артефакта** на имя класса экрана. Это единственная проверка, которая держится независимо от механизма
-- [ ] Экран получает токен через Supabase Auth тестовым пользователем из SKL-01 и показывает живой `GET /v1/me`
-- [ ] `/healthz` дёргается **сырым вызовом** на экземпляре клиента без плагина аутентификации: он намеренно вне OpenAPI-спеки, поэтому в сгенерированном клиенте его нет и Bearer на него вешать нечего
-- [ ] Различимы три состояния: API недоступен · обновление удалось и повтор прошёл · обновление не удалось, сессия сброшена. Разделять «просрочен» и «401» нельзя — API отдаёт их неразличимым телом намеренно
+**Debug screen**
+- [ ] The screen lives in a **separate Gradle module** `:debugTools`, not in a build-variant source set: `composeApp` has no variants, and an unregistered directory is ignored by Gradle silently — the screen would have ended up nowhere while acceptance passed vacuously
+- [ ] On Android the module is wired in through `debugImplementation` from `:androidApp`, where the variants are real; on iOS — by a build property, and the release build is built without it
+- [ ] Acceptance is a **grep of the release artifact** for the screen's class name. That is the only check that holds regardless of the mechanism
+- [ ] The screen obtains a token through Supabase Auth with the test user from SKL-01 and shows a live `GET /v1/me`
+- [ ] `/healthz` is called with a **raw call** on a client instance without the auth plugin: it is deliberately outside the OpenAPI spec, so it is absent from the generated client and there is nothing to attach a Bearer to
+- [ ] Three states are distinguishable: API unavailable · refresh succeeded and the retry went through · refresh failed and the session was cleared. "Expired" and "401" must not be separated — the API returns them with an indistinguishable body on purpose
 
 ## Scope / Non-scope
 
-**В скоупе:** защищённое хранилище с тестовой инфраструктурой под него, конфигурация базы API, генерация и потребление клиента, транспорт с единственным владельцем обновления, отладочный модуль, тесты на `MockEngine`.
+**In scope:** secure storage together with the test infrastructure for it, API base configuration, generating and consuming the client, transport with a single refresh owner, the debug module, `MockEngine` tests.
 
-**Вне скоупа, называю явно:**
-- Экраны входа и приёма приглашения — M2.
-- Загрузка фотографий в Storage — M3.
-- **Персистентный кэш чтений** и очередь повторной отправки дозы с ключом идемпотентности (инвариант 6) — M3. Это и есть аналог задачи партнёра про React Query: слой кэша отложен, а не отсутствует.
-- Отправка часового пояса (инвариант 5) — M2, вместе с настоящим входом.
-- Блокировка по биометрии (инвариант 3, вторая половина) — M10.
-- Пиннинг сертификатов — не в MVP.
-- Отчёты о падениях. Утверждение «токены не попадают в крэш-репорты» проверяемо только там, где есть Sentry, — это блок «Деплой и наблюдаемость».
+**Out of scope, named explicitly:**
+- The sign-in and invite-acceptance screens — M2.
+- Photo upload to Storage — M3.
+- **A persistent read cache** and the dose retry queue with an idempotency key (invariant 6) — M3. This is the analogue of the partner's React Query task: the cache layer is deferred, not absent.
+- Sending the timezone (invariant 5) — M2, together with real sign-in.
+- Biometric lock (invariant 3, second half) — M10.
+- Certificate pinning — not in the MVP.
+- Crash reports. The claim "tokens do not reach crash reports" is only verifiable where Sentry exists — that is the "Deploy and Observability" block.
 
-**Блокировка:**
+**Blocking:**
 
-| Что нужно | Откуда | Что без него нельзя |
+| What is needed | From where | What is impossible without it |
 |---|---|---|
-| `openapi.json` | «Скелет API», шаг 2 | генерировать клиент (шаг 2) |
-| проект Supabase, тестовый пользователь | SKL-01 (ручная) | отладочный экран (шаг 3) |
-| развёрнутый dev API | SKL-06 (ручная) | отладочный экран (шаг 3) |
+| `openapi.json` | "API Skeleton", step 2 | generating the client (step 2) |
+| a Supabase project, a test user | SKL-01 (manual) | the debug screen (step 3) |
+| a deployed dev API | SKL-06 (manual) | the debug screen (step 3) |
 
-Шаг 1 внешними задачами не заблокирован, **но и не бесплатен**: он приносит в проект тестовую инфраструктуру для Android-рантайма, которой сегодня нет, и требует спайка по Keychain. Это работа шага, а не предусловие.
+Step 1 is not blocked by external tasks, **but it is not free either**: it brings Android runtime test infrastructure into the project, which does not exist today, and it requires a Keychain spike. That is the step's work, not a precondition for it.
 
-## Что уже реализовано (DONE)
+## What already exists (DONE)
 
-Проверено против кода 28.07.2026, числа исправлены после ревью.
+Verified against the code on 2026-07-28; the numbers were corrected after review.
 
-- **Три** Gradle-модуля: `:shared`, `:composeApp`, `:androidApp`. `iosApp/` — проект XcodeGen, а не модуль сборки
-- `shared` содержит ровно шов `Platform` (`expect` плюс два `actual`) и три теста к нему. Ни сети, ни хранилища, ни моделей домена
-- Дизайн-система в `composeApp/…/design`: палитра, радиусы, отступы, типографика, тема, **41** иконка (число закреплено ассертом в тесте), **16** публичных композейблов, посчитанных как функции с аннотацией `@Composable`: пять текстовых, четыре контрола, четыре поверхности, две перегрузки рендера иконки и сама тема. «Девять примитивов» из первой редакции и «14» из отзыва судьи — это разные правила подсчёта; здесь правило названо, чтобы число можно было перепроверить
-- Версии: Kotlin 2.4.10, Compose MP 1.11.1, AGP 9.3.1, Gradle 9.6.1 по контрольной сумме — все четыре подтверждены
-- **17** тест-функций, дающих **18** прогонов: `PlatformTest` из `commonTest` исполняется и на Android-хосте, и на iOS-симуляторе. Compose UI-тесты гоняются только на iOS-таргете — у Android-таргета намеренно не заведён host-test builder
-- Гейт `scripts/gate/kmp.sh` и `ios.sh`, джобы `kmp-android` и `kmp-ios` в CI
-- **Релизной сборки не существует ни на одной платформе**: `ios.sh` собирает только Debug, у `:androidApp` release без минификации и без подписи. Приёмка «проверить релизный артефакт» требует пути сборки, которого пока нет — это входит в шаг 3
+- **Three** Gradle modules: `:shared`, `:composeApp`, `:androidApp`. `iosApp/` is an XcodeGen project, not a build module
+- `shared` contains exactly the `Platform` seam (`expect` plus two `actual`s) and three tests for it. No networking, no storage, no domain models
+- The design system in `composeApp/…/design`: palette, radii, spacing, typography, theme, **41** icons (the number is pinned by an assertion in a test), **16** public composables, counted as functions annotated `@Composable`: five text, four controls, four surfaces, two icon-render overloads, and the theme itself. The "nine primitives" from the first draft and the "14" from the judge's feedback are different counting rules; here the rule is named so the number can be re-checked
+- Versions: Kotlin 2.4.10, Compose MP 1.11.1, AGP 9.3.1, Gradle 9.6.1 by checksum — all four confirmed
+- **17** test functions producing **18** runs: `PlatformTest` from `commonTest` executes on both the Android host and the iOS simulator. Compose UI tests run only on the iOS target — the Android target deliberately has no host-test builder
+- The `scripts/gate/kmp.sh` and `ios.sh` gates, the `kmp-android` and `kmp-ios` jobs in CI
+- **No release build exists on either platform**: `ios.sh` builds Debug only, and `:androidApp`'s release has no minification and no signing. The acceptance criterion "check the release artifact" requires a build path that does not yet exist — that is part of step 3
 
-**Чего нет вовсе:** Ktor, сериализации, хранилища, DI, навигации, моделей домена, `supabase-kt`, логирования (ни Napier, ни Kermit). Это первый блок, приносящий в `kmp/` внешние зависимости за пределами Compose.
+**What does not exist at all:** Ktor, serialization, storage, DI, navigation, domain models, `supabase-kt`, logging (neither Napier nor Kermit). This is the first block bringing external dependencies into `kmp/` beyond Compose.
 
-## Технические детали
+## Technical detail
 
-**Версии, проверенные судьёй:** `openapi-generator` 7.24.0 · `supabase-kt` 3.7.0 · Ktor 3.5.1 у обеих сторон буквально · `multiplatform-settings` 1.3.0 — **не опционален**, `supabase-kt` тянет его жёстко.
+**Versions verified by the judge:** `openapi-generator` 7.24.0 · `supabase-kt` 3.7.0 · Ktor 3.5.1 on both sides literally · `multiplatform-settings` 1.3.0 — **not optional**, `supabase-kt` depends on it hard.
 
-Ловушка документации: описание опции `library=multiplatform` в справке генератора до сих пор говорит «Ktor 1.6.7». Это неправда с 2024 года — истина в шаблоне сборки, который пинит Ktor 3.5.1.
+A documentation trap: the description of the `library=multiplatform` option in the generator's reference still says "Ktor 1.6.7". That has been untrue since 2024 — the truth is in the build template, which pins Ktor 3.5.1.
 
-**Хранилище: умолчание плохо на обеих платформах.** `SettingsSessionManager` из `supabase-kt` кладёт сессию целиком, вместе с refresh-токеном, открытым текстом: на Android в `SharedPreferences`, на iOS в `NSUserDefaults`. Первая редакция спеки утверждала, что проблема только на Android — это было занижением. Отдельно: `codeVerifierCache` имеет такое же plaintext-умолчание и лежит на PKCE-пути приёма приглашения в M2, его тоже надо подменять.
+**Storage: the default is bad on both platforms.** `SettingsSessionManager` from `supabase-kt` stores the entire session, refresh token included, in plaintext: in `SharedPreferences` on Android, in `NSUserDefaults` on iOS. The first draft of this spec claimed the problem was Android-only — that was an understatement. Separately: `codeVerifierCache` has the same plaintext default and sits on the PKCE invite-acceptance path in M2; it has to be substituted too.
 
-**Более дешёвый путь, чем свой `SessionManager`.** Судья указал на него, и он лучше: оставить `SettingsSessionManager`, но передать ему собственный `Settings` — `KeychainSettings` на Apple, шифрованное хранилище на Android. Меньше своего кода на пути аутентификации медицинского приложения, а точка расширения штатная. Собственная реализация `SessionManager` остаётся запасным вариантом, если параметров `Settings` не хватит для нужного класса доступности Keychain.
+**A cheaper path than our own `SessionManager`.** The judge pointed it out, and it is better: keep `SettingsSessionManager`, but hand it our own `Settings` — `KeychainSettings` on Apple, encrypted storage on Android. Less of our own code on the authentication path of a medical app, and the extension point is a supported one. A custom `SessionManager` implementation stays the fallback if the `Settings` parameters do not reach the Keychain accessibility class we need.
 
-**Отладочный модуль, а не source set.** У `composeApp` (плагин `com.android.kotlin.multiplatform.library`) нет ни `buildTypes`, ни вариантов — Android-компиляция одна. Директория `debugMain` была бы проигнорирована молча. Поэтому отдельный модуль `:debugTools`: на Android подключается `debugImplementation` из `:androidApp`, где `com.android.application` и варианты настоящие; на iOS — по свойству сборки. Проверка одна и не зависит от механизма: грепнуть релизный артефакт.
+**A debug module, not a source set.** `composeApp` (the `com.android.kotlin.multiplatform.library` plugin) has neither `buildTypes` nor variants — there is a single Android compilation. A `debugMain` directory would have been ignored silently. Hence the separate `:debugTools` module: on Android it is wired in with `debugImplementation` from `:androidApp`, where `com.android.application` and real variants exist; on iOS — by a build property. There is one check and it does not depend on the mechanism: grep the release artifact.
 
-**Обновление токена — один владелец.** У `supabase-kt` есть собственное авто-обновление. Второй механизм в транспорте создаёт гонку: Supabase ротирует refresh-токены, и несколько параллельных обновлений одним токеном за окном обнаружения повторного использования означают отзыв сессии. Обновление делегируется в Auth и сериализуется; если используется штатный `Auth`-плагин Ktor с `bearer`, он сериализует сам — тогда это надо назвать, а не писать своё.
+**Token refresh — one owner.** `supabase-kt` has its own auto-refresh. A second mechanism in the transport creates a race: Supabase rotates refresh tokens, and several concurrent refreshes with one token inside the reuse-detection window mean a revoked session. Refresh is delegated to Auth and serialized; if the stock Ktor `Auth` plugin with `bearer` is used, it serializes on its own — in which case that should be named rather than reimplemented.
 
-**Потребление сгенерированного кода.** Генератор выдаёт standalone-проект: свой `build.gradle.kts`, `settings.gradle.kts`, враппер, `docs/`, тесты в `src/test/kotlin` (невалидный source set для KMP), и в его сборке нет `androidTarget()` — подключить included build нельзя в принципе. Стратегия: генерация в отдельную директорию, копирование только `apis/`, `models/`, `infrastructure/` в зарегистрированный `srcDir`, `.openapi-generator-ignore` на лишнее, движок Ktor объявляется руками (шаблон тянет устаревший `ktor-client-ios` вместо `ktor-client-darwin`).
+**Consuming the generated code.** The generator emits a standalone project: its own `build.gradle.kts`, `settings.gradle.kts`, wrapper, `docs/`, tests in `src/test/kotlin` (an invalid source set for KMP), and its build has no `androidTarget()` — an included build is impossible in principle. The strategy: generate into a separate directory, copy only `apis/`, `models/`, and `infrastructure/` into a registered `srcDir`, `.openapi-generator-ignore` for the rest, and declare the Ktor engine by hand (the template pulls the obsolete `ktor-client-ios` instead of `ktor-client-darwin`).
 
-**Отображение типов — решение, а не следствие.** Генератор мапит `BigDecimal` в `Double`, `UUID` в `String`, `object` в `String`. Конвенция проекта — «числа это данные, доза это `{value, unit}`». Значит форма, которую huma отдаёт в схему для дозы, выбирается здесь, чтобы сгенерированный Kotlin был точен. Смежно: у multiplatform-генератора открыт баг с сериализацией enum по имени константы вместо значения — любой enum в контракте это заденет.
+**Type mapping is a decision, not a consequence.** The generator maps `BigDecimal` to `Double`, `UUID` to `String`, `object` to `String`. The project convention is "numbers are data, a dose is `{value, unit}`". So the shape huma emits into the schema for a dose is chosen here, so that the generated Kotlin is precise. Adjacent: the multiplatform generator has an open bug serializing enums by constant name instead of value — any enum in the contract will hit it.
 
-**Что вообще можно утверждать про логи.** Логирования в `kmp/` сегодня нет. Проверяемо ровно две вещи: `sanitizeHeader` на `Authorization`, если плагин логирования появится, и что тип с токеном не печатает его в `toString()`. Утверждение про крэш-репорты убрано — его место там, где есть Sentry.
+**What can actually be claimed about logs.** There is no logging in `kmp/` today. Exactly two things are verifiable: `sanitizeHeader` on `Authorization`, if a logging plugin ever appears, and that a token-carrying type does not print it in `toString()`. The crash-report claim was removed — its place is where Sentry exists.
 
-**Файлы:**
+**Files:**
 
 ```
 kmp/
   shared/src/
     commonMain/kotlin/app/cadence/shared/
-      net/ApiConfig.kt            генерируется задачей сборки
-      net/ApiClient.kt            обёртка над сгенерированным клиентом
-      auth/SupabaseAuth.kt        вход и обновление через supabase-kt
-      storage/SecureSettings.kt   expect: Settings поверх защищённого хранилища
-      generated/                  apis/, models/, infrastructure/ — только они
+      net/ApiConfig.kt            generated by a build task
+      net/ApiClient.kt            a wrapper over the generated client
+      auth/SupabaseAuth.kt        sign-in and refresh via supabase-kt
+      storage/SecureSettings.kt   expect: Settings over secure storage
+      generated/                  apis/, models/, infrastructure/ — those only
     androidMain/…/SecureSettings.android.kt   Keystore AES/GCM
     iosMain/…/SecureSettings.ios.kt           Keychain, AfterFirstUnlockThisDeviceOnly
-    commonTest/…                  MockEngine: транспорт, параллельные 401, sanitize
-  debugTools/                     отдельный модуль: отладочный экран
+    commonTest/…                  MockEngine: transport, concurrent 401s, sanitize
+  debugTools/                     a separate module: the debug screen
 ```
 
-## Архитектурное решение
+## Architecture decision
 
-Обе развилки закрыты решениями в [[20-Projects/cadence/architecture/proposals/api-openapi-code-first|ноте-предложении]]: клиент генерируется из `openapi.json`, доступ к Supabase Auth — через `supabase-kt`. Новой ноты не требуется — это клиентская половина уже одобренного выбора.
+Both forks are closed by decisions in the [[20-Projects/cadence/architecture/proposals/api-openapi-code-first|proposal note]]: the client is generated from `openapi.json`, and Supabase Auth is reached through `supabase-kt`. No new note is required — this is the client half of an already approved choice.
 
-Что изменилось после ревью: подмена хранения делается не собственным `SessionManager`, а собственным `Settings` под штатным менеджером — меньше своего кода на пути аутентификации; обновление токена не дублируется, а делегируется владельцу; отладочный экран выносится в модуль, потому что механизм из первой редакции в этом проекте не существует.
+What changed after the review: storage substitution is done not with our own `SessionManager` but with our own `Settings` under the stock manager — less of our code on the authentication path; token refresh is not duplicated but delegated to its owner; the debug screen moves into a module, because the mechanism from the first draft does not exist in this project.
 
-Главный компромисс прежний: `supabase-kt` закрывает работу трёх майлстоунов, но приносит стороннюю зависимость в путь аутентификации медицинского приложения и по умолчанию хранит сессию открытым текстом на обеих платформах. Подмена хранилища — обязательное условие выбора.
+The main trade-off is unchanged: `supabase-kt` covers three milestones' worth of work, but brings a third-party dependency onto the authentication path of a medical app and by default stores the session in plaintext on both platforms. Substituting the storage is a condition of the choice.
 
-## Дельты компонентов
+## Component deltas
 
 ### kmp-app.md
-- MODIFIED: «Форма» — `shared/` получает сгенерированный из `openapi.json` клиент, обёртку над ним и защищённое хранилище за `expect/actual`; появляется модуль `:debugTools`, отсутствующий в релизных сборках.
-- ADDED: в «Форму» — `supabase-kt` как способ доступа к Supabase Auth, с обязательной подменой хранилища сессии и кэша верификатора PKCE.
-- MODIFIED: инвариант 3 — уточняется, что умолчание библиотеки ему не удовлетворяет **ни на одной** платформе и подменяется; для Keychain фиксируется класс доступности и запрет синхронизации.
-- ADDED: единственный владелец обновления токена — модуль Auth; обновление сериализовано.
+- MODIFIED: "Shape" — `shared/` gains a client generated from `openapi.json`, a wrapper over it, and secure storage behind `expect/actual`; a `:debugTools` module appears, absent from release builds.
+- ADDED: to "Shape" — `supabase-kt` as the way to reach Supabase Auth, with mandatory substitution of the session storage and the PKCE verifier cache.
+- MODIFIED: invariant 3 — clarified that the library default does not satisfy it on **either** platform and gets substituted; for the Keychain the accessibility class and the synchronization ban are pinned.
+- ADDED: the single owner of token refresh is the Auth module; refresh is serialized.
 
 ### api.md
-- REMOVED: из «Открытых вопросов» — выбор генератора клиента под Kotlin. Решён.
-- ADDED: в «Контракты» — форма, в которой доза отдаётся в схему, выбирается так, чтобы сгенерированный Kotlin-клиент был точен.
+- REMOVED: from "Open questions" — choosing the Kotlin client generator. Decided.
+- ADDED: to "Contracts" — the shape in which a dose is emitted into the schema is chosen so that the generated Kotlin client is precise.
 
 ## Decomposition
 
-Соответствие исходным задачам: все три шага закрывают SKL-11.
+Mapping to the original tasks: all three steps close SKL-11.
 
-### step-1: Защищённое хранилище и тестовая инфраструктура под него
+### step-1: Secure storage and the test infrastructure for it
 
-`Settings` поверх Keychain и Keystore за `expect/actual`, с явными параметрами доступности и вайпом после переустановки. Нечитаемое хранилище — «сессии нет», а не падение.
+`Settings` over Keychain and Keystore behind `expect/actual`, with explicit accessibility parameters and a wipe after reinstall. Unreadable storage is "no session", not a crash.
 
-Здесь же появляется то, без чего это нечем проверить: тесты Android с рантаймом (Robolectric или устройство в CI), расширение `scripts/gate/kmp.sh`, новые source set в белом списке detekt. И спайк по Keychain из `iosSimulatorArm64Test` с запасным вариантом XCTest-хоста.
+This is also where what makes it checkable appears: Android tests with a runtime (Robolectric or a device in CI), an extension of `scripts/gate/kmp.sh`, the new source sets in the detekt allow-list. Plus the Keychain spike from `iosSimulatorArm64Test` with the XCTest-host fallback.
 
 todoist: "6h8xx8WR6rgcmxpq"
 
-### step-2: Клиент из `openapi.json`, конфигурация и транспорт
+### step-2: The client from `openapi.json`, configuration, and transport
 
-⏸ **Требует `openapi.json`** из блока «Скелет API», шаг 2.
+⏸ **Requires `openapi.json`** from the "API Skeleton" block, step 2.
 
-Генерация, копирование только нужных директорий, исключение из ktlint и решение по detekt, гейт на дрейф. База API из сборки названным механизмом плюс исполняемое правило против релиза с dev-адресом. Выравнивание Ktor. Решение по отображению типов для дозы. Транспорт с единственным владельцем обновления и тестом на параллельные 401.
+Generation, copying only the needed directories, exclusion from ktlint and a decision for detekt, the drift gate. The API base from the build through a named mechanism plus an enforced rule against a release with a dev address. Aligning Ktor. The type-mapping decision for the dose. Transport with a single refresh owner and a test for concurrent 401s.
 
 todoist: "6h8xx8gf3vH47vPH"
 
-### step-3: Вход через Supabase и отладочный модуль
+### step-3: Sign-in through Supabase and the debug module
 
-⏸ **Требует SKL-01 и SKL-06.**
+⏸ **Requires SKL-01 and SKL-06.**
 
-`supabase-kt` со своим `Settings` из шага 1, включая `codeVerifierCache`. Модуль `:debugTools`: вход тестовым пользователем, `GET /v1/me` сгенерированным клиентом, `/healthz` сырым вызовом без плагина аутентификации, три различимых состояния. Приёмка включает путь релизной сборки, которого сегодня нет, и греп артефакта.
+`supabase-kt` with its `Settings` from step 1, including `codeVerifierCache`. The `:debugTools` module: sign-in with a test user, `GET /v1/me` through the generated client, `/healthz` as a raw call without the auth plugin, three distinguishable states. Acceptance includes a release build path that does not exist today, and a grep of the artifact.
 
 todoist: "6h8xx8cjPvPr5PXq"
 
-## Открытые вопросы
+## Open questions
 
-> [!decision] 29.07.2026 — **одного эндпоинта достаточно, шаг 3 закрывается здесь.** Экран доказывает конвейер: генерацию, заголовок `Authorization`, десериализацию и форму ошибки. Второй эндпоинт не скажет о конвейере ничего нового — он скажет об эндпоинте. Ждать M2 значит держать весь блок KMP открытым целый майлстоун ради утверждения, которое уже доказано.
+> [!decision] 2026-07-29 — **one endpoint is enough; step 3 closes here.** The screen proves the pipeline: generation, the `Authorization` header, deserialization, and the error shape. A second endpoint says nothing new about the pipeline — it says something about the endpoint. Waiting for M2 would mean holding the entire KMP block open for a whole milestone for a claim that is already proven.

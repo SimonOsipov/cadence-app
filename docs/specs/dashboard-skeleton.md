@@ -8,209 +8,208 @@ todoist_parent: "6h8w86HRwchgxPGq"
 components: [web-dashboard]
 proposal: ""
 ---
+
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/dashboard-skeleton.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
-# Скелет дашборда
+# Dashboard Skeleton
 
-## Описание
+## Summary
 
-Поднять `web/` как настоящее приложение на Vite: перенести дизайн-токены из прототипа так, чтобы они больше не разъезжались, собрать страницу Обзора на фикстурах, выкатить её на Railway dev и накрыть дымовым тестом с проверкой того, что развёрнута именно проверяемая сборка.
+Stand `web/` up as a real Vite application: port the design tokens from the prototype so they stop diverging, build the Overview page on fixtures, deploy it to Railway dev, and cover it with a smoke test that verifies the deployed build is the one being checked.
 
-Смысл шага — поставить каркас, в который экраны M6 добавляются как маршруты, а не как новая сборка. Данные остаются фикстурами: `/v1` появится после блока «Скелет API», аутентификация врача — M2.
+The point of this step is to put up a frame into which the M6 screens are added as routes rather than as a new build. The data stays fixtures: `/v1` arrives after the "API Skeleton" block, and doctor authentication is M2.
 
-Первая редакция спеки получила от независимого судьи NEEDS-REWORK: все три числа в разделе «уже реализовано» были неверны, заявленный стек не устанавливался, из скоупа молча выпало боковое меню, а «дословный перенос» воспроизвёл бы нарушение инварианта компонента. Эта редакция написана после проверки каждого утверждения против кода.
+The first draft of this spec got NEEDS-REWORK from an independent judge: all three numbers in the "already implemented" section were wrong, the stated stack would not install, the side menu silently fell out of scope, and a "verbatim port" would have reproduced a violation of a component invariant. This draft was written after checking every claim against the code.
 
 ## User Story
 
-**As a** врач клиники (а до него — разработчик, переносящий экраны из прототипа)
-**I want** дашборд, который собирается, деплоится и рисует Обзор в тех же цветах и той же типографике, что и утверждённый прототип
-**So that** следующий экран — это маршрут и компонент, а не ещё одна настройка сборки
+**As a** clinic doctor (and before them, the developer porting screens from the prototype)
+**I want** a dashboard that builds, deploys, and draws the Overview in the same colours and the same typography as the approved prototype
+**So that** the next screen is a route and a component, not one more build setting
 
 ## Acceptance Criteria
 
-**Каркас**
-- [ ] `web/` — приложение на Vite + React + TypeScript со строгим режимом; `tsc --noEmit`, ESLint и Vitest зелёные
-- [ ] Версия Node закреплена (`.nvmrc` плюс `engines`), как закреплены Go, JDK и XcodeGen в остальных стеках
-- [ ] `web/prototype/**` исключён из `tsconfig`, конфигурации ESLint и Vitest — он заморожен и не должен попадать ни в сборку, ни в линт
-- [ ] Раннеры не пересекаются: Vitest видит только `src/**`, Playwright — только `tests/**`. Иначе Vitest подберёт дымовую спеку и гейт покраснеет навсегда, начиная с шага 5
-- [ ] Прогон Vitest на пустом приложении не падает (`passWithNoTests` либо реальный тест уже в шаге 1) — иначе гейт красный на первом же шаге
-- [ ] `.gitignore` дополнен: `node_modules`, `playwright-report/`, `test-results/`, `.vite/`. Сегодня `node_modules` в нём нет вовсе
-- [ ] Появился `scripts/gate/web.sh`, он вызывается из `scripts/gate/all.sh`, и в `ci.yml` заведена джоба `web` с новым выходом фильтра изменений. Все три места сейчас явно отмечают отсутствие web-гейта, и все три обновляются
+**The frame**
+- [ ] `web/` is a Vite + React + TypeScript application in strict mode; `tsc --noEmit`, ESLint, and Vitest are green
+- [ ] The Node version is pinned (`.nvmrc` plus `engines`), the way Go, the JDK, and XcodeGen are pinned in the other stacks
+- [ ] `web/prototype/**` is excluded from `tsconfig`, from the ESLint configuration, and from Vitest — it is frozen and must reach neither the build nor the linter
+- [ ] The runners do not overlap: Vitest sees only `src/**`, Playwright only `tests/**`. Otherwise Vitest picks up the smoke spec and the gate goes red permanently, starting at step 5
+- [ ] A Vitest run on an empty application does not fail (`passWithNoTests`, or a real test already in step 1) — otherwise the gate is red at the very first step
+- [ ] `.gitignore` is extended: `node_modules`, `playwright-report/`, `test-results/`, `.vite/`. Today it does not contain `node_modules` at all
+- [ ] `scripts/gate/web.sh` exists and is invoked from `scripts/gate/all.sh`, and a `web` job with a new change-filter output is created in `ci.yml`. All three places currently note explicitly that there is no web gate, and all three get updated
 
-**Токены**
-- [ ] `colors_and_type.css` перенесён из прототипа **побайтово, кроме одной строки** — `@import` шрифтов Google заменён на локальный `@font-face`. Гейт сравнивает перенесённый файл с замороженным оригиналом и падает при любом другом расхождении
-- [ ] Типизированный объект генерируется из этого CSS, коммитится, гейт падает при дрейфе. Алиасы вида `--success: var(--forest-700)` резолвятся в конечное значение; для DOM отдельно экспортируется имя переменной
-- [ ] Проведена **сверка с `kmp/…/CadenceColors.kt`**: расхождения разрешены явно и записаны. Известны минимум четыре — `border` (в CSS `#e4dac6`, компоненты прототипа и KMP используют под этим именем `#cdc1a8` из `--border-strong`), `ink700` (в CSS отсутствует, в прототипе даёт `undefined`, в KMP получил значение), нетокенизированные hex в компонентах, и `--s-*`/`--r-*`, которых в разметке прототипа нет вовсе
-- [ ] Опечатка в имени токена при потреблении из TypeScript — ошибка компиляции. Для CSS и inline-стилей это **не гарантируется**: либо добавлен stylelint, либо `var(--` запрещён вне `tokens/`
-- [ ] Три семейства подключаются локально, файлы лежат в репозитории, обращений к Google Fonts из рантайма нет: **Cormorant Garamond** (дисплейный), **Golos Text** (основной текст, замена DM Sans), **JetBrains Mono**. У всех трёх есть кириллица
+**Tokens**
+- [ ] `colors_and_type.css` is ported from the prototype **byte for byte, except one line** — the Google Fonts `@import` is replaced by a local `@font-face`. The gate compares the ported file against the frozen original and fails on any other divergence
+- [ ] A typed object is generated from that CSS, committed, and the gate fails on drift. Aliases of the form `--success: var(--forest-700)` resolve to a final value; the variable name is exported separately for the DOM
+- [ ] A **reconciliation against `kmp/…/CadenceColors.kt`** is done: divergences are resolved explicitly and written down. At least four are known — `border` (in CSS `#e4dac6`, while the prototype's components and KMP use `#cdc1a8` from `--border-strong` under that name), `ink700` (absent from CSS, yields `undefined` in the prototype, has a value in KMP), untokenized hex values in components, and `--s-*`/`--r-*`, which do not appear in the prototype's markup at all
+- [ ] A typo in a token name consumed from TypeScript is a compile error. For CSS and inline styles this is **not guaranteed**: either stylelint is added, or `var(--` is forbidden outside `tokens/`
+- [ ] Three families are linked locally, the files live in the repository, and there are no runtime calls to Google Fonts: **Cormorant Garamond** (display), **Golos Text** (body text, replacing DM Sans), **JetBrains Mono**. All three have Cyrillic
 
-**Иконки**
-- [ ] Используемое подмножество **выводится скриптом**, а не переписывается руками. Две разные роли. **Сид** — однократный вывод по `dd-app.jsx`, `dd-components.jsx` и `dd-data.jsx`: без `dd-chat*` (чат вне скоупа) и без компонентов `design-system`, которые дашборд не рендерит (`AppHeader`, `IconBtn`, `TabBar`, `Spark`), включая имена из полей `icon:`, из `iconMap` и из тернаров — ожидаемо около 22 иконок. **Гейт** — постоянная сверка набора против грепа по `web/src/**`, то есть против нового приложения: иначе обе стороны сравнения породит один скрипт из одного источника и проверка станет тавтологией
-- [ ] Незнакомое имя иконки — ошибка компиляции
+**Icons**
+- [ ] The subset in use is **derived by a script**, not retyped by hand. Two distinct roles. The **seed** — a one-off derivation from `dd-app.jsx`, `dd-components.jsx`, and `dd-data.jsx`: without `dd-chat*` (chat is out of scope) and without the `design-system` components the dashboard does not render (`AppHeader`, `IconBtn`, `TabBar`, `Spark`), including names from `icon:` fields, from `iconMap`, and from ternaries — around 22 icons expected. The **gate** — a standing reconciliation of the set against a grep over `web/src/**`, that is, against the new application: otherwise both sides of the comparison are produced by one script from one source and the check becomes a tautology
+- [ ] An unknown icon name is a compile error
 
-**Обзор**
-- [ ] Страница рисует **боковое меню**, полосу статистики, триаж, реестр, расписание на сегодня и карточку пациента
-- [ ] Боковое меню содержит только «Обзор» и «Сообщения». Четыре пункта прототипа, выведенные из скоупа MVP («Аналитика», «Протоколы», «Расписание», «Пациенты»), **удалены**, а не показаны неактивными: инвариант 4 запрещает мёртвые элементы управления, и соблюсти его с первого дня дешевле, чем чинить в M10
-- [ ] **Все агрегаты приходят посчитанными**: полоса статистики (включая среднюю адгерентность), счётчики вкладок реестра, процент к цели, состав триажа. В прототипе они считаются на клиенте — это нарушение инварианта 2, и оно не переносится
-- [ ] Запрет на вычисление агрегатов в компонентах — механизм, а не намерение: агрегаты приходят отдельным типом `OverviewAggregates` из слоя данных, а правило запрещает **выводить их из `items`** — то есть закрывает источник, а не арифметику. Запрет на `Math.*` не годится: он срабатывает на вычислении геометрии спарклайна и при этом пропускает `Math.max(...data)`. Конкретные селекторы подбираются в шаге 3, критерий — правило не мешает рисовать графики и ловит любое обращение к сырому массиву пациентов ради числа
-- [ ] Пороги биомаркеров приходят из данных, а не зашиты в компонентах
-- [ ] Компоненты имеют состояния загрузки, пустоты и ошибки — иначе при переезде на `/v1` их придётся дописывать в каждом
-- [ ] Фикстура реестра имеет форму страницы (`items`, `total`, курсор), а не голого массива: API будет пагинировать и фильтровать на сервере
-- [ ] Визуальное сравнение с прототипом проходит по разделам Обзора. Прототип для этого поднимается локальным http-сервером — по `file://` он не открывается
+**Overview**
+- [ ] The page draws the **side menu**, the stats bar, triage, the roster, today's schedule, and the patient card
+- [ ] The side menu contains only "Обзор" and "Сообщения". The prototype's four items that were taken out of MVP scope ("Аналитика", "Протоколы", "Расписание", "Пациенты") are **removed**, not shown disabled: invariant 4 forbids dead controls, and honouring it from day one is cheaper than fixing it in M10
+- [ ] **Every aggregate arrives precomputed**: the stats bar (average adherence included), the roster tab counters, the percentage to goal, the triage composition. In the prototype they are computed on the client — that violates invariant 2, and it does not get ported
+- [ ] The ban on computing aggregates in components is a mechanism, not an intention: aggregates arrive as a separate `OverviewAggregates` type from the data layer, and the rule forbids **deriving them from `items`** — that is, it closes off the source rather than the arithmetic. A ban on `Math.*` will not do: it fires on sparkline geometry while letting `Math.max(...data)` through. The specific selectors are chosen at step 3; the criterion is that the rule does not get in the way of drawing charts and does catch any access to the raw patient array for the sake of a number
+- [ ] Biomarker thresholds come from data rather than being hardcoded in components
+- [ ] Components have loading, empty, and error states — otherwise they will have to be written into each of them during the move to `/v1`
+- [ ] The roster fixture has the shape of a page (`items`, `total`, a cursor), not a bare array: the API will paginate and filter on the server
+- [ ] A visual comparison against the prototype passes section by section across the Overview. The prototype is served locally over http for this — it does not open over `file://`
 
-**Деплой и дым**
-- [ ] Статика собирается и раздаётся в проекте Railway, окружение `dev`; переменные сборки задаются на окружение, отсутствие обязательной роняет сборку
-- [ ] `web/.env.example` существует, и гейт с CI имеют значения по умолчанию — иначе обязательные переменные из шага деплоя красят гейт предыдущего шага
-- [ ] Сборка публикует свой коммит (например `/version.json`), и дым **сверяет развёрнутый SHA** с проверяемым — иначе тест попадёт на предыдущую сборку и «охранит» ничего
-- [ ] Дым ждёт готовности деплоя, имеет одну попытку повтора, ставит браузеры в CI
-- [ ] Красный дым **откатывает** деплой на предыдущий. Тест после выкатки — детектор, а не гейт; гейтом его делает откат
+**Deployment and smoke**
+- [ ] The static build is built and served in a Railway project, environment `dev`; build variables are set per environment, and a missing required one fails the build
+- [ ] `web/.env.example` exists, and the gate and CI have defaults — otherwise required variables from the deployment step turn the previous step's gate red
+- [ ] The build publishes its own commit (say `/version.json`), and the smoke test **reconciles the deployed SHA** against the one under test — otherwise the test hits the previous build and guards nothing
+- [ ] The smoke test waits for the deployment to be ready, has a single retry, and installs browsers in CI
+- [ ] A red smoke test **rolls back** the deployment to the previous one. A test after release is a detector, not a gate; the rollback is what makes it a gate
 
 ## Scope / Non-scope
 
-**В скоупе:** каркас сборки, перенос токенов и шрифтового механизма, выведенное подмножество иконок, Обзор с боковым меню на фикстурах, слой доступа к данным, деплой на Railway dev, дым с проверкой SHA и откатом, web-гейт и джоба CI.
+**In scope:** the build frame, porting the tokens and the font mechanism, the derived icon subset, the Overview with a side menu on fixtures, the data access layer, deployment to Railway dev, the smoke test with SHA verification and rollback, the web gate and the CI job.
 
-**Вне скоупа, называю явно:**
-- Настоящие данные из `/v1`. Слой доступа готовится, транспорт остаётся фикстурным.
-- Вход и роли. Аутентификация врача — M2; страница пока открыта.
-- Экраны кроме Обзора, включая «Сообщения». Иконки, нужные только чату, в подмножество не входят.
-- Страницы «Аналитика», «Протоколы», «Расписание», «Пациенты» — вне скоупа MVP по ноте компонента.
-- Герметичный стенд Playwright для PR — M2. Здесь дым после деплоя.
-- Продовое окружение. SKL-13 говорит «в конвейере слияния», а прод появляется в M11; здесь только `dev`.
-- Генерация TS-клиента из `openapi.json` — в описании SKL-09 её нет; вопрос всплывёт при подключении настоящих данных.
+**Out of scope, named explicitly:**
+- Real data from `/v1`. The access layer is prepared, the transport stays on fixtures.
+- Sign-in and roles. Doctor authentication is M2; the page is open for now.
+- Screens other than the Overview, including "Сообщения". Icons needed only by chat are not in the subset.
+- The "Аналитика", "Протоколы", "Расписание", and "Пациенты" pages — out of MVP scope per the component note.
+- A hermetic Playwright harness for PRs — M2. Here it is a post-deployment smoke test.
+- The production environment. SKL-13 says "in the merge pipeline", and production appears in M11; here it is `dev` only.
+- Generating a TS client from `openapi.json` — it is not in the SKL-09 description; the question will surface when real data is wired in.
 
-**Блокировка.** Шаги 4 и 5 требуют проекта Railway — ручная задача SKL-06. Шаги 1–3 от неё не зависят. `/implement` остановится на шаге 4, и это правильное поведение.
+**Blocking.** Steps 4 and 5 require a Railway project — the manual task SKL-06. Steps 1–3 do not depend on it. `/implement` will stop at step 4, and that is the correct behaviour.
 
-## Что уже реализовано (DONE)
+## What already exists (DONE)
 
-Проверено против кода 28.07.2026; числа первой редакции были неверны и здесь исправлены.
+Verified against the code on 2026-07-28; the first draft's numbers were wrong and are corrected here.
 
-- `web/prototype/` — архивированный прототип (BST-07, коммит `71e4a84`): `Doctor Dashboard.html`, пять `dd-*.jsx`, `design-system/` и три SVG логотипа. README помечает FROZEN.
-- `colors_and_type.css` содержит **89** пользовательских свойств (не 121 — прежнее число получилось из грепа, считавшего любые вхождения `--`). Из них около трети — алиасы на другие переменные.
-- `heroicons.js` содержит **41** путь (не 48).
-- Сколько иконок использует дашборд, я двумя разными грепами получил по-разному (16 и 15), судья — 23. Именно поэтому список в спеке не приводится: подмножество выводится скриптом, а гейт проверяет совпадение. Руками этот список верным не будет.
-- `web/` кроме `prototype/` — пусто, `package.json` нет.
-- `.github/workflows/ci.yml` и `scripts/gate/all.sh` содержат дословные комментарии о том, что web-гейта нет до SKL-09; оба обновляются здесь.
-- `.gitignore` **не содержит** `node_modules`.
+- `web/prototype/` — the archived prototype (BST-07, commit `71e4a84`): `Doctor Dashboard.html`, five `dd-*.jsx` files, `design-system/`, and three logo SVGs. The README marks it FROZEN.
+- `colors_and_type.css` contains **89** custom properties (not 121 — the earlier number came from a grep counting every occurrence of `--`). About a third of them are aliases to other variables.
+- `heroicons.js` contains **41** paths (not 48).
+- How many icons the dashboard uses, two different greps of mine answered differently (16 and 15), and the judge got 23. That is precisely why the list is not written into the spec: the subset is derived by a script and the gate verifies the match. By hand, this list will not be correct.
+- `web/` outside `prototype/` is empty; there is no `package.json`.
+- `.github/workflows/ci.yml` and `scripts/gate/all.sh` contain verbatim comments saying there is no web gate until SKL-09; both are updated here.
+- `.gitignore` **does not contain** `node_modules`.
 
-## Технические детали
+## Technical detail
 
-**Версии и их совместимость** (проверено установкой):
+**Versions and their compatibility** (verified by installing):
 
-| Пакет | Версия | Замечание |
+| Package | Version | Note |
 |---|---|---|
 | Vite | 8.1.5 | |
-| React / React DOM | 19.2.8 | React 18 **невозможен**: `react-router@8.3.0` имеет peer `react >=19.2.7` |
-| TypeScript | **6.0.3**, не 7.x | `typescript-eslint@8.65.0` держит peer `typescript >=4.8.4 <6.1.0`, а `typescript@7` вообще не отдаёт классический compiler API — линт `.tsx` не заработает и с `--legacy-peer-deps` |
+| React / React DOM | 19.2.8 | React 18 is **impossible**: `react-router@8.3.0` has peer `react >=19.2.7` |
+| TypeScript | **6.0.3**, not 7.x | `typescript-eslint@8.65.0` holds peer `typescript >=4.8.4 <6.1.0`, and `typescript@7` does not expose the classic compiler API at all — linting `.tsx` will not work even with `--legacy-peer-deps` |
 | ESLint / typescript-eslint | 10.8.0 / 8.65.0 | |
 | @tanstack/react-query | 5.101.4 | |
-| react-router | 8.3.0 | требует Node ≥ 22.22 |
+| react-router | 8.3.0 | requires Node ≥ 22.22 |
 | Vitest | 4.1.10 | |
 | @playwright/test | 1.62.0 | |
 
-**Токены.** CSS переносится побайтово, кроме строки `@import` шрифтов Google: она заменяется локальным `@font-face`, и это единственное допустимое отклонение от дословности — гейт проверяет остальное сравнением с замороженным оригиналом. Без такой проверки «CSS остаётся источником правды» ничем не подкреплено.
+**Tokens.** The CSS is ported byte for byte except the Google Fonts `@import` line: that is replaced by a local `@font-face`, and it is the only permissible deviation from verbatim — the gate checks the rest by comparison against the frozen original. Without such a check, "the CSS remains the source of truth" is backed by nothing.
 
-Генератор разбирает `:root`, резолвит алиасы в конечные значения и отдельно экспортирует имена переменных для DOM. Значения с запятыми, кавычками и функциями (`--font-body`, `clamp(...)`, двойные тени) требуют настоящего парсера, а не регулярного выражения.
+The generator parses `:root`, resolves aliases to final values, and separately exports the variable names for the DOM. Values with commas, quotes, and functions (`--font-body`, `clamp(...)`, double shadows) require a real parser, not a regular expression.
 
-**Сверка с мобилкой обязательна.** KMP уже отгрузил `CadenceColors.kt`, и он местами следует не CSS, а JS-компонентам прототипа. Генерация «из CSS» без сверки разведёт две поверхности на первом же токене. Известные расхождения перечислены в критериях приёмки; каждое разрешается явным решением, а не молча.
+**Reconciliation with the mobile app is mandatory.** KMP has already shipped `CadenceColors.kt`, and in places it follows the prototype's JS components rather than the CSS. Generating "from the CSS" without reconciling would split the two surfaces at the very first token. The known divergences are listed in the acceptance criteria; each is resolved by an explicit decision rather than silently.
 
-**Иконки.** Подмножество выводится скриптом из прототипа и проверяется гейтом в обе стороны. Ручной список пробовали — он оказался одновременно избыточным (иконки из компонентов, которые дашборд не рендерит, и из экрана «Сообщения») и неполным (не хватало иконок бокового меню, триажа и ленты активности).
+**Icons.** The subset is derived by a script from the prototype and verified by the gate in both directions. A hand-written list was tried — it turned out to be simultaneously excessive (icons from components the dashboard does not render, and from the "Сообщения" screen) and incomplete (missing the side menu, triage, and activity feed icons).
 
-**Агрегаты.** В прототипе полоса статистики собирается выражением над массивом пациентов — включая среднюю адгерентность, названную в инварианте 2 ноты компонента. Счётчики вкладок реестра и процент к цели считаются там же. Всё это приходит из фикстуры посчитанным, а правило линтера не даёт вернуть вычисление в компонент. Инвариант, у которого нет механизма, живёт до первого дедлайна.
+**Aggregates.** In the prototype the stats bar is assembled by an expression over the patient array — including the average adherence named in invariant 2 of the component note. The roster tab counters and the percentage to goal are computed in the same place. All of it arrives precomputed from the fixture, and a lint rule prevents the computation from moving back into a component. An invariant with no mechanism lives until the first deadline.
 
-**Слой доступа.** React Query подключается сразу, за ним транспорт, читающий фикстуры. Одного файла мало: фикстуры обязаны быть асинхронными, иначе состояния загрузки и ошибки не появятся, а реестр — постраничным, иначе клиентская фильтрация прототипа переедет вместе с ним и развалится на настоящем API.
+**The access layer.** React Query is wired in immediately, with a transport behind it reading fixtures. One file is not enough: the fixtures have to be asynchronous, otherwise loading and error states never appear, and the roster has to be paginated, otherwise the prototype's client-side filtering moves in with it and falls apart against the real API.
 
-**Дым.** Тест по URL развёрнутого окружения — детектор, а не гейт: к моменту красного плохая сборка уже обслуживает трафик. Гейтом его делает откат. Плюс проверка SHA: Railway деплоит асинхронно, и тест, запущенный сразу после мержа, попадёт на предыдущую сборку и пройдёт.
+**The smoke test.** A test against the deployed environment's URL is a detector, not a gate: by the time it goes red, the bad build is already serving traffic. The rollback is what makes it a gate. Plus the SHA check: Railway deploys asynchronously, and a test started right after the merge will hit the previous build and pass.
 
-**Шрифты — общее решение с мобилкой.** У `--font-display` кириллический запасной вариант в CSS уже есть, и в мобилке дисплейный шрифт уже выбран. Нерешён только основной текстовой: у DM Sans кириллицы нет. Здесь строится механизм, файлы кладутся после решения — та же точка подмены, что `CadenceFonts` в KMP.
+**Fonts — a decision shared with the mobile app.** `--font-display` already has a Cyrillic fallback in the CSS, and the display font is already chosen in the mobile app. Only the body text face is unresolved: DM Sans has no Cyrillic. The mechanism is built here, and the files are added once the decision lands — the same substitution point as `CadenceFonts` in KMP.
 
-**Файлы:**
+**Files:**
 
 ```
 web/
   package.json, vite.config.ts, tsconfig.json, eslint.config.js, .nvmrc, .env.example
-  scripts/generate-tokens.ts        CSS → типизированный объект
-  scripts/derive-icons.ts           подмножество из прототипа
+  scripts/generate-tokens.ts        CSS → typed object
+  scripts/derive-icons.ts           the subset from the prototype
   src/
-    tokens/colors_and_type.css      побайтово, кроме @import
-    tokens/tokens.ts                генерируется, коммитится
-    fonts/                          @font-face; файлы — после решения
-    icons/                          выведенное подмножество + компонент
-    data/transport.ts               шов: фикстуры сегодня, HTTP потом
-    data/fixtures/overview.ts       агрегаты посчитаны, реестр постраничный
-    features/overview/…             меню, полоса, триаж, реестр, расписание, карточка
+    tokens/colors_and_type.css      byte for byte, except @import
+    tokens/tokens.ts                generated, committed
+    fonts/                          @font-face; files land after the decision
+    icons/                          the derived subset plus the component
+    data/transport.ts               the seam: fixtures today, HTTP later
+    data/fixtures/overview.ts       aggregates precomputed, roster paginated
+    features/overview/…             menu, stats bar, triage, roster, schedule, card
     app.tsx, main.tsx, router.tsx
   tests/smoke.spec.ts
 scripts/gate/web.sh
 ```
 
-## Архитектурное решение
+## Architecture decision
 
-Нота компонента уже описывает Vite + React + TS + React Query + react-router и требует перенести токены дословно в один типизированный источник — архитектура не меняется, поэтому ноты-предложения нет.
+The component note already describes Vite + React + TS + React Query + react-router and requires the tokens to be ported verbatim into one typed source — the architecture does not change, so there is no proposal note.
 
-Направление генерации: CSS источник, TypeScript выход. Дословность переноса возможна только если CSS остаётся тем, что перенесли. Но «единственный источник правды» — заявление более сильное, чем реальность: прототип хранит часть визуальной правды в inline-hex, а KMP уже разошёлся с CSS на двух токенах. Поэтому вместе с генерацией идёт сверка, а расхождения разрешаются решением, а не выбором инструмента.
+Direction of generation: CSS is the source, TypeScript is the output. A verbatim port is only possible while the CSS remains what was ported. But "the single source of truth" is a stronger claim than reality: the prototype keeps part of its visual truth in inline hex, and KMP has already diverged from the CSS on two tokens. So generation comes together with reconciliation, and divergences are resolved by a decision rather than by a choice of tool.
 
-Транспортный шов под React Query — с первого дня, вместе с асинхронностью и постраничностью, иначе переезд на `/v1` станет переписыванием компонентов.
+The transport seam under React Query goes in from day one, together with asynchrony and pagination, otherwise the move to `/v1` becomes a rewrite of the components.
 
-**Расхождение инвариантов, называю явно.** Инвариант 7 обзора говорит, что пороги биомаркеров живут в одном модуле констант, который читают обе поверхности; инвариант 3 ноты компонента — что они приходят в ответе API. Это две разные архитектуры, а не две формулировки одной. Здесь следуем ноте компонента; на шагах 1–3 это ничем не грозит, потому что данные фикстурные. Окончательное решение принимается в блоке «Скелет API», где пороги проектируются, и по правилам проекта системный инвариант требует ноты-предложения — молча выбрать сторону нельзя.
+**A conflict of invariants, named explicitly.** Invariant 7 of the overview says biomarker thresholds live in a single constants module read by both surfaces; invariant 3 of the component note says they arrive in the API response. Those are two different architectures, not two phrasings of one. Here we follow the component note; on steps 1–3 that costs nothing, because the data is fixtures. The final decision is made in the "API Skeleton" block, where the thresholds are designed, and by the project's rules a system invariant requires a proposal note — the side cannot be chosen silently.
 
-## Дельты компонентов
+## Component deltas
 
 ### web-dashboard.md
-- MODIFIED: «Форма» — React 18 → React 19 (вынужденно: peer `react-router`); TypeScript 6, не 7 (иначе не работает линт); токены живут как CSS-источник плюс сгенерированный типизированный объект, дрейф ловится гейтом; шрифты подключаются локально, без обращений к Google Fonts из рантайма.
-- ADDED: в «Форму» — транспортный шов под React Query (асинхронные фикстуры сегодня, HTTP при подключении `/v1`), типизированный компонент иконки на выведенном подмножестве.
-- MODIFIED: инвариант 2 — **формулировка уточняется, смысл не меняется**: «адгерентность» в нём уже названа, а средняя адгерентность — это адгерентность. Явно перечисляются агрегаты (полоса статистики, счётчики вкладок, проценты) и добавляется, что исполнение обеспечено правилом, а не договорённостью.
+- MODIFIED: "Shape" — React 18 → React 19 (forced: the `react-router` peer); TypeScript 6, not 7 (otherwise linting does not work); tokens live as a CSS source plus a generated typed object, with drift caught by the gate; fonts are linked locally, with no runtime calls to Google Fonts.
+- ADDED: to "Shape" — a transport seam under React Query (asynchronous fixtures today, HTTP when `/v1` is wired in), a typed icon component over the derived subset.
+- MODIFIED: invariant 2 — **the wording is clarified, the meaning is unchanged**: "adherence" is already named in it, and average adherence is adherence. The aggregates are listed explicitly (stats bar, tab counters, percentages) and it is added that enforcement is provided by a rule rather than by an agreement.
 
 ## Decomposition
 
-Соответствие исходным задачам: шаги 1–3 закрывают SKL-09, шаг 4 — SKL-10, шаг 5 — SKL-13.
+Mapping to the original tasks: steps 1–3 close SKL-09, step 4 closes SKL-10, step 5 closes SKL-13.
 
-### step-1: Каркас сборки и web-гейт
+### step-1: The build frame and the web gate
 
-Vite + React 19 + TypeScript 6 со строгим режимом, ESLint с typescript-eslint, Vitest. `.nvmrc` и `engines`. Исключение `web/prototype/**` из tsconfig, ESLint и Vitest. Дополнение `.gitignore`. Появляются `scripts/gate/web.sh` и джоба `web` в `ci.yml` с новым выходом фильтра изменений.
+Vite + React 19 + TypeScript 6 in strict mode, ESLint with typescript-eslint, Vitest. `.nvmrc` and `engines`. Exclusion of `web/prototype/**` from tsconfig, ESLint, and Vitest. Extending `.gitignore`. `scripts/gate/web.sh` and a `web` job in `ci.yml` appear, with a new change-filter output.
 
-Дерево собирается, гейт зелёный на пустом приложении.
+The tree builds and the gate is green on an empty application.
 
 todoist: "6h8w88mf3pfWxfFH"
 
-### step-2: Токены, шрифты и иконки
+### step-2: Tokens, fonts, and icons
 
-Побайтовый перенос CSS кроме `@import`; генератор с резолвом алиасов; коммит сгенерированного объекта и проверка дрейфа; сравнение перенесённого CSS с замороженным оригиналом. Сверка с `CadenceColors.kt` и разрешение известных расхождений.
+A byte-for-byte port of the CSS except the `@import`; the generator with alias resolution; committing the generated object and checking for drift; comparing the ported CSS against the frozen original. Reconciliation with `CadenceColors.kt` and resolution of the known divergences.
 
-`@font-face` с локальными файлами: Cormorant Garamond, Golos Text, JetBrains Mono. `--font-body` меняется с DM Sans на Golos Text — это единственная правка значения при переносе, и она записана решением ниже. Гейт падает, если Vite не смог разрешить файл шрифта.
+`@font-face` with local files: Cormorant Garamond, Golos Text, JetBrains Mono. `--font-body` changes from DM Sans to Golos Text — the only value edit during the port, and it is recorded as a decision below. The gate fails if Vite could not resolve a font file.
 
-Скрипт выведения подмножества иконок, компонент и двусторонняя проверка гейтом.
+The icon subset derivation script, the component, and the two-way check in the gate.
 
 todoist: "6h8w88wr2qpwvvRH"
 
-### step-3: Обзор на фикстурах
+### step-3: The Overview on fixtures
 
-Боковое меню (с принятым решением по четырём вне-скоупным пунктам), полоса статистики, триаж, реестр, расписание, карточка пациента. Транспортный шов, асинхронные фикстуры, постраничный реестр, состояния загрузки/пустоты/ошибки. Все агрегаты приходят посчитанными; правило линтера запрещает считать их в компонентах. Пороги биомаркеров — из данных.
+The side menu (with the accepted decision on the four out-of-scope items), the stats bar, triage, the roster, the schedule, the patient card. The transport seam, asynchronous fixtures, a paginated roster, loading/empty/error states. Every aggregate arrives precomputed; a lint rule forbids computing them in components. Biomarker thresholds come from data.
 
 todoist: "6h8w895m4HMqr9jH"
 
-### step-4: Деплой на Railway dev
+### step-4: Deployment to Railway dev
 
-⏸ **Требует SKL-06.**
+⏸ **Requires SKL-06.**
 
-Гарнитура выбрана (Golos Text), файлы кладутся в шаге 2 — но проверить это гейтом надо отдельно: `@font-face` без файлов собирается **зелёным**, Vite оставляет ссылку на разрешение в рантайме. Значит отсутствие файла не покраснеет ни на сборке, ни в шаге 2, а проявится 404 на Railway. Гейт обязан падать на этом предупреждении Vite.
+The face is chosen (Golos Text) and the files land in step 2 — but verifying that with the gate has to happen separately: `@font-face` without files builds **green**, and Vite leaves the reference to be resolved at runtime. So a missing file will not go red at build time or in step 2; it surfaces as a 404 on Railway. The gate is obliged to fail on that Vite warning.
 
-Статика в окружении `dev`, переменные сборки на окружение, `web/.env.example` и умолчания для гейта. Сборка публикует свой коммит. Страница сверяется с прототипом, поднятым локально.
+Static assets in the `dev` environment, build variables per environment, `web/.env.example` and defaults for the gate. The build publishes its own commit. The page is compared against the prototype served locally.
 
 todoist: "6h8w897hhGJHmfHq"
 
-### step-5: Дым как гейт с откатом
+### step-5: The smoke test as a gate, with rollback
 
-⏸ **Требует step-4.**
-
-Ожидание готовности деплоя, сверка развёрнутого SHA, проверка страницы Обзора и реестра, одна попытка повтора, установка браузеров в CI. Красный дым откатывает деплой. Конфиг пишется расширяемым — в M2 из него вырастает герметичный стенд для PR.
+Waiting for the deployment to be ready, reconciling the deployed SHA, checking the Overview page and the roster, one retry, browser installation in CI. A red smoke test rolls the deployment back. The config is written to be extensible — in M2 a hermetic PR harness grows out of it.
 
 todoist: "6h8w89CJJWM2x3cH"
 
-## Открытые вопросы
+## Open questions
 
-> [!decision] 28.07.2026 — основной текстовой шрифт: **Golos Text** вместо DM Sans, на обеих поверхностях.
-> Причина: у DM Sans нет кириллицы (`latin`, `latin-ext`), а вся продуктовая копия русская. В прототипе эту проверку сделали для дисплейного шрифта (Instrument Serif → Cormorant Garamond) и не сделали для текстового. Golos Text проектировался под кириллицу, а не дополнен ею, имеет открытую лицензию и близок к DM Sans по ширине и тону — макеты прототипа не разъедутся.
-> Следствия: в дашборде `--font-body` меняется при переносе (единственная правка значения); в мобилке меняется `CadenceFonts.body`, и файлы надо положить в `composeApp` — это отдельная задача, поскольку BST-05 уже закрыт.
+> [!decision] 2026-07-28 — the body text face: **Golos Text** instead of DM Sans, on both surfaces.
+> Reason: DM Sans has no Cyrillic (`latin`, `latin-ext`), and all product copy is Russian. In the prototype this check was done for the display face (Instrument Serif → Cormorant Garamond) and not done for the text face. Golos Text was designed for Cyrillic rather than extended into it, has an open licence, and is close to DM Sans in width and tone — the prototype's layouts will not shift.
+> Consequences: in the dashboard `--font-body` changes during the port (the only value edit); in the mobile app `CadenceFonts.body` changes, and the files have to be placed in `composeApp` — a separate task, since BST-05 is already closed.
 
-> [!decision] 28.07.2026 — боковое меню показывает только «Обзор» и «Сообщения».
-> Четыре пункта прототипа, выведенные из скоупа MVP, удаляются, а не показываются неактивными. Инвариант 4 ноты компонента запрещает мёртвые элементы управления к M10; соблюсти его сразу дешевле, чем чинить потом, а врач на демо не увидит обещаний, которых MVP не выполнит. Реестр в Обзоре и есть список пациентов — отдельный пункт «Пациенты» не нужен по той же ноте.
+> [!decision] 2026-07-28 — the side menu shows only "Обзор" and "Сообщения".
+> The prototype's four items that fall outside MVP scope are removed rather than shown disabled. Invariant 4 of the component note forbids dead controls by M10; honouring it immediately is cheaper than fixing it later, and a doctor at a demo will not see promises the MVP does not keep. The roster in the Overview *is* the patient list — a separate "Пациенты" item is unnecessary per the same note.

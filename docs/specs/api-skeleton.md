@@ -10,247 +10,248 @@ proposal: "[[20-Projects/cadence/architecture/proposals/api-openapi-code-first|a
 ---
 
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/api-skeleton.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
-# Скелет API
 
-## Описание
+# API Skeleton
 
-Довести `api/` от скелета, который умеет только `/healthz`, до приложения, у которого есть собственность на схему, работающий низкопривилегированный путь запроса, версионированный контракт и проверенная аутентификация. После этого блока первый клинический эндпоинт — это строки в готовых местах, а не ещё один слой фундамента.
+## Summary
 
-Спека прошла двух независимых судей (28.07.2026), и главная их находка изменила её форму: в первой редакции роль `cadence_authenticated` заводилась `NOLOGIN` и потому никем не использовалась — путь запроса продолжал ходить под владельцем базы, а критерий приёмки это маскировал, проверяя атрибут спящей роли. Инвариант «база — авторитет по доступу» доставляется только связкой из трёх ролей и принудительного RLS.
+Take `api/` from a skeleton that can only answer `/healthz` to an application that owns its schema, has a working low-privilege request path, a versioned contract, and verified authentication. After this block, the first clinical endpoint is lines in places already prepared, not one more layer of foundation.
+
+The spec passed two independent judges (2026-07-28), and their main finding changed its shape: in the first draft the `cadence_authenticated` role was created `NOLOGIN` and therefore used by nobody — the request path kept running as the database owner, and an acceptance criterion masked that by checking an attribute of a dormant role. The invariant "the database is the authority on access" is delivered only by the combination of three roles and forced RLS.
 
 ## User Story
 
-**As a** разработчик, начинающий M2 с приглашений, профилей и первых политик RLS
-**I want** цепочку миграций с настоящим разделением ролей, собранный `/v1`, тестовую обвязку на настоящем Postgres, проверку Bearer-токена и доказанный шов имперсонации
-**So that** первая клиническая таблица добавляется вместе со своей политикой в готовую обвязку, а не вместе с фундаментом, который ещё надо построить
+**As a** developer starting M2 with invitations, profiles, and the first RLS policies
+**I want** a migration chain with real role separation, an assembled `/v1`, a test harness on real Postgres, Bearer token verification, and a proven impersonation seam
+**So that** the first clinical table is added together with its policy into a harness that is ready, rather than together with a foundation that still has to be built
 
 ## Acceptance Criteria
 
-**Схема и роли**
-- [x] `api/migrations/` — единственная цепочка; цели `migrate-up`/`migrate-down`/`migrate-new` вызывают `go run ./cmd/migrate`, внешний CLI `migrate` больше не нужен
-- [x] Базовая миграция заводит три роли: `cadence_owner` (владелец объектов, под ним идут миграции), `cadence_app` (`LOGIN`, ничем не владеет — эта роль в `DATABASE_URL`), `cadence_authenticated` (`NOLOGIN`, цель имперсонации), плюс `GRANT cadence_authenticated TO cadence_app`
-- [x] Тест проверяет роль **из `DATABASE_URL`**, а не спящую: `rolsuper = false AND rolbypassrls = false AND rolcreaterole = false`, и что она не владеет ни одним объектом схемы приложения
-- [x] Тест-инвариант обходит `pg_class` и требует `relrowsecurity AND relforcerowsecurity` для каждой таблицы схемы приложения. Сегодня проходит вхолостую (таблиц нет) и становится гейтом в момент появления первой
-- [x] Базовая миграция проверена под **не-суперпользователем**: в Supabase роль `postgres` суперпользователем не является, а `ALTER DEFAULT PRIVILEGES` привязан к создающей роли и требует явного `FOR ROLE`
-- [x] `migrate-down` откатывает чисто: `REVOKE` и `DROP OWNED BY` до `DROP ROLE`, `CREATE ROLE` под охраной существования (роли — объекты кластера, не БД)
+**Schema and roles**
+- [x] `api/migrations/` is the single chain; the `migrate-up`/`migrate-down`/`migrate-new` targets call `go run ./cmd/migrate`, and the external `migrate` CLI is no longer needed
+- [x] The base migration creates three roles: `cadence_owner` (owns the objects; migrations run as it), `cadence_app` (`LOGIN`, owns nothing — this is the role in `DATABASE_URL`), `cadence_authenticated` (`NOLOGIN`, the impersonation target), plus `GRANT cadence_authenticated TO cadence_app`
+- [x] A test checks the role **from `DATABASE_URL`**, not the dormant one: `rolsuper = false AND rolbypassrls = false AND rolcreaterole = false`, and that it owns no object in the application schema
+- [x] An invariant test walks `pg_class` and requires `relrowsecurity AND relforcerowsecurity` for every table in the application schema. Today it passes vacuously (there are no tables) and becomes a gate the moment the first one appears
+- [x] The base migration is verified under a **non-superuser**: in Supabase the `postgres` role is not a superuser, and `ALTER DEFAULT PRIVILEGES` is bound to the creating role and requires an explicit `FOR ROLE`
+- [x] `migrate-down` rolls back cleanly: `REVOKE` and `DROP OWNED BY` before `DROP ROLE`, with `CREATE ROLE` guarded by an existence check (roles are cluster objects, not database ones)
 
-**Контракт**
-- [x] `/v1` собран на huma поверх chi; каждый из 11 контекстов имеет точку регистрации маршрутов
-- [x] `openapi.json` порождается из типов, выгружается командой `cmd/openapi`, **коммитится**, и гейт падает, если пересборка его меняет — без этого рефакторинг Go-типа молча переименовывает поле у обеих клиентских поверхностей
-- [x] В спеке объявлена схема безопасности `bearer`, и операции `/v1` её требуют — иначе сгенерированные клиенты не будут слать `Authorization`
-- [x] Любой не-2xx ответ — `application/problem+json`: 401, 404, 405, 422, 500, 503. Пятый путь старой формы (`internalErrorBody`, пишется в обход `Error()`) тоже переведён, вместе с `Content-Type`
-- [x] `detail` для 5xx — фиксированная строка плюс `request_id`; подлежащая ошибка не сериализуется никогда. Ответ 401 не различает причину отказа — различие живёт только в логе
-- [x] `/healthz` остаётся вне `/v1`, без аутентификации и вне OpenAPI-спеки; `openapi.json` и `/docs` тоже вне аутентификации
+**Contract**
+- [x] `/v1` is assembled with huma on top of chi; each of the 11 contexts has a route registration point
+- [x] `openapi.json` is produced from the types, exported by the `cmd/openapi` command, **committed**, and the gate fails if a rebuild changes it — without that, refactoring a Go type silently renames a field on both client surfaces
+- [x] The spec declares the `bearer` security scheme, and the `/v1` operations require it — otherwise the generated clients will not send `Authorization`
+- [x] Any non-2xx response is `application/problem+json`: 401, 404, 405, 422, 500, 503. The fifth path of the old shape (`internalErrorBody`, written bypassing `Error()`) is converted too, along with its `Content-Type`
+- [x] `detail` for 5xx is a fixed string plus `request_id`; the underlying error is never serialized. The 401 response does not distinguish the reason for refusal — the distinction lives only in the log
+- [x] `/healthz` stays outside `/v1`, unauthenticated and outside the OpenAPI spec; `openapi.json` and `/docs` are also unauthenticated
 
-**Тесты**
-- [x] Интеграционные тесты — за build-тегом `integration`, цель `make test-integration`, обязательная джоба в CI. `scripts/gate/go.sh` остаётся зелёным на хосте без Docker
-- [x] База на тест (не общая транзакция): политики RLS в M2 требуют подключения под другой ролью и GUC уровня соединения, чего общая транзакция не даёт
-- [x] В фикстурах — пара ключей, локальный JWKS на `httptest.Server`, хелпер выдачи токена с произвольными claims
-- [x] Тест «deny by default»: обход роутера через `chi.Walk` требует 401 без токена от каждого маршрута, кроме явного списка исключений
-- [x] Пакет `testsupport` запрещён к импорту вне `_test.go` через `depguard`, и закрыт build-тегом
+**Tests**
+- [x] Integration tests sit behind the `integration` build tag, with a `make test-integration` target and a required CI job. `scripts/gate/go.sh` stays green on a host with no Docker
+- [x] A database per test (not a shared transaction): the RLS policies in M2 require connecting as a different role and connection-level GUCs, which a shared transaction does not provide
+- [x] The fixtures include a key pair, a local JWKS on an `httptest.Server`, and a helper issuing tokens with arbitrary claims
+- [x] A "deny by default" test: a walk over the router via `chi.Walk` requires a 401 without a token from every route except an explicit exemption list
+- [x] The `testsupport` package is forbidden from being imported outside `_test.go` via `depguard`, and is closed behind a build tag
 
-**Аутентификация**
-- [x] `SUPABASE_JWT_ISSUER` и `SUPABASE_JWT_AUDIENCE` обязательны в конфиге; адрес JWKS **выводится** из issuer и отдельной ручкой не является
-- [x] Проверяются: подпись, закрытый список алгоритмов `{RS256, ES256}`, обязательный `exp`, обязательный `kid`, `iss`, `aud`, `nbf`, допуск на рассинхрон часов
-- [x] Refresh JWKS по неизвестному `kid` ограничен по частоте — иначе поток случайных `kid` кладёт аутентификацию через rate-limit Supabase
-- [x] Недоступный JWKS при пустом кэше означает отказ (401/503), а не пропуск
-- [x] `GET /v1/me` возвращает **узкий** типизированный принципал (`sub`, `role`, `exp`), а не сырые claims Supabase: они несут email, телефон и `app_metadata`, и отдать их пачкой — расширить контракт неявно и навсегда
-- [x] Состояния сессии в API нет
+**Authentication**
+- [x] `SUPABASE_JWT_ISSUER` and `SUPABASE_JWT_AUDIENCE` are mandatory in the config; the JWKS address is **derived** from the issuer and is not a separate knob
+- [x] Verified: the signature, a closed algorithm list `{RS256, ES256}`, a mandatory `exp`, a mandatory `kid`, `iss`, `aud`, `nbf`, and a clock-skew allowance
+- [x] The JWKS refresh triggered by an unknown `kid` is rate-limited — otherwise a stream of random `kid`s takes authentication down through Supabase's rate limit
+- [x] An unavailable JWKS with an empty cache means refusal (401/503), not a pass-through
+- [x] `GET /v1/me` returns a **narrow** typed principal (`sub`, `role`, `exp`) rather than Supabase's raw claims: those carry email, phone, and `app_metadata`, and handing them over in bulk would extend the contract implicitly and permanently
+- [x] There is no session state in the API
 
-**Шов имперсонации**
-- [x] `database.WithCaller(ctx, pool, principal, fn)` выполняет тело в транзакции с выставленными ролью и claims; claims выставляются **параметризованно**, а не склейкой строки
-- [x] Доказано тестами на временной таблице: внутри действует нужная роль; после выхода роль сброшена; враждебное значение claim ничего не ломает
+**The impersonation seam**
+- [x] `database.WithCaller(ctx, pool, principal, fn)` runs the body in a transaction with the role and claims set; the claims are set **parametrically**, not by string concatenation
+- [x] Proven by tests on a temporary table: inside, the intended role is in effect; after exit, the role is reset; a hostile claim value breaks nothing
 
 ## Scope / Non-scope
 
-**В скоупе:** цепочка миграций и три роли, принудительный RLS как исполняемый инвариант, версионированный роутинг, генерация и фиксация контракта, форма ошибки, тестовая обвязка, проверка JWT, `GET /v1/me`, шов имперсонации.
+**In scope:** the migration chain and three roles, forced RLS as an enforced invariant, versioned routing, contract generation and pinning, the error shape, the test harness, JWT verification, `GET /v1/me`, the impersonation seam.
 
-**Вне скоупа, называю явно:**
-- Клинические таблицы и политики. Базовая миграция заводит роли и права, не данные.
-- Набор регрессионных тестов политик RLS — начинается в M2 с первой таблицей. Здесь строится обвязка и инвариант, на которых он будет стоять.
-- Живой Supabase. **Пункт SKL-04 «миграции применяются против cadence-dev» переезжает в SKL-06** (деплой применяет миграции) — при закрытии SKL-04 это фиксируется комментарием в задаче, чтобы пункт не пропал.
-- Генерация клиентов из `openapi.json` — SKL-11 (Kotlin). Для дашборда генерация клиента в SKL-09 не описана; вопрос всплывёт там.
-- Инвариант 5 ноты `data-layer` («каждая миграция расширяет набор тестов политик») базовой миграцией формально не выполняется: политик нет, потому что нет таблиц. Осознанно.
+**Out of scope, named explicitly:**
+- Clinical tables and policies. The base migration creates roles and grants, not data.
+- The RLS policy regression suite — it begins in M2 with the first table. What is built here is the harness and the invariant it will stand on.
+- Live Supabase. **The SKL-04 item "migrations are applied against cadence-dev" moves to SKL-06** (the deployment applies migrations) — when SKL-04 is closed this is recorded in a comment on the task so the item is not lost.
+- Generating clients from `openapi.json` — SKL-11 (Kotlin). For the dashboard, client generation is not described in SKL-09; the question will surface there.
+- Invariant 5 of the `data-layer` note ("every migration extends the policy test suite") is formally not satisfied by the base migration: there are no policies, because there are no tables. Deliberate.
 
-## Что уже реализовано (DONE)
+## What already exists (DONE)
 
-Из BST-06 (`8ed170f`) в `api/`. Проверено судьёй против кода 28.07.2026:
+From BST-06 (`8ed170f`) in `api/`. Verified by the judge against the code on 2026-07-28:
 
-- `cmd/api/main.go` — composition root, сигналы, дедлайн подключения к БД **и дедлайн пробы `/healthz`** (таймаут живёт здесь, а не в `httpserver.Health`)
-- `internal/platform/config` — конфиг из окружения с валидацией на старте, `DATABASE_URL` обязателен, `DATABASE_SERVICE_URL` читается и пуст по умолчанию, тесты на 152 строки
-- `internal/platform/httpserver` — chi, RequestID, структурный лог, свой recoverer, CORS-allowlist, graceful shutdown, `/healthz`, тесты
-- `internal/platform/database` — пул pgx с fail-fast, `HealthCheck`, `RunMigrations` (написан, **нигде не вызывается** — единственные упоминания в самом файле)
-- `internal/<11 контекстов>` — пакеты с `doc.go`, без кода
-- `Makefile` — уже содержит `migrate-up`/`migrate-down`/`migrate-new`, и они вызывают **внешний бинарь `migrate`**, которого нет ни в гейте, ни в CI. Их надо перевести на `cmd/migrate`
-- `.golangci.yml` v2, `.env.example`, `docker-compose.yml` с `postgres:17-alpine` на 5433
+- `cmd/api/main.go` — the composition root, signals, a deadline for connecting to the database **and a deadline for the `/healthz` probe** (the timeout lives here, not in `httpserver.Health`)
+- `internal/platform/config` — configuration from the environment with validation at startup, `DATABASE_URL` mandatory, `DATABASE_SERVICE_URL` read and empty by default, 152 lines of tests
+- `internal/platform/httpserver` — chi, RequestID, a structured log, its own recoverer, a CORS allow-list, graceful shutdown, `/healthz`, tests
+- `internal/platform/database` — the pgx pool with fail-fast, `HealthCheck`, `RunMigrations` (written, and **called nowhere** — the only mentions are inside the file itself)
+- `internal/<11 contexts>` — packages with a `doc.go` and no code
+- `Makefile` — already contains `migrate-up`/`migrate-down`/`migrate-new`, and they call the **external `migrate` binary**, which is present neither in the gate nor in CI. They have to be moved onto `cmd/migrate`
+- `.golangci.yml` v2, `.env.example`, `docker-compose.yml` with `postgres:17-alpine` on 5433
 
-**Что переписывается.** `ErrorResponse{error, code}` используется на четырёх продуктовых путях — 404 и 405 (`server.go`), 500 при панике (`server.go`), 503 (`health.go`) — и есть **пятый**: константа `internalErrorBody` в `response.go`, которая пишется напрямую в `JSON()` при сбое маршалинга, минуя `Error()`, и не покрыта тестом. Тестовых файлов, читающих тип, **три**: `response_test.go`, `server_test.go` и `health_test.go`. Удаление типа без правки всех трёх ломает сборку пакета.
+**What gets rewritten.** `ErrorResponse{error, code}` is used on four product paths — 404 and 405 (`server.go`), 500 on panic (`server.go`), 503 (`health.go`) — and there is a **fifth**: the `internalErrorBody` constant in `response.go`, written straight into `JSON()` on a marshalling failure, bypassing `Error()` and covered by no test. There are **three** test files reading the type: `response_test.go`, `server_test.go`, and `health_test.go`. Deleting the type without amending all three breaks the package build.
 
-## Технические детали
+## Technical detail
 
-**Новые зависимости** (существование и совместимость проверены судьёй; `humachi` собран и запущен с нашим chi на Go 1.26.4):
+**New dependencies** (existence and compatibility verified by the judge; `humachi` was built and run with our chi on Go 1.26.4):
 
-| Модуль | Версия | Зачем |
+| Module | Version | What for |
 |---|---|---|
-| `github.com/danielgtaylor/huma/v2` | v2.39.0 | типизированные маршруты, валидация, генерация OpenAPI |
-| `github.com/golang-jwt/jwt/v5` | v5.3.1 | разбор и проверка JWT |
-| `github.com/MicahParks/keyfunc/v3` | v3.8.1 | кэширующий JWKS-источник ключей |
-| `github.com/testcontainers/testcontainers-go` | v0.43.0 | настоящий Postgres в тестах |
-| `github.com/testcontainers/testcontainers-go/modules/postgres` | v0.43.0 | отдельный модуль, тянет `pgx v5.9.2` — MVS разрулит с нашим v5.10.0 |
+| `github.com/danielgtaylor/huma/v2` | v2.39.0 | typed routes, validation, OpenAPI generation |
+| `github.com/golang-jwt/jwt/v5` | v5.3.1 | parsing and verifying JWTs |
+| `github.com/MicahParks/keyfunc/v3` | v3.8.1 | a caching JWKS key source |
+| `github.com/testcontainers/testcontainers-go` | v0.43.0 | real Postgres in tests |
+| `github.com/testcontainers/testcontainers-go/modules/postgres` | v0.43.0 | a separate module, pulling `pgx v5.9.2` — MVS resolves it against our v5.10.0 |
 
-**Роли.** Три, а не одна. `cadence_owner` владеет схемой и объектами, под ним применяются миграции (`DATABASE_MIGRATION_URL`). `cadence_app` — `LOGIN`, `NOSUPERUSER`, `NOBYPASSRLS`, `NOCREATEROLE`, не владеет ничем; это `DATABASE_URL`. `cadence_authenticated` — `NOLOGIN`, цель `SET LOCAL ROLE`; без `GRANT cadence_authenticated TO cadence_app` шов из step-4 просто не выполнится. Роль без обхода RLS, которая владеет таблицами, дырой быть не перестаёт: владелец может отключить RLS, поэтому владение и подключение разводятся здесь, а не в M2.
+**Roles.** Three, not one. `cadence_owner` owns the schema and the objects, and migrations are applied as it (`DATABASE_MIGRATION_URL`). `cadence_app` is `LOGIN`, `NOSUPERUSER`, `NOBYPASSRLS`, `NOCREATEROLE`, and owns nothing; this is `DATABASE_URL`. `cadence_authenticated` is `NOLOGIN`, the target of `SET LOCAL ROLE`; without `GRANT cadence_authenticated TO cadence_app` the seam from step-4 simply will not run. A role without RLS bypass that owns the tables does not stop being a hole: the owner can disable RLS, so ownership and connection are separated here rather than in M2.
 
-**Монтирование huma.** У `humachi` v2.39.0 нет варианта с префиксом: при монтировании на подроутер `/v1` операция обслуживается верно, но в документе оказывается `paths: {"/me": …}`, а сам документ уезжает под auth-middleware — проверено экспериментально. Поэтому маршруты регистрируются полными путями `/v1/...` на корневом mux, а middleware вешается по префиксу с явными исключениями (`/healthz`, `openapi.json`, `/docs`).
+**Mounting huma.** `humachi` v2.39.0 has no prefix-aware variant: when mounted on a `/v1` subrouter the operation is served correctly, but the document ends up with `paths: {"/me": …}` and the document itself moves under the auth middleware — verified experimentally. So routes are registered with full `/v1/...` paths on the root mux, and the middleware is attached by prefix with explicit exemptions (`/healthz`, `openapi.json`, `/docs`).
 
-**Проверка токена.** Помимо подписи: закрытый список алгоритмов `{RS256, ES256}` (Supabase выдаёт ES256 по умолчанию для новых проектов и RSA для созданных после мая 2025 — фактический алгоритм `cadence-dev` подтверждается в SKL-01), обязательный `exp` (в `jwt/v5` он не обязателен по умолчанию), обязательный `kid` (иначе keyfunc перебирает ключи), `iss`, `aud`, `nbf`, допуск на рассинхрон часов. Отдельно: `aud` у Supabase равен `authenticated` во всех проектах и изоляции проектов не даёт — привязку несёт `iss` и идентичность ключей. Формулировать это надо честно, чтобы тест «чужая аудитория → 401» не создавал ложного чувства защиты.
+**Token verification.** Besides the signature: a closed algorithm list `{RS256, ES256}` (Supabase issues ES256 by default for new projects and RSA for those created after May 2025 — the actual algorithm of `cadence-dev` is confirmed in SKL-01), a mandatory `exp` (in `jwt/v5` it is not mandatory by default), a mandatory `kid` (otherwise keyfunc tries keys in turn), `iss`, `aud`, `nbf`, and a clock-skew allowance. Separately: Supabase's `aud` equals `authenticated` in every project and provides no project isolation — the binding is carried by `iss` and by the identity of the keys. This has to be stated honestly, so that the test "foreign audience → 401" does not create a false sense of protection.
 
-**Заголовок `Authorization`** разбирается с регистронезависимой схемой; токен в query-строке запрещён — это то же правило, что для сокета в обзоре («токен не в URL, чтобы не попадал в логи»).
+**The `Authorization` header** is parsed with a case-insensitive scheme; a token in the query string is forbidden — the same rule as for the socket in the overview ("no token in the URL, so it does not end up in logs").
 
-**Известное ограничение.** Роль берётся из токена, без обращения к базе. Понижение врача вступает в силу через TTL токена, и политики RLS в M2 унаследуют эту границу. Записано сейчас, а не обнаружено потом.
+**A known limitation.** The role is taken from the token, with no database lookup. Demoting a doctor takes effect after the token's TTL, and the RLS policies in M2 will inherit that boundary. Recorded now rather than discovered later.
 
-**Изоляция тестов** — база на тест. Общая транзакция дешевле, но не даёт подключиться другой ролью и проверить GUC уровня соединения, а именно это потребуется набору тестов политик в M2. Контейнер общий на прогон через `TestMain`, чтобы параллельные пакеты не поднимали по Postgres каждый.
+**Test isolation** — a database per test. A shared transaction is cheaper but does not allow connecting as a different role and checking connection-level GUCs, which is exactly what the policy test suite in M2 will require. The container is shared across the run via `TestMain`, so parallel packages do not each stand up a Postgres.
 
-**Защита от обхода аутентификации.** Механизм, а не намерение: `testsupport` закрыт build-тегом и запрещён к импорту через `depguard` отовсюду, кроме `_test.go`; JWKS-URL выводится из issuer и отдельной ручкой не является — иначе прод отличается от теста одной переменной в Railway; `SUPABASE_JWT_ISSUER` и `SUPABASE_JWT_AUDIENCE` обязательны, пустое значение роняет старт, а не отключает проверку тихо.
+**Protection against bypassing authentication.** A mechanism, not an intention: `testsupport` is closed behind a build tag and forbidden from being imported via `depguard` everywhere except `_test.go`; the JWKS URL is derived from the issuer and is not a separate knob — otherwise production differs from the test by one variable in Railway; `SUPABASE_JWT_ISSUER` and `SUPABASE_JWT_AUDIENCE` are mandatory, and an empty value fails startup rather than silently disabling verification.
 
-**Утечки в problem+json.** Формат несёт `detail`, `instance` и `errors[].value`. Опасность конкретная: обёрнутая ошибка pgx уносит в `detail` фрагмент SQL с именами таблиц, а `errors[].value` эхом возвращает присланное значение — для формы логирования дозы это медданные, которые попадут и в Sentry. Текущий код это свойство держит и имеет тесты на неутечку; при смене формата оно обязано сохраниться.
+**Leaks in problem+json.** The format carries `detail`, `instance`, and `errors[].value`. The danger is concrete: a wrapped pgx error carries a fragment of SQL with table names into `detail`, and `errors[].value` echoes the submitted value back — for the dose-logging form that is medical data, and it would reach Sentry too. The current code holds this property and has non-leakage tests; on a change of format it must be preserved.
 
-**Файлы:**
+**Files:**
 
 ```
 api/
-  cmd/migrate/main.go                       применение цепочки (переиспользует RunMigrations)
-  cmd/openapi/main.go                       выгрузка openapi.json без старта приложения
-  openapi.json                              коммитится; гейт проверяет отсутствие дрейфа
-  migrations/000001_base.up.sql|.down.sql   три роли, гранты, права по умолчанию с FOR ROLE
+  cmd/migrate/main.go                       applying the chain (reuses RunMigrations)
+  cmd/openapi/main.go                       exporting openapi.json without starting the app
+  openapi.json                              committed; the gate checks for drift
+  migrations/000001_base.up.sql|.down.sql   three roles, grants, default privileges with FOR ROLE
   internal/platform/httpserver/
-    problem.go, problem_test.go             RFC 7807 вместо ErrorResponse
-    api.go                                  сборка huma.API на корневом mux
+    problem.go, problem_test.go             RFC 7807 instead of ErrorResponse
+    api.go                                  assembling huma.API on the root mux
   internal/platform/auth/
-    jwks.go, principal.go, middleware.go    + тесты
+    jwks.go, principal.go, middleware.go    + tests
   internal/platform/database/
-    caller.go, caller_test.go               шов имперсонации
+    caller.go, caller_test.go               the impersonation seam
   internal/platform/testsupport/            build tag + depguard
     postgres.go, keys.go
   internal/identity/handler.go              GET /v1/me
 ```
 
-## Архитектурное решение
+## Architecture decision
 
-Контракт рождается из кода: huma поверх chi, спека — выход сборки. Обоснование и альтернативы — в [[20-Projects/cadence/architecture/proposals/api-openapi-code-first|ноте-предложении]].
+The contract is born from the code: huma on top of chi, and the spec is a build output. The rationale and the alternatives are in the [[20-Projects/cadence/architecture/proposals/api-openapi-code-first|proposal note]].
 
-Судья привёл сильнейший контраргумент: при code-first контракт становится тем, чем случайно оказался код, и переименование поля Go-структуры молча переименовывает поле JSON у двух клиентских поверхностей, выглядя в ревью как рефакторинг. Аргумент справедлив наполовину и закрывается дёшево: `openapi.json` коммитится, а гейт падает, если пересборка его меняет. Изменение контракта обязано появиться в диффе и быть подтверждённым осознанно — артефакт ревью возвращается без перехода на spec-first.
+The judge raised the strongest counter-argument: under code-first the contract becomes whatever the code happened to be, and renaming a Go struct field silently renames a JSON field on two client surfaces while looking like a refactor in review. The argument is half fair and closes cheaply: `openapi.json` is committed, and the gate fails if a rebuild changes it. A contract change must appear in a diff and be confirmed deliberately — the review artifact comes back without moving to spec-first.
 
-Форма ошибки — RFC 7807. Миграции применяются отдельной командой под собственной ролью: этого требует раздел «Среды» обзора, и это же снимает гонку при нескольких инстансах.
+The error shape is RFC 7807. Migrations are applied by a separate command under their own role: the "Environments" section of the overview requires it, and it also removes the race with several instances.
 
-## Дельты компонентов
+## Component deltas
 
 ### api.md
-- MODIFIED: «Форма» — добавляется `huma` (типизированные маршруты `/v1`, валидация, генерация OpenAPI) поверх `chi`; `golang-migrate` применяется отдельной командой `cmd/migrate` под ролью-владельцем.
-- MODIFIED: «Контракты» — `openapi.json` порождается из типов, коммитится и защищён от дрейфа гейтом; объявлена схема безопасности `bearer`; `/healthz`, `openapi.json` и `/docs` вне спеки и вне аутентификации; форма любого не-2xx ответа — `application/problem+json`.
-- ADDED: в «Форму» — `internal/platform/auth` (проверка токена), `internal/platform/testsupport` (обвязка, закрытая от прода build-тегом и depguard), `database.WithCaller` (шов имперсонации).
-- ADDED: в «Инварианты» — роль пути запроса не владеет объектами схемы; разделение владельца и приложения обязательно.
-- REMOVED: из «Открытых вопросов» — выбор генератора на стороне сервера. Выбор клиентского генератора под Kotlin остаётся (SKL-11).
+- MODIFIED: "Shape" — `huma` is added (typed `/v1` routes, validation, OpenAPI generation) on top of `chi`; `golang-migrate` is applied by a separate `cmd/migrate` command under the owner role.
+- MODIFIED: "Contracts" — `openapi.json` is produced from the types, committed, and protected from drift by the gate; the `bearer` security scheme is declared; `/healthz`, `openapi.json`, and `/docs` are outside the spec and outside authentication; the shape of any non-2xx response is `application/problem+json`.
+- ADDED: to "Shape" — `internal/platform/auth` (token verification), `internal/platform/testsupport` (a harness closed off from production by a build tag and depguard), `database.WithCaller` (the impersonation seam).
+- ADDED: to "Invariants" — the request-path role owns no schema objects; separating the owner from the application is mandatory.
+- REMOVED: from "Open questions" — choosing the server-side generator. Choosing the Kotlin client generator remains (SKL-11).
 
 ### data-layer.md
-- MODIFIED: инвариант 1 — уточняется, что принудительный RLS проверяется исполняемым тестом-инвариантом по `pg_class`, а не только декларируется.
-- MODIFIED: инвариант 3 — цепочка живёт в `api/migrations/`, применяется ролью `cadence_owner`; путь запроса ходит под `cadence_app`, которая ничем не владеет.
-- ADDED: имена трёх ролей и их назначение.
+- MODIFIED: invariant 1 — clarified that forced RLS is verified by an executable invariant test over `pg_class` rather than merely declared.
+- MODIFIED: invariant 3 — the chain lives in `api/migrations/` and is applied by the `cadence_owner` role; the request path runs as `cadence_app`, which owns nothing.
+- ADDED: the names of the three roles and their purpose.
 
 ### identity.md
-- ADDED: в «Контракты» — `GET /v1/me`, возвращающий узкий принципал (`sub`, `role`, `exp`) из проверенного токена, без обращения к базе.
-- ADDED: известное ограничение — роль берётся из токена, поэтому изменение роли вступает в силу через TTL токена.
+- ADDED: to "Contracts" — `GET /v1/me`, returning a narrow principal (`sub`, `role`, `exp`) from a verified token, with no database lookup.
+- ADDED: a known limitation — the role is taken from the token, so a role change takes effect after the token's TTL.
 
 ### kmp-app.md, web-dashboard.md
-- MODIFIED: источник генерации клиента назван точно — закоммиченный `openapi.json` модуля `api`, включая схему безопасности `bearer`.
+- MODIFIED: the client generation source is named precisely — the committed `openapi.json` of the `api` module, including the `bearer` security scheme.
 
 ## Decomposition
 
-### step-1: Роли, цепочка миграций и обвязка Postgres
+### step-1: Roles, the migration chain, and the Postgres harness
 
-Три роли с разделением владения и подключения, гранты, права по умолчанию с явным `FOR ROLE`. `cmd/migrate` под собственным URL; цели Makefile переводятся на него, внешний CLI уходит.
+Three roles separating ownership from connection, the grants, and default privileges with an explicit `FOR ROLE`. `cmd/migrate` under its own URL; the Makefile targets move onto it, and the external CLI goes away.
 
-Тестовая обвязка целиком: контейнер через `TestMain`, база на тест, применение цепочки. На ней — содержательные тесты: атрибуты роли из `DATABASE_URL`, отсутствие владения, чистый откат, применение под не-суперпользователем, и тест-инвариант принудительного RLS по `pg_class`.
+The test harness in full: a container via `TestMain`, a database per test, applying the chain. On top of it, the substantive tests: the attributes of the role from `DATABASE_URL`, the absence of ownership, a clean rollback, application under a non-superuser, and the forced-RLS invariant test over `pg_class`.
 
-Интеграционные тесты закрываются build-тегом `integration`; появляются `make test-integration` и обязательная джоба в CI. Быстрый гейт остаётся зелёным без Docker.
+Integration tests are closed behind the `integration` build tag; `make test-integration` and a required CI job appear. The fast gate stays green without Docker.
 
-> [!deviation] 2026-07-29 — под `cadence_owner` миграции не подключаются, а становятся
-> Spec said: `cadence_owner` владеет схемой, под ним идут миграции, он в `DATABASE_MIGRATION_URL`. Actually done: `cadence_owner` заведён `NOLOGIN`, а `DATABASE_MIGRATION_URL` несёт **загрузочную роль** — `postgres` в Supabase, суперпользователь контейнера локально, — которая получает членство в `cadence_owner` и доходит до владения через `SET ROLE`. Why: golang-migrate берёт одну строку подключения на всю цепочку, а `cadence_owner` создаётся первой же миграцией — подключиться под ним на первом применении не под кем.
-> Следствие, существенное для M2: роль из `DATABASE_MIGRATION_URL` — это `CREATEROLE`-роль, постоянно состоящая в `cadence_owner`, то есть способная отключить RLS на любой таблице приложения. Набор тестов политик пишется против этого факта, а не против картины «мигратор ушёл и больше не возвращается».
-> Каждая последующая миграция обязана начинаться с `SET ROLE cadence_owner`. Это не дисциплина, а инвариант: интеграционный обход `pg_class` падает на любой таблице схемы, которой владелец не владеет.
+> [!deviation] 2026-07-29 — migrations do not connect as `cadence_owner`, they become it
+> Spec said: `cadence_owner` owns the schema, migrations run as it, and it is in `DATABASE_MIGRATION_URL`. Actually done: `cadence_owner` is created `NOLOGIN`, and `DATABASE_MIGRATION_URL` carries a **bootstrap role** — `postgres` in Supabase, the container's superuser locally — which is granted membership in `cadence_owner` and reaches ownership through `SET ROLE`. Why: golang-migrate takes one connection string for the whole chain, and `cadence_owner` is created by the very first migration — on the first application there is nobody to connect as.
+> A consequence that matters for M2: the role from `DATABASE_MIGRATION_URL` is a `CREATEROLE` role permanently belonging to `cadence_owner`, that is, capable of disabling RLS on any application table. The policy test suite is written against that fact, not against a picture in which "the migrator left and never comes back".
+> Every subsequent migration must begin with `SET ROLE cadence_owner`. This is not discipline but an invariant: the integration walk over `pg_class` fails on any schema table the owner does not own.
 
-> [!deviation] 2026-07-29 — `cadence_app` заведён `NOINHERIT`, и цепочка декларирует атрибуты, а не создаёт их однажды
-> Spec said: три роли и `GRANT cadence_authenticated TO cadence_app`. Actually done: то же самое плюс `NOINHERIT` у `cadence_app` и явный `WITH INHERIT FALSE` у членства. Why: с наследованием членство отдаёт права `cadence_authenticated` любому запросу без всякого `SET ROLE` — шов из step-4 остаётся вызываемым, но перестаёт быть обязательным, и пропуск шва становится невидимым. С `NOINHERIT` запрос мимо шва не имеет прав на таблицы вообще и падает громко.
-> Три находки, из-за которых это заняло больше одной строки. С PostgreSQL 16 роль-создатель получает членство с `SET FALSE` — `pg_has_role` показывает `MEMBER`, а `SET ROLE` запрещён. Наследование живёт в самом членстве, а членство ключуется грантующим: `GRANT` правит только свою строку, поэтому цепочка сперва `REVOKE`, потом выдаёт заново. И то, что цепочка отозвать не может — членство, выданное суперпользователем, — она **обнаруживает и останавливается** с явным текстом, вместо того чтобы отчитаться о разделении, которого не добилась.
-> Атрибуты `SUPERUSER` и `BYPASSRLS` менять может только тот, кто ими владеет, поэтому они проверяются, а не выставляются: чужая роль с этими правами роняет применение цепочки.
+> [!deviation] 2026-07-29 — `cadence_app` is created `NOINHERIT`, and the chain declares attributes rather than creating them once
+> Spec said: three roles and `GRANT cadence_authenticated TO cadence_app`. Actually done: the same plus `NOINHERIT` on `cadence_app` and an explicit `WITH INHERIT FALSE` on the membership. Why: with inheritance the membership hands `cadence_authenticated`'s privileges to any query without any `SET ROLE` — the seam from step-4 remains callable but stops being mandatory, and skipping it becomes invisible. With `NOINHERIT` a query that bypasses the seam has no privileges on the tables at all and fails loudly.
+> Three findings that made this take more than one line. Since PostgreSQL 16 the creating role receives membership with `SET FALSE` — `pg_has_role` shows `MEMBER` while `SET ROLE` is forbidden. Inheritance lives in the membership itself, and a membership is keyed by its grantor: a `GRANT` amends only its own row, so the chain first does a `REVOKE` and then grants anew. And what the chain cannot revoke — a membership granted by a superuser — it **detects and stops on**, with explicit text, instead of reporting a separation it did not achieve.
+> The `SUPERUSER` and `BYPASSRLS` attributes can only be changed by someone who holds them, so they are checked rather than set: a foreign role carrying them fails the application of the chain.
 
-> [!deviation] 2026-07-29 — схема приложения названа `app`; у `cmd/migrate` появился `force`
-> Spec said: «схема приложения» без имени. Actually done: `app`. Why: выделенная схема делает запрос «чем владеет путь запроса» точным и держит наши объекты в стороне от `public`, который в Supabase делится с расширениями.
-> `cmd/migrate force <n>` — сверх спеки. Why: цепочка, упавшая на середине, помечает версию `dirty`, и после этого любые `up` и `down` отказываются работать. Внешний CLI `migrate`, который умел `force`, этим шагом уходит; без замены восстановление после частичного применения означало бы правку `schema_migrations` руками в проде.
+> [!deviation] 2026-07-29 — the application schema is named `app`; `cmd/migrate` gained a `force`
+> Spec said: "the application schema", unnamed. Actually done: `app`. Why: a dedicated schema makes the question "what does the request path own" precise and keeps our objects away from `public`, which in Supabase is shared with extensions.
+> `cmd/migrate force <n>` is beyond the spec. Why: a chain that fails midway marks the version `dirty`, after which every `up` and `down` refuses to work. The external `migrate` CLI, which could do `force`, goes away with this step; without a replacement, recovering from a partial application would mean editing `schema_migrations` by hand in production.
 
 todoist: "6h8vJP3vWQXJxHWq"
 
-### step-2: huma, `/v1`, problem+json и зафиксированный контракт
+### step-2: huma, `/v1`, problem+json, and the pinned contract
 
-huma через `humachi` на корневом mux, маршруты полными путями `/v1/...`. Точки регистрации для 11 контекстов. Схема безопасности `bearer` в конфигурации спеки.
+huma via `humachi` on the root mux, with routes registered as full paths. Registration points for the 11 contexts. The `bearer` security scheme in the spec's configuration.
 
-Форма ошибки переводится на problem+json на всех пяти путях, включая `internalErrorBody` и `Content-Type`; переписываются три тестовых файла; сохраняются тесты на неутечку. `cmd/openapi` выгружает `openapi.json`, файл коммитится, гейт проверяет отсутствие дрейфа.
+The error shape moves to problem+json on all five paths, including `internalErrorBody` and the `Content-Type`; three test files are rewritten; the non-leakage tests are preserved. `cmd/openapi` exports `openapi.json`, the file is committed, and the gate checks for drift.
 
-> [!deviation] 2026-07-29 — реестр контекстов живёт в `internal/router`, а не в `platform`
-> Spec said: файлы шага — `problem.go`, `api.go`, `cmd/openapi/main.go`. Actually done: плюс новый пакет `internal/router` и `routes.go` в каждом из одиннадцати контекстов. Why: точка регистрации у контекста должна быть в самом контексте, иначе «где живёт роутинг» решается заново при каждом эндпоинте. А список всех одиннадцати обязан быть в одном месте, чтобы утверждение «все контексты навешены» стало проверяемым: тест сверяет реестр с директориями под `internal/` и падает на двенадцатом контексте, который добавили и забыли навесить.
-> Почему не в `platform`: `platform` — транспорт, конфиг и база, он не знает про предметные контексты. Реестр знает про все одиннадцать, поэтому импортировать его из `platform` значило бы развернуть зависимость. Цена — один особый случай в тесте реестра, исключающий сам пакет `router` из списка контекстов.
+> [!deviation] 2026-07-29 — the context registry lives in `internal/router`, not in `platform`
+> Spec said: the step's files are `problem.go`, `api.go`, and `cmd/openapi/main.go`. Actually done: plus a new `internal/router` package and a `routes.go` in each of the eleven contexts. Why: a context's registration point belongs in the context itself, otherwise "where does routing live" gets decided anew with every endpoint. And the list of all eleven must be in one place so that the claim "every context is mounted" becomes verifiable: a test reconciles the registry against the directories under `internal/` and fails on a twelfth context that was added and forgotten.
+> Why not in `platform`: `platform` is transport, config, and database, and it does not know about the domain contexts. The registry knows about all eleven, so importing it from `platform` would invert the dependency. The cost is one special case in the registry test, excluding the `router` package itself from the list of contexts.
 
-> [!deviation] 2026-07-29 — очистка ошибки происходит в `MarshalJSON`, лог — в трансформере huma
-> Spec said: форма ошибки переводится на problem+json, `detail` для 5xx — фиксированная строка. Actually done: то же самое, но очистка перенесена в `Problem.MarshalJSON`, а запись в лог — в трансформер huma. Why: ревью показало, что первая редакция не логировала ничего, хотя код в четырёх местах утверждал «различие живёт в логе». Причина конкретна: `huma.Error500InternalServerError` строит ошибку **без контекста**, поэтому хук конструирования запроса не видит и записать `request_id` не может — а это большинство ошибок. Трансформер huma — единственный хук, который видит каждую ошибку вместе с её запросом.
-> Очистка при этом ушла в `MarshalJSON`, потому что к моменту трансформера значение ещё должно быть полным (иначе логировать нечего), а к моменту байтов — уже пустым. Побочный эффект оказался ценнее замысла: к проводу нет пути в обход маршалинга, поэтому забыть очистить теперь физически нельзя.
-> Также отключены `SchemasPath` и `CreateHooks` huma: по умолчанию он подмешивает в каждое тело поле `$schema`, собранное из заголовка `Host`, и открывает третий неаутентифицированный путь `/schemas`. Первое дало бы ошибке две разные формы — от huma и от роутера, — второе шаг 3 обязан был бы знать.
+> [!deviation] 2026-07-29 — error scrubbing happens in `MarshalJSON`, and logging in huma's transformer
+> Spec said: the error shape moves to problem+json, and `detail` for 5xx is a fixed string. Actually done: the same, but scrubbing moved into `Problem.MarshalJSON` and the log write into huma's transformer. Why: the review showed that the first draft logged nothing, although the code claimed in four places that "the distinction lives in the log". The reason is specific: `huma.Error500InternalServerError` builds the error **without a context**, so a construction hook does not see the request and cannot write the `request_id` — and that covers most errors. huma's transformer is the only hook that sees every error together with its request.
+> Scrubbing accordingly moved into `MarshalJSON`, because by the time of the transformer the value still has to be complete (otherwise there is nothing to log), and by the time of the bytes it has to already be empty. The side effect turned out to be more valuable than the intent: there is no path to the wire that bypasses marshalling, so forgetting to scrub is now physically impossible.
+> huma's `SchemasPath` and `CreateHooks` were also disabled: by default it mixes a `$schema` field into every body, assembled from the `Host` header, and opens a third unauthenticated path, `/schemas`. The first would give the error two different shapes — one from huma and one from the router — and the second is something step 3 would have had to know about.
 
 todoist: "6h8vJP7cfmxpcXrq"
 
-### step-3: Проверка токена по JWKS и `GET /v1/me`
+### step-3: Token verification against JWKS and `GET /v1/me`
 
-Фикстура ключей: пара, локальный JWKS, выдача токена с произвольными claims. Middleware по префиксу `/v1` с исключениями. Полный список проверок из технических деталей. `SUPABASE_JWT_ISSUER` и `SUPABASE_JWT_AUDIENCE` — обязательные в конфиге, JWKS выводится из issuer; правятся `config.go`, `config_test.go`, `.env.example`.
+The key fixture: a pair, a local JWKS, and issuance of tokens with arbitrary claims. Middleware by the `/v1` prefix with exemptions. The full list of checks from the technical detail. `SUPABASE_JWT_ISSUER` and `SUPABASE_JWT_AUDIENCE` mandatory in the config, with JWKS derived from the issuer; `config.go`, `config_test.go`, and `.env.example` are amended.
 
-`GET /v1/me` возвращает узкий принципал. Тесты: валидный токен — 200; просроченный, без `exp`, с чужим издателем, с чужим `kid`, с битой подписью, с запрещённым алгоритмом и без заголовка — 401 с неразличимым телом. Тест «deny by default» через `chi.Walk`. `testsupport` закрыт тегом и `depguard`.
+`GET /v1/me` returns a narrow principal. Tests: a valid token — 200; expired, without `exp`, with a foreign issuer, with a foreign `kid`, with a broken signature, with a forbidden algorithm, and with no header — 401 with an indistinguishable body. The "deny by default" test via `chi.Walk`. `testsupport` closed behind the tag and `depguard`.
 
-> [!deviation] 2026-07-29 — фикстуры ключей без build-тега; механизм — `depguard`
-> Spec said: `testsupport` закрыт тегом и `depguard`. Actually done: тег `integration` остался только на `postgres.go`; `keys.go` — пары ключей, локальный JWKS и выдача токенов — без тега. Why: тег закрыл бы от быстрого гейта все тесты аутентификации: `go test ./...` перестал бы их собирать, и молча. Молча пропущенный тест аутентификации хуже медленного.
-> Защита от попадания в прод при этом не ослаблена, потому что её всегда давал не тег: `depguard` запрещает импорт `testsupport` из любого файла, кроме `_test.go`. Тег был вторым слоем для пакета, которому нужен Docker, — там он и остался.
+> [!deviation] 2026-07-29 — the key fixtures have no build tag; the mechanism is `depguard`
+> Spec said: `testsupport` is closed behind a tag and `depguard`. Actually done: the `integration` tag stayed only on `postgres.go`; `keys.go` — key pairs, the local JWKS, and token issuance — has no tag. Why: the tag would have closed every authentication test off from the fast gate: `go test ./...` would stop building them, and silently. A silently skipped authentication test is worse than a slow one.
+> Protection against reaching production is not weakened by this, because it was never the tag that provided it: `depguard` forbids importing `testsupport` from any file other than `_test.go`. The tag was a second layer for the package that needs Docker — and that is where it stayed.
 
-> [!deviation] 2026-07-29 — middleware закрывает всё, а не префикс `/v1`
-> Spec said: middleware по префиксу `/v1` с исключениями. Actually done: guard навешен на весь mux, а исключения — точный (не префиксный) список из шести транспортных путей: `/healthz`, `/docs` и четыре документа, которые huma монтирует на одну `OpenAPIPath` (текущая версия и downgrade до 3.0, каждая в JSON и YAML). Why: правило «закрываем `/v1`» оставляет открытым всё вне `/v1`, и каждый добавленный позже путь открыт, пока кто-нибудь не вспомнит его закрыть. Обратная формулировка ошибается в безопасную сторону: путь, о котором не подумали, отвечает 401. Заодно неизвестный путь перестаёт отличаться от известного — 401, а не 404.
-> Точное сравнение, а не префиксное: `/healthz` префиксом открыл бы и `/healthzzz`. Оба свойства закреплены тестами, и оба проверены мутацией.
-> Сверх файлов шага появился `internal/router/Mount` — единственная сборка HTTP-поверхности, которую вызывает и `cmd/api`, и тест обхода `chi.Walk`. Без неё тест обходил бы роутер, собранный для теста, и ничего не утверждал бы о том, что слушает процесс.
+> [!deviation] 2026-07-29 — the middleware closes everything, not the `/v1` prefix
+> Spec said: middleware by the `/v1` prefix with exemptions. Actually done: the guard is attached to the whole mux, and the exemptions are an exact (not prefix) list of six transport paths: `/healthz`, `/docs`, and the four documents huma mounts on a single `OpenAPIPath` (the current version and the downgrade to 3.0, each in JSON and YAML). Why: the rule "we close `/v1`" leaves everything outside `/v1` open, and every path added later is open until somebody remembers to close it. The inverse formulation errs on the safe side: a path nobody thought about answers 401. As a bonus, an unknown path stops being distinguishable from a known one — 401, not 404.
+> Exact comparison rather than prefix: `/healthz` as a prefix would also open `/healthzzz`. Both properties are pinned by tests, and both were verified by mutation.
+> Beyond the step's files, `internal/router/Mount` appeared — the single assembly of the HTTP surface, called both by `cmd/api` and by the `chi.Walk` test. Without it, the test would walk a router assembled for the test and would assert nothing about what the process listens on.
 
-> [!deviation] 2026-07-29 — `GET /v1/me` отвечает `expires_at` в RFC 3339
-> Spec said: узкий принципал `sub`, `role`, `exp`. Actually done: `sub`, `role`, `expires_at` — типизированный `time.Time`, в контракте `format: date-time`. Why: поле с именем `exp` читается как одноимённый claim, то есть как число секунд, и отдавать под этим именем строку RFC 3339 — приглашение разобрать его неправильно на обеих клиентских поверхностях. Состав полей не изменился: три, и тест падает, если их станет четыре.
+> [!deviation] 2026-07-29 — `GET /v1/me` answers with `expires_at` in RFC 3339
+> Spec said: a narrow principal `sub`, `role`, `exp`. Actually done: `sub`, `role`, `expires_at` — a typed `time.Time`, `format: date-time` in the contract. Why: a field named `exp` reads as the claim of the same name, that is, as a number of seconds, and returning an RFC 3339 string under that name is an invitation to parse it wrongly on both client surfaces. The set of fields did not change: there are three, and a test fails if there are four.
 
-> [!deviation] 2026-07-29 — бюджет внепланового обновления JWKS равен 3 с, а не 100 мс
-> Spec said: refresh по неизвестному `kid` ограничен по частоте. Actually done: то же самое, плюс явный `RateLimitWaitMax` в 3 секунды. Why: в `jwkset` v0.11.1 этот параметр ограничивает не только ожидание квоты — из него делается контекст, который передаётся в сам HTTP-запрос обновления. Значение, выбранное «чтобы не подвесить запрос», молча становится таймаутом запроса, и при 100 мс внеплановое обновление против Supabase не успевает никогда: после ротации ключей все токены с новым `kid` отвергаются до планового обновления через час. Найдено ревью, воспроизведено фикстурой с задержкой 300 мс, которая теперь в наборе — на localhost эта ошибка невидима.
-> Подвешивания это не возвращает: при квоте «один раз в 5 минут» ограниченному запросу нужно ждать минуты, что больше дедлайна, поэтому лимитер отказывает сразу. Бюджет тратит только то одно обновление, которое разрешено.
-> Там же исправлена классификация ошибок: исчерпанная квота — это отказ токену (`ErrTokenRejected`), а не недоступность ключей. Иначе поток мусорных `kid` заполняет лог аварией, которой нет, и настоящая авария от неё неотличима.
-> Второй раунд ревью уточнил формулировку: один дедлайн покрывает и ожидание квоты, и сам запрос, а лимитер спит, если ожидание в дедлайн укладывается. Поэтому запрос, пришедший в конец окна, получал бы разрешение с почти исчерпанным дедлайном — тот же дефект, но раз в 5 минут вместо раза в час. Дедлайн собран как сумма: 250 мс на ожидание плюс 3 с гарантированных на запрос. Спящим может оказаться не более одного запроса — лимитер резервирует квоту до сна, и всё, что пришло рядом, видит ожидание в минуты и отказывается сразу.
+> [!deviation] 2026-07-29 — the budget for an unscheduled JWKS refresh is 3 s, not 100 ms
+> Spec said: the refresh triggered by an unknown `kid` is rate-limited. Actually done: the same, plus an explicit `RateLimitWaitMax` of 3 seconds. Why: in `jwkset` v0.11.1 that parameter limits more than the wait for quota — a context is made from it and passed into the refresh HTTP request itself. A value chosen "so as not to hang the request" silently becomes the request timeout, and at 100 ms an unscheduled refresh against Supabase never completes: after a key rotation, every token with the new `kid` is rejected until the scheduled refresh an hour later. Found by review, reproduced with a fixture delayed by 300 ms which is now in the suite — on localhost this bug is invisible.
+> This does not bring the hang back: with a quota of "once per 5 minutes" a rate-limited request would have to wait minutes, which exceeds the deadline, so the limiter refuses immediately. The budget is spent only by the single refresh that is permitted.
+> The error classification was corrected in the same place: an exhausted quota is a refusal of the token (`ErrTokenRejected`), not key unavailability. Otherwise a stream of junk `kid`s fills the log with an incident that is not happening, and a real incident becomes indistinguishable from it.
+> A second review round refined the wording: one deadline covers both the wait for quota and the request itself, and the limiter sleeps if the wait fits inside the deadline. So a request arriving at the end of the window would get permission with a nearly exhausted deadline — the same defect, but once per 5 minutes instead of once per hour. The deadline is assembled as a sum: 250 ms for the wait plus 3 s guaranteed for the request. At most one request can end up sleeping — the limiter reserves the quota before sleeping, and everything arriving alongside sees a wait of minutes and refuses immediately.
 
-> [!deviation] 2026-07-29 — заголовок `WWW-Authenticate` принадлежит статусу, а не вызывающему
-> Spec said: любой не-2xx — `application/problem+json`, 401 не различает причину отказа. Actually done: то же самое, плюс `Problem.GetHeaders()` — реализация `huma.HeadersError`, которую применяют оба писателя, и `WriteProblem`, и путь ошибок huma. Why: RFC 7235 требует challenge на каждом 401, а писателей у типа два. Challenge, выставляемый на месте вызова, — это правило, которое один из двух рано или поздно пропустит, и тогда набор заголовков начнёт говорить, какой слой отказал. Это тот же довод, что уже записан над `normalise`.
+> [!deviation] 2026-07-29 — the `WWW-Authenticate` header belongs to the status, not to the caller
+> Spec said: any non-2xx is `application/problem+json`, and a 401 does not distinguish the reason for refusal. Actually done: the same, plus `Problem.GetHeaders()` — an implementation of `huma.HeadersError` used by both writers, `WriteProblem` and huma's error path. Why: RFC 7235 requires a challenge on every 401, and the type has two writers. A challenge set at the call site is a rule that one of the two will eventually skip, and then the header set starts telling you which layer refused. This is the same argument already recorded above `normalise`.
 
 todoist: "6h8vJP8V4VH2JHvq"
 
-### step-4: Шов имперсонации
+### step-4: The impersonation seam
 
-`database.WithCaller(ctx, pool, principal, fn)`: транзакция, `SET LOCAL ROLE cadence_authenticated`, claims через `set_config` с параметром — не склейкой строки, иначе значение claim из токена становится вектором инъекции против собственной сессии.
+`database.WithCaller(ctx, pool, principal, fn)`: a transaction, `SET LOCAL ROLE cadence_authenticated`, and claims through `set_config` with a parameter — not by string concatenation, otherwise a claim value from the token becomes an injection vector against our own session.
 
-Доказывается на временной таблице внутри тестовой транзакции: внутри действует нужная роль, после выхода роль сброшена, claims читаются, враждебное значение claim ничего не ломает. Клинических таблиц для этого не нужно — и именно поэтому шов пишется сейчас, пока обвязка свежая, а не вместе с первой таблицей в M2.
+Proven on a temporary table inside the test transaction: inside, the intended role is in effect; after exit, the role is reset; the claims are readable; a hostile claim value breaks nothing. No clinical tables are needed for this — and that is precisely why the seam is written now, while the harness is fresh, rather than together with the first table in M2.
 
-> [!deviation] 2026-07-29 — доказательство на таблице владельца в схеме `app`, а не на временной
-> Spec said: доказывается на временной таблице внутри тестовой транзакции. Actually done: проба — обычная таблица в схеме `app`, созданная под `SET ROLE cadence_owner` через загрузочную роль, в отдельной БД на тест (изоляция и так есть — база на тест, а не общая транзакция). Why: временная таблица, созданная `cadence_app`, принадлежала бы `cadence_app` и была бы ему доступна и так — тест прошёл бы, ничего не сказав ни о default privileges для `cadence_authenticated`, ни о `NOINHERIT`, то есть ни о том, зачем шов существует. Проба в `app` под владельцем — это в точности форма таблицы, которая появится в M2, и привилегии к ней приходят из базовой миграции, а не из строчки, дописанной в тесте.
-> Побочный результат: тот же набор доказывает и обратное свойство — запрос мимо шва получает `42501` на таблице приложения. Без владельческой пробы это утверждение сформулировать не на чем.
+> [!deviation] 2026-07-29 — the proof is on an owner's table in the `app` schema, not on a temporary one
+> Spec said: proven on a temporary table inside the test transaction. Actually done: the probe is an ordinary table in the `app` schema, created under `SET ROLE cadence_owner` through the bootstrap role, in a separate database per test (isolation exists anyway — a database per test, not a shared transaction). Why: a temporary table created by `cadence_app` would belong to `cadence_app` and be accessible to it regardless — the test would pass while saying nothing about default privileges for `cadence_authenticated` or about `NOINHERIT`, that is, nothing about why the seam exists. A probe in `app` under the owner is exactly the shape of table that will appear in M2, and its privileges come from the base migration rather than from a line added in the test.
+> A side result: the same suite proves the converse property too — a query bypassing the seam gets `42501` on an application table. Without the owner's probe there is nothing to state that claim on.
 
-> [!deviation] 2026-07-29 — шов принимает `database.Caller`, а не `auth.Principal`
-> Spec said: `database.WithCaller(ctx, pool, principal, fn)`. Actually done: третий аргумент — `database.Caller{Subject, Role}`, объявленный в самом `database`. Why: правило проекта — интерфейсы принадлежат потребителю, а ядро не импортирует драйверы и транспорты. Приняв `auth.Principal`, слой базы начал бы зависеть от пакета, который знает про JWKS, HTTP-заголовки и время жизни токена. Цена — один литерал структуры на месте вызова; выигрыш — `database` не знает, что аутентификация вообще существует.
-> Заодно в док-комментарии `Caller` записаны две границы, которые M2 обязан закрыть, а не унаследовать: `Subject` проверяется только на непустоту (идиома Supabase приводит `sub` к `uuid`, и политика, написанная так, на не-UUID даст `22P02` — то есть 500 вместо отказа), а `Role` в стоковом проекте Supabase у всех равна литералу `authenticated` — продуктовые роли приходят хуком выдачи токена, и куда именно их кладёт хук, решается в M2.
+> [!deviation] 2026-07-29 — the seam takes `database.Caller`, not `auth.Principal`
+> Spec said: `database.WithCaller(ctx, pool, principal, fn)`. Actually done: the third argument is `database.Caller{Subject, Role}`, declared in `database` itself. Why: the project rule is that interfaces belong to the consumer, and the core does not import drivers or transports. By accepting `auth.Principal`, the database layer would start depending on a package that knows about JWKS, HTTP headers, and token lifetimes. The cost is one struct literal at the call site; the gain is that `database` does not know authentication exists at all.
+> At the same time, two boundaries M2 must close rather than inherit were written into `Caller`'s doc comment: `Subject` is checked only for non-emptiness (the Supabase idiom casts `sub` to `uuid`, and a policy written that way gives `22P02` on a non-UUID — that is, a 500 instead of a refusal), and in a stock Supabase project `Role` equals the literal `authenticated` for everyone — the product roles arrive through the token issuance hook, and exactly where the hook puts them is decided in M2.
 
 todoist: "6h8vJPHrWcQGPhWH"
 
-## Открытые вопросы
+## Open questions
 
-> [!decision] 28.07.2026 — да, внесено. Пункт «зафиксировать фактический алгоритм подписи токенов и `iss`» добавлен в описание задачи SKL-01. Спека держит закрытый список `{RS256, ES256}`, поэтому step-3 не заблокирован; подтверждение алгоритма — предусловие первого подключения к живому Supabase (SKL-06), а не этой работы.
+> [!decision] 2026-07-28 — yes, added. The item "pin down the actual token signing algorithm and `iss`" was added to the description of task SKL-01. The spec holds a closed list `{RS256, ES256}`, so step-3 is not blocked; confirming the algorithm is a precondition of the first connection to live Supabase (SKL-06), not of this work.

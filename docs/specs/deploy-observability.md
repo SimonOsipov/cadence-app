@@ -10,220 +10,251 @@ proposal: "[[20-Projects/cadence/architecture/proposals/data-layer-to-russia|arc
 ---
 
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/deploy-observability.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
-# Деплой и наблюдаемость
 
-> [!decision] 29.07.2026 — спека пересмотрена под переезд слоя данных в Россию
-> Гейт 152-ФЗ из [[20-Projects/cadence/adr/ADR-006-supabase-and-152fz|ADR-006]] сработал; слой данных переезжает в Timeweb — см. [[20-Projects/cadence/architecture/proposals/data-layer-to-russia|ноту-предложение]].
-> Для этой спеки это **переименование, а не переписывание**: App Platform даёт ровно то, на чём она построена — автодеплой из репозитория, сборку по Dockerfile, переменные окружения, откат на любую версию в одну кнопку, логи приложения в панели.
-> Изменились три вещи: имя платформы, **граница Sentry** (только исключения; логи остаются в российском контуре) и **источник внешнего пинга** (монитор из бесплатного тарифа Sentry). Разбиение на шаги и их привязка к задачам Todoist не менялись.
+# Deployment and Observability
 
-## Описание
+> [!decision] 2026-07-29 — the spec was revised for the data layer's move to Russia
+> The 152-FZ gate from [[20-Projects/cadence/adr/ADR-006-supabase-and-152fz|ADR-006]] fired; the data layer moves to Timeweb — see the [[20-Projects/cadence/architecture/proposals/data-layer-to-russia|proposal note]].
+> For this spec that is a **rename, not a rewrite**: App Platform provides exactly what it was built on — auto-deploy from the repository, a Dockerfile build, environment variables, a one-button rollback to any version, application logs in the panel.
+> Three things changed: the platform's name, the **Sentry boundary** (exceptions only; logs stay inside the Russian perimeter), and the **source of the external ping** (a monitor from Sentry's free tier). The step breakdown and its mapping to Todoist tasks did not change.
 
-Довести конвейер до релизного и сделать так, чтобы падения на трёх поверхностях были видны — без того, чтобы медданные уезжали в чужое облако.
+## Summary
 
-Смягчение риска «оператор один» начинается здесь. Один человек не заметит аварию, о которой ему не сказали, и не вспомнит порядок отката в три часа ночи.
+Take the pipeline to release quality and make failures visible on all three
+surfaces — without medical data travelling to somebody else's cloud.
 
-Первая редакция получила NEEDS-REWORK, и две находки перевернули её механику. Первая: `beforeSend` в мобильном SDK — не хук пересборки события, а слияние обратно фиксированного подмножества полей, куда исключения не входят; наивная реализация выглядела бы рабочей и молча пропускала бы наружу текст ошибки. Вторая: маршрут разбора «`request_id` → логи платформы» вёл в пустоту, потому что содержательного лога у 5xx нет вовсе. Аллоулист без такого лога — это не «строго», это слепо.
+Mitigating the "a single operator" risk starts here. One person will not notice an
+incident nobody told them about, and will not remember the rollback order at three
+in the morning.
+
+The first draft got NEEDS-REWORK, and two findings turned its mechanics over. The
+first: `beforeSend` in the mobile SDK is not a hook for rebuilding the event but a
+merge-back of a fixed subset of fields, and exceptions are not among them; a naive
+implementation would have looked like it worked while silently letting the error
+text out. The second: the diagnostic route "`request_id` → platform logs" led
+nowhere, because a 5xx has no meaningful log at all. An allow-list without such a
+log is not "strict", it is blind.
 
 ## User Story
 
-**As a** единственный оператор системы
-**I want** чтобы выкатка происходила сама, падения приходили мне, а диагноз был возможен без медданных в чужом облаке
-**So that** авария в клиническом продукте обнаруживалась мной, а не врачом, и чинилась по инструкции, а не воспроизведением вручную
+**As the** system's only operator
+**I want** deployment to happen by itself, failures to reach me, and diagnosis to be
+possible without medical data in somebody else's cloud
+**So that** an incident in a clinical product is found by me rather than by a
+doctor, and fixed by a procedure rather than by reproducing it by hand
 
 ## Acceptance Criteria
 
-**Sentry: аллоулист плюс курируемый код**
-- [ ] Sentry подключён в API, дашборде и мобильном приложении
-- [ ] **Наружу уходят только исключения, и только явно разрешённое в них**: курируемый код ошибки, стек, версия сборки, платформа, `request_id`, маршрут без параметров
-- [ ] **Логи в Sentry не отправляются никогда.** Это не настройка, а граница соответствия: `logScrubbed` намеренно пишет в лог причину отказа 401, значение паники и локации полей — то есть присланное пользователем. Логи живут в российском контуре, Sentry получает только курируемое событие. Сшивает их `request_id`
-- [ ] Курируемый код обязателен, потому что типа недостаточно: после `fmt.Errorf("…: %w", err)` почти все ошибки в Go имеют один тип `*fmt.wrapError`, а в JS почти всё — `Error`. Аллоулист по типу сгруппировал бы весь продакшен в одно ишью
-- [ ] Сырое сообщение ошибки наружу не идёт: прямой `CaptureException(err)` запрещён в пользу обёртки, берущей код и распознанный тип
-- [ ] **На мобилке фильтр ставится нативно** через `initWithPlatformOptions`, отдельно для Android и iOS. Общий KMP-хук для этого непригоден: он сливает обратно фиксированный набор полей, и `exceptions` в него не входит — `event.exceptions.clear()` даст зелёный тест и отправит исключение целиком
-- [ ] Есть тест-канарейка: событие с полем, которое общий хук не переносит, доказывает, что зачистка сработала на нативном уровне
-- [ ] Перечислены и закрыты **все** каналы отправки, а не только ошибки: трассировки, логи, метрики, replay, снимки экрана и иерархии представлений выключены в MVP. У каждого SDK свои отдельные хуки, и `beforeSend` их не покрывает
-- [ ] `attachThreads` и `attachStackTrace` рассмотрены явно: дампы потоков нефильтруемы общим хуком
-- [ ] DSN нормализуется к пустой строке — `null` до SDK не доходит никогда. На Android `null` роняет приложение на старте, а пустая строка выключает SDK. Тест покрывает именно `null`
-- [ ] `sentry-go` не подхватывает `SENTRY_DSN` из окружения молча: пустая конфигурация означает выключено
+**Sentry: an allow-list plus a curated code**
+- [ ] Sentry is wired into the API, the dashboard, and the mobile app
+- [ ] **Only exceptions leave, and within them only what is explicitly permitted**: the curated error code, the stack, the build version, the platform, `request_id`, and the route without parameters
+- [ ] **Logs are never sent to Sentry.** This is not a setting but a compliance boundary: `logScrubbed` deliberately writes the reason for a 401 refusal, the panic value, and field locations into the log — that is, what the user sent. The logs live inside the Russian perimeter, and Sentry receives only the curated event. `request_id` stitches them together
+- [ ] A curated code is mandatory, because the type is not enough: after `fmt.Errorf("…: %w", err)` almost every error in Go has the single type `*fmt.wrapError`, and in JS almost everything is an `Error`. An allow-list keyed on type would group all of production into one issue
+- [ ] The raw error message does not go out: a direct `CaptureException(err)` is forbidden in favour of a wrapper that takes the code and the recognized type
+- [ ] **On mobile the filter is installed natively** through `initWithPlatformOptions`, separately for Android and iOS. The shared KMP hook is unsuitable for this: it merges back a fixed set of fields, and `exceptions` is not among them — `event.exceptions.clear()` will give a green test and send the exception in full
+- [ ] There is a canary test: an event with a field the shared hook does not carry over proves the scrubbing happened at the native level
+- [ ] **Every** sending channel is enumerated and closed, not only errors: traces, logs, metrics, replay, screenshots, and view-hierarchy captures are disabled in the MVP. Each SDK has its own separate hooks, and `beforeSend` does not cover them
+- [ ] `attachThreads` and `attachStackTrace` are considered explicitly: thread dumps are unfilterable by the shared hook
+- [ ] The DSN is normalized to an empty string — `null` never reaches the SDK. On Android `null` crashes the app at startup, while an empty string disables the SDK. The test covers `null` specifically
+- [ ] `sentry-go` does not silently pick up `SENTRY_DSN` from the environment: an empty configuration means disabled
 
-**Содержательный лог — без него аллоулист бесполезен**
-- [ ] На пути 5xx появляется структурный лог: `request_id`, курируемый код, развёрнутая цепочка `%w`. Сегодня логгер пишет только метод, путь, статус и длительность, а обычная 500 не логируется вообще
-- [ ] У лога **своё записанное правило** о том, что в него класть можно, и оно исполняется: значения полей, тела запросов и присланные пользователем строки в лог не идут
-- [ ] Существующие места, которые сегодня пишут в лог содержимое, приведены к этому правилу: причина отказа пробы `/healthz` и значение паники в recoverer — оба несут то, что прислал пользователь
+**A meaningful log — without it the allow-list is useless**
+- [ ] A structured log appears on the 5xx path: `request_id`, the curated code, the unwrapped `%w` chain. Today the logger writes only the method, path, status, and duration, and an ordinary 500 is not logged at all
+- [ ] The log has **its own written rule** about what may go into it, and the rule is enforced: field values, request bodies, and user-supplied strings do not go into the log
+- [ ] The existing places that write content into the log today are brought in line with that rule: the reason a `/healthz` probe failed and the panic value in the recoverer — both carry what the user sent
 
-**Карты исходников**
-- [ ] Релиз и карты создаются **там, где происходит настоящая сборка**. Дашборд собирается на App Platform, а не в CI: карты, загруженные из отдельной джобы, относились бы к другому бандлу и не сопоставились бы — стек остался бы нечитаем, а критерий выглядел бы выполненным
+**Source maps**
+- [ ] The release and the maps are created **where the real build happens**. The dashboard is built on App Platform, not in CI: maps uploaded from a separate job would belong to a different bundle and would not match — the stack would stay unreadable while the criterion looked satisfied
 
-**Пинг и артефакт деплоя**
-- [ ] В репозитории появляется артефакт деплоя API: сегодня нет ни `Dockerfile`, ни манифеста App Platform, и ни одна другая спека их не заводит
-- [ ] Слияние в `main` деплоит **API** в окружение `dev`; миграции — отдельным шагом до деплоя, командой `cmd/migrate`
-- [ ] У API есть свой дым после деплоя и свой откат. Для дашборда это уже сделано в его блоке; API держит медданные и остался без обоих
-- [ ] Внешний монитор опрашивает `/healthz` и уведомляет оператора; проверено на намеренно остановленном сервисе, что уведомление доходит
-- [ ] Монитор — **из бесплатного тарифа Sentry** (один включён), отдельный сервис не заводится. Он вне нашей инфраструктуры, и это требование, а не удобство: монитор, лежащий вместе с тем, что он мониторит, молчит именно тогда, когда нужен. `/healthz` отвечает `{"status":"ok"}` и персональных данных не несёт, поэтому зарубежный монитор здесь не создаёт трансграничной передачи
+**Ping and the deployment artifact**
+- [ ] A deployment artifact for the API appears in the repository: today there is neither a `Dockerfile` nor an App Platform manifest, and no other spec creates them
+- [ ] Merging into `main` deploys **the API** to the `dev` environment; migrations run as a separate step before the deployment, with the `cmd/migrate` command
+- [ ] The API has its own post-deployment smoke test and its own rollback. For the dashboard this is already done in its own block; the API holds medical data and was left without both
+- [ ] An external monitor polls `/healthz` and notifies the operator; verified against a deliberately stopped service that the notification arrives
+- [ ] The monitor comes **from Sentry's free tier** (one is included), and no separate service is created. It lives outside our infrastructure, and that is a requirement rather than a convenience: a monitor sitting alongside what it monitors goes silent precisely when it is needed. `/healthz` answers `{"status":"ok"}` and carries no personal data, so a foreign monitor creates no cross-border transfer here
 
 **RUNBOOK**
-- [ ] `RUNBOOK.md`: выкатка, откат, где какие переменные, где смотреть логи, что делать при срабатывании пинга
-- [ ] Учение по откату проводится **на API**, а не на дашборде: у дашборда откат автоматизирован дымом из его блока, и учение измерило бы автоматику вместо инструкции
-- [ ] Учение оставляет артефакт: что выкачено, чем сломано, какой командой откачено, сколько заняло
+- [ ] `RUNBOOK.md`: deployment, rollback, where which variables live, where to look at logs, what to do when the ping fires
+- [ ] The rollback drill is run **on the API**, not on the dashboard: the dashboard's rollback is automated by the smoke test from its own block, and a drill there would measure the automation instead of the procedure
+- [ ] The drill leaves an artifact: what was deployed, what broke it, which command rolled it back, how long it took
 
-**Защита main**
-- [ ] `CODEOWNERS` и файл ruleset с точным списком обязательных проверок лежат в репозитории — конфигурация версионируется, а не кликается
-- [ ] Прав `admin` у нас не будет: партнёр их выдать не может (BST-10, подтверждено 29.07.2026). Поэтому шаг поставляет **не файл, а готовую к запуску команду** — `gh api` с этим ruleset, чтобы партнёру осталось выполнить одну строку, а не пройти по вкладкам настроек и не принять ни одного решения
-- [ ] К команде приложена короткая записка: что она включает, что после этого сломается в его привычках (прямой push в `main` перестанет проходить) и как откатить
-- [ ] **Проверка — за нами, и она проверяемая, а не декларативная.** После применения партнёром: попытка прямого push в `main` и попытка слияния с красной проверкой должны быть отклонены. Обе делаются с нашим `write`-доступом, поэтому подтвердить результат мы можем сами
+**Protecting main**
+- [ ] `CODEOWNERS` and a ruleset file with the exact list of required checks live in the repository — the configuration is versioned rather than clicked
+- [ ] We will not have `admin` rights: the partner cannot grant them (BST-10, confirmed on 2026-07-29). So the step ships **not a file but a ready-to-run command** — `gh api` with this ruleset — so that all the partner has to do is run one line rather than walk through settings tabs and make a single decision
+- [ ] A short note accompanies the command: what it turns on, what will break in their habits afterwards (direct pushes to `main` stop working), and how to roll it back
+- [ ] **Acceptance is ours, and it is verifiable rather than declarative.** After the partner applies it: an attempt to push directly to `main` and an attempt to merge with a red check must both be rejected. Both are done with our `write` access, so we can confirm the result ourselves
 
 ## Scope / Non-scope
 
-**В скоупе:** Sentry с аллоулистом и курируемым кодом, нативные фильтры на мобилке, структурный лог 5xx со своим правилом, карты исходников там, где сборка, артефакт деплоя API, деплой API при слиянии, дым и откат для API, внешний пинг, `RUNBOOK.md` с проведённым учением, заготовка защиты `main`.
+**In scope:** Sentry with an allow-list and a curated code, native filters on mobile,
+a structured 5xx log with its own rule, source maps where the build happens, the API
+deployment artifact, deploying the API on merge, a smoke test and rollback for the
+API, the external ping, `RUNBOOK.md` with a completed drill, and the groundwork for
+protecting `main`.
 
-**Вне скоупа:**
-- Продовое окружение, копии, восстановление на точку во времени — M11.
-- Метрик-стек — обзор прямо говорит, что в MVP его нет.
-- **Деплой дашборда** — он принадлежит блоку «Скелет дашборда», шаг 4. Первая редакция заявляла его и здесь; двойного владения быть не должно.
-- Гейты Go, KMP и web — сделаны в BST-09 и в блоках API и дашборда. Здесь остаётся только обязательность проверок и деплой.
-- Оповещения о бизнес-событиях — развёртка в M8.
+**Out of scope:**
+- The production environment, backups, point-in-time recovery — M11.
+- A metrics stack — the overview says outright that the MVP has none.
+- **Deploying the dashboard** — it belongs to the "Dashboard Skeleton" block, step 4. The first draft claimed it here too; there must be no double ownership.
+- The Go, KMP, and web gates — done in BST-09 and in the API and dashboard blocks. What remains here is only making the checks required, and the deployment.
+- Notifications about business events — the rollout is in M8.
 
-**Блокировка:**
+**Blocking:**
 
-| Что нужно | Откуда | Что без него нельзя |
+| What is needed | From where | What is impossible without it |
 |---|---|---|
-| problem+json и `errors[].value` | «Скелет API», шаг 2 | критерий про эхо присланного значения |
-| `cmd/migrate` | «Скелет API», шаг 1 | миграции отдельным шагом |
-| контур Timeweb: кластеры, S3, SMTP | SKL-01 (ручная) | всё, что ниже |
-| App Platform с API и GoTrue | SKL-06 (ручная) | деплой, пинг, учение по откату |
-| приложение дашборда | «Скелет дашборда», шаг 1 | Sentry и карты для дашборда |
-| **применение ruleset партнёром** | BST-10 — прав `admin` у нас не будет | защита `main` вступает в силу |
-| аккаунт Sentry Cloud, бесплатный тариф | ручная, ~10 минут | реальные DSN и монитор доступности |
+| problem+json and `errors[].value` | "API Skeleton", step 2 | the criterion about echoing a submitted value |
+| `cmd/migrate` | "API Skeleton", step 1 | migrations as a separate step |
+| the Timeweb environment: clusters, S3, SMTP | SKL-01 (manual) | everything below |
+| App Platform with the API and GoTrue | SKL-06 (manual) | deployment, ping, the rollback drill |
+| the dashboard application | "Dashboard Skeleton", step 1 | Sentry and maps for the dashboard |
+| **the partner applying the ruleset** | BST-10 — we will not have `admin` rights | `main` protection taking effect |
+| a Sentry Cloud account, free tier | manual, ~10 minutes | real DSNs and the availability monitor |
 
-Шаг 1 **не полностью свободен**: часть его критериев зависит от формы ошибки, которая приходит со «Скелетом API». Первая редакция утверждала обратное.
+Step 1 is **not entirely free**: some of its criteria depend on the error shape that
+arrives with "API Skeleton". The first draft claimed otherwise.
 
-## Что уже реализовано (DONE)
+## What already exists (DONE)
 
-Проверено против репозитория 28.07.2026.
+Verified against the repository on 2026-07-28.
 
-- `.github/workflows/ci.yml`: шесть джоб — `changes`, `scripts`, `tests-not-weakened`, `api`, `kmp-android`, `kmp-ios`. Web-джобы нет, деплоя нет
+- `.github/workflows/ci.yml`: six jobs — `changes`, `scripts`, `tests-not-weakened`, `api`, `kmp-android`, `kmp-ios`. There is no web job and no deployment
 - `scripts/gate/`: `all.sh`, `go.sh`, `kmp.sh`, `ios.sh`
-- Sentry отсутствует в коде — в Go, в Kotlin и в конфигурациях сборок. В текстах спек он упоминается, так что «нигде» из первой редакции было неточностью
-- `RUNBOOK.md` отсутствует. **Артефакта деплоя тоже нет**: ни `Dockerfile`, ни `docker-compose.yml`, ни какого-либо манифеста платформы
-- Права: `admin: false`, `maintain: false`, есть `pull`, `push`, `triage`. Защита `main` отсутствует полностью — rulesets пуст, `branches/main/protection` отдаёт 404. При этом workflow уже срабатывает на push в `main`
-- **Репозиторий публичный.** Для продукта, чей репозиторий будет нести всю цепочку миграций и политики RLS, это стоит отдельного решения — записано в риски ниже
-- Логгер запроса пишет метод, путь, статус, длительность, `request_id`. Обычная 500 не логируется. Причина отказа `/healthz` и значение паники в recoverer в лог **уходят** — вместе с тем, что прислал пользователь
+- Sentry is absent from the code — in Go, in Kotlin, and in the build configurations. It is mentioned in the text of the specs, so "nowhere" in the first draft was an inaccuracy
+- `RUNBOOK.md` is absent. **There is no deployment artifact either**: no `Dockerfile`, no `docker-compose.yml`, no platform manifest of any kind
+- Permissions: `admin: false`, `maintain: false`; we have `pull`, `push`, `triage`. `main` protection is entirely absent — rulesets is empty and `branches/main/protection` returns 404. Meanwhile the workflow already fires on pushes to `main`
+- **The repository is public.** For a product whose repository will carry the entire migration chain and the RLS policies, that deserves its own decision — recorded in the risks below
+- The request logger writes the method, path, status, duration, and `request_id`. An ordinary 500 is not logged. The `/healthz` failure reason and the panic value in the recoverer **do** go into the log — together with what the user sent
 
-## Технические детали
+## Technical detail
 
-**Версии** (все — последние на 28.07.2026): `sentry-go` v0.48.0 · `@sentry/react` 10.68.0 · `sentry-kotlin-multiplatform` **0.27.0**.
+**Versions** (all current as of 2026-07-28): `sentry-go` v0.48.0 · `@sentry/react` 10.68.0 · `sentry-kotlin-multiplatform` **0.27.0**.
 
-**Пересборка события возможна не везде.** В Go `BeforeSend` возвращает событие, и возвращённое уходит. В JS так же. В KMP — нет: общий хук сливает обратно фиксированный набор (release, level, message, tags, user, breadcrumbs и ещё несколько), а `exceptions`, `contexts`, `extras`, `threads` не переносятся. Поэтому мобильный фильтр ставится нативно через `initWithPlatformOptions`, и это не «тот же аллоулист на двух клиентах», а две реализации с двумя наборами тестов. Оценка шага должна это учитывать.
+**Rebuilding the event is not possible everywhere.** In Go, `BeforeSend` returns an event, and what it returns is what goes out. In JS the same. In KMP — no: the shared hook merges back a fixed set (release, level, message, tags, user, breadcrumbs, and a few more), while `exceptions`, `contexts`, `extras`, and `threads` are not carried over. So the mobile filter is installed natively through `initWithPlatformOptions`, and this is not "the same allow-list on two clients" but two implementations with two sets of tests. The step's estimate must account for that.
 
-**Почему нужен курируемый код.** Аллоулист, пропускающий «тип ошибки», в Go бесполезен: конвенция `%w` делает почти всё `*fmt.wrapError`. Аллоулист, пропускающий сообщение, — это блоклист, от которого мы отказались: `%w` протаскивает фрагмент SQL с параметрами. Выход — конечный набор кодов, который продукт объявляет сам, и обёртка, запрещающая отправлять сырую ошибку.
+**Why a curated code is needed.** An allow-list that lets "the error type" through is useless in Go: the `%w` convention makes nearly everything a `*fmt.wrapError`. An allow-list that lets the message through is a block-list, which we rejected: `%w` drags along a fragment of SQL with its parameters. The way out is a finite set of codes the product declares itself, and a wrapper that forbids sending a raw error.
 
-**Лог — вторая половина механизма.** Аллоулист отвечает на «что-то сломалось», лог должен отвечать на «что именно»: нарушение ограничения, отказ политики, таймаут пула и неверная единица дозы дают один и тот же стек. Поэтому в скоуп входит структурный лог 5xx с развёрнутой цепочкой `%w` — и своё правило, что в него можно. Иначе аллоулист превращает диагностику в воспроизведение вручную, а это часы в клиническом продукте.
+**The log is the second half of the mechanism.** The allow-list answers "something broke"; the log has to answer "what exactly": a constraint violation, a policy refusal, a pool timeout, and a wrong dose unit all produce the same stack. That is why a structured 5xx log with the unwrapped `%w` chain is in scope — along with its own rule about what may go into it. Otherwise the allow-list turns diagnosis into manual reproduction, and in a clinical product that is hours.
 
-**Логи и медданные — решено 29.07.2026.** Код намеренно пишет причину в лог и прячет её из ответа, и это остаётся. Логи объявляются **доверенной зоной**, потому что теперь они наши и в России: панель App Platform, при росте объёма — Loki в нашем же контуре. Доступ к платформе становится частью периметра, и это записано.
-Отсюда же граница Sentry: туда уходит курируемое событие об исключении и не уходит ни одна строка лога. Разделение не косметическое — именно лог несёт то, что прислал пользователь, а для формы логирования дозы это медданные.
+**Logs and medical data — decided 2026-07-29.** The code deliberately writes the reason into the log and hides it from the response, and that stays. The logs are declared a **trusted zone**, because they are now ours and in Russia: the App Platform panel, and Loki inside our own perimeter as volume grows. Access to the platform becomes part of the perimeter, and that is written down.
+Hence the Sentry boundary too: a curated exception event goes there, and not a single log line does. The separation is not cosmetic — it is precisely the log that carries what the user sent, and for the dose-logging form that is medical data.
 
-**Карты исходников — там, где сборка.** Дашборд по одобренной спеке собирается на платформе, а не в CI. Sentry для Vite сопоставляет карты с бандлом по идентификатору, инъектируемому сборщиком, поэтому карты из другой сборки не подойдут. Плагин ставится в сборку дашборда, токен — в переменных окружения App Platform.
+**Source maps — where the build happens.** By its approved spec the dashboard is built on the platform, not in CI. Sentry for Vite matches maps to a bundle by an identifier injected by the bundler, so maps from a different build will not fit. The plugin goes into the dashboard's build, and the token into App Platform's environment variables.
 
-**Пустой DSN.** В Go и JS отсутствие DSN просто выключает SDK. На Android `null` бросает исключение на старте, а выключает только пустая строка — и KMP-обёртка передаёт `null` напрямую. Поэтому нормализация обязательна, а тест должен проверять `null`, а не `""`.
+**An empty DSN.** In Go and JS the absence of a DSN simply disables the SDK. On Android `null` throws at startup, and only an empty string disables it — and the KMP wrapper passes `null` straight through. So normalization is mandatory, and the test must check `null`, not `""`.
 
-**Учение по откату — на API.** У дашборда откат автоматизирован дымом из его блока; учение там измерило бы автоматику. API держит медданные, у него ни дыма, ни отката пока нет — значит и то и другое строится здесь, и на нём же проверяется инструкция.
+**The rollback drill — on the API.** The dashboard's rollback is automated by the smoke test from its own block; a drill there would measure the automation. The API holds medical data and so far has neither a smoke test nor a rollback — so both are built here, and the procedure is verified on it.
 
-## Архитектурное решение
+## Architecture decision
 
-Обзор уже определяет наблюдаемость: Sentry на трёх поверхностях, `/healthz` плюс внешний пинг, логи платформы, метрик-стека нет, `RUNBOOK.md` с первого майлстоуна. Архитектура не меняется — меняется только то, чья это платформа.
+The overview already defines observability: Sentry on three surfaces, `/healthz`
+plus an external ping, platform logs, no metrics stack, and `RUNBOOK.md` from the
+first milestone. The architecture does not change — only whose platform it is.
 
-Решение, принятое здесь, — форма фильтра: строгий аллоулист плюс курируемый код ошибки, а не зачистка известных полей. Продиктовано предметной областью: медданные, один оператор и 152-ФЗ, который с 29.07.2026 является **выполненным требованием, а не открытым риском**. Это ужесточает, а не смягчает: аллоулист перестал быть вопросом гигиены и стал границей соответствия, поэтому тест-канарейка на поле, которое общий хук не переносит, из желательного становится обязательным. Блоклист — ставка на то, что никто никогда не забудет фильтр.
+The decision made here is the shape of the filter: a strict allow-list plus a
+curated error code, rather than scrubbing known fields. It is dictated by the domain:
+medical data, a single operator, and 152-FZ, which as of 2026-07-29 is a **satisfied
+requirement rather than an open risk**. That tightens things rather than loosening
+them: the allow-list stopped being a matter of hygiene and became a compliance
+boundary, so the canary test on a field the shared hook does not carry over goes from
+desirable to mandatory. A block-list is a bet that nobody will ever forget a filter.
 
-Судья справедливо заметил, что первая редакция построила фильтр и не построила канал, куда содержательное уходит взамен. Отсюда добавление структурного лога 5xx в скоуп: аллоулист без него оставляет оператора без диагноза.
+The judge fairly observed that the first draft built a filter and did not build the
+channel the meaningful content goes into instead. Hence adding the structured 5xx log
+to the scope: without it, the allow-list leaves the operator with no diagnosis.
 
-**Расхождение с обзором, называю явно.** Раздел «Среды» говорит, что в dev миграции применяются автоматически при деплое. Спека вводит отдельный шаг до деплоя — тот же механизм, что понадобится в prod, где автоматически нельзя. Совместимо, но это уточнение обзора, а не следование ему.
+**A divergence from the overview, named explicitly.** The "Environments" section says
+that in dev, migrations are applied automatically on deployment. This spec introduces
+a separate step before deployment — the same mechanism that will be needed in prod,
+where automatic is not allowed. Compatible, but it is a refinement of the overview,
+not compliance with it.
 
-## Дельты компонентов
+## Component deltas
 
 ### api.md
-- ADDED: в «Форму» — Sentry с пересборкой события из разрешённых полей и обёрткой, запрещающей отправку сырой ошибки; структурный лог 5xx с курируемым кодом и развёрнутой цепочкой.
-- ADDED: в «Инварианты» — наружу уходит только явно разрешённое; сырое сообщение ошибки не покидает процесс ни через Sentry, ни через лог.
+- ADDED: to "Shape" — Sentry with the event rebuilt from permitted fields and a wrapper forbidding the sending of a raw error; a structured 5xx log with the curated code and the unwrapped chain.
+- ADDED: to "Invariants" — only what is explicitly permitted goes out; a raw error message leaves the process neither through Sentry nor through the log.
 
 ### kmp-app.md
-- ADDED: в «Форму» — Sentry с фильтром, поставленным нативно на каждой платформе; общий KMP-хук для приватностного контроля непригоден.
+- ADDED: to "Shape" — Sentry with the filter installed natively on each platform; the shared KMP hook is unsuitable for privacy control.
 
 ### web-dashboard.md
-- ADDED: в «Форму» — Sentry с аллоулистом; релиз и карты исходников создаются в сборке на App Platform, а не в CI.
+- ADDED: to "Shape" — Sentry with an allow-list; the release and the source maps are created in the build on App Platform, not in CI.
 
 ## Decomposition
 
-Соответствие исходным задачам: шаги 1, 2 и 5 закрывают SKL-12; шаги 3, 4 и 6 — остаток SKL-07.
+Mapping to the original tasks: steps 1, 2, and 5 close SKL-12; steps 3, 4, and 6 close the remainder of SKL-07.
 
-### step-1: Sentry в API, курируемый код и структурный лог 5xx
+### step-1: Sentry in the API, the curated code, and the structured 5xx log
 
-⏸ **Частично требует** «Скелет API», шаг 2 — критерий про `errors[].value` относится к problem+json, которого ещё нет.
+⏸ **Partially requires** "API Skeleton", step 2 — the criterion about `errors[].value` refers to problem+json, which does not exist yet.
 
-Обёртка, запрещающая сырую ошибку; набор кодов; пересборка события; выключение остальных каналов; нормализация DSN с тестом на `null`. Структурный лог 5xx со своим правилом, и приведение к нему `/healthz` и recoverer. Тесты на синтетическом событии с дозой, email и фрагментом SQL.
+The wrapper forbidding a raw error; the set of codes; rebuilding the event; disabling the other channels; DSN normalization with a test on `null`. The structured 5xx log with its own rule, and bringing `/healthz` and the recoverer in line with it. Tests on a synthetic event containing a dose, an email, and a fragment of SQL.
 
 todoist: "6h8xx8cHV9Wq46Wq"
 
-### step-2: Sentry в мобилке и дашборде
+### step-2: Sentry in the mobile app and the dashboard
 
-⏸ **Дашборд требует** «Скелет дашборда», шаг 1.
+⏸ **The dashboard requires** "Dashboard Skeleton", step 1.
 
-Мобилка: нативные фильтры через `initWithPlatformOptions` отдельно на Android и iOS, тест-канарейка на поле, которое общий хук не переносит. Дашборд: аллоулист плюс релиз и карты в сборке на App Platform.
+Mobile: native filters through `initWithPlatformOptions` separately on Android and iOS, and a canary test on a field the shared hook does not carry over. Dashboard: the allow-list plus the release and the maps in the App Platform build.
 
 todoist: "6h8xx8gH33cxMqWq"
 
-### step-3: Артефакт деплоя API
+### step-3: The API deployment artifact
 
-⏸ **Требует SKL-06.**
+⏸ **Requires SKL-06.**
 
-`Dockerfile` и, если сервисов будет больше одного, `docker-compose.yml` в корне репозитория — сегодня их нет ни в одной спеке. Переменные на окружение. Ограничения App Platform, которые надо учесть в манифесте: порты 80 и 443 заняты, автоматически проксируется только первый сервис, `volumes` запрещены.
+A `Dockerfile` and, if there is more than one service, a `docker-compose.yml` at the repository root — today neither appears in any spec. Variables per environment. The App Platform constraints the manifest has to account for: ports 80 and 443 are taken, only the first service is proxied automatically, and `volumes` are forbidden.
 
 todoist: "6h8xx8hFMr7m84Vq"
 
-### step-4: Слияние деплоит API в dev, с дымом и откатом
+### step-4: Merging deploys the API to dev, with a smoke test and rollback
 
-⏸ **Требует шага 3 и `cmd/migrate`** из «Скелета API», шаг 1.
+⏸ **Requires step 3 and `cmd/migrate`** from "API Skeleton", step 1.
 
-Миграции отдельным шагом до деплоя. Дым по `/healthz` после деплоя со сверкой развёрнутой версии. Откат при красном.
+Migrations as a separate step before the deployment. A `/healthz` smoke test after deployment, reconciling the deployed version. Rollback on red.
 
 todoist: "6h8xx8hX5HrMX6Mq"
 
-### step-5: Пинг доступности и RUNBOOK с учением
+### step-5: The availability ping and the RUNBOOK with a drill
 
-⏸ **Требует шага 4.**
+⏸ **Requires step 4.**
 
-Внешний монитор с проверкой, что уведомление доходит. `RUNBOOK.md`. Учение по откату на API с артефактом: что выкачено, чем сломано, чем откачено, сколько заняло.
+An external monitor with a check that the notification arrives. `RUNBOOK.md`. A rollback drill on the API with an artifact: what was deployed, what broke it, what rolled it back, how long it took.
 
 todoist: "6h8xx8jg2JqG83jH"
 
-### step-6: Защита main — подготовка, применение партнёром, проверка нами
+### step-6: Protecting main — preparation, application by the partner, verification by us
 
-Прав `admin` не будет: партнёр не может их выдать. Шаг проектируется под это, а не ждёт их.
+There will be no `admin` rights: the partner cannot grant them. The step is designed for that rather than waiting on them.
 
-`CODEOWNERS` и ruleset кладутся в репозиторий как версионируемая конфигурация, и к ним прикладывается **готовая к запуску команда `gh api`** плюс записка на несколько строк: что включается, что изменится в привычках, как откатить. Смысл в том, чтобы партнёр выполнил одну строку и не принял ни одного решения — решения приняты здесь.
+`CODEOWNERS` and the ruleset go into the repository as versioned configuration, and they come with a **ready-to-run `gh api` command** plus a note of a few lines: what gets turned on, what changes in their habits, how to roll it back. The point is that the partner runs one line and makes not a single decision — the decisions were made here.
 
-Приёмка остаётся за нами и остаётся проверяемой: после применения мы пробуем прямой push в `main` и слияние с красной проверкой, и обе попытки должны быть отклонены. `write`-доступа для такой проверки достаточно.
+Acceptance stays with us and stays verifiable: after it is applied we attempt a direct push to `main` and a merge with a red check, and both attempts must be rejected. `write` access is enough for that check.
 
-> [!decision] 29.07.2026 — **ни форка, ни организации: остаёмся в репозитории партнёра.**
-> Выяснилось, что партнёр не «не хочет» выдать `admin`, а не может: у репозиториев личного аккаунта GitHub ровно два уровня — владелец и коллаборатор с записью, а роли `admin`, `maintain` и `triage` существуют только у репозиториев организации. Собственная рекомендация GitHub на этот случай — перенос в организацию.
-> Рассматривались форк и организация. Форк отклонён: он даёт `admin` **на копии**, тогда как незащищённым остаётся канонический `main`; сверх того он уводит коммерческий продукт клиники в личный аккаунт подрядчика, разводит два remote, привязывает деплой к форку и лишает PR из форка секретов в CI. Организация — правильная форма для коммерческого продукта на двоих и решала бы задачу навсегда, но требует действия партнёра, которого решено не запрашивать сейчас.
-> Принято: остаёмся как есть, применение ruleset — разовое действие партнёра. Цена, названная явно: **каждая будущая настройка репозитория снова пойдёт через него** — секреты для деплоя, окружения, Dependabot. Переспросить, когда таких обращений накопится больше одного.
+> [!decision] 2026-07-29 — **neither a fork nor an organization: we stay in the partner's repository.**
+> It turned out that the partner does not "not want" to grant `admin` but cannot: personal-account GitHub repositories have exactly two levels — owner and collaborator with write — and the `admin`, `maintain`, and `triage` roles exist only on organization repositories. GitHub's own recommendation for this case is to transfer to an organization.
+> A fork and an organization were both considered. The fork was rejected: it grants `admin` **on a copy**, while the canonical `main` stays unprotected; beyond that it moves a clinic's commercial product into a contractor's personal account, splits the remotes in two, ties the deployment to the fork, and denies PRs from the fork access to CI secrets. An organization is the right shape for a two-person commercial product and would settle the matter permanently, but it requires an action from the partner that we decided not to request now.
+> Accepted: we stay as we are, and applying the ruleset is a one-off action by the partner. The cost, named explicitly: **every future repository setting will go through them again** — deployment secrets, environments, Dependabot. Revisit once more than one such request has accumulated.
 
-> [!deviation] 2026-07-29 — шаг поставляет исполняемую проверку, а не только конфигурацию
-> Spec said: `CODEOWNERS` и файл ruleset плюс команда и записка. Actually done: то же самое плюс `scripts/gate/ruleset.sh`, включённый в общий гейт и в джобу `Shell gate`, плюс расширение фильтра `changes` в `ci.yml` с `.github/workflows/` до всего `.github/`.
-> Why: конфигурация защиты — единственная часть репозитория, чья ошибка не проявляется ни в одном тесте и обнаруживается только тем, что перестаёт сливаться. Обе ошибки тихие и разнонаправленные: обязательная проверка без соответствующей джобы никогда не отчитается и заблокирует все PR навсегда, а работающая джоба вне списка обязательных не гейтит ничего, и ветка лишь выглядит защищённой. Скрипт сверяет `main.json` с `ci.yml` в обе стороны и отдельно требует, чтобы у `on:` не появилось фильтра по путям — джоба, пропущенная по `if:`, отчитывается как успешная, а workflow, пропущенный по `paths:`, не отчитывается вовсе.
-> Расширение фильтра `changes` — следствие: без него правка ruleset не запускала бы джобу, которая его проверяет.
-> Проверено десятью мутациями, все убиты: фильтр путей на триггере, опечатка в имени проверки, выпавшая из списка джоба, `enforcement: evaluate`, непустой `bypass_actors`, снятая защита от переписывания истории, а после ревью ещё четыре — `"on":` в кавычках, комментарий на нулевой колонке внутри блока `on:`, flow-style `on:` и `matrix` на джобе. Первые три ревью нашло само: читатель молча возвращал пустой блок, и проверка на фильтр путей превращалась в no-op — то есть ровно в тот тихий отказ, ради предотвращения которого написана.
+> [!deviation] 2026-07-29 — the step ships an executable check, not only configuration
+> Spec said: `CODEOWNERS` and a ruleset file plus the command and the note. Actually done: the same, plus `scripts/gate/ruleset.sh`, included in the shared gate and in the `Shell gate` job, plus extending the `changes` filter in `ci.yml` from `.github/workflows/` to all of `.github/`.
+> Why: the protection configuration is the only part of the repository whose error shows up in no test and is discovered only by things ceasing to merge. Both errors are quiet and point in opposite directions: a required check with no corresponding job will never report and will block every PR forever, while a working job outside the required list gates nothing and the branch merely looks protected. The script reconciles `main.json` against `ci.yml` in both directions and separately requires that `on:` never acquire a path filter — a job skipped by `if:` reports as successful, whereas a workflow skipped by `paths:` does not report at all.
+> Extending the `changes` filter follows from that: without it, editing the ruleset would not trigger the job that checks it.
+> Verified with ten mutations, all killed: a path filter on the trigger, a typo in a check name, a job dropped from the list, `enforcement: evaluate`, a non-empty `bypass_actors`, history-rewrite protection removed, and after review four more — `"on":` in quotes, a comment at column zero inside the `on:` block, a flow-style `on:`, and a `matrix` on a job. Review found the first three itself: the reader was silently returning an empty block, and the path-filter check turned into a no-op — that is, into exactly the quiet failure it was written to prevent.
 >
-> **Наша половина шага сделана; шаг не закрыт.** Остаётся то, что не в нашей власти: слияние ветки (BST-12 держит push до конца M0 и M1), один прогон CI со сверкой фактических имён проверок — они выведены из `ci.yml`, но ни разу не наблюдались, а обязательная проверка с именем, которого GitHub никогда не присылал, блокирует все PR навсегда, — применение владельцем, и наши две проверки поведения после него.
+> **Our half of the step is done; the step is not closed.** What remains is outside our control: merging the branch (BST-12 holds the push until the end of M0 and M1), one CI run reconciling the actual check names — they were derived from `ci.yml` but never once observed, and a required check with a name GitHub has never reported blocks every PR forever — application by the owner, and our two behaviour checks afterwards.
 
 todoist: "6h8xx8rpMQ5QGM8q"
 
-## Открытые вопросы
+## Open questions
 
-> [!decision] 29.07.2026 — **логи доверенная зона, Sentry — нет.** Логи живут в российском контуре и медданные в них допустимы; доступ к App Platform становится частью периметра, и это записано здесь. Sentry получает только курируемое событие об исключении, ни одной строки лога. Диагностика при этом не беднеет: `request_id` сшивает событие в Sentry с содержательным логом у нас. Отсюда же следует, что структурный лог 5xx из шага 1 пишет развёрнутую цепочку `%w` целиком, а не усечённую.
+> [!decision] 2026-07-29 — **the logs are a trusted zone, Sentry is not.** The logs live inside the Russian perimeter and medical data is permissible in them; access to App Platform becomes part of the perimeter, and that is written down here. Sentry receives only the curated exception event, not a single log line. Diagnosis does not get poorer for it: `request_id` stitches the Sentry event to the meaningful log on our side. It also follows that the structured 5xx log from step 1 writes the `%w` chain unwrapped in full rather than truncated.
 
-> [!decision] 29.07.2026 — **канал уведомления: почта плюс вебхук.** Почта включена в тариф Sentry и не стоит ничего; вебхук — то, что действительно будит, и он же снимает возражение «формально критерий выполнен, фактически нет». Критерий приёмки шага 5 остаётся прежним и проверяется на намеренно остановленном сервисе: уведомление должно дойти, а не быть отправленным. Доступность вебхуков на бесплатном тарифе проверяется при выполнении шага.
+> [!decision] 2026-07-29 — **the notification channel: email plus a webhook.** Email is included in the Sentry tier and costs nothing; the webhook is what actually wakes you, and it also answers the objection "formally the criterion is met, actually it is not". The step 5 acceptance criterion is unchanged and is verified against a deliberately stopped service: the notification must arrive, not merely be sent. Webhook availability on the free tier is verified while doing the step.
 
-> [!decision] 29.07.2026 — **репозиторий остаётся публичным пока.** Решение партнёра как владельца продукта; он же выдаёт права `admin`.
-> Записан довод, который его не отменил, но должен быть переспрошен: публикация не ломает модель доступа — её исполняет Postgres, и знание текста политики не даёт её обойти, — но удешевляет поиск наших ошибок в её *реализации*. Атакующему не нужно угадывать, какой эндпоинт забыл `WithCaller`; он читает дифф. При одном разработчике и нулевом внешнем ревью это раздаёт карту местности, которую мы сами ещё не всю проверили.
-> **Переспросить в M2, до слияния первой политики RLS.** Сейчас в репозитории архитектура и скелет; первая политика делает публичной точную карту доступа к медданным, и закрытие после этого уже ничего не отменяет — форки, клоны и кеши остаются. Обратное неверно: закрытие ничего не хоронит, отдельные куски можно опубликовать осознанно в любой момент.
-> Побочное следствие в плюс: у публичного репозитория минуты Actions не ограничены, поэтому джоба `kmp-ios` на `macos-latest` не упирается в бесплатный лимит с множителем 10.
+> [!decision] 2026-07-29 — **the repository stays public for now.** The partner's decision as the product's owner; they are also the one who grants `admin` rights.
+> The argument that did not overturn it but should be revisited is recorded: publication does not break the access model — Postgres enforces it, and knowing a policy's text does not let you get around it — but it makes finding our mistakes in its *implementation* cheaper. An attacker does not need to guess which endpoint forgot `WithCaller`; they read the diff. With one developer and zero external review, that hands out a map of terrain we have not fully surveyed ourselves.
+> **Revisit in M2, before the first RLS policy merges.** Right now the repository holds architecture and a skeleton; the first policy makes the exact access map for medical data public, and closing the repository afterwards undoes nothing — forks, clones, and caches remain. The converse is not true: closing buries nothing, and individual pieces can be published deliberately at any time.
+> A side benefit: a public repository has unlimited Actions minutes, so the `kmp-ios` job on `macos-latest` does not run into the free limit with its 10× multiplier.
