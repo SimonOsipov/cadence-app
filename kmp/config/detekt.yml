@@ -57,6 +57,11 @@ style:
       - '**/app/cadence/design/**'
       - '**/CadenceFormatTest.kt'
       - '**/shared/src/commonTest/**'
+      # And MockSeed, which is a fixture: one patient, one protocol, two meals,
+      # written out. Naming `LocalDate(2026, 5, 10)` as three constants would
+      # bury the one thing the line says. Its neighbours in `mock/` are not
+      # excluded — they hold logic, and the rule should keep watching them.
+      - '**/MockSeed.kt'
   MaxLineLength:
     maxLineLength: 120
     # CadenceIcons.kt is generated path data carried over from the prototype.
