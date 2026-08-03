@@ -456,3 +456,20 @@ wizard asks. Until then, nothing should be read into a mock rotation.
 dropped — `photoPath` is always null, and `Written` still reports success. §03
 routes photos straight to object storage under a path convention, and the
 upload lands with the storage work.
+
+## The mood scale says nothing until the patient says something
+
+**What the prototype does:** `INITIAL_LOG_STATE` seeds `mood: 3`, and
+`MoodSlider` renders `labels[value - 1]` unconditionally — so the scale reads
+«Ровно» before the patient has touched it, and the third dot is filled in.
+
+**What we do:** `CadenceMoodSlider.value` is `Int?`. Nothing is selected and no
+word is shown until one is chosen; the two end captions («Никак», «Светло») stay,
+because they label the scale rather than an answer.
+
+**Why:** step 4 of the wizard is «Короткая сверка — всё по желанию», and §03's
+`journal_entries.mood` is nullable. A seeded 3 is the wizard putting a word in a
+patient's mouth and then writing it to the clinical record as if they had said
+it — one of the prototype's bugs rather than one of its behaviours.
+
+Guarded by `StepperAndSliderTest.theMoodSliderShowsNoWordUntilOneIsChosen`.

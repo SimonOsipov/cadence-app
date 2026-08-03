@@ -124,6 +124,20 @@ Five steps with a rule each. This is why the state is in `shared`.
 - [ ] **Step 5: Mutate.** A zone reporting its neighbour's id; a stepper that ignores its step size; a fill that is not clamped.
 - [ ] **Step 6:** gate, commit.
 
+> [!deviation] 2026-08-03
+> Spec said: three files in `design/`. Actually done: three files, plus
+> `CadenceBodyMap` takes a `lastUsed` list the plan does not mention.
+>
+> The prototype draws a muted dot for `state.lastUsed`, and without it the
+> rotation suggestion reads as arbitrary — nothing on screen says why *this*
+> zone is next. Task 1 already computes the history, so the parameter costs one
+> line and closes the affordance rather than deferring it.
+>
+> `stepFor(unit)` became the default of a `step` parameter rather than a rule
+> inside the control: a compound whose titration does not move in 0,05 мг is a
+> fact about the protocol, and the caller should not have to change the design
+> system.
+
 ---
 
 ### Task 5: The five steps
