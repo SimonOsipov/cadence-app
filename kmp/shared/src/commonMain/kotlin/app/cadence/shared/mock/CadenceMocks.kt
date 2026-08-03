@@ -7,6 +7,7 @@ import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.ProtocolItemId
+import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.SystemCadenceClock
 import app.cadence.shared.domain.cycleWeek
 import app.cadence.shared.domain.dosesPerWeek
@@ -66,7 +67,11 @@ class CadenceMocks(
             val todaysMeals = MockSeed.meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
 
             return TodaySummary(
-                cycleWeek = cycleWeek(MockSeed.plan.protocol, date),
+                // Null for a cancelled course, like its occurrences: «Неделя 4»
+                // over an empty calendar is worse than saying nothing.
+                cycleWeek =
+                    cycleWeek(MockSeed.plan.protocol, date)
+                        ?.takeIf { MockSeed.plan.protocol.status != ProtocolStatus.CANCELLED },
                 // The weekly injection is what «next dose» means on this
                 // screen; the daily item is a strip, not a call to action.
                 nextDose = todays.firstOrNull { it.itemId == MockSeed.semaItemId },
