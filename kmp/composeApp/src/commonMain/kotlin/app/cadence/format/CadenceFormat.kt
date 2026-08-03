@@ -140,3 +140,41 @@ fun formatDose(dose: Dose): Pair<String, String> {
         }
     return value to dose.unit.code
 }
+
+/**
+ * «↓ 0,4 кг» — how far the last reading moved, or null if there is nothing to
+ * compare it to.
+ *
+ * One reading is where every patient starts, and `points[size - 2]` on a
+ * one-point series throws; the guard is the reason this is a function rather
+ * than an expression repeated at two call sites, which is what it was.
+ *
+ * Zero is «→», not «↑». Two identical readings are a plateau, and rendering one
+ * as a gain is a claim the data does not make.
+ */
+fun formatDelta(
+    points: List<Double>,
+    unit: String,
+    digits: Int = 1,
+): String? {
+    if (points.size < 2) return null
+    val delta = points.last() - points[points.size - 2]
+    val arrow =
+        when {
+            delta < 0 -> "↓"
+            delta > 0 -> "↑"
+            else -> "→"
+        }
+    val magnitude = if (delta < 0) -delta else delta
+    return "$arrow ${formatDecimal(magnitude, digits)} $unit"
+}
+
+/** §03 stores the wire unit («kg», «ms»); the screen shows Russian. */
+fun unitRu(unit: String): String =
+    when (unit) {
+        "kg" -> "кг"
+        "ms" -> "мс"
+        "bpm" -> "уд/мин"
+        "cm" -> "см"
+        else -> unit
+    }

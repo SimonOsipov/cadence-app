@@ -23,7 +23,8 @@ import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceSpark
 import app.cadence.design.CadenceTitle
 import app.cadence.format.formatDecimal
-import app.cadence.shared.repository.MetricSeries
+import app.cadence.format.formatDelta
+import app.cadence.format.unitRu
 
 private val SHEET_SPARK_HEIGHT = 70.dp
 private const val READING_DIGITS = 1
@@ -32,15 +33,17 @@ private const val READING_DIGITS = 1
  * The sheet behind the headline glance, ported from
  * mobile/src/features/today/BiomarkerSheet.tsx.
  *
- * Takes a [MetricSeries] rather than a metric and a repository: §11 makes this
- * one read — «latest measurement + 7-pt series per metric» — and a sheet that
- * fetched its own data could not be shown a series a test chose.
+ * Takes plain values rather than a repository or a `MetricSeries`: the glance
+ * above it already holds the same numbers, and two components rendering one
+ * series from two shapes is where they start to disagree.
  */
 @Composable
 fun BiomarkerSheet(
     open: Boolean,
     title: String,
-    series: MetricSeries,
+    points: List<Double>,
+    latest: Double?,
+    unit: String,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenTrend: () -> Unit = { },
@@ -49,7 +52,6 @@ fun BiomarkerSheet(
         CadenceEyebrow("Биомаркер", Modifier.padding(bottom = CadenceSpacing.xs))
         CadenceTitle(title, size = 32.sp)
 
-        val latest = series.latest
         if (latest == null) {
             // Not an empty chart: a blank box beside a caption reads as «failed
             // to load», and a patient waits instead of measuring.
@@ -59,7 +61,7 @@ fun BiomarkerSheet(
                 style = Cadence.typography.body.copy(color = Cadence.palette.subtle),
             )
         } else {
-            Reading(series, latest.value, latest.unit)
+            Reading(points, latest, unit)
         }
 
         CadenceButton(
@@ -74,11 +76,11 @@ fun BiomarkerSheet(
 
 @Composable
 private fun Reading(
-    series: MetricSeries,
+    points: List<Double>,
     value: Double,
     unit: String,
 ) {
-    val delta = series.points.takeIf { it.size >= 2 }?.let { it.last().value - it[it.size - 2].value }
+    val delta = formatDelta(points, unitRu(unit))
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = CadenceSpacing.md),
@@ -91,12 +93,7 @@ private fun Reading(
                 horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val falling = delta < 0
-                CadencePill(
-                    label =
-                        "${if (falling) "↓" else "↑"} " +
-                            "${formatDecimal(if (falling) -delta else delta, READING_DIGITS)} ${unitRu(unit)}",
-                )
+                CadencePill(delta)
                 BasicText(
                     text = "к прошлой неделе",
                     style = Cadence.typography.meta.copy(color = Cadence.palette.subtle, fontSize = 12.sp),
@@ -105,25 +102,10 @@ private fun Reading(
         }
 
         CadenceSpark(
-            data = series.points.map { it.value.toFloat() },
+            data = points.map { it.toFloat() },
             modifier = Modifier.fillMaxWidth(),
             fill = CadenceColors.forest50,
             height = SHEET_SPARK_HEIGHT,
         )
     }
 }
-
-/**
- * §03 stores the unit as the wire value («kg», «ms»); the screen shows Russian.
- * An unknown unit is passed through rather than blanked — a number with no unit
- * beside it is worse than one with an unfamiliar one.
- */
-private fun unitRu(unit: String): String =
-    when (unit) {
-        "kg" -> "кг"
-        "ms" -> "мс"
-        "bpm" -> "уд/мин"
-        "cm" -> "см"
-        "%" -> "%"
-        else -> unit
-    }

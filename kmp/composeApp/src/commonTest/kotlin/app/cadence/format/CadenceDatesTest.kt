@@ -40,4 +40,47 @@ class CadenceDatesTest {
         // null-я неделя» is the shape that gets shipped when nobody asks.
         assertEquals("Воскресенье, утро", greeting(LocalDate(2026, 5, 31), PartOfDay.MORNING, cycleWeek = null))
     }
+
+    @Test
+    fun theHeadingsAreMondayFirstInOrder() {
+        // Asserted as a sequence. The screen test checked that all seven labels
+        // are displayed, in any order — a Sunday-first calendar, wrong for a
+        // Russian product, would have shipped green.
+        assertEquals(listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"), weekdayHeadings())
+    }
+
+    @Test
+    fun theBlanksBeforeTheFirstOfTheMonthMatchItsWeekday() {
+        // Zero on a Monday, six on a Sunday, and the two are what a grid that
+        // is off by a column gets wrong. `leadingBlanks` had no direct test at
+        // all, and the screen's bounds comparison held for three of the seven
+        // possible offsets.
+        assertEquals(0, leadingBlanks(LocalDate(2026, 6, 1)), "1 June 2026 is a Monday")
+        assertEquals(4, leadingBlanks(LocalDate(2026, 5, 1)), "1 May 2026 is a Friday")
+        assertEquals(6, leadingBlanks(LocalDate(2026, 11, 1)), "1 November 2026 is a Sunday")
+    }
+
+    @Test
+    fun allTwelveMonthsHaveTheirGenitiveForm() {
+        // The plan asked for a table test and got «мая» and «июня» by accident,
+        // through the schedule screen. A transposed pair would surface only
+        // when the calendar reached it.
+        assertEquals(
+            listOf(
+                "1 января",
+                "1 февраля",
+                "1 марта",
+                "1 апреля",
+                "1 мая",
+                "1 июня",
+                "1 июля",
+                "1 августа",
+                "1 сентября",
+                "1 октября",
+                "1 ноября",
+                "1 декабря",
+            ),
+            (1..12).map { dayAndMonth(LocalDate(2026, it, 1)) },
+        )
+    }
 }

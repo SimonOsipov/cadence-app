@@ -98,4 +98,31 @@ class CadenceFormatTest {
         // plural function that is wrong at zero is wrong.
         assertEquals("приёмов", pluralMeals(0))
     }
+
+    @Test
+    fun aDeltaNeedsTwoReadingsAndSaysWhichWayItWent() {
+        // One reading is where every patient starts, and points[size - 2] on a
+        // one-point list throws. The guard was written twice inline and
+        // measured by nothing.
+        assertEquals(null, formatDelta(emptyList(), "кг"))
+        assertEquals(null, formatDelta(listOf(98.4), "кг"))
+        assertEquals("↓ 0,4 кг", formatDelta(listOf(98.8, 98.4), "кг"))
+        assertEquals("↑ 0,6 кг", formatDelta(listOf(98.4, 99.0), "кг"))
+        // A plateau is not a gain. Rendering two identical readings as «↑ 0,0»
+        // is a claim the data does not make.
+        assertEquals("→ 0,0 кг", formatDelta(listOf(98.4, 98.4), "кг"))
+        // Only the last pair counts, whatever came before it.
+        assertEquals("↓ 0,4 кг", formatDelta(listOf(101.2, 99.0, 98.8, 98.4), "кг"))
+    }
+
+    @Test
+    fun everyUnitTheAppStoresHasARussianForm() {
+        assertEquals("кг", unitRu("kg"))
+        assertEquals("мс", unitRu("ms"))
+        assertEquals("уд/мин", unitRu("bpm"))
+        assertEquals("см", unitRu("cm"))
+        // An unknown unit passes through: a number with no unit beside it is
+        // worse than one with an unfamiliar unit.
+        assertEquals("%", unitRu("%"))
+    }
 }

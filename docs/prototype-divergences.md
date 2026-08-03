@@ -337,3 +337,31 @@ cannot assert a weekday or a cycle week without passing or failing by the day it
 runs on — the trap `ConfirmToastTest` already fell into once. Tests that need a
 day wind their own clock and pass the mocks in; `AppTest` asserts the patient's
 name and the selected tab instead.
+
+## The schedule and Today ports are partial, and here is what is missing
+
+Fidelity is the block's acceptance criterion and invariant 1 of the `kmp-app`
+note makes an unrecorded difference an accident rather than a decision. A review
+found that the registry covered a fraction of what the two ports changed. The
+rest, named:
+
+**Schedule.** No month name or year over the grid; one month rather than the
+whole cycle scrolled; no legend; no progress track with the «10 мая · старт /
+26 июля · финиш» ends; no «Сегодня» jump or auto-scroll; one injection dot
+rather than the prototype's four category dots; the band names the week but not
+«Семаглутид · 0,25 мг еженедельно»; the day sheet is not ported and `onOpenDay`
+is left unwired, so no day is tappable from the app. Closed by a later pass over
+this screen; the day sheet needs the dose wizard (step 5) to have anywhere to go.
+
+**Today.** `TodayMeals` draws totals only — the prototype lists the last three
+meals with name, time, item count and kcal, plus an empty state. The macro legs
+are relabelled P/C/F → Б/Ж/У and reordered. `MealHero` uses the paler `sand100`
+and turns two pills into text links, with «Записать приём пищи» shortened to
+«Записать приём» and «Из рецепта» to «Рецепты». The reorder warning sits at the
+bottom of the scroll rather than in the prototype's fourth position — a
+low-stock warning demoted below the fold is a behaviour change, and it should be
+moved back or defended. The hero drops the `06:42` timestamp and the injection
+site from «Записано · правый живот, ротация.».
+
+None of these is a decision anyone made; they are what a port leaves behind when
+it is measured by tests rather than by a side-by-side run. Step 11 is that run.

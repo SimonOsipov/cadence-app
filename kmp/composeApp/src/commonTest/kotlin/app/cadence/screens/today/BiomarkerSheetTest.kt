@@ -10,18 +10,19 @@ import app.cadence.design.CadenceTheme
 import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.mock.CadenceMocks
-import app.cadence.shared.repository.MetricSeries
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-private fun series(metric: Metric): MetricSeries =
+private fun points(metric: Metric): List<Double> =
     runBlocking {
         CadenceMocks(FixedCadenceClock.at("2026-05-31T04:00:00Z"), TimeZone.of("Europe/Moscow"))
             .measurements
             .series(metric)
+            .points
+            .map { it.value }
     }
 
 @OptIn(ExperimentalTestApi::class)
@@ -31,7 +32,14 @@ class BiomarkerSheetTest {
         runComposeUiTest {
             setContent {
                 CadenceTheme {
-                    BiomarkerSheet(open = true, title = "Вес", series = series(Metric.WEIGHT), onDismiss = {})
+                    BiomarkerSheet(
+                        open = true,
+                        title = "Вес",
+                        points = points(Metric.WEIGHT),
+                        latest = 98.4,
+                        unit = "kg",
+                        onDismiss = {},
+                    )
                 }
             }
 
@@ -47,7 +55,14 @@ class BiomarkerSheetTest {
         runComposeUiTest {
             setContent {
                 CadenceTheme {
-                    BiomarkerSheet(open = true, title = "Вес", series = series(Metric.WEIGHT), onDismiss = {})
+                    BiomarkerSheet(
+                        open = true,
+                        title = "Вес",
+                        points = points(Metric.WEIGHT),
+                        latest = 98.4,
+                        unit = "kg",
+                        onDismiss = {},
+                    )
                 }
             }
 
@@ -62,7 +77,14 @@ class BiomarkerSheetTest {
             // patient waits instead of measuring.
             setContent {
                 CadenceTheme {
-                    BiomarkerSheet(open = true, title = "Грудь", series = series(Metric.CHEST), onDismiss = {})
+                    BiomarkerSheet(
+                        open = true,
+                        title = "Грудь",
+                        points = points(Metric.CHEST),
+                        latest = null,
+                        unit = "cm",
+                        onDismiss = {},
+                    )
                 }
             }
 
@@ -75,7 +97,14 @@ class BiomarkerSheetTest {
         runComposeUiTest {
             setContent {
                 CadenceTheme {
-                    BiomarkerSheet(open = false, title = "Вес", series = series(Metric.WEIGHT), onDismiss = {})
+                    BiomarkerSheet(
+                        open = false,
+                        title = "Вес",
+                        points = points(Metric.WEIGHT),
+                        latest = 98.4,
+                        unit = "kg",
+                        onDismiss = {},
+                    )
                 }
             }
 
@@ -91,7 +120,9 @@ class BiomarkerSheetTest {
                     BiomarkerSheet(
                         open = true,
                         title = "Вес",
-                        series = series(Metric.WEIGHT),
+                        points = points(Metric.WEIGHT),
+                        latest = 98.4,
+                        unit = "kg",
                         onDismiss = {},
                         onOpenTrend = { opened++ },
                     )

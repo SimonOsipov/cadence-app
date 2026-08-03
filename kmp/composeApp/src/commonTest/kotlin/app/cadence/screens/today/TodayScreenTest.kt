@@ -293,6 +293,21 @@ class TodayScreenTest {
         }
 
     @Test
+    fun theGlanceOpensTheBiomarkerSheet() =
+        runComposeUiTest {
+            // The sheet shipped unreachable: 129 lines and five green tests
+            // that nothing but those tests could reach, while the glance's tap
+            // went to the trends tab. In the prototype the sheet *is* the
+            // glance's behaviour.
+            setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
+
+            onNodeWithText("98,4").performScrollTo().performClick()
+            waitForIdle()
+
+            onNodeWithText("Открыть детали тренда").assertIsDisplayed()
+        }
+
+    @Test
     fun everyControlInTheHeaderReportsItself() =
         runComposeUiTest {
             val seen = mutableListOf<String>()

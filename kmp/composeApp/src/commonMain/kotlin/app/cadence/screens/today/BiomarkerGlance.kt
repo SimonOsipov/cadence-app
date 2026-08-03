@@ -28,7 +28,9 @@ import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceSpark
 import app.cadence.design.pressable
 import app.cadence.format.formatDecimal
+import app.cadence.format.formatDelta
 import app.cadence.format.pluralWeeks
+import app.cadence.format.unitRu
 
 private val CARD_RADIUS = 18.dp
 private const val WEIGHT_DIGITS = 1
@@ -54,7 +56,7 @@ fun BiomarkerGlance(
     val palette = Cadence.palette
     val interactionSource = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(CARD_RADIUS)
-    val delta = series.takeIf { it.size >= 2 }?.let { it.last() - it[it.size - 2] }
+    val delta = formatDelta(series, unitRu("kg"))
 
     Row(
         modifier =
@@ -69,15 +71,15 @@ fun BiomarkerGlance(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CadenceSpacing.sm)) {
-            CadenceEyebrow("Вес · ${series.size} ${pluralWeeks(series.size)}")
+            CadenceEyebrow("Вес · история")
 
             CadenceNumber(
                 value = latest?.let { formatDecimal(it, WEIGHT_DIGITS) } ?: "—",
-                unit = "кг",
+                unit = unitRu("kg"),
                 size = 34.sp,
             )
 
-            if (delta != null) DeltaPill(delta)
+            if (delta != null) CadencePill(delta)
         }
 
         CadenceSpark(
@@ -87,17 +89,6 @@ fun BiomarkerGlance(
             height = GLANCE_SPARK_HEIGHT,
         )
     }
-}
-
-/** «↓ 0,4 кг» — the arrow is the sign, so the number never carries a minus. */
-@Composable
-private fun DeltaPill(delta: Double) {
-    val falling = delta < 0
-    val arrow = if (falling) "↓" else "↑"
-
-    CadencePill(
-        label = "$arrow ${formatDecimal(if (falling) -delta else delta, WEIGHT_DIGITS)} кг",
-    )
 }
 
 /** The standing prompt into the diary, whether or not a dose was logged today. */

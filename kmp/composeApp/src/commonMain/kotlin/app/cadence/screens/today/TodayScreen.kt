@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import app.cadence.design.Cadence
@@ -53,6 +57,8 @@ fun TodayScreen(
     onSelectTab: (CadenceDestination) -> Unit = { },
     onOpenActions: () -> Unit = { },
 ) {
+    var biomarkerOpen by remember { mutableStateOf(false) }
+
     Column(modifier.fillMaxSize()) {
         TodayHeader(
             patientName = patientName,
@@ -63,53 +69,19 @@ fun TodayScreen(
             onOpenProfile = onOpenProfile,
         )
 
-        Column(
-            modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
-        ) {
-            TodayHero(
-                compoundName = summary.nextDoseCompound?.nameRu,
-                dose = summary.nextDose?.dose,
-                logged = summary.doseLoggedToday,
-                onLogDose = onLogDose,
-                onOpenQuickFeel = onOpenQuickFeel,
-            )
-
-            BiomarkerGlance(
-                series = summary.weightSeries,
-                latest = summary.weightKg,
-                onOpen = onOpenTrends,
-            )
-
-            WellbeingNudge(onOpen = onOpenJournal)
-
-            ProtocolStrip(rows = summary.weekProtocol, onOpenSchedule = onOpenSchedule)
-
-            MealHero(
-                eaten = summary.mealMacros,
-                targets = summary.targets,
-                onLogMeal = onLogMeal,
-                onOpenRecipes = onOpenRecipes,
-            )
-
-            TodayMeals(
-                eaten = summary.mealMacros,
-                targets = summary.targets,
-                onOpenNutrition = onOpenNutrition,
-            )
-
-            summary.reorder?.let { hint ->
-                ReorderCard(
-                    compoundName =
-                        summary.weekProtocol
-                            .firstOrNull { it.compound?.id == hint.compoundId }
-                            ?.compound
-                            ?.nameRu,
-                    weeksLeft = hint.weeksLeft,
-                    onOpenVials = onOpenVials,
-                )
-            }
-        }
+        TodayBody(
+            summary = summary,
+            modifier = Modifier.weight(1f),
+            onLogDose = onLogDose,
+            onOpenQuickFeel = onOpenQuickFeel,
+            onOpenJournal = onOpenJournal,
+            onOpenVials = onOpenVials,
+            onOpenBiomarker = { biomarkerOpen = true },
+            onOpenSchedule = onOpenSchedule,
+            onLogMeal = onLogMeal,
+            onOpenRecipes = onOpenRecipes,
+            onOpenNutrition = onOpenNutrition,
+        )
 
         // The bar lives inside the screen, as it does in the prototype — the
         // navigator has none, and Schedule and Journal do not carry one.
@@ -119,6 +91,19 @@ fun TodayScreen(
             onLog = onOpenActions,
         )
     }
+
+    BiomarkerSheet(
+        open = biomarkerOpen,
+        title = "Вес",
+        points = summary.weightSeries,
+        latest = summary.weightKg,
+        unit = "kg",
+        onDismiss = { biomarkerOpen = false },
+        onOpenTrend = {
+            biomarkerOpen = false
+            onOpenTrends()
+        },
+    )
 }
 
 /** The fixed strip above the scroll region: greeting, name, four ways out. */
@@ -154,6 +139,73 @@ private fun TodayHeader(
                 CadenceIconButton(CadenceIcons.bookOpen, "Обучение", onOpenLearn)
                 CadenceIconButton(CadenceIcons.user, "Профиль", onOpenProfile)
             }
+        }
+    }
+}
+
+/** The scrolling half, split out only because the whole screen outgrew a screenful. */
+@Composable
+private fun TodayBody(
+    summary: TodaySummary,
+    modifier: Modifier = Modifier,
+    onLogDose: () -> Unit,
+    onOpenQuickFeel: () -> Unit,
+    onOpenJournal: () -> Unit,
+    onOpenVials: () -> Unit,
+    onOpenBiomarker: () -> Unit,
+    onOpenSchedule: () -> Unit,
+    onLogMeal: () -> Unit,
+    onOpenRecipes: () -> Unit,
+    onOpenNutrition: () -> Unit,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
+    ) {
+        TodayHero(
+            compoundName = summary.nextDoseCompound?.nameRu,
+            dose = summary.nextDose?.dose,
+            logged = summary.doseLoggedToday,
+            onLogDose = onLogDose,
+            onOpenQuickFeel = onOpenQuickFeel,
+        )
+
+        BiomarkerGlance(
+            series = summary.weightSeries,
+            latest = summary.weightKg,
+            // In the prototype the glance's tap opens the sheet — the sheet
+            // *is* the glance's behaviour. Shipping it wired to the trends
+            // tab left 129 lines reachable only from their own tests.
+            onOpen = onOpenBiomarker,
+        )
+
+        WellbeingNudge(onOpen = onOpenJournal)
+
+        ProtocolStrip(rows = summary.weekProtocol, onOpenSchedule = onOpenSchedule)
+
+        MealHero(
+            eaten = summary.mealMacros,
+            targets = summary.targets,
+            onLogMeal = onLogMeal,
+            onOpenRecipes = onOpenRecipes,
+        )
+
+        TodayMeals(
+            eaten = summary.mealMacros,
+            targets = summary.targets,
+            onOpenNutrition = onOpenNutrition,
+        )
+
+        summary.reorder?.let { hint ->
+            ReorderCard(
+                compoundName =
+                    summary.weekProtocol
+                        .firstOrNull { it.compound?.id == hint.compoundId }
+                        ?.compound
+                        ?.nameRu,
+                weeksLeft = hint.weeksLeft,
+                onOpenVials = onOpenVials,
+            )
         }
     }
 }
