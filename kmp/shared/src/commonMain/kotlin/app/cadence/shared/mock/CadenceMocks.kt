@@ -12,6 +12,7 @@ import app.cadence.shared.domain.SystemCadenceClock
 import app.cadence.shared.domain.cycleWeek
 import app.cadence.shared.domain.dosesPerWeek
 import app.cadence.shared.domain.occurrencesFor
+import app.cadence.shared.domain.partOfDay
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
 import app.cadence.shared.domain.today
@@ -75,6 +76,8 @@ class CadenceMocks(
             val todaysMeals = MockSeed.meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
 
             return TodaySummary(
+                date = date,
+                partOfDay = partOfDay(clock.now().toLocalDateTime(zone).time),
                 // Null for a cancelled course, like its occurrences: «Неделя 4»
                 // over an empty calendar is worse than saying nothing.
                 cycleWeek =

@@ -2,7 +2,9 @@ package app.cadence.shared.repository
 
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Occurrence
+import app.cadence.shared.domain.PartOfDay
 import app.cadence.shared.domain.ReorderHint
+import kotlinx.datetime.LocalDate
 
 /**
  * What the Today screen needs, in one object.
@@ -18,6 +20,10 @@ import app.cadence.shared.domain.ReorderHint
  * been through a formatter.
  */
 data class TodaySummary(
+    /** The day this summary is about, in the patient's zone. */
+    val date: LocalDate,
+    /** «утро» in «Воскресенье, утро · 4-я неделя» — a fact about the clock. */
+    val partOfDay: PartOfDay,
     val cycleWeek: Int?,
     val nextDose: Occurrence?,
     val doseLoggedToday: Boolean,

@@ -4,6 +4,7 @@ import app.cadence.shared.domain.DoseUnit
 import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
+import app.cadence.shared.domain.PartOfDay
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -27,6 +28,20 @@ class MockRepositoryTest {
             val next = assertNotNull(summary.nextDose, "the seeded protocol has a dose due today")
             assertEquals(0.25, next.dose?.value)
             assertEquals(DoseUnit.MG, next.dose?.unit)
+        }
+
+    @Test
+    fun theSummaryCarriesTheDayItIsAboutAndTheHourOfIt() =
+        runTest {
+            // The greeting is «Воскресенье, утро · 4-я неделя» in the prototype,
+            // frozen. Both halves are facts about the clock, and the zone is
+            // the patient's: 09:00 UTC is noon in Moscow, which is «день».
+            val morning = mocks("2026-05-31T04:00:00Z").today.today()
+            val afternoon = mocks("2026-05-31T09:00:00Z").today.today()
+
+            assertEquals(LocalDate(2026, 5, 31), morning.date)
+            assertEquals(PartOfDay.MORNING, morning.partOfDay)
+            assertEquals(PartOfDay.AFTERNOON, afternoon.partOfDay)
         }
 
     @Test
