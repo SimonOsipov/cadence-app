@@ -1,5 +1,7 @@
 package app.cadence.format
 
+import app.cadence.shared.domain.Dose
+import app.cadence.shared.domain.DoseUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -34,6 +36,47 @@ class CadenceFormatTest {
         // as a very positive one.
         assertEquals("2\u00A0147\u00A0483\u00A0647", formatInteger(Int.MAX_VALUE))
         assertEquals("-2\u00A0147\u00A0483\u00A0648", formatInteger(Int.MIN_VALUE))
+    }
+
+    @Test
+    fun weeksTakeTheSameRuleAsMeals() {
+        // The prototype's reorder card repeats the meal card's approximation —
+        // `weeksLeft < 5 ? 'недели' : 'недель'` — and is wrong from 21 up in
+        // the same way. One rule, two nouns.
+        assertEquals("неделю", pluralWeeks(1))
+        assertEquals("недели", pluralWeeks(3))
+        assertEquals("недель", pluralWeeks(5))
+        assertEquals("недель", pluralWeeks(11))
+        assertEquals("неделю", pluralWeeks(21))
+        assertEquals("недели", pluralWeeks(22))
+    }
+
+    @Test
+    fun aDecimalUsesTheCommaAndKeepsItsTrailingZero() {
+        // «98,4», «110,0» — the comma is the locale's, and a weight that
+        // dropped its trailing zero would jump between one and two glyphs as
+        // the patient loses weight.
+        assertEquals("98,4", formatDecimal(98.4, digits = 1))
+        assertEquals("110,0", formatDecimal(110.0, digits = 1))
+        assertEquals("0,25", formatDecimal(0.25, digits = 2))
+        assertEquals("1\u00A0240,5", formatDecimal(1240.5, digits = 1))
+        assertEquals("-0,6", formatDecimal(-0.6, digits = 1))
+    }
+
+    @Test
+    fun aDecimalRoundsRatherThanTruncates() {
+        assertEquals("0,3", formatDecimal(0.25, digits = 1))
+        assertEquals("99,0", formatDecimal(98.96, digits = 1))
+    }
+
+    @Test
+    fun aDoseIsItsValueAndItsUnitWithNoTrailingZeroes() {
+        // «0,25 мг», «250 мкг», «1 мг» — the protocol's own numbers, and a
+        // dose of 1,0 mg reads «1 мг» the way a clinician says it.
+        assertEquals("0,25" to "мг", formatDose(Dose(0.25, DoseUnit.MG)))
+        assertEquals("0,5" to "мг", formatDose(Dose(0.5, DoseUnit.MG)))
+        assertEquals("1" to "мг", formatDose(Dose(1.0, DoseUnit.MG)))
+        assertEquals("250" to "мкг", formatDose(Dose(250.0, DoseUnit.MCG)))
     }
 
     @Test
