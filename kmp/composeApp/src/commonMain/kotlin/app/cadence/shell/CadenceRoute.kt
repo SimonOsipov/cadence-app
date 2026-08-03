@@ -1,5 +1,7 @@
 package app.cadence.shell
 
+import androidx.navigation.NavDestination
+import androidx.navigation.NavDestination.Companion.hasRoute
 import app.cadence.design.CadenceDestination
 import kotlinx.serialization.Serializable
 
@@ -94,6 +96,22 @@ sealed interface CadenceRoute {
     @Serializable
     data object RecipeBuilder : Modal
 }
+
+/**
+ * Whether a destination belongs to the modal group.
+ *
+ * Four explicit checks rather than a test against [CadenceRoute.Modal]: the
+ * marker interface is not `@Serializable` — it has no route of its own — and
+ * `hasRoute` matches on a serializer. The thing that stops a fifth modal being
+ * forgotten here is not the compiler but
+ * `CadenceNavigationTest.theScreenBeneathAModalDoesNotMove`, which fails the
+ * moment a modal drifts the screen under it.
+ */
+internal fun NavDestination.isModal(): Boolean =
+    hasRoute<CadenceRoute.LogDose>() ||
+        hasRoute<CadenceRoute.LogMeal>() ||
+        hasRoute<CadenceRoute.AddVial>() ||
+        hasRoute<CadenceRoute.RecipeBuilder>()
 
 /**
  * The root of the after-sign-in graph.

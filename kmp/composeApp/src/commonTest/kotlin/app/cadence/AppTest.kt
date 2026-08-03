@@ -53,6 +53,22 @@ class AppTest {
         }
 
     @Test
+    fun theSheetSendsTheUserIntoTheMealWizard() =
+        runComposeUiTest {
+            setContent { App() }
+
+            onNodeWithContentDescription("Записать").performClick()
+            onNodeWithText("Записать приём пищи").performClick()
+            waitForIdle()
+
+            // The mirror of the dose case, and it was missing: the fix round
+            // that pinned the dose row deleted the only test clicking this one,
+            // so `onPickMeal = { }` passed the whole suite.
+            onNodeWithText("Экран «Записать приём пищи»").assertIsDisplayed()
+            assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
     fun theAppIsWrappedInItsOwnTheme() =
         runComposeUiTest {
             // CadenceTheme is App's job, not the shell's — the shell is only

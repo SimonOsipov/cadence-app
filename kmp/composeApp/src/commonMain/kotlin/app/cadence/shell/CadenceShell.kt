@@ -128,10 +128,16 @@ fun CadenceShell(
         navController = navController,
         startDestination = CADENCE_ROOT,
         modifier = modifier.fillMaxSize(),
-        enterTransition = { pushEnter() },
-        exitTransition = { pushExit() },
-        popEnterTransition = { popEnter() },
-        popExitTransition = { popExit() },
+        // The transitions live here, on the NavHost, because Compose reads
+        // each side from the destination it belongs to: a screen's exit is
+        // taken from the screen being *left*, not from the one arriving. Two
+        // overrides on the modal itself therefore could not hold the screen
+        // beneath it still — they fired when leaving the modal forward, which
+        // is not the same event and not the one that drifts.
+        enterTransition = { if (targetState.destination.isModal()) modalEnter() else pushEnter() },
+        exitTransition = { if (targetState.destination.isModal()) modalUnderlayExit() else pushExit() },
+        popEnterTransition = { if (initialState.destination.isModal()) modalUnderlayEnter() else popEnter() },
+        popExitTransition = { if (initialState.destination.isModal()) modalExit() else popExit() },
     ) {
         tabRoutes(navController, onOpenActions)
         pushedRoutes(navController)
@@ -248,14 +254,9 @@ private fun NavGraphBuilder.modalRoutes(
  * and no test would say so.
  */
 private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(noinline content: @Composable () -> Unit) {
-    composable<T>(
-        enterTransition = { modalEnter() },
-        // The screen underneath a native fullScreenModal does not move. Without
-        // these two the NavHost defaults apply and it drifts a third of the
-        // width sideways while the modal rises — a horizontal slide the
-        // prototype does not have, on all four logging flows.
-        exitTransition = { modalUnderlayExit() },
-        popEnterTransition = { modalUnderlayEnter() },
-        popExitTransition = { modalExit() },
-    ) { content() }
+    // No transition overrides: they belong on the NavHost, which is the only
+    // place that can see both sides of a transition at once. What this builder
+    // still buys is the type constraint — registering an ordinary route as a
+    // modal, or a modal as an ordinary push, does not compile.
+    composable<T> { content() }
 }

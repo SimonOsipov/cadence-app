@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -279,7 +280,11 @@ class DesignSystemTest {
                 }
             }
 
-            onNodeWithText("Статическая карточка").assertIsDisplayed()
+            // The click action is the assertion: `clickable` publishes one and
+            // merges descendants, so a card given a no-op handler instead of
+            // the null branch is distinguishable after all — the first version
+            // of this test recorded that as an accepted limit and was wrong.
+            onNodeWithText("Статическая карточка").assertIsDisplayed().assertHasNoClickAction()
         }
 
     @Test

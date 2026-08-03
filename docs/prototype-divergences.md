@@ -209,8 +209,15 @@ already on, with identical params, does nothing.
 
 **What we do:** rebuild the entry.
 
-**Why:** matching arguments needs the filled route string, which
-navigation-compose generates internally and does not expose. The alternative —
+**Why:** the cheap comparison — the filled route string — is generated
+internally by navigation-compose and not exposed. `NavBackStackEntry.toRoute<T>()`
+would rebuild the route object and the routes are data classes, so it is not
+impossible, only awkward: `openRoute` would have to be `reified`, and the
+`selectDestination` call site passes `CadenceDestination.route`, typed as the
+non-serializable `CadenceRoute` supertype. Narrowing that property is what
+makes this fixable, if a screen ever holds state worth the trouble.
+
+The alternative —
 the type-only guard this code shipped with first — returned early on *any*
 same-type navigation, so tapping a neighbouring biomarker from
 `TrendDetail("hrv")` did nothing at all and said nothing about why. Given the
@@ -235,3 +242,25 @@ broken. It is not in the partner's §08 list of prototype bugs, and it is
 reachable only from `ChatThreadScreen`'s «к списку», which is ported in step 9.
 Left faithful for now and raised there, where the screen that triggers it is in
 front of us, rather than fixed blind in the shell.
+
+## Modal transitions live on the NavHost, not on the modal
+
+**What the prototype does:** `Stack.Group` with
+`presentation: 'fullScreenModal'` — the four logging flows rise from the bottom
+and the screen beneath them does not move.
+
+**What we do:** the same, decided at the `NavHost` by asking whether the
+destination on the other side of the transition is a `CadenceRoute.Modal`.
+
+**Why it is written down:** the obvious spelling — overriding `enterTransition`
+and `exitTransition` on the four `composable<…>` entries — does not work, and
+looks like it does. Compose reads each side of a transition from the
+destination it belongs to: a screen's exit comes from the screen being *left*.
+Overrides on the modal therefore fired when navigating forward *out* of a
+modal, an event that only arrives with step 9, while the underlay kept the
+NavHost default and drifted a third of the width sideways on every one of the
+four flows. This shipped for a whole review round with a comment asserting the
+opposite. Pinned now by
+`CadenceNavigationTest.theScreenBeneathAModalDoesNotMove`, its negative
+`anOrdinaryPushDoesMoveTheScreenBeneath`, and
+`aModalArrivesFromBelowAndAPushFromTheSide`.

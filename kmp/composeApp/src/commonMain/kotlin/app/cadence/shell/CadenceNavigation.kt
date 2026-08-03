@@ -1,6 +1,7 @@
 package app.cadence.shell
 
 import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import app.cadence.design.CadenceDestination
 
@@ -44,10 +45,25 @@ fun NavHostController.openRoute(route: CadenceRoute) {
             navigate(route)
         }
 
-        // Below the current screen: return to that instance, keeping it and
-        // whatever state it holds. This is the recipe-to-Nutrition case.
+        // Below the current screen. React Navigation slices the stack back to
+        // the screen *and* writes the new arguments onto it; the two halves
+        // need different handling here.
         existing.destination.id != current?.id -> {
-            popBackStack(existing.destination.id, inclusive = false)
+            if (existing.destination.arguments.isEmpty()) {
+                // Nothing to update, so keep the instance and whatever state it
+                // holds. The common case — every bottom-bar destination is
+                // argument-less — and the recipe-to-Nutrition one.
+                popBackStack(existing.destination.id, inclusive = false)
+            } else {
+                // Popping to it non-inclusively lands on the arguments it was
+                // created with, not the ones asked for: `TrendDetail("ldl")`
+                // with `TrendDetail("hrv")` buried in the stack put the patient
+                // back on hrv. Measured — and worse than the duplicate-pushing
+                // version this replaced, which at least showed the right one.
+                // Rebuilding costs the entry's state, which no screen holds yet.
+                popBackStack(existing.destination.id, inclusive = true)
+                navigate(route)
+            }
         }
 
         // It *is* the current screen, with arguments that may differ. Swap the
@@ -76,13 +92,12 @@ fun NavHostController.pushRoute(route: CadenceRoute) {
  * list, and the recipe builder swapping itself for the recipe it just saved.
  * In both, backing out to the screen that just completed would be wrong.
  *
- * Pops by destination id rather than by `destination.route`. The route is a
- * *pattern* — `…CadenceRoute.ChatThread/{threadId}` — matched as a string, so
- * it happens to work for the four routes carrying a `String` and would quietly
- * stop the first time one carries an `Int`. The id is identity, and it also
- * removes the null branch, in which the whole call degraded to a plain push:
- * the finished screen left behind you, which is the one thing this function
- * exists to prevent.
+ * Pops by destination id rather than by `destination.route`. Not because the
+ * pattern would fail to match — `popUpTo(String)` is resolved against
+ * `destination.route`, which is the very pattern being passed, so it holds for
+ * any argument type. The id is simply identity, and using it removes the null
+ * branch in which the whole call degraded to a plain push: the finished screen
+ * left behind you, which is the one thing this function exists to prevent.
  */
 fun NavHostController.replaceRoute(route: CadenceRoute) {
     val leaving = currentBackStackEntry?.destination?.id
@@ -94,13 +109,16 @@ fun NavHostController.replaceRoute(route: CadenceRoute) {
 /**
  * React Navigation's `popToTop`.
  *
- * Returns whether it popped anything, and [selectDestination] reads it. The
- * root is [CADENCE_ROOT] rather than `CadenceRoute.Today` spelled twice: block
- * 7 puts an area above this graph, and a root that moved would turn every tab
- * tap into a silent no-pop while the tests, which all start on Today, stayed
- * green.
+ * Returns whether it popped anything, and [selectDestination] reads it.
+ *
+ * Pops to the graph's own start destination rather than to a named route. The
+ * typed `popBackStack(CADENCE_ROOT, …)` fills arguments into the route string
+ * before matching — the trap documented on [openRoute] — so the first root that
+ * carried one would return false for a root that *is* on the stack, and every
+ * tab tap would become a silent no-pop. Block 7 moves this boundary; asking the
+ * graph is argument-proof and needs no second literal to stay in step.
  */
-fun NavHostController.popToTop(): Boolean = popBackStack(CADENCE_ROOT, inclusive = false)
+fun NavHostController.popToTop(): Boolean = popBackStack(graph.findStartDestination().id, inclusive = false)
 
 /**
  * The bottom bar's `changeTab`, minus the `'log'` branch — logging is not a
@@ -110,12 +128,13 @@ fun NavHostController.popToTop(): Boolean = popBackStack(CADENCE_ROOT, inclusive
  * tab is «go there», not «go there on top of everything I was doing».
  */
 fun NavHostController.selectDestination(destination: CadenceDestination) {
-    // popToTop returns false when the root is not on the stack — which cannot
-    // happen while Today is the start destination, and is precisely what block
-    // 7 changes. Stacking a tab on top of an unknown stack is worse than doing
-    // nothing: the bar would start accumulating depth and back would walk a
-    // path the patient never took.
-    if (!popToTop() && currentBackStackEntry?.destination?.hasRoute(CADENCE_ROOT::class) != true) return
+    // popToTop returns false in two different situations: «already standing on
+    // the root», which is ordinary, and «the root is not on the stack at all»,
+    // which cannot happen today and is what block 7 changes. Only the second is
+    // a reason to stop — stacking a tab on an unknown stack would make the bar
+    // accumulate depth and turn back into tab history.
+    val onRoot = currentBackStackEntry?.destination?.id == graph.findStartDestination().id
+    if (!popToTop() && !onRoot) return
 
     // The guard is load-bearing, not cosmetic: without it, tapping «Сегодня»
     // while on Today takes openRoute's third branch and rebuilds the root.

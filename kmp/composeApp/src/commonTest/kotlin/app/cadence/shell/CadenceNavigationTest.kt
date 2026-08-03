@@ -4,6 +4,7 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -18,6 +19,7 @@ import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceTheme
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -324,5 +326,124 @@ class CadenceNavigationTest {
 
             navigate { nav.selectDestination(CadenceDestination.NUTRITION) }
             onNodeWithText("Питание").assertIsSelected()
+        }
+
+    @Test
+    fun returningToAScreenBelowBringsTheArgumentsYouAskedFor() =
+        runComposeUiTest {
+            val nav = startShell()
+
+            // The other half of the dead tap. Popping back to an existing entry
+            // lands on the arguments it was *created* with, so asking for «ldl»
+            // put the patient on «hrv» — measured, and worse than the version
+            // that merely pushed a duplicate.
+            navigate { nav.openRoute(CadenceRoute.Trends) }
+            navigate { nav.openRoute(CadenceRoute.TrendDetail("hrv")) }
+            navigate { nav.openRoute(CadenceRoute.Journal) }
+            navigate { nav.openRoute(CadenceRoute.TrendDetail("ldl")) }
+
+            assertEquals(listOf("Today", "Trends", "TrendDetail"), nav.stack())
+            onNodeWithText("Экран «Биомаркер · ldl»").assertIsDisplayed()
+        }
+
+    @Test
+    fun returningToAnArgumentLessScreenKeepsItsEntry() =
+        runComposeUiTest {
+            val nav = startShell()
+
+            // The common case, and the one the argument fix must not break: a
+            // bottom-bar destination carries nothing to update, so it is
+            // returned to rather than rebuilt, and its entry survives.
+            navigate { nav.selectDestination(CadenceDestination.NUTRITION) }
+            val entryId = nav.currentBackStackEntry?.id
+            navigate { nav.openRoute(CadenceRoute.Recipes) }
+            navigate { nav.openRoute(CadenceRoute.Nutrition) }
+
+            assertEquals(listOf("Today", "Nutrition"), nav.stack())
+            assertEquals(entryId, nav.currentBackStackEntry?.id, "Nutrition was rebuilt rather than returned to")
+        }
+
+    @Test
+    fun theScreenBeneathAModalDoesNotMove() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceShell(navController = nav) }
+            }
+
+            val atRest = onNodeWithText("Экран «Сегодня»").getBoundsInRoot()
+
+            // A native fullScreenModal leaves the screen under it where it was.
+            // Compose reads a screen's exit transition from the screen being
+            // left, so overrides placed on the modal could not affect this —
+            // they fired on a different event entirely, and the KDoc claimed
+            // otherwise for a whole review round.
+            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
+            mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS / 2L)
+            waitForIdle()
+
+            assertEquals(atRest, onNodeWithText("Экран «Сегодня»").getBoundsInRoot(), "the underlay drifted")
+        }
+
+    @Test
+    fun aModalArrivesFromBelowAndAPushFromTheSide() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceShell(navController = nav) }
+            }
+
+            // Every screen here is a PlaceholderScreen with the same padding,
+            // so a settled title's left edge is the reference: a screen sliding
+            // up is already at it, one sliding in from the right is not.
+            val settledLeft = onNodeWithText("Экран «Сегодня»").getBoundsInRoot().left
+
+            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
+            mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS / 2L)
+            waitForIdle()
+            assertEquals(
+                settledLeft,
+                onNodeWithText("Экран «Записать приём пищи»").getBoundsInRoot().left,
+                "a modal slid in sideways instead of rising",
+            )
+
+            runOnUiThread { nav.popBackStack() }
+            mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS * 2L)
+            waitForIdle()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.Schedule) }
+            mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS / 2L)
+            waitForIdle()
+            assertNotEquals(
+                settledLeft,
+                onNodeWithText("Экран «Расписание»").getBoundsInRoot().left,
+                "an ordinary push did not come in from the side",
+            )
+        }
+
+    @Test
+    fun anOrdinaryPushDoesMoveTheScreenBeneath() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceShell(navController = nav) }
+            }
+
+            val atRest = onNodeWithText("Экран «Сегодня»").getBoundsInRoot()
+
+            // The negative of the test above: without it, «the underlay does
+            // not move» would also pass against a NavHost that animates nothing
+            // at all.
+            runOnUiThread { nav.openRoute(CadenceRoute.Schedule) }
+            mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS / 2L)
+            waitForIdle()
+
+            assertNotEquals(atRest, onNodeWithText("Экран «Сегодня»").getBoundsInRoot(), "a push did not parallax")
         }
 }

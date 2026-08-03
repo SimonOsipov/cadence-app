@@ -7,12 +7,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -24,6 +24,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
 import app.cadence.design.CadenceColors
@@ -53,6 +54,9 @@ data class ConfirmToastState(
     val dayKcal: Int,
 )
 
+/** The prototype's floor for the bottom inset, as in CadenceTabBar. */
+private val MIN_BOTTOM_INSET = 16.dp
+
 private val TOAST_RADIUS = 22.dp
 private val TOAST_PADDING = 18.dp
 private val TOAST_GAP = 14.dp
@@ -76,6 +80,7 @@ fun ConfirmToast(
 ) {
     if (state == null) return
     val palette = Cadence.palette
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = RoundedCornerShape(TOAST_RADIUS)
 
     Box(
@@ -89,11 +94,19 @@ fun ConfirmToast(
                 // live — a tap on «+» underneath opens the action sheet, which
                 // composes *below* this layer and would be read through it.
                 .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                // max(inset, 16) + 8 in the prototype; windowInsetsPadding has
-                // already applied the inset, so this is the remainder — the
-                // same shape CadenceTabBar and CadenceSheet both use.
-                .padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+                .padding(
+                    start = CadenceSpacing.lg,
+                    end = CadenceSpacing.lg,
+                    top = CadenceSpacing.sm,
+                    // `Math.max(insets.bottom, 16) + 8` in the prototype, which
+                    // is CadenceTabBar's shape and not windowInsetsPadding's:
+                    // the inset alone puts the card 8dp from the edge on a
+                    // device with no gesture bar, where the prototype puts it
+                    // 24. The tab bar carries a comment about exactly this trap
+                    // and an earlier version of this line cited it as precedent
+                    // while not using it.
+                    bottom = max(bottomInset, MIN_BOTTOM_INSET) + CadenceSpacing.sm,
+                ),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Row(
