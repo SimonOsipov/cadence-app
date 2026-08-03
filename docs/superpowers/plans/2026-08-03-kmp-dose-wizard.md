@@ -149,6 +149,24 @@ Five steps with a rule each. This is why the state is in `shared`.
 - [ ] **Step 5: Mutate.** The next button ignoring `canAdvance`; back losing the draft; the review reading the compound's default rather than the draft's dose.
 - [ ] **Step 6:** gate, commit.
 
+> [!deviation] 2026-08-03
+> Spec said: five `screens/dose/*Step.kt` files. Actually done: one
+> `DoseSteps.kt` holding the five bodies, plus `DoseWizard.kt` and
+> `DoseOption.kt`. Why: 365 lines across five cohesive functions, and five
+> seventy-line files with five test files would have been more ceremony than
+> structure.
+>
+> `CadenceButton` gained `enabled`, because «Дальше» is dead until its step's
+> rule is met and a button that merely ignores taps looks identical to one that
+> works. It went to the design system with its own test rather than being faked
+> in the screen.
+>
+> The syringe bar is drawn only when something knows the reading.
+> `DoseOption.syringeUnits` is null everywhere today: a mg→units conversion is
+> a property of the vial's reconstitution and the vial picker is not ported. The
+> prototype's own formula draws the ratio to the prescription rather than a
+> volume, which is right for one of its four compounds and wrong for three.
+
 ---
 
 ### Task 6: The shell stops drawing the placeholder

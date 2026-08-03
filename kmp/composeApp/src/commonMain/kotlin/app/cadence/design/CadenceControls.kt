@@ -18,10 +18,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -55,6 +57,9 @@ internal fun Modifier.pressable(
 }
 
 enum class CadenceButtonKind { PRIMARY, SECONDARY, GHOST, DARK, DANGER }
+
+/** `opacity: nextDisabled ? 0.65 : 1` on the prototype's wizard footer. */
+private const val DISABLED_ALPHA = 0.65f
 
 enum class CadenceButtonSize { SMALL, MEDIUM, LARGE }
 
@@ -112,6 +117,9 @@ fun CadenceButton(
     size: CadenceButtonSize = CadenceButtonSize.MEDIUM,
     icon: List<String>? = null,
     fillWidth: Boolean = false,
+    // The dose wizard's «Дальше» is dead until its step's rule is met, and a
+    // button that merely ignores taps looks identical to one that works.
+    enabled: Boolean = true,
 ) {
     val colors = colorsFor(kind)
     val metrics = metricsFor(size)
@@ -121,7 +129,12 @@ fun CadenceButton(
         modifier =
             modifier
                 .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
-                .pressable(onClick, interactionSource)
+                .then(if (enabled) Modifier.pressable(onClick, interactionSource) else Modifier)
+                // Merged, so the button answers as one node: the label lives
+                // on a child `BasicText`, and a test asking «is «Дальше»
+                // enabled» would otherwise be handed the text and told yes.
+                .semantics(mergeDescendants = true) { if (!enabled) disabled() }
+                .then(if (enabled) Modifier else Modifier.alpha(DISABLED_ALPHA))
                 .background(colors.background, PILL_SHAPE)
                 .border(1.dp, colors.outline, PILL_SHAPE)
                 .padding(horizontal = metrics.horizontal, vertical = metrics.vertical),

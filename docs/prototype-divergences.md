@@ -473,3 +473,33 @@ patient's mouth and then writing it to the clinical record as if they had said
 it — one of the prototype's bugs rather than one of its behaviours.
 
 Guarded by `StepperAndSliderTest.theMoodSliderShowsNoWordUntilOneIsChosen`.
+
+## What the wizard's five steps do not draw yet
+
+The chrome, the five bodies and the review are ported. These are missing, and
+step 11's side-by-side run is where they get decided rather than discovered:
+
+**Step 2.** The vial picker, and with it the review's «Флакон · N доз» row —
+see «The vial picker is not ported yet». The syringe barrel is drawn only when
+`DoseOption.syringeUnits` is known, which is nowhere today: the reading depends
+on the vial's reconstitution. The prototype computes
+`(dose / compound.default) * syringeFill`, which draws the ratio to the
+prescription rather than a volume — right for Семаглутид and wrong for the other
+three of its own compounds, so it is not ported. The subtitle also drops the
+«— 0,25 мг» the prototype appends.
+
+**Step 4.** The «Ничего» chip, which in the prototype clears the others and
+makes the review read «Без замечаний» rather than «—». The note box has no
+`minHeight: 70`.
+
+**Step 5.** The `{date} · {time}` eyebrow over the hero card; the inner sand
+hairline frame; the closing «Нажмите Сохранить дозу…» paragraph. The unit is set
+in body face beside the number rather than inside the italic display title.
+
+**Chrome.** `FadeIn` between steps; the footer's gradient scrim; the arrow icon
+on «Дальше» and the chevron and `sunk` background on «Назад»; the prototype's
+warm confirmation sheet after saving, which auto-dismisses after 2,6 s.
+
+**The disabled button** is alpha only. The prototype also swaps the background
+to `sunk` and the label to `subtle`, so its dead button reads grey where ours
+reads like a faded primary.

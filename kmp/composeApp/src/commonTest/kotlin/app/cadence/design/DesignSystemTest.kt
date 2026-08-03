@@ -14,6 +14,7 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -34,6 +35,25 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class DesignSystemTest {
+    @Test
+    fun aDisabledButtonSaysSoAndSwallowsTheTap() =
+        runComposeUiTest {
+            // Both halves. `assertIsNotEnabled` checks a semantics property and
+            // nothing else, so a button that merely *claims* to be disabled
+            // while still firing its handler passes it — and the dose wizard's
+            // «Сохранить дозу» would submit an incomplete draft.
+            var clicks = 0
+
+            setContent {
+                CadenceTheme { CadenceButton(label = "Дальше", onClick = { clicks++ }, enabled = false) }
+            }
+
+            onNodeWithText("Дальше").assertIsNotEnabled()
+            onNodeWithText("Дальше").performClick()
+
+            assertEquals(0, clicks, "a disabled button fired its handler")
+        }
+
     @Test
     fun buttonShowsItsLabelAndReportsClicks() =
         runComposeUiTest {
