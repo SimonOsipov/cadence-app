@@ -64,7 +64,24 @@ object MockSeed {
             icon = "beaker",
         )
 
-    val compounds = listOf(semaglutide, bpc)
+    /**
+     * The prototype's third strip row, «Глицин + магний · на ночь».
+     *
+     * A SUPPLEMENT in §03's terms: no phases, so no dose on the row — which is
+     * what makes the strip's dose column meaningfully optional rather than
+     * always present.
+     */
+    val glycine =
+        Compound(
+            id = CompoundId("glycine"),
+            code = "glycine",
+            nameRu = "Глицин + магний",
+            defaultUnit = DoseUnit.MG,
+            route = "внутрь",
+            icon = "moon",
+        )
+
+    val compounds = listOf(semaglutide, bpc, glycine)
 
     /** Sunday, 10 May 2026 — the prototype's cycle start, now an actual field. */
     val cycleStart = LocalDate(2026, 5, 10)
@@ -72,6 +89,7 @@ object MockSeed {
     private val protocolId = ProtocolId("protocol-1")
     val semaItemId = ProtocolItemId("item-sema")
     val bpcItemId = ProtocolItemId("item-bpc")
+    val glycineItemId = ProtocolItemId("item-glycine")
 
     val plan =
         ProtocolPlan(
@@ -106,6 +124,16 @@ object MockSeed {
                         daysOfWeek = emptyList(),
                         times = listOf(LocalTime(8, 0), LocalTime(20, 0)),
                         loggable = true,
+                    ),
+                    ProtocolItem(
+                        id = glycineItemId,
+                        protocolId = protocolId,
+                        kind = ProtocolItemKind.SUPPLEMENT,
+                        compoundId = glycine.id,
+                        cadence = ProtocolCadence.DAILY,
+                        daysOfWeek = emptyList(),
+                        times = listOf(LocalTime(21, 30)),
+                        loggable = false,
                     ),
                 ),
             phases =
