@@ -365,3 +365,29 @@ site from «Записано · правый живот, ротация.».
 
 None of these is a decision anyone made; they are what a port leaves behind when
 it is measured by tests rather than by a side-by-side run. Step 11 is that run.
+
+## The rotation suggestion is computed, not seeded
+
+**What the prototype does:** `INITIAL_LOG_STATE` in
+`mobile/src/features/log-dose/data.ts` carries `suggested: 'l-abdomen'` beside
+`lastUsed: ['r-abdomen']` as two independent literals, and `components.tsx`
+renders `state.suggested` directly. Nothing recomputes it, so the suggestion
+cannot move and cannot disagree with what the patient actually logged — the two
+constants are consistent only because someone typed them that way.
+
+**What we do:** `suggestNextSite(recent: List<DoseEvent>)` in
+`shared/domain/InjectionRotation.kt` derives it — least-recently-used, an unused
+zone ahead of every used one, ties broken by the set's order.
+
+**Why:** «Nothing derived is stored» is a project rule, and a suggestion is the
+one number on this screen a patient acts on. A frozen constant is a suggestion
+that goes stale the first time it is followed.
+
+**What a side-by-side run will show:** with any mock history in place the
+highlighted zone will differ from the prototype's screenshot. That is the point,
+not a defect. The prototype's own documented pair — `r-abdomen` used therefore
+`l-abdomen` suggested — is reproduced by the rule and asserted in
+`InjectionRotationTest.anUnusedZoneWinsOverEveryUsedOne`.
+
+The rule reads `DoseEvent.injectedAt` and not `scheduledForDate`, so a dose
+logged after the fact counts from when it went in.
