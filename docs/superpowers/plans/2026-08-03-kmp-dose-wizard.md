@@ -67,6 +67,21 @@ Five steps with a rule each. This is why the state is in `shared`.
 - [ ] **Step 5: Mutate.** Each guard dropped in turn; a compound change that keeps the old dose.
 - [ ] **Step 6:** gate, commit.
 
+> [!deviation] 2026-08-03
+> Spec said: the draft holds selected item, dose, site, mood, side effects, note,
+> photo, plus `canAdvance(step)` and `steps`. Actually done: it also holds the
+> item's `kind`, and gained `canSubmit()`. Why: `DoseEvent.site` is nullable
+> because a supplement has no zone, so `canAdvance(SITE)` has to know what kind
+> of item it is or the wizard cannot log one; and a review step that «has no
+> next» makes `canAdvance(REVIEW)` false, so a screen wiring its last button to
+> it would render a wizard nobody can finish. `canSubmit()` is derived from the
+> other four steps rather than restating them.
+>
+> Two further guards were added that the prototype does not have: a dose must be
+> greater than zero, and re-tapping the already-chosen compound is a no-op. Both
+> are prototype bugs the block is instructed not to port. Recorded in
+> `docs/prototype-divergences.md`.
+
 ---
 
 ### Task 3: One action, two facts

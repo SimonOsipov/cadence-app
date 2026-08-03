@@ -391,3 +391,45 @@ not a defect. The prototype's own documented pair — `r-abdomen` used therefore
 
 The rule reads `DoseEvent.injectedAt` and not `scheduledForDate`, so a dose
 logged after the fact counts from when it went in.
+
+## The dose step has a guard, and the compound row is idempotent
+
+**What the prototype does:** `stepDefs` in `log-dose/LogDoseScreen.tsx` sets
+`nextDisabled` on step 1 («Препарат») and step 3 («Место») and on no other. Step
+2 advances with whatever is in the field, including nothing, and its stepper
+clamps at zero, so «0 мг» is a reachable state that «Дальше» accepts. Its
+compound row is also not idempotent: pressing the already-selected compound
+re-applies `comp.default`, so a patient who stepped the dose down, went back and
+tapped the same compound again silently got the default number returned.
+
+**What we do:** `DoseDraft.canAdvance(DOSE)` requires a dose that exists and is
+greater than zero, and `selectItem` returns the draft untouched when the item
+tapped is the one already chosen.
+
+**Why:** the zero dose is not cosmetic — the wizard's write decrements a vial,
+so an accepted zero records an injection that did not happen and takes stock
+with it. The re-tap is listed as a prototype bug rather than a behaviour: «его
+баги не к переносу».
+
+**Also deliberately different:** the site step is required only for an item
+whose kind is `INJECTION`. `DoseEvent.site` is nullable because a supplement has
+no zone, and the prototype never has to answer this because every compound in
+its `COMPOUNDS` list is subcutaneous.
+
+## The vial picker is not ported yet
+
+**What the prototype does:** step 2 renders a `VialPicker` under the stepper and
+`LogState` carries `vialId`; step 5 names the vial in the review.
+
+**What we do:** `DoseDraft` carries no vial. The write resolves the active vial
+for the compound itself, which is what the narrow `logDose` already did.
+
+**Why:** the plan's field list for the draft is the patient's choices, and which
+vial a dose came out of is a choice the app can make correctly on its own while
+there is exactly one active vial per compound. It stops being correct the moment
+a patient has two open vials of the same compound — §03 allows it and the
+prototype's own `VIALS` seed contains it (`v1` and `v2`, both semaglutide).
+
+**Owed:** the picker, and with it a `vialId` on the draft. Until then a patient
+with two open vials cannot say which one they used. Named here rather than in a
+comment because step 11 measures this file.

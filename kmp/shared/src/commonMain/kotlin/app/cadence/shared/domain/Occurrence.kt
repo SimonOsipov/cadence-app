@@ -88,12 +88,14 @@ fun occurrencesFor(
     // `GET /me/schedule?month` is defined to render.
     if (plan.protocol.status == ProtocolStatus.CANCELLED) return emptyList()
 
-    val week = cycleWeek(plan.protocol, date) ?: return emptyList()
+    // A date outside the protocol's window generates nothing; the dose each
+    // item carries is [phaseDose]'s answer for the same date.
+    if (cycleWeek(plan.protocol, date) == null) return emptyList()
 
     return plan.items
         .filter { it.fallsOn(date) }
         .flatMap { item ->
-            val dose = plan.phases[item.id]?.firstOrNull { it.covers(week) }?.dose
+            val dose = phaseDose(plan, item.id, date)
             item.times.map { time ->
                 Occurrence(
                     itemId = item.id,
@@ -105,6 +107,28 @@ fun occurrencesFor(
                 )
             }
         }
+}
+
+/**
+ * The dose in force for one item on one date, or null when none is.
+ *
+ * Null has three causes and they are one answer: the protocol is cancelled, the
+ * date falls outside its window, or the item has no phase covering that week —
+ * a weigh-in, or a band that does not reach. In each case there is no number to
+ * offer, and offering one is the defect the step-4 review found on the hero.
+ *
+ * One function rather than two readings of `phases`: the wizard resets its dose
+ * to «the current phase» and the calendar stamps the same number on every
+ * occurrence. Written twice, they disagree the first time a band moves.
+ */
+fun phaseDose(
+    plan: ProtocolPlan,
+    itemId: ProtocolItemId,
+    date: LocalDate,
+): Dose? {
+    if (plan.protocol.status == ProtocolStatus.CANCELLED) return null
+    val week = cycleWeek(plan.protocol, date) ?: return null
+    return plan.phases[itemId]?.firstOrNull { it.covers(week) }?.dose
 }
 
 /**
