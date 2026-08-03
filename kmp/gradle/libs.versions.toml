@@ -4,6 +4,12 @@
 # No material3: the design system is ported from the frozen Expo prototype
 # (mobile/src/theme), not taken from Material. Only the Compose primitives are
 # needed here.
+#
+# navigation-compose is the one library taken rather than ported. Unlike the
+# Material widgets, what it carries is not a look — it is back-stack ownership,
+# saved state across process death and the platform back gesture, and a
+# hand-rolled stack would have to reimplement all three before the first screen
+# lands. Type-safe routes are why kotlinx-serialization comes with it.
 
 [versions]
 agp = "9.3.1"
@@ -13,6 +19,10 @@ ktlint-tool = "1.8.0"
 detekt = "1.23.8"
 compose-multiplatform = "1.11.1"
 androidx-activity-compose = "1.13.0"
+# Stable, not the 2.10.0-alpha line: the alpha pulls lifecycle 2.11.0-beta01
+# and compose 1.10.0 transitively, and nothing here needs what it adds.
+navigation-compose = "2.9.2"
+kotlinx-serialization = "1.11.0"
 
 android-minSdk = "28"
 android-targetSdk = "36"
@@ -27,6 +37,8 @@ compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-mu
 compose-ui-backhandler = { module = "org.jetbrains.compose.ui:ui-backhandler", version.ref = "compose-multiplatform" }
 compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "compose-multiplatform" }
 compose-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
+navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "navigation-compose" }
+kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -34,5 +46,8 @@ android-multiplatform-library = { id = "com.android.kotlin.multiplatform.library
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+# Versioned with the compiler, not independently: the serialization plugin is a
+# Kotlin compiler plugin and only ever matches its own compiler.
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

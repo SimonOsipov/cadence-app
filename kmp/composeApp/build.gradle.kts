@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.multiplatform.library)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -38,6 +39,8 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.ui.backhandler)
             implementation(libs.compose.resources)
+            implementation(libs.navigation.compose)
+            implementation(libs.kotlinx.serialization.core)
         }
         // No host-test builder on the Android target on purpose: a Compose UI
         // test needs a real (or Robolectric) Android runtime, so these run on
