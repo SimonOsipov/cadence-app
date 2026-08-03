@@ -1,121 +1,25 @@
 package app.cadence
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import app.cadence.design.Cadence
-import app.cadence.design.CadenceButton
-import app.cadence.design.CadenceCard
-import app.cadence.design.CadenceChip
-import app.cadence.design.CadenceColors
-import app.cadence.design.CadenceDestination
-import app.cadence.design.CadenceEyebrow
-import app.cadence.design.CadenceIcons
-import app.cadence.design.CadenceMeta
-import app.cadence.design.CadenceNumber
-import app.cadence.design.CadencePill
-import app.cadence.design.CadenceSheet
-import app.cadence.design.CadenceSpacing
-import app.cadence.design.CadenceSpark
-import app.cadence.design.CadenceTabBar
 import app.cadence.design.CadenceTheme
-import app.cadence.design.CadenceTitle
-import app.cadence.design.cadenceEmphasisedTitle
-import app.cadence.shared.currentPlatform
-
-/** Test handle for the showcase's sparkline, which draws no text. */
-const val SHOWCASE_SPARK_TAG = "showcase-spark"
+import app.cadence.shell.CadenceApp
 
 /**
  * App is the single Compose entry point both platforms render.
  *
- * It is still a placeholder — the 24 real screens are ported one milestone at a
- * time out of the frozen Expo prototype. What it shows today is the design
- * system that came over ahead of them: the palette, the type scale, the
- * primitives and the icon set, all rendering identically on Android and iOS.
+ * It was a showcase of the design system until the shell landed. Everything it
+ * displayed is covered by the design system's own tests — the coverage was
+ * audited component by component before the showcase was deleted, and the one
+ * gap it left, `CadencePill`, got a test of its own. The app itself is where a
+ * regression shows now.
+ *
+ * The theme is provided here rather than in [CadenceApp] because [CadenceApp]
+ * is only the area after sign-in, and block 7 adds an area before it that needs
+ * the same tokens.
  */
 @Composable
 fun App() {
     CadenceTheme {
-        var sheetOpen by remember { mutableStateOf(false) }
-        var weekly by remember { mutableStateOf(true) }
-        var destination by remember { mutableStateOf(CadenceDestination.TODAY) }
-        var logged by remember { mutableStateOf(0) }
-
-        Column(
-            modifier = Modifier.fillMaxSize().padding(CadenceSpacing.xl),
-            verticalArrangement = Arrangement.spacedBy(CadenceSpacing.lg, Alignment.CenterVertically),
-        ) {
-            CadenceEyebrow("сегодня")
-            CadenceTitle("Cadence")
-            CadenceMeta(currentPlatform().name)
-            // Makes the bar's state observable, so a tap that never arrived fails
-            // a test instead of merely leaving the wrong pill tinted.
-            CadenceMeta("${destination.label} · записей: $logged")
-
-            // «Ваша аптечка» — one run of text, with the middle word in the
-            // drawn italic display face.
-            CadenceTitle(cadenceEmphasisedTitle(prefix = "Ваша ", emphasis = "аптечка"), size = 22.sp)
-
-            CadenceSpark(
-                data = listOf(0.7f, 0.65f, 0.6f, 0.55f, 0.5f, 0.48f, 0.4f),
-                // Tagged because it draws no text: without a handle, deleting
-                // this block leaves the whole suite green.
-                modifier = Modifier.testTag(SHOWCASE_SPARK_TAG),
-                fill = CadenceColors.forest50,
-                width = 160.dp,
-                height = 48.dp,
-            )
-
-            CadenceCard(modifier = Modifier.fillMaxWidth()) {
-                CadenceEyebrow("следующая доза")
-                // The value and its unit stay two fields all the way to the
-                // screen; «0,25» is this locale's rendering of 0.25.
-                CadenceNumber(value = "0,25", unit = "мг")
-                CadencePill("по расписанию")
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm)) {
-                CadenceChip("Неделя", onClick = { weekly = true }, active = weekly)
-                CadenceChip("Месяц", onClick = { weekly = false }, active = !weekly)
-            }
-
-            CadenceButton(
-                label = "Открыть лист",
-                onClick = { sheetOpen = true },
-                icon = CadenceIcons.plus,
-                fillWidth = true,
-            )
-        }
-
-        // Bottom-aligned, as it will sit once the shell places it in step 2.
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Bottom,
-        ) {
-            CadenceTabBar(
-                active = destination,
-                onSelect = { destination = it },
-                onLog = { logged++ },
-            )
-        }
-
-        CadenceSheet(open = sheetOpen, onDismiss = { sheetOpen = false }) {
-            CadenceTitle("Лист")
-            CadenceMeta("Нажмите на затемнение, чтобы закрыть")
-        }
+        CadenceApp()
     }
 }

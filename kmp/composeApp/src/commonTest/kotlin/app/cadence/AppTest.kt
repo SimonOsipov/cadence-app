@@ -3,76 +3,76 @@ package app.cadence
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.shared.currentPlatform
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class AppTest {
     @Test
-    fun appShowsTheBrand() =
+    fun theAppOpensOnToday() =
         runComposeUiTest {
             setContent { App() }
 
-            onNodeWithText("Cadence").assertIsDisplayed()
+            onNodeWithText("Экран «Сегодня»").assertIsDisplayed()
+            onNodeWithText("Сегодня").assertIsSelected()
         }
 
     @Test
-    fun appShowsThePlatformItRunsOn() =
+    fun theAppShowsThePlatformItRunsOn() =
         runComposeUiTest {
             setContent { App() }
 
-            // Proves :shared is linked into the UI, not just into the module graph.
-            onNodeWithText(currentPlatform().name).assertIsDisplayed()
+            // Proves :shared is linked into the UI and not merely into the
+            // module graph. It rides on the placeholder's footer today; see the
+            // note on PlaceholderScreen about where this has to go when the
+            // last placeholder is deleted.
+            onNodeWithText("заглушка · ${currentPlatform().name}").assertIsDisplayed()
         }
 
     @Test
-    fun theShowcaseRendersEveryComponentItIsSupposedTo() =
+    fun theAppIsWrappedInItsOwnTheme() =
         runComposeUiTest {
+            // CadenceTheme is App's job, not the shell's — the shell is only
+            // the area after sign-in, and block 7 adds an area before it that
+            // needs the same tokens. If App stopped providing them, every
+            // composable underneath would throw on the typography local rather
+            // than fall back, so reaching any screen at all is the assertion.
             setContent { App() }
 
-            // The showcase is where a regression is seen before it reaches a
-            // screen. A component that silently stops rendering fails here.
-            listOf(
-                "СЕГОДНЯ" to "the eyebrow",
-                "Ваша аптечка" to "the emphasised title",
-                "0,25" to "the measured value",
-                "мг" to "its unit",
-                "по расписанию" to "the pill",
-                "Неделя" to "the chip",
-                "Открыть лист" to "the button",
-                "Сегодня" to "the tab bar",
-            ).forEach { (text, _) ->
-                onNodeWithText(text).assertIsDisplayed()
-            }
-
-            // The sparkline draws no text, so without a handle deleting it from
-            // the showcase leaves this whole suite green — which it did.
-            onNodeWithTag(SHOWCASE_SPARK_TAG).assertIsDisplayed()
+            onNodeWithText("Экран «Сегодня»").assertIsDisplayed()
         }
 
     @Test
-    fun theShowcaseTabBarReportsBothADestinationAndTheAction() =
+    fun thePlusOpensTheSheetRatherThanChangingDestination() =
         runComposeUiTest {
             setContent { App() }
-
-            // The previous version of this test clicked a tab and asserted the
-            // tab's own label was displayed — which it is either way, because
-            // the bar renders every label unconditionally. It passed against
-            // `onSelect = {}`. The showcase now shows its state, so the
-            // assertion has something a tap can actually change.
-            onNodeWithText("Сегодня · записей: 0").assertIsDisplayed()
-
-            onNodeWithText("Тренды").performClick()
-            onNodeWithText("Тренды · записей: 0").assertIsDisplayed()
 
             onNodeWithContentDescription("Записать").performClick()
-            onNodeWithText("Тренды · записей: 1").assertIsDisplayed()
-            // And it did not double as a destination change.
-            onNodeWithText("Тренды").assertIsSelected()
+
+            onNodeWithText("Отмена").assertIsDisplayed()
+            // And the bar did not treat the action as a place.
+            onNodeWithText("Сегодня").assertIsSelected()
+        }
+
+    @Test
+    fun theSheetSendsTheUserIntoTheDoseWizard() =
+        runComposeUiTest {
+            setContent { App() }
+
+            onNodeWithContentDescription("Записать").performClick()
+            onNodeWithText("Записать дозу").performClick()
+            waitForIdle()
+
+            // The sheet row and the wizard carry the same words, so the back
+            // affordance is what tells them apart — and the sheet closing
+            // behind the modal is the other half of it.
+            onNodeWithContentDescription("Назад").assertIsDisplayed()
+            assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
         }
 }

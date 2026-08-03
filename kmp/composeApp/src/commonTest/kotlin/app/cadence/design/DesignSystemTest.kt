@@ -1,6 +1,7 @@
 package app.cadence.design
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -262,6 +263,26 @@ class DesignSystemTest {
             }
 
             onNodeWithText("СЕГОДНЯ").assertIsDisplayed()
+        }
+
+    @Test
+    fun everyPillToneRendersItsLabel() =
+        runComposeUiTest {
+            // The showcase in App.kt used to be the only place a pill was
+            // rendered under test. It became the shell in step 2 of the port,
+            // and this is where that assertion went — found by auditing what
+            // the showcase alone was covering, before deleting it.
+            setContent {
+                CadenceTheme {
+                    Column {
+                        CadencePillTone.entries.forEach { CadencePill(it.name, tone = it) }
+                    }
+                }
+            }
+
+            CadencePillTone.entries.forEach {
+                onNodeWithText(it.name).assertIsDisplayed()
+            }
         }
 
     @Test

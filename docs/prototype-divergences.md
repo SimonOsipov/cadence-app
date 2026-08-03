@@ -148,3 +148,56 @@ Kotlin/Native carries no ICU, so a locale API would be an expect/actual pair
 over two different implementations for a rule that is three lines. The
 separator is asserted as the code point, not as «looks spaced»: a plain space
 would let a kcal count wrap between its thousands and its hundreds.
+
+## Navigation: one library taken rather than ported
+
+**What the prototype does:** `@react-navigation/native-stack`, with
+`animation: 'slide_from_right'`, `animationDuration: 380`, and a
+`fullScreenModal` group for the four logging flows.
+
+**What we do:** `org.jetbrains.androidx.navigation:navigation-compose` 2.9.2,
+with the same durations and directions spelled out as Compose transitions.
+
+**Why:** unlike the Material widgets this project refused, what a navigation
+library carries is not a look. It is back-stack ownership, saved state across
+process death, and the platform back gesture — a hand-rolled stack would have
+to reimplement all three before the first screen lands. `slide_from_right` has
+no Compose preset, so the push is written out: a full-width slide in, with the
+outgoing screen trailing at a third of the width, which is what a native iOS
+push does under it.
+
+The four modal routes carry their transition by membership in a `modal<>`
+builder rather than by repeating two overrides each, the way the prototype's
+`Stack.Group` does. One omission in four copies would be a screen sliding the
+wrong way, and no test would say so.
+
+## `navigate` is not `navigate`
+
+**What the prototype does:** React Navigation's `navigate` returns to an
+existing instance of a route if the stack already holds one; its `push` always
+adds a new entry. `AppNavigator.tsx` uses both, deliberately — `push` only for
+article-to-article.
+
+**What we do:** `NavHostController.openRoute` reproduces the first, `pushRoute`
+the second. Compose's own `navigate` always pushes, and `launchSingleTop`
+de-duplicates only against the top of the stack, so neither is the prototype's
+behaviour.
+
+**Why it is visible:** «добавить в день» on a recipe hands back to Nutrition
+from three screens deep. Faithful, the stack goes
+`[Today, Nutrition, Recipes, RecipeDetail]` → `[Today, Nutrition]`; with a plain
+navigate it grows to five and back walks a path the user never took. Pinned by
+`CadenceNavigationTest.openingARouteAlreadyInTheStackReturnsToItInsteadOfStackingASecond`.
+
+## Screen titles while the screens are placeholders
+
+**What the prototype does:** each screen draws its own composed header — no
+screen anywhere renders the bare word «Сегодня» as a title.
+
+**What we do:** the placeholder standing in for each route titles itself
+«Экран «Сегодня»».
+
+**Why:** the bare label is also the tab bar's own text, so two nodes would read
+the same word and every assertion about which screen is showing would be
+ambiguous — which is how the first version of the navigation test failed. This
+divergence dies with the placeholders, in steps 3–9.
