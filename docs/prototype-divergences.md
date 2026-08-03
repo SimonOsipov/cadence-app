@@ -201,3 +201,37 @@ screen anywhere renders the bare word «Сегодня» as a title.
 the same word and every assertion about which screen is showing would be
 ambiguous — which is how the first version of the navigation test failed. This
 divergence dies with the placeholders, in steps 3–9.
+
+## `openRoute` re-opens the current screen instead of no-opping
+
+**What the prototype does:** React Navigation's `navigate` to the screen you are
+already on, with identical params, does nothing.
+
+**What we do:** rebuild the entry.
+
+**Why:** matching arguments needs the filled route string, which
+navigation-compose generates internally and does not expose. The alternative —
+the type-only guard this code shipped with first — returned early on *any*
+same-type navigation, so tapping a neighbouring biomarker from
+`TrendDetail("hrv")` did nothing at all and said nothing about why. Given the
+choice between a rebuilt entry and a dead tap in a medical app, the rebuild
+wins. No screen holds state worth preserving yet; the first one that does is
+what forces this line to change. Pinned by
+`CadenceNavigationTest.openingTheScreenYouAreOnWithDifferentArgumentsShowsTheNewOnes`
+and `…DoesNotStackASecondCopy`.
+
+## `replace` still leaves two copies when the target is already below
+
+**What the prototype does:** `ChatList → ChatThread → replace('ChatList')`
+leaves `[…, ChatList, ChatList]`. React Navigation's `replace` swaps the top
+entry and does not look further down.
+
+**What we do:** the same — measured on the simulator, `[Today, ChatList,
+ChatList]`.
+
+**Why it is listed:** because it is a defect, not a feature — back from the
+second `ChatList` lands on a visually identical screen and the button reads as
+broken. It is not in the partner's §08 list of prototype bugs, and it is
+reachable only from `ChatThreadScreen`'s «к списку», which is ported in step 9.
+Left faithful for now and raised there, where the screen that triggers it is in
+front of us, rather than fixed blind in the shell.

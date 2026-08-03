@@ -38,3 +38,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.modalEnter(): Ent
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.modalExit(): ExitTransition =
     slideOutVertically(tween(CADENCE_PUSH_DURATION_MS)) { it }
+
+/**
+ * The screen a modal rises over does not move.
+ *
+ * A native `fullScreenModal` leaves it exactly where it was; the NavHost's own
+ * defaults would slide it a third of the width sideways, which is a horizontal
+ * drift the prototype has on none of the four logging flows.
+ */
+internal fun modalUnderlayEnter(): EnterTransition = EnterTransition.None
+
+internal fun modalUnderlayExit(): ExitTransition = ExitTransition.None

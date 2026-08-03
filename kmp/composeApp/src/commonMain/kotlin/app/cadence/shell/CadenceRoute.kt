@@ -69,22 +69,41 @@ sealed interface CadenceRoute {
         val threadId: String,
     ) : CadenceRoute
 
-    // The four the prototype presents as full-screen modals rather than
-    // pushing — `Stack.Group` with `presentation: 'fullScreenModal'`. They
-    // slide up, not in from the right, and that is the only thing that makes
-    // them a group.
-    @Serializable
-    data object LogDose : CadenceRoute
+    /**
+     * The four the prototype presents as full-screen modals rather than
+     * pushing — `Stack.Group` with `presentation: 'fullScreenModal'`. They
+     * slide up, not in from the right.
+     *
+     * A marker interface rather than a comment over four declarations, because
+     * the argument for grouping them at all — that four repeated overrides
+     * invite one omission nobody would see — applies just as much to a group
+     * the compiler does not check. Registering `Schedule` as a modal, or
+     * `LogDose` as an ordinary push, now fails to compile.
+     */
+    sealed interface Modal : CadenceRoute
 
     @Serializable
-    data object LogMeal : CadenceRoute
+    data object LogDose : Modal
 
     @Serializable
-    data object AddVial : CadenceRoute
+    data object LogMeal : Modal
 
     @Serializable
-    data object RecipeBuilder : CadenceRoute
+    data object AddVial : Modal
+
+    @Serializable
+    data object RecipeBuilder : Modal
 }
+
+/**
+ * The root of the after-sign-in graph.
+ *
+ * Named once because two places need to agree on it — `NavHost`'s
+ * `startDestination` and [popToTop] — and block 7 will move the boundary above
+ * this graph. Two literals that drifted apart would turn every tab tap into a
+ * silent no-pop.
+ */
+val CADENCE_ROOT: CadenceRoute = CadenceRoute.Today
 
 /**
  * Where a bottom-bar destination lands.

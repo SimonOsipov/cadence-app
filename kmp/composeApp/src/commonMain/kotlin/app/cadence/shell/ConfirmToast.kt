@@ -20,6 +20,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -39,13 +40,17 @@ const val CADENCE_CONFIRM_TOAST_MS: Long = 1700
 /**
  * What a logged meal has to say for itself.
  *
- * The reached count only; the target it is measured against is the day's, and
- * belongs to whoever knows the day rather than to the event.
+ * `dayKcal` is **the day's running total including this meal**, not the meal's
+ * own — `showConfirm({ kcal: nextTotals.kcal, … })` in
+ * mobile/src/state/AppState.tsx, where `nextTotals = dayTotals(nextMeals)`. The
+ * field was called `kcal` first, which invited step 8 to wire the meal's own
+ * figure and render «300 / 2 100 ккал сегодня» after a 300-kcal breakfast: a
+ * plausible wrong number, in a health product, that nothing would have caught.
  */
 @Immutable
 data class ConfirmToastState(
     val mealName: String,
-    val kcal: Int,
+    val dayKcal: Int,
 )
 
 private val TOAST_RADIUS = 22.dp
@@ -78,8 +83,17 @@ fun ConfirmToast(
             modifier
                 .fillMaxSize()
                 .background(palette.glassSoft)
+                // The prototype's overlay is `pointerEvents="auto"`: for the
+                // 1 700 ms it is up it is the topmost hit target and swallows
+                // every touch. Without this the screen is dimmed but fully
+                // live — a tap on «+» underneath opens the action sheet, which
+                // composes *below* this layer and would be read through it.
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.xxl),
+                // max(inset, 16) + 8 in the prototype; windowInsetsPadding has
+                // already applied the inset, so this is the remainder — the
+                // same shape CadenceTabBar and CadenceSheet both use.
+                .padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Row(
@@ -109,7 +123,7 @@ fun ConfirmToast(
                     style = Cadence.typography.title.copy(color = palette.ink, fontSize = TOAST_TITLE_SIZE),
                     maxLines = 1,
                 )
-                ToastTally(reached = state.kcal, target = targetKcal)
+                ToastTally(reached = state.dayKcal, target = targetKcal)
             }
         }
     }

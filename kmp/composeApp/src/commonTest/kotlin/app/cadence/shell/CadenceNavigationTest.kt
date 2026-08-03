@@ -3,7 +3,10 @@ package app.cadence.shell
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -65,27 +68,36 @@ private fun ComposeUiTest.navigate(block: () -> Unit) {
  * kept beside the hierarchy it mirrors.
  */
 private object CadenceRouteSamples {
-    val all: List<CadenceRoute> =
+    /**
+     * Every route with the title its screen must draw.
+     *
+     * The titles are the point. Asserting only that navigation did not throw
+     * proved nothing a `composable<Journal> { }` with an empty body would not
+     * also pass — and thirteen of the nineteen routes had no other test
+     * touching their content. The four carrying an argument spell it out, so a
+     * screen that drops its parameter fails here too.
+     */
+    val all: List<Pair<CadenceRoute, String>> =
         listOf(
-            CadenceRoute.Today,
-            CadenceRoute.Trends,
-            CadenceRoute.TrendDetail("hrv"),
-            CadenceRoute.Nutrition,
-            CadenceRoute.Vials,
-            CadenceRoute.Schedule,
-            CadenceRoute.Learn,
-            CadenceRoute.Article("a-1"),
-            CadenceRoute.Journal,
-            CadenceRoute.Body,
-            CadenceRoute.Recipes,
-            CadenceRoute.RecipeDetail("r-1"),
-            CadenceRoute.Profile,
-            CadenceRoute.ChatList,
-            CadenceRoute.ChatThread("ksenia"),
-            CadenceRoute.LogDose,
-            CadenceRoute.LogMeal,
-            CadenceRoute.AddVial,
-            CadenceRoute.RecipeBuilder,
+            CadenceRoute.Today to "Сегодня",
+            CadenceRoute.Trends to "Тренды",
+            CadenceRoute.TrendDetail("hrv") to "Биомаркер · hrv",
+            CadenceRoute.Nutrition to "Питание",
+            CadenceRoute.Vials to "Аптечка",
+            CadenceRoute.Schedule to "Расписание",
+            CadenceRoute.Learn to "Обучение",
+            CadenceRoute.Article("a-1") to "Статья · a-1",
+            CadenceRoute.Journal to "Дневник",
+            CadenceRoute.Body to "Тело",
+            CadenceRoute.Recipes to "Рецепты",
+            CadenceRoute.RecipeDetail("r-1") to "Рецепт · r-1",
+            CadenceRoute.Profile to "Профиль",
+            CadenceRoute.ChatList to "Чаты",
+            CadenceRoute.ChatThread("ksenia") to "Переписка · ksenia",
+            CadenceRoute.LogDose to "Записать дозу",
+            CadenceRoute.LogMeal to "Записать приём пищи",
+            CadenceRoute.AddVial to "Добавить флакон",
+            CadenceRoute.RecipeBuilder to "Новый рецепт",
         )
 }
 
@@ -199,12 +211,17 @@ class CadenceNavigationTest {
             // throws only when something navigates to it — which, until the
             // screens land, is never. This walks all of them so a missing
             // `composable<…>` fails now rather than in step 9 of the block.
-            CadenceRouteSamples.all.forEach { route ->
+            //
+            // The title assertion is what makes it a rendering test rather than
+            // a registration test: `hasRoute` after a navigate that did not
+            // throw is very nearly tautological.
+            CadenceRouteSamples.all.forEach { (route, title) ->
                 navigate { nav.pushRoute(route) }
                 assertTrue(
                     nav.currentBackStackEntry?.destination?.hasRoute(route::class) == true,
                     "no destination registered for $route",
                 )
+                onNodeWithText("Экран «$title»").assertIsDisplayed()
             }
         }
 
@@ -222,5 +239,90 @@ class CadenceNavigationTest {
             navigate { nav.openRoute(CadenceRoute.Schedule) }
 
             assertTrue(onAllNodesWithText("Аптечка").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
+    fun everyRouteIsAccountedForInTheSamples() =
+        runComposeUiTest {
+            val nav = startShell()
+
+            // The sample list is hand-written — no `sealedSubclasses` on Native
+            // — so a route added to the graph without a sample would go
+            // unwalked and its own comment admits it. This crosses the list
+            // against the graph so at least that direction cannot drift.
+            val registered = nav.graph.count { it !is NavGraph }
+
+            assertEquals(registered, CadenceRouteSamples.all.size, "a route in the graph has no sample")
+        }
+
+    @Test
+    fun openingTheScreenYouAreOnWithDifferentArgumentsShowsTheNewOnes() =
+        runComposeUiTest {
+            val nav = startShell()
+
+            // A patient on one biomarker taps a neighbouring one. This used to
+            // hit an early return and do nothing at all — the tap died, the
+            // screen kept the old biomarker, and nothing anywhere said why.
+            navigate { nav.openRoute(CadenceRoute.TrendDetail("hrv")) }
+            navigate { nav.openRoute(CadenceRoute.TrendDetail("ldl")) }
+
+            assertEquals(listOf("Today", "TrendDetail"), nav.stack())
+            onNodeWithText("Экран «Биомаркер · ldl»").assertIsDisplayed()
+        }
+
+    @Test
+    fun openingTheScreenYouAreOnDoesNotStackASecondCopy() =
+        runComposeUiTest {
+            val nav = startShell()
+
+            navigate { nav.openRoute(CadenceRoute.Trends) }
+            navigate { nav.openRoute(CadenceRoute.Trends) }
+
+            assertEquals(listOf("Today", "Trends"), nav.stack())
+        }
+
+    @Test
+    fun backReturnsToTheScreenBehind() =
+        runComposeUiTest {
+            val nav = startShell()
+
+            // The way out of fifteen of the nineteen routes, and nothing
+            // clicked it until a mutation showed `back = { }` passing the whole
+            // suite.
+            navigate { nav.openRoute(CadenceRoute.Schedule) }
+            assertEquals(listOf("Today", "Schedule"), nav.stack())
+
+            onNodeWithContentDescription("Назад").performClick()
+            waitForIdle()
+
+            assertEquals(listOf("Today"), nav.stack())
+        }
+
+    @Test
+    fun theRootOffersNoWayBack() =
+        runComposeUiTest {
+            startShell()
+
+            // Today is the start destination; a back chevron there would be an
+            // affordance for something that cannot happen.
+            assertTrue(onAllNodesWithContentDescription("Назад").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
+    fun eachTabScreenHighlightsItsOwnDestination() =
+        runComposeUiTest {
+            val nav = startShell()
+
+            // TabBarTest proves the bar highlights what it is told to. This
+            // proves the shell tells it the right thing — passing TODAY for
+            // every screen left the whole suite green.
+            navigate { nav.selectDestination(CadenceDestination.INVENTORY) }
+            onNodeWithText("Аптечка").assertIsSelected()
+
+            navigate { nav.selectDestination(CadenceDestination.TRENDS) }
+            onNodeWithText("Тренды").assertIsSelected()
+
+            navigate { nav.selectDestination(CadenceDestination.NUTRITION) }
+            onNodeWithText("Питание").assertIsSelected()
         }
 }

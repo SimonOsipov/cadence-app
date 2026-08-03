@@ -18,9 +18,14 @@ import androidx.navigation.toRoute
 import app.cadence.design.CadenceDestination
 import kotlinx.coroutines.delay
 
-/** Stand-ins until the meal wizard lands in step 8 of the block. */
+/**
+ * Stand-ins until the meal wizard lands in step 8 of the block.
+ *
+ * The kcal figure is the *day's* total after the meal, not the meal's own —
+ * see [ConfirmToastState].
+ */
 private const val PLACEHOLDER_MEAL_NAME = "Обед"
-private const val PLACEHOLDER_MEAL_KCAL = 1240
+private const val PLACEHOLDER_DAY_KCAL = 1240
 
 /** The day's target — `MEAL_TARGETS.kcal` in the prototype's meal data. */
 private const val PLACEHOLDER_KCAL_TARGET = 2100
@@ -45,8 +50,23 @@ fun CadenceApp(
 ) {
     var actionsOpen by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<ConfirmToastState?>(null) }
+    // Keyed on a counter rather than on the toast itself. ConfirmToastState is a
+    // data class and mutableStateOf compares structurally, so raising an equal
+    // toast inside the window would be no assignment at all: no state change,
+    // no restart, and the second confirmation would inherit the remainder of
+    // the first one's life. The prototype clears its timeout before re-arming,
+    // for the same reason.
+    //
+    // No UI test reaches this, and that is not an oversight: the overlay
+    // swallows touches for the whole window, so a second meal cannot be logged
+    // by tapping until the first toast is gone — see
+    // ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp. The counter stays
+    // because the moment anything raises a toast without a tap behind it — a
+    // repository push, a recipe added to the day — the equality trap is live
+    // again, and it costs one Int.
+    var raisedAt by remember { mutableStateOf(0) }
 
-    LaunchedEffect(toast) {
+    LaunchedEffect(raisedAt) {
         if (toast != null) {
             delay(CADENCE_CONFIRM_TOAST_MS)
             toast = null
@@ -57,7 +77,10 @@ fun CadenceApp(
         CadenceShell(
             navController = navController,
             onOpenActions = { actionsOpen = true },
-            onMealLogged = { name, kcal -> toast = ConfirmToastState(name, kcal) },
+            onMealLogged = { name, dayKcal ->
+                toast = ConfirmToastState(name, dayKcal)
+                raisedAt++
+            },
         )
 
         ActionChooserSheet(
@@ -103,7 +126,7 @@ fun CadenceShell(
 ) {
     NavHost(
         navController = navController,
-        startDestination = CadenceRoute.Today,
+        startDestination = CADENCE_ROOT,
         modifier = modifier.fillMaxSize(),
         enterTransition = { pushEnter() },
         exitTransition = { pushExit() },
@@ -133,7 +156,11 @@ private fun NavGraphBuilder.tabRoutes(
                 title = destination.label,
                 destination = destination,
                 // Today is the root: there is nothing behind it to go back to.
-                onBack = if (destination == CadenceDestination.TODAY) null else nav::popToTop,
+                // The other three use goBack, as the prototype does — identical
+                // to popToTop only while a tab always sits at depth 1, which
+                // stops being true the moment a real screen reaches one from
+                // deeper (RecipeDetail → Nutrition).
+                onBack = if (destination == CadenceDestination.TODAY) null else back(nav),
                 onSelectTab = nav::selectDestination,
                 onLog = onOpenActions,
             )
@@ -147,9 +174,18 @@ private fun NavGraphBuilder.tabRoutes(
     }
 }
 
+/**
+ * The way out of every screen that is not the root.
+ *
+ * One definition rather than one per graph section: `popBackStack()` spelled
+ * inline in three places is three chances for one of them to become `{ }` and
+ * strand a screen, which is what the tests could not see until they clicked it.
+ */
+private fun back(nav: NavHostController): () -> Unit = { nav.popBackStack() }
+
 /** Everything reached by a push: slides in from the right, backed out of. */
 private fun NavGraphBuilder.pushedRoutes(nav: NavHostController) {
-    val back: () -> Unit = { nav.popBackStack() }
+    val back = back(nav)
 
     composable<CadenceRoute.TrendDetail> { entry ->
         PlaceholderScreen("Биомаркер · ${entry.toRoute<CadenceRoute.TrendDetail>().biomarkerId}", onBack = back)
@@ -180,7 +216,7 @@ private fun NavGraphBuilder.modalRoutes(
     nav: NavHostController,
     onMealLogged: (String, Int) -> Unit,
 ) {
-    val back: () -> Unit = { nav.popBackStack() }
+    val back = back(nav)
 
     modal<CadenceRoute.LogDose> {
         PlaceholderScreen("Записать дозу", onBack = back, action = "Записать" to back)
@@ -194,7 +230,7 @@ private fun NavGraphBuilder.modalRoutes(
             // so the toast is reachable before the wizard is ported.
             action =
                 "Записать" to {
-                    onMealLogged(PLACEHOLDER_MEAL_NAME, PLACEHOLDER_MEAL_KCAL)
+                    onMealLogged(PLACEHOLDER_MEAL_NAME, PLACEHOLDER_DAY_KCAL)
                     back()
                 },
         )
@@ -211,9 +247,15 @@ private fun NavGraphBuilder.modalRoutes(
  * overrides — where one omission would be a screen that slides the wrong way
  * and no test would say so.
  */
-private inline fun <reified T : CadenceRoute> NavGraphBuilder.modal(noinline content: @Composable () -> Unit) {
+private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(noinline content: @Composable () -> Unit) {
     composable<T>(
         enterTransition = { modalEnter() },
+        // The screen underneath a native fullScreenModal does not move. Without
+        // these two the NavHost defaults apply and it drifts a third of the
+        // width sideways while the modal rises — a horizontal slide the
+        // prototype does not have, on all four logging flows.
+        exitTransition = { modalUnderlayExit() },
+        popEnterTransition = { modalUnderlayEnter() },
         popExitTransition = { modalExit() },
     ) { content() }
 }

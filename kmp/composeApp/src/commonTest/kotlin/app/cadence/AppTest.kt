@@ -36,6 +36,23 @@ class AppTest {
         }
 
     @Test
+    fun theSheetCanBeDismissedWithoutChoosingAnything() =
+        runComposeUiTest {
+            setContent { App() }
+
+            onNodeWithContentDescription("Записать").performClick()
+            onNodeWithText("Отмена").performClick()
+            waitForIdle()
+
+            // Wiring onDismiss to nothing made the sheet unclosable — the only
+            // way out was into one of the two wizards — and every test stayed
+            // green, because the sheet's own suite checks that it *reports* the
+            // tap, not that the shell acts on it.
+            assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
+            onNodeWithText("Экран «Сегодня»").assertIsDisplayed()
+        }
+
+    @Test
     fun theAppIsWrappedInItsOwnTheme() =
         runComposeUiTest {
             // CadenceTheme is App's job, not the shell's — the shell is only
@@ -69,10 +86,13 @@ class AppTest {
             onNodeWithText("Записать дозу").performClick()
             waitForIdle()
 
-            // The sheet row and the wizard carry the same words, so the back
-            // affordance is what tells them apart — and the sheet closing
-            // behind the modal is the other half of it.
-            onNodeWithContentDescription("Назад").assertIsDisplayed()
+            // The *destination*, not merely «some screen with a back button».
+            // Swapping the two rows' targets — dose opening the meal wizard —
+            // left the whole suite green, because both tests named after this
+            // wiring asserted only that a «Назад» existed.
+            onNodeWithText("Экран «Записать дозу»").assertIsDisplayed()
+            // And the sheet closed behind the modal rather than staying under
+            // it, as the prototype closes it before it navigates.
             assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
         }
 }

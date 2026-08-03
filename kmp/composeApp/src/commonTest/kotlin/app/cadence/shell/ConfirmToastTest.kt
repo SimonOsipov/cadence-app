@@ -7,15 +7,22 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import app.cadence.design.CadenceTheme
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-/** The prototype's `MEAL_TARGETS.kcal`, and what the placeholder meal carries. */
+/**
+ * The prototype's `MEAL_TARGETS.kcal`, and the day total the placeholder emits.
+ *
+ * `DAY_KCAL` is the running total *after* the meal, not the meal's own figure —
+ * `showConfirm({ kcal: nextTotals.kcal, … })` in AppState.tsx. The two are
+ * easily confused and the toast would render a plausible wrong number.
+ */
 private const val TARGET_KCAL = 2100
-private const val LOGGED_KCAL = 1240
+private const val DAY_KCAL = 1240
 
 @OptIn(ExperimentalTestApi::class)
 class ConfirmToastTest {
@@ -25,7 +32,7 @@ class ConfirmToastTest {
             setContent {
                 CadenceTheme {
                     ConfirmToast(
-                        state = ConfirmToastState(mealName = "Обед", kcal = LOGGED_KCAL),
+                        state = ConfirmToastState(mealName = "Обед", dayKcal = DAY_KCAL),
                         targetKcal = TARGET_KCAL,
                     )
                 }
@@ -83,22 +90,51 @@ class ConfirmToastTest {
         }
 
     @Test
-    fun thePlusOpensTheSheetAndTheSheetOpensTheWizard() =
+    fun theToastRaisedByTheShellCarriesTheShellsOwnNumbers() =
         runComposeUiTest {
             mainClock.autoAdvance = false
-            setContent { CadenceTheme { CadenceApp() } }
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceApp(navController = nav) }
+            }
 
-            onNodeWithContentDescription("Записать").performClick()
+            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
             settle()
-            onNodeWithText("Записать приём пищи").performClick()
-            settle()
+            onNodeWithText("Записать").performClick()
+            mainClock.advanceTimeBy(FRAME_MS)
+            waitForIdle()
 
-            // The sheet row and the wizard carry the same words; the back
-            // affordance is what tells them apart.
-            onNodeWithContentDescription("Назад").assertIsDisplayed()
-            // And the sheet closed behind it rather than staying under the
-            // modal — the prototype closes it before it navigates.
-            assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
+            // The unit tests above supply their own numbers, so nothing pinned
+            // what the shell actually passes: a target of 0 went unnoticed.
+            onNodeWithText("1\u00A0240 / 2\u00A0100 ккал сегодня").assertIsDisplayed()
+        }
+
+    @Test
+    fun theToastSwallowsEveryTouchWhileItIsUp() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceApp(navController = nav) }
+            }
+
+            logAMeal(nav)
+            onNodeWithText("Обед · записано").assertIsDisplayed()
+
+            // The prototype's overlay is `pointerEvents="auto"` — for 1 700 ms
+            // it is the topmost hit target and nothing beneath it is live.
+            // Without that the screen is merely dimmed: a tap on «+» opens the
+            // action sheet, which composes *under* this layer and would be read
+            // through a scrim.
+            onNodeWithText("Тренды").performClick()
+            waitForIdle()
+
+            assertTrue(
+                nav.currentBackStack.value.none { it.destination.hasRoute<CadenceRoute.Trends>() },
+                "a tap went through the toast overlay",
+            )
         }
 }
 
@@ -114,6 +150,16 @@ private const val FRAME_MS = 100L
  */
 private const val JUST_UNDER_THE_DEADLINE_MS = 1500L
 private const val PAST_THE_DEADLINE_MS = 200L
+
+/** Opens the meal wizard, taps «Записать», and lets the toast appear. */
+@OptIn(ExperimentalTestApi::class)
+private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostController) {
+    runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
+    settle()
+    onNodeWithText("Записать").performClick()
+    mainClock.advanceTimeBy(FRAME_MS)
+    waitForIdle()
+}
 
 @OptIn(ExperimentalTestApi::class)
 private fun androidx.compose.ui.test.ComposeUiTest.settle() {

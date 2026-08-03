@@ -266,6 +266,43 @@ class DesignSystemTest {
         }
 
     @Test
+    fun aStaticCardStillRendersItsContent() =
+        runComposeUiTest {
+            // The `onClick == null` branch exists to avoid starting an
+            // interaction collector per item in a list — a deliberate
+            // optimisation whose only exercise was the showcase. The audit
+            // that replaced the showcase went component by component and so
+            // missed the parameter combinations it had been executing.
+            setContent {
+                CadenceTheme {
+                    CadenceCard { CadenceBody("Статическая карточка") }
+                }
+            }
+
+            onNodeWithText("Статическая карточка").assertIsDisplayed()
+        }
+
+    @Test
+    fun aButtonWithAnIconAndFullWidthStillRendersBoth() =
+        runComposeUiTest {
+            // Same gap: `if (icon != null)` measures the icon through
+            // LocalDensity and composes a CadenceIcon, and after the showcase
+            // went, no test composed that branch at all.
+            setContent {
+                CadenceTheme {
+                    CadenceButton(
+                        label = "Открыть лист",
+                        onClick = {},
+                        icon = CadenceIcons.plus,
+                        fillWidth = true,
+                    )
+                }
+            }
+
+            onNodeWithText("Открыть лист").assertIsDisplayed()
+        }
+
+    @Test
     fun everyPillToneRendersItsLabel() =
         runComposeUiTest {
             // The showcase in App.kt used to be the only place a pill was
