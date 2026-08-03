@@ -8,7 +8,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
-import app.cadence.shared.currentPlatform
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -19,20 +18,18 @@ class AppTest {
         runComposeUiTest {
             setContent { App() }
 
-            onNodeWithText("Экран «Сегодня»").assertIsDisplayed()
+            // The ported screen, not the placeholder. The greeting is
+            // assembled from a TodaySummary, so reaching it proves :shared is
+            // linked into the UI and not merely into the module graph — which
+            // is what the deleted platform-name assertion used to do, and what
+            // PlaceholderScreen's note asked to be re-homed.
+            // The patient's name, not the greeting: `App()` runs on the system
+            // clock, and asserting a weekday would make this test pass or fail
+            // by the day it is run on. What it needs to prove is that the
+            // ported screen is what the app opens on — the placeholder had no
+            // name on it.
+            onNodeWithText("Марина").assertIsDisplayed()
             onNodeWithText("Сегодня").assertIsSelected()
-        }
-
-    @Test
-    fun theAppShowsThePlatformItRunsOn() =
-        runComposeUiTest {
-            setContent { App() }
-
-            // Proves :shared is linked into the UI and not merely into the
-            // module graph. It rides on the placeholder's footer today; see the
-            // note on PlaceholderScreen about where this has to go when the
-            // last placeholder is deleted.
-            onNodeWithText("заглушка · ${currentPlatform().name}").assertIsDisplayed()
         }
 
     @Test
@@ -49,7 +46,7 @@ class AppTest {
             // green, because the sheet's own suite checks that it *reports* the
             // tap, not that the shell acts on it.
             assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
-            onNodeWithText("Экран «Сегодня»").assertIsDisplayed()
+            onNodeWithText("Сегодня").assertIsSelected()
         }
 
     @Test
@@ -78,7 +75,7 @@ class AppTest {
             // than fall back, so reaching any screen at all is the assertion.
             setContent { App() }
 
-            onNodeWithText("Экран «Сегодня»").assertIsDisplayed()
+            onNodeWithText("Сегодня").assertIsSelected()
         }
 
     @Test

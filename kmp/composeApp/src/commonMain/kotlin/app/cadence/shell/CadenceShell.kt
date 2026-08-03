@@ -17,6 +17,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.cadence.design.CadenceDestination
+import app.cadence.screens.schedule.ScheduleScreen
+import app.cadence.screens.schedule.ScheduleState
+import app.cadence.screens.today.TodayScreen
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
@@ -30,6 +33,23 @@ import kotlinx.coroutines.launch
  * needs the wizard.
  */
 private const val PLACEHOLDER_MEAL_NAME = "Обед"
+
+/** Until sign-in says whose app this is — block 7. */
+private const val PATIENT_NAME = "Марина"
+private const val PRIMARY_THREAD = "ksenia"
+
+/** §03: `protocols.weeks (12)`. Read from the protocol once one is fetched. */
+private const val CYCLE_WEEKS = 12
+
+/** The month around [today], in the shape «График» draws. */
+private suspend fun CadenceMocks.scheduleFor(today: TodaySummary): ScheduleState =
+    ScheduleState(
+        today = today.date,
+        cycleWeek = today.cycleWeek,
+        cycleWeeks = CYCLE_WEEKS,
+        days = schedule.month(today.date),
+        titration = today.nextTitration,
+    )
 
 /**
  * The whole after-sign-in surface: the graph, the sheet the `+` opens, and the
@@ -63,7 +83,13 @@ fun CadenceApp(
     // the same way; nothing about this line knows it is talking to a mock.
     var reloads by remember { mutableStateOf(0) }
 
-    LaunchedEffect(reloads) { summary = mocks.today.today() }
+    var schedule by remember { mutableStateOf<ScheduleState?>(null) }
+
+    LaunchedEffect(reloads) {
+        val today = mocks.today.today()
+        summary = today
+        schedule = mocks.scheduleFor(today)
+    }
 
     var actionsOpen by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<ConfirmToastState?>(null) }
@@ -100,6 +126,8 @@ fun CadenceApp(
                     reloads++
                 }
             },
+            summary = summary,
+            schedule = schedule,
             onMealLogged = { name ->
                 // The day's running total, from the repository — §03 puts
                 // exactly that in the toast, not the meal's own figure.
@@ -147,6 +175,12 @@ fun CadenceShell(
     onOpenActions: () -> Unit = { },
     onMealLogged: (String) -> Unit = { },
     onDoseLogged: () -> Unit = { },
+    // The two sections that are ported. The rest of the graph still draws
+    // placeholders, and a null summary means the first read has not landed —
+    // the screen is not composed until it has, rather than being shown a day
+    // made of zeroes.
+    summary: TodaySummary? = null,
+    schedule: ScheduleState? = null,
 ) {
     NavHost(
         navController = navController,
@@ -163,8 +197,8 @@ fun CadenceShell(
         popEnterTransition = { if (initialState.destination.isModal()) modalUnderlayEnter() else popEnter() },
         popExitTransition = { if (initialState.destination.isModal()) modalExit() else popExit() },
     ) {
-        tabRoutes(navController, onOpenActions)
-        pushedRoutes(navController)
+        tabRoutes(navController, onOpenActions, summary)
+        pushedRoutes(navController, schedule)
         modalRoutes(navController, onMealLogged, onDoseLogged)
     }
 }
@@ -179,6 +213,7 @@ fun CadenceShell(
 private fun NavGraphBuilder.tabRoutes(
     nav: NavHostController,
     onOpenActions: () -> Unit,
+    summary: TodaySummary?,
 ) {
     CadenceDestination.entries.forEach { destination ->
         val body: @Composable () -> Unit = {
@@ -196,10 +231,44 @@ private fun NavGraphBuilder.tabRoutes(
             )
         }
         when (destination) {
-            CadenceDestination.TODAY -> composable<CadenceRoute.Today> { body() }
-            CadenceDestination.INVENTORY -> composable<CadenceRoute.Vials> { body() }
-            CadenceDestination.TRENDS -> composable<CadenceRoute.Trends> { body() }
-            CadenceDestination.NUTRITION -> composable<CadenceRoute.Nutrition> { body() }
+            CadenceDestination.TODAY -> {
+                composable<CadenceRoute.Today> {
+                    if (summary == null) {
+                        body()
+                    } else {
+                        TodayScreen(
+                            summary = summary,
+                            patientName = PATIENT_NAME,
+                            onLogDose = { nav.openRoute(CadenceRoute.LogDose) },
+                            onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
+                            onOpenQuickFeel = { nav.openRoute(CadenceRoute.Journal) },
+                            onOpenVials = { nav.selectDestination(CadenceDestination.INVENTORY) },
+                            onOpenTrends = { nav.selectDestination(CadenceDestination.TRENDS) },
+                            onOpenChat = { nav.openRoute(CadenceRoute.ChatThread(PRIMARY_THREAD)) },
+                            onOpenSchedule = { nav.openRoute(CadenceRoute.Schedule) },
+                            onOpenLearn = { nav.openRoute(CadenceRoute.Learn) },
+                            onOpenProfile = { nav.openRoute(CadenceRoute.Profile) },
+                            onLogMeal = { nav.openRoute(CadenceRoute.LogMeal) },
+                            onOpenRecipes = { nav.openRoute(CadenceRoute.Recipes) },
+                            onOpenNutrition = { nav.selectDestination(CadenceDestination.NUTRITION) },
+                            onSelectTab = nav::selectDestination,
+                            onOpenActions = onOpenActions,
+                        )
+                    }
+                }
+            }
+
+            CadenceDestination.INVENTORY -> {
+                composable<CadenceRoute.Vials> { body() }
+            }
+
+            CadenceDestination.TRENDS -> {
+                composable<CadenceRoute.Trends> { body() }
+            }
+
+            CadenceDestination.NUTRITION -> {
+                composable<CadenceRoute.Nutrition> { body() }
+            }
         }
     }
 }
@@ -214,13 +283,22 @@ private fun NavGraphBuilder.tabRoutes(
 private fun back(nav: NavHostController): () -> Unit = { nav.popBackStack() }
 
 /** Everything reached by a push: slides in from the right, backed out of. */
-private fun NavGraphBuilder.pushedRoutes(nav: NavHostController) {
+private fun NavGraphBuilder.pushedRoutes(
+    nav: NavHostController,
+    schedule: ScheduleState?,
+) {
     val back = back(nav)
 
     composable<CadenceRoute.TrendDetail> { entry ->
         PlaceholderScreen("Биомаркер · ${entry.toRoute<CadenceRoute.TrendDetail>().biomarkerId}", onBack = back)
     }
-    composable<CadenceRoute.Schedule> { PlaceholderScreen("Расписание", onBack = back) }
+    composable<CadenceRoute.Schedule> {
+        if (schedule == null) {
+            PlaceholderScreen("Расписание", onBack = back)
+        } else {
+            ScheduleScreen(state = schedule, onBack = back)
+        }
+    }
     composable<CadenceRoute.Learn> { PlaceholderScreen("Обучение", onBack = back) }
     composable<CadenceRoute.Article> { entry ->
         PlaceholderScreen("Статья · ${entry.toRoute<CadenceRoute.Article>().articleId}", onBack = back)

@@ -15,10 +15,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import app.cadence.design.Cadence
+import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceIconButton
 import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceSpacing
+import app.cadence.design.CadenceTabBar
 import app.cadence.design.CadenceTitle
 import app.cadence.format.greeting
 import app.cadence.shared.repository.TodaySummary
@@ -48,6 +50,8 @@ fun TodayScreen(
     onLogMeal: () -> Unit = { },
     onOpenRecipes: () -> Unit = { },
     onOpenNutrition: () -> Unit = { },
+    onSelectTab: (CadenceDestination) -> Unit = { },
+    onOpenActions: () -> Unit = { },
 ) {
     Column(modifier.fillMaxSize()) {
         TodayHeader(
@@ -60,7 +64,7 @@ fun TodayScreen(
         )
 
         Column(
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
         ) {
             TodayHero(
@@ -106,6 +110,14 @@ fun TodayScreen(
                 )
             }
         }
+
+        // The bar lives inside the screen, as it does in the prototype — the
+        // navigator has none, and Schedule and Journal do not carry one.
+        CadenceTabBar(
+            active = CadenceDestination.TODAY,
+            onSelect = onSelectTab,
+            onLog = onOpenActions,
+        )
     }
 }
 

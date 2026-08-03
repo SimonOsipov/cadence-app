@@ -312,3 +312,28 @@ section, step 8 of the block. Porting a suggestion with no recipes behind it
 would mean seeding a second, parallel set of dishes — which is exactly the
 prototype mistake §03 spends its reconciliation table undoing. Completed when
 step 8 lands; recorded here so it is not mistaken for an oversight.
+
+## The `:shared`-is-linked proof moves off the placeholder
+
+**What it was:** `AppTest` asserted «заглушка · iOS» on `PlaceholderScreen`'s
+footer, which existed so that `:shared` being linked into the UI — rather than
+merely into the module graph — had something observable behind it.
+`PlaceholderScreen`'s KDoc asked whoever deleted the last placeholder to re-home
+that assertion rather than let a real screen grow a platform label.
+
+**What it is now:** the Today route draws the ported screen, whose greeting and
+hero are assembled from a `TodaySummary` that comes through `:shared`. Reaching
+the screen at all is the proof, and the platform-name test is deleted rather
+than moved.
+
+**Note for the remaining seventeen routes:** they still draw placeholders, so
+the footer is still there. This resolves the obligation for Today only; the same
+question returns for whichever route is last.
+
+## `App()` reads the system clock, so its tests assert what the clock cannot move
+
+`CadenceApp`'s default `CadenceMocks()` uses `SystemCadenceClock`, so `AppTest`
+cannot assert a weekday or a cycle week without passing or failing by the day it
+runs on — the trap `ConfirmToastTest` already fell into once. Tests that need a
+day wind their own clock and pass the mocks in; `AppTest` asserts the patient's
+name and the selected tab instead.
