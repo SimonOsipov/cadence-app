@@ -4,10 +4,12 @@ import app.cadence.shared.domain.CadenceClock
 import app.cadence.shared.domain.DoseEvent
 import app.cadence.shared.domain.DoseEventId
 import app.cadence.shared.domain.InjectionSite
+import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.SystemCadenceClock
 import app.cadence.shared.domain.cycleWeek
+import app.cadence.shared.domain.dosesPerWeek
 import app.cadence.shared.domain.occurrencesFor
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
@@ -38,6 +40,12 @@ import kotlinx.datetime.toLocalDateTime
  */
 class CadenceMocks(
     private val clock: CadenceClock = SystemCadenceClock,
+    // The device's zone, and that is temporary: CadenceClock's own KDoc calls
+    // reading a default the wrong answer, and §03 derives cycle position from
+    // «protocols.start_date + patient timezone». The seed has a profile with a
+    // zone on it now, and the shell will pass it once sign-in exists to say
+    // whose profile it is — until then a patient in Kaliningrad with a phone on
+    // Moscow time sees a different week than the server.
     private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) {
     private val events = mutableListOf<DoseEvent>()
@@ -73,10 +81,29 @@ class CadenceMocks(
                 mealCount = todaysMeals.size,
                 mealKcal = todaysMeals.sumOf { it.totals.kcal },
                 targets = MockSeed.targets,
-                weightKg = MockSeed.measurements.lastOrNull()?.value,
+                // «Latest reading wins», §03 — by `measuredAt` and for this metric,
+                // not by position in a list. The same defect as the unfiltered
+                // meals, hidden by a seed holding exactly one measurement.
+                weightKg =
+                    MockSeed.measurements
+                        .filter { it.metric == Metric.WEIGHT }
+                        .maxByOrNull { it.measuredAt }
+                        ?.value,
                 targetWeightKg = MockSeed.profile.targetWeightKg,
                 vialDosesLeft = remainingDoses(vial, events),
-                reorder = reorderHint(MockSeed.vials, events, MockSeed.SEMA_DOSES_PER_WEEK),
+                reorder =
+                    reorderHint(
+                        compoundId = MockSeed.semaglutide.id,
+                        vials = MockSeed.vials,
+                        events = events,
+                        // Derived from the protocol item, not seeded: a stored
+                        // rate is the sort of thing that goes stale the first
+                        // time a doctor edits the schedule.
+                        dosesPerWeek =
+                            MockSeed.plan.items
+                                .first { it.id == MockSeed.semaItemId }
+                                .dosesPerWeek(),
+                    ),
             )
         }
     }

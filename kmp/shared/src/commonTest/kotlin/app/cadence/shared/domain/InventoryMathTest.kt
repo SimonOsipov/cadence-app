@@ -120,6 +120,33 @@ class InventoryMathTest {
     }
 
     @Test
+    fun aSealedVialAboutToExpireSaysSo() {
+        // Measured: it read SEALED. Unopened stock with days left on it is
+        // exactly the vial worth warning about — it is about to be wasted —
+        // and the precedence comment already claimed expiry outranked
+        // everything but disposal.
+        val v = vial(openedAt = null, expiresOn = LocalDate(2026, 6, 3))
+
+        assertEquals(VialStatus.EXPIRING, vialStatus(v, emptyList(), TODAY))
+    }
+
+    @Test
+    fun aHintIsAboutOneCompoundAndCountsOnlyItsVials() {
+        // Measured: an unopened BPC vial suppressed the semaglutide hint, and
+        // BPC doses counted as semaglutide supply divided by semaglutide's
+        // weekly rate. A patient about to run out was told nothing.
+        val sema = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
+        val bpcSpare =
+            vial(totalDoses = 30).copy(id = VialId("v-bpc"), compoundId = CompoundId("bpc"))
+
+        val alone = reorderHint(SEMA, listOf(sema), emptyList(), dosesPerWeek = 1.0)
+        val withOtherCompound = reorderHint(SEMA, listOf(sema, bpcSpare), emptyList(), dosesPerWeek = 1.0)
+
+        assertEquals(alone, withOtherCompound, "a vial of another compound changed the answer")
+        assertEquals(SEMA, alone?.compoundId)
+    }
+
+    @Test
     fun theReorderHintNeedsBothNoSparesAndLittleSupply() {
         // §03: «0 sealed spares & ≤4 weeks supply». Either alone is not a
         // reason to tell a patient to order more.
@@ -132,15 +159,15 @@ class InventoryMathTest {
         val spare = vial(totalDoses = 1)
 
         assertNull(
-            reorderHint(listOf(open, spare), List(3) { doseFrom(open) }, dosesPerWeek = 1.0),
+            reorderHint(SEMA, listOf(open, spare), List(3) { doseFrom(open) }, dosesPerWeek = 1.0),
             "a sealed spare is exactly what makes reordering unnecessary",
         )
         assertNull(
-            reorderHint(listOf(open), emptyList(), dosesPerWeek = 0.2),
+            reorderHint(SEMA, listOf(open), emptyList(), dosesPerWeek = 0.2),
             "four doses at one every five weeks is twenty weeks of supply",
         )
 
-        val hint = reorderHint(listOf(open), List(1) { doseFrom(open) }, dosesPerWeek = 1.0)
+        val hint = reorderHint(SEMA, listOf(open), List(1) { doseFrom(open) }, dosesPerWeek = 1.0)
 
         assertEquals(3, hint?.weeksLeft)
         assertEquals(SEMA, hint?.compoundId)
@@ -153,7 +180,7 @@ class InventoryMathTest {
 
         // The binned vial must not count as the sealed spare that suppresses
         // the hint, and its doses must not count as supply.
-        val hint = reorderHint(listOf(open, binned), List(1) { doseFrom(open) }, dosesPerWeek = 1.0)
+        val hint = reorderHint(SEMA, listOf(open, binned), List(1) { doseFrom(open) }, dosesPerWeek = 1.0)
 
         assertEquals(3, hint?.weeksLeft)
     }

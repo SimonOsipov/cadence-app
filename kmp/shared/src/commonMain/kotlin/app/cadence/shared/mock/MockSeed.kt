@@ -112,11 +112,11 @@ object MockSeed {
                 mapOf(
                     semaItemId to
                         listOf(
-                            ProtocolPhase(1, 4, Dose(SEMA_START, DoseUnit.MG)),
-                            ProtocolPhase(5, 8, Dose(SEMA_MID, DoseUnit.MG)),
-                            ProtocolPhase(9, 12, Dose(SEMA_TOP, DoseUnit.MG)),
+                            ProtocolPhase(1, 4, Dose(0.25, DoseUnit.MG)),
+                            ProtocolPhase(5, 8, Dose(0.5, DoseUnit.MG)),
+                            ProtocolPhase(9, 12, Dose(1.0, DoseUnit.MG)),
                         ),
-                    bpcItemId to listOf(ProtocolPhase(1, 12, Dose(BPC_DOSE, DoseUnit.MCG))),
+                    bpcItemId to listOf(ProtocolPhase(1, 12, Dose(250.0, DoseUnit.MCG))),
                 ),
         )
 
@@ -146,8 +146,8 @@ object MockSeed {
             userId = patientId,
             dateOfBirth = LocalDate(1988, 3, 14),
             sex = null,
-            heightCm = HEIGHT_CM,
-            targetWeightKg = TARGET_WEIGHT_KG,
+            heightCm = 188,
+            targetWeightKg = 92.0,
             joinedAt = LocalDate(2026, 4, 20),
         )
 
@@ -160,10 +160,23 @@ object MockSeed {
                 id = MeasurementId("m-1"),
                 patientId = patientId,
                 metric = Metric.WEIGHT,
-                value = CURRENT_WEIGHT_KG,
+                value = 98.4,
                 unit = "kg",
                 measuredAt = Instant.parse("2026-05-31T06:00:00Z"),
                 source = MeasurementSource.MANUAL,
+                externalId = null,
+                note = null,
+            ),
+            // A later reading of another metric, so «latest weight» cannot be
+            // «last in the list» and pass.
+            Measurement(
+                id = MeasurementId("m-2"),
+                patientId = patientId,
+                metric = Metric.HRV,
+                value = 58.0,
+                unit = "ms",
+                measuredAt = Instant.parse("2026-05-31T06:05:00Z"),
+                source = MeasurementSource.HEALTH_KIT,
                 externalId = null,
                 note = null,
             ),
@@ -190,15 +203,4 @@ object MockSeed {
                 items = listOf(MealItem("Куриная грудка с гречкой", 320, Macros(520, 48, 46, 12))),
             ),
         )
-
-    /** Семаглутид is weekly, so the protocol burns one dose of it a week. */
-    const val SEMA_DOSES_PER_WEEK: Double = 1.0
 }
-
-private const val SEMA_START = 0.25
-private const val SEMA_MID = 0.5
-private const val SEMA_TOP = 1.0
-private const val BPC_DOSE = 250.0
-private const val HEIGHT_CM = 188
-private const val TARGET_WEIGHT_KG = 92.0
-private const val CURRENT_WEIGHT_KG = 98.4

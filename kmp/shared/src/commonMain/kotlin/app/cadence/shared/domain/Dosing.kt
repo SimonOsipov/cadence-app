@@ -6,7 +6,15 @@ import kotlin.time.Instant
 
 // dosing — «the core clinical fact stream» (§03).
 
-/** §03: ten injection zones, which is what makes a rotation suggestion possible. */
+/**
+ * §03: ten injection zones, which is what makes a rotation suggestion possible.
+ *
+ * §03 names only three and writes «(10 zones)», so the rest come from
+ * `mobile/src/features/log-dose/data.ts` — `ZONES_FRONT` and `ZONES_BACK` — and
+ * not from anywhere else. Two of them were invented here first («l-flank»,
+ * «r-flank») and matched no zone the body map can draw; the codes are what
+ * `dose_events.site_code` stores and what the rotation suggestion compares.
+ */
 enum class InjectionSite(
     val code: String,
 ) {
@@ -18,8 +26,8 @@ enum class InjectionSite(
     RIGHT_GLUTE("r-glute"),
     LEFT_THIGH("l-thigh"),
     RIGHT_THIGH("r-thigh"),
-    LEFT_FLANK("l-flank"),
-    RIGHT_FLANK("r-flank"),
+    LEFT_LOWER_BACK("l-lback"),
+    RIGHT_LOWER_BACK("r-lback"),
 }
 
 /** §03's seven side effects, a closed set. */

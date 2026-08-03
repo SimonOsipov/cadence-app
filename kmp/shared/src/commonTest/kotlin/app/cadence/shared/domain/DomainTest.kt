@@ -18,10 +18,27 @@ class DomainTest {
     }
 
     @Test
-    fun theTenInjectionSitesAreAllThere() {
-        // §03 names ten zones. The wizard's rotation suggestion is meaningless
-        // if the set is short.
-        assertEquals(10, InjectionSite.entries.size)
+    fun theTenInjectionSitesAreThePrototypesOwn() {
+        // Codes, not a count. This test asserted `entries.size == 10` and was
+        // green while two of the ten were invented — «l-flank» and «r-flank»,
+        // which match no zone the body map draws. The same file was already
+        // comparing code sets for SideEffect and Metric; the pattern was
+        // applied selectively and the gap is exactly where the drift landed.
+        assertEquals(
+            setOf(
+                "r-delt",
+                "l-delt",
+                "r-abdomen",
+                "l-abdomen",
+                "r-thigh",
+                "l-thigh",
+                "l-lback",
+                "r-lback",
+                "l-glute",
+                "r-glute",
+            ),
+            InjectionSite.entries.map { it.code }.toSet(),
+        )
     }
 
     @Test
@@ -71,8 +88,15 @@ class DomainTest {
     }
 
     @Test
-    fun theSevenJournalTagsAreFixed() {
-        // §03: «tags[] (7 fixed)». An open set would let a client invent one.
-        assertEquals(7, JournalTag.entries.size)
+    fun theJournalTagsAreTheSideEffectsUnderAnotherName() {
+        // §03: one dose-wizard check-in writes both a dose event and a journal
+        // entry — «one action, two facts». That is only possible if the two
+        // vocabularies are the same one, and the prototype's own comment says
+        // so: «tags — side-effect ids». Counting to seven did not notice that
+        // this enum had been invented from scratch.
+        assertEquals(
+            SideEffect.entries.map { it.code }.toSet(),
+            JournalTag.entries.map { it.code }.toSet(),
+        )
     }
 }

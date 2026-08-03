@@ -153,7 +153,7 @@ class OccurrenceTest {
         // what «nothing derived is stored» forbids.
         val date = LocalDate(2026, 5, 17)
 
-        val occurrences = occurrencesOn(date, events = listOf(doseEventFor(SEMA, date)))
+        val occurrences = occurrencesOn(date, events = listOf(doseEventFor(SEMA, date, LocalTime(7, 0))))
 
         assertEquals(OccurrenceStatus.DONE, occurrences.first { it.itemId == SEMA }.status)
         assertTrue(occurrences.filter { it.itemId == BPC }.none { it.status == OccurrenceStatus.DONE })
@@ -163,7 +163,7 @@ class OccurrenceTest {
     fun anEventOnAnotherDayDoesNotSatisfyTodaysOccurrence() {
         // Matching on the item alone would mark every Sunday done for the rest
         // of the cycle after the first injection.
-        val logged = doseEventFor(SEMA, LocalDate(2026, 5, 17))
+        val logged = doseEventFor(SEMA, LocalDate(2026, 5, 17), LocalTime(7, 0))
 
         val later = occurrencesOn(LocalDate(2026, 5, 24), events = listOf(logged))
 
@@ -177,5 +177,77 @@ class OccurrenceTest {
         assertTrue(occurrencesOn(LocalDate(2026, 5, 17), today = today).all { it.status == OccurrenceStatus.MISSED })
         assertTrue(occurrencesOn(LocalDate(2026, 6, 7), today = today).all { it.status == OccurrenceStatus.SCHEDULED })
         assertTrue(occurrencesOn(today, today = today).all { it.status == OccurrenceStatus.PENDING })
+    }
+
+    @Test
+    fun anEventWithoutASlotSatisfiesNoOccurrence() {
+        // Measured before it was fixed: one BPC event with a null
+        // `scheduledForTime` marked both 08:00 and 20:00 DONE, so a patient who
+        // had taken the morning injection was told the evening one was already
+        // done. The same class of bug the date-matching comment warns about,
+        // one level down.
+        //
+        // §03 stores `scheduled_for (date + slot)`, so a dose logged outside the
+        // schedule did not fulfil a scheduled occurrence and must not claim to.
+        val date = LocalDate(2026, 5, 18)
+
+        val bpc =
+            occurrencesOn(date, events = listOf(doseEventFor(BPC, date, time = null)))
+                .filter { it.itemId == BPC }
+
+        assertTrue(bpc.none { it.status == OccurrenceStatus.DONE }, "a slotless event closed a slot")
+    }
+
+    @Test
+    fun anEventMatchesOnlyTheSlotItWasLoggedAgainst() {
+        val date = LocalDate(2026, 5, 18)
+
+        val bpc =
+            occurrencesOn(date, events = listOf(doseEventFor(BPC, date, LocalTime(8, 0))))
+                .filter { it.itemId == BPC }
+
+        assertEquals(OccurrenceStatus.DONE, bpc.first { it.time == LocalTime(8, 0) }.status)
+        assertTrue(bpc.first { it.time == LocalTime(20, 0) }.status != OccurrenceStatus.DONE)
+    }
+
+    @Test
+    fun anItemScheduledSeveralDaysAWeekFallsOnEachOfThem() {
+        // N_PER_WEEK shares a branch with WEEKLY, which is right — §03 gives
+        // both `days_of_week[]` — but nothing exercised it, so deleting the
+        // case would have made «трижды в неделю» vanish from the calendar with
+        // the gate green.
+        val thrice =
+            ProtocolItem(
+                id = ProtocolItemId("tb"),
+                protocolId = PROTOCOL_ID,
+                kind = ProtocolItemKind.INJECTION,
+                compoundId = CompoundId("tb"),
+                cadence = ProtocolCadence.N_PER_WEEK,
+                daysOfWeek = listOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY),
+                times = listOf(LocalTime(9, 0)),
+                loggable = true,
+            )
+        val plan = ProtocolPlan(PROTOCOL, listOf(thrice), mapOf(thrice.id to PHASES.getValue(BPC)))
+
+        val hit =
+            (18..24)
+                .map { LocalDate(2026, 5, it) }
+                .filter { occurrencesFor(plan, emptyList(), it, it).isNotEmpty() }
+
+        assertEquals(listOf(LocalDate(2026, 5, 18), LocalDate(2026, 5, 20), LocalDate(2026, 5, 22)), hit)
+    }
+
+    @Test
+    fun aProtocolThatIsNoLongerActiveGeneratesNothing() {
+        // Measured before it was fixed: a CANCELLED protocol produced a full
+        // schedule. §03 gives `protocols.status` three values and nothing was
+        // reading it, so a patient whose course had been stopped kept being
+        // told to inject.
+        val date = LocalDate(2026, 5, 18)
+
+        listOf(ProtocolStatus.CANCELLED, ProtocolStatus.COMPLETED).forEach { status ->
+            val stopped = ProtocolPlan(PROTOCOL.copy(status = status), ITEMS, PHASES)
+            assertTrue(occurrencesFor(stopped, emptyList(), date, date).isEmpty(), "$status still generated")
+        }
     }
 }

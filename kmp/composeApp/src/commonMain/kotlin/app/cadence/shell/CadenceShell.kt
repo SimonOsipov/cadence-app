@@ -43,6 +43,12 @@ private const val PLACEHOLDER_MEAL_NAME = "Обед"
  * The timer lives here rather than in [ConfirmToast] because how long something
  * stays on screen is a property of the screen. `showConfirm` in the prototype
  * puts it in the same place, for the same reason.
+ *
+ * **There is no failure path yet, and this is where it will go.** Neither the
+ * read nor the write handles an exception, because the mock cannot throw on any
+ * reachable path. The Ktor client can, so «swapping the mock is a change to one
+ * file» is true of the repositories and not of this composable: a *screen* will
+ * still not change, but this will.
  */
 @Composable
 fun CadenceApp(

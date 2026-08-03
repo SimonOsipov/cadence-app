@@ -19,6 +19,19 @@ data class Ingredient(
     val per100g: Macros,
 )
 
+/**
+ * §03: «tags[] protein|gentle|quick». Closed there, so closed here — every
+ * other closed set in this transcription became an enum, and a `List<String>`
+ * lets a screen filter on a tag no recipe can ever carry.
+ */
+enum class RecipeTag(
+    val code: String,
+) {
+    PROTEIN("protein"),
+    GENTLE("gentle"),
+    QUICK("quick"),
+}
+
 enum class MealType(
     val code: String,
 ) {
@@ -40,7 +53,7 @@ data class Recipe(
     val ownerId: UserId?,
     val name: String,
     val mealType: MealType,
-    val tags: List<String>,
+    val tags: List<RecipeTag>,
     val servings: Int,
     val prepMin: Int?,
     val cookMin: Int?,

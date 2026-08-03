@@ -79,6 +79,11 @@ fun occurrencesFor(
     date: LocalDate,
     today: LocalDate,
 ): List<Occurrence> {
+    // A stopped course stops generating. §03 gives `protocols.status` three
+    // values and this was reading none of them, so a patient whose protocol had
+    // been cancelled kept being told to inject.
+    if (plan.protocol.status != ProtocolStatus.ACTIVE) return emptyList()
+
     val week = cycleWeek(plan.protocol, date) ?: return emptyList()
 
     return plan.items
@@ -98,6 +103,19 @@ fun occurrencesFor(
         }
 }
 
+/**
+ * How many doses of this item a week burns — the rate stock runs down at.
+ *
+ * Derived rather than seeded: it is `daysOfWeek × times` for a weekly item and
+ * `7 × times` for a daily one, and a stored copy is the sort of thing that goes
+ * stale the first time a protocol is edited.
+ */
+fun ProtocolItem.dosesPerWeek(): Double =
+    when (cadence) {
+        ProtocolCadence.DAILY -> DAYS_PER_WEEK.toDouble() * times.size
+        ProtocolCadence.WEEKLY, ProtocolCadence.N_PER_WEEK -> daysOfWeek.size.toDouble() * times.size
+    }
+
 /** §03's `cadence` and `days_of_week[]`, read together. */
 private fun ProtocolItem.fallsOn(date: LocalDate): Boolean =
     when (cadence) {
@@ -108,8 +126,15 @@ private fun ProtocolItem.fallsOn(date: LocalDate): Boolean =
 /**
  * A logged event wins; otherwise the date decides.
  *
- * The event has to match the date as well as the item — matching on the item
- * alone would mark every remaining Sunday done after the first injection.
+ * The event has to match the item, the date **and the slot**. Matching on the
+ * item alone would mark every remaining Sunday done after the first injection;
+ * matching without the slot did the same thing inside a day — one BPC-157 event
+ * with a null time closed both 08:00 and 20:00, and a patient who had taken the
+ * morning injection was told the evening one was already done.
+ *
+ * An event with no slot therefore satisfies nothing, which is the right answer:
+ * §03 stores `scheduled_for (date + slot)`, so a dose logged outside the
+ * schedule did not fulfil a scheduled occurrence.
  */
 private fun statusOf(
     item: ProtocolItem,
@@ -122,7 +147,7 @@ private fun statusOf(
         events.any { event ->
             event.protocolItemId == item.id &&
                 event.scheduledForDate == date &&
-                (event.scheduledForTime == null || event.scheduledForTime == time)
+                event.scheduledForTime == time
         }
     if (logged) return OccurrenceStatus.DONE
 

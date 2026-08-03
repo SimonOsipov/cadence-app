@@ -23,8 +23,12 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(libs.kotlinx.datetime)
-            implementation(libs.kotlinx.coroutines.core)
+            // api, not implementation: LocalDate, Instant and TimeZone are in
+            // this module's public signature — Occurrence.date,
+            // ScheduleRepository.month, CadenceClock.today — so a consumer that
+            // had to redeclare the dependency could drift to another version of
+            // the types it is already being handed.
+            api(libs.kotlinx.datetime)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

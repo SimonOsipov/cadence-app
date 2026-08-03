@@ -41,7 +41,6 @@ kotlin {
             implementation(libs.compose.resources)
             implementation(libs.navigation.compose)
             implementation(libs.kotlinx.serialization.core)
-            implementation(libs.kotlinx.datetime)
         }
         // No host-test builder on the Android target on purpose: a Compose UI
         // test needs a real (or Robolectric) Android runtime, so these run on

@@ -99,6 +99,34 @@ class MockRepositoryTest {
         }
 
     @Test
+    fun theDayDotsSayWhichDayIsWhich() =
+        runTest {
+            // Three of ScheduleDay's five fields had no assertion anywhere, and
+            // dropping the emptiness guard from `allDone` painted «всё
+            // выполнено» over the nine days before the protocol began.
+            val m = mocks()
+            val days = m.schedule.month(LocalDate(2026, 5, 1))
+            val beforeTheCycle = days.first { it.date == LocalDate(2026, 5, 1) }
+            val today = days.first { it.date == LocalDate(2026, 5, 31) }
+
+            assertEquals(null, beforeTheCycle.cycleWeek)
+            assertFalse(beforeTheCycle.allDone, "a day outside the protocol cannot be done")
+            assertFalse(beforeTheCycle.anyPending)
+
+            assertEquals(4, today.cycleWeek)
+            assertTrue(today.anyPending, "today has occurrences nobody has logged")
+        }
+
+    @Test
+    fun theLatestWeightIsTheLatestWeightAndNotTheLatestReading() =
+        runTest {
+            // The seed's most recent measurement is an HRV of 58. «Latest
+            // reading wins» is per metric, and a lookup that took the last row
+            // would put 58 kg on the Today screen.
+            assertEquals(98.4, mocks().today.today().weightKg)
+        }
+
+    @Test
     fun daysBeforeTheProtocolBeganCarryNothing() =
         runTest {
             // The calendar is drawn for whole months, and the cycle starts on

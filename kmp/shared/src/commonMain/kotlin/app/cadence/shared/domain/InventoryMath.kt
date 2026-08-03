@@ -47,9 +47,16 @@ fun vialStatus(
     // rather than a sequence of early exits whose order is implicit.
     return when {
         vial.disposedAt != null -> VialStatus.DISPOSED
-        vial.openedAt == null -> VialStatus.SEALED
+
+        // Expiry before sealed, deliberately: unopened stock with days left on
+        // it is exactly the vial worth warning about, because it is about to be
+        // wasted. An earlier order read SEALED and said nothing.
         daysToExpiry <= EXPIRING_DAYS -> VialStatus.EXPIRING
+
+        vial.openedAt == null -> VialStatus.SEALED
+
         remaining < vial.totalDoses * LOW_FRACTION -> VialStatus.LOW
+
         else -> VialStatus.ACTIVE
     }
 }
@@ -75,15 +82,20 @@ data class ReorderHint(
 )
 
 fun reorderHint(
+    compoundId: CompoundId,
     vials: List<Vial>,
     events: List<DoseEvent>,
     dosesPerWeek: Double,
 ): ReorderHint? {
-    val live = vials.filter { it.disposedAt == null }
+    // One compound at a time. Without the filter an unopened vial of anything
+    // else counted as the sealed spare that suppresses the hint, its doses
+    // counted as this compound's supply, and the hint named whichever vial
+    // happened to come first — a patient about to run out was told nothing.
+    val live = vials.filter { it.disposedAt == null && it.compoundId == compoundId }
     val hasSealedSpare = live.any { it.openedAt == null }
     if (dosesPerWeek <= 0.0 || live.isEmpty() || hasSealedSpare) return null
 
     val weeksLeft = (live.sumOf { remainingDoses(it, events) } / dosesPerWeek).toInt()
 
-    return if (weeksLeft > REORDER_WEEKS) null else ReorderHint(live.first().compoundId, weeksLeft)
+    return if (weeksLeft > REORDER_WEEKS) null else ReorderHint(compoundId, weeksLeft)
 }
