@@ -16,6 +16,7 @@ import app.cadence.shared.domain.partOfDay
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
 import app.cadence.shared.domain.today
+import app.cadence.shared.domain.weekProtocolRows
 import app.cadence.shared.repository.DoseLogRepository
 import app.cadence.shared.repository.MeasurementsRepository
 import app.cadence.shared.repository.MetricSeries
@@ -86,6 +87,8 @@ class CadenceMocks(
                 // The weekly injection is what «next dose» means on this
                 // screen; the daily item is a strip, not a call to action.
                 nextDose = todays.firstOrNull { it.itemId == MockSeed.semaItemId },
+                nextDoseCompound = MockSeed.semaglutide,
+                weekProtocol = weekProtocolRows(MockSeed.plan, MockSeed.compounds, events, date),
                 doseLoggedToday =
                     todays.any {
                         it.itemId == MockSeed.semaItemId && it.status == OccurrenceStatus.DONE

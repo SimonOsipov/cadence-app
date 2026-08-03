@@ -55,7 +55,12 @@ style:
     # for actually live: the 25% low-stock line, the 14-day expiry window.
     excludes:
       - '**/app/cadence/design/**'
-      - '**/CadenceFormatTest.kt'
+      # The formatter package's tests, all of them: each is a table mapping an
+      # input to the text it renders as, and `greeting(LocalDate(2026, 5, 31),
+      # …) == "Воскресенье, утро"` is the specification written out. The
+      # formatters themselves are not excluded — their group size, teen range
+      # and rounding half are named where they live.
+      - '**/commonTest/**/app/cadence/format/**'
       - '**/shared/src/commonTest/**'
       # And MockSeed, which is a fixture: one patient, one protocol, two meals,
       # written out. Naming `LocalDate(2026, 5, 10)` as three constants would

@@ -19,7 +19,12 @@ import kotlinx.datetime.LocalTime
 data class ProtocolRow(
     val itemId: ProtocolItemId,
     val kind: ProtocolItemKind,
-    val compoundId: CompoundId?,
+    /**
+     * Resolved here rather than left as an id: §11's Today row reads
+     * «Семаглутид · 0,25 мг», and a screen that had to look the name up would
+     * need a repository it is not allowed to have.
+     */
+    val compound: Compound?,
     val dose: Dose?,
     val times: List<LocalTime>,
     val cadence: ProtocolCadence,
@@ -37,6 +42,7 @@ data class ProtocolRow(
  */
 fun weekProtocolRows(
     plan: ProtocolPlan,
+    compounds: List<Compound>,
     events: List<DoseEvent>,
     today: LocalDate,
 ): List<ProtocolRow> {
@@ -48,7 +54,7 @@ fun weekProtocolRows(
         ProtocolRow(
             itemId = item.id,
             kind = item.kind,
-            compoundId = item.compoundId,
+            compound = compounds.firstOrNull { it.id == item.compoundId },
             dose = plan.phases[item.id]?.firstOrNull { it.covers(week) }?.dose,
             times = item.times,
             cadence = item.cadence,

@@ -51,6 +51,11 @@ private val PHASES =
         BPC to listOf(ProtocolPhase(1, 12, Dose(250.0, DoseUnit.MCG))),
     )
 
+private val COMPOUNDS =
+    listOf(SEMA, BPC, GLYCINE).map {
+        Compound(CompoundId(it.raw), it.raw, it.raw.uppercase(), DoseUnit.MG, "п/к", "beaker")
+    }
+
 private fun plan(status: ProtocolStatus = ProtocolStatus.ACTIVE) =
     ProtocolPlan(Protocol(PID, UserId("p"), START, 12, status, null, null), ITEMS, PHASES)
 
@@ -58,7 +63,7 @@ private fun rowsOn(
     today: LocalDate,
     events: List<DoseEvent> = emptyList(),
     status: ProtocolStatus = ProtocolStatus.ACTIVE,
-) = weekProtocolRows(plan(status), events, today)
+) = weekProtocolRows(plan(status), COMPOUNDS, events, today)
 
 private fun logged(
     item: ProtocolItemId,
@@ -125,6 +130,24 @@ class WeekProtocolTest {
         // a claim about a day that does not have one.
         assertEquals(null, rowsOn(LocalDate(2026, 5, 20)).first { it.itemId == SEMA }.todayStatus)
         assertTrue(rowsOn(LocalDate(2026, 5, 20)).first { it.itemId == BPC }.todayStatus != null)
+    }
+
+    @Test
+    fun aRowNamesItsCompoundRatherThanCarryingAnId() {
+        // §11's Today row is «Семаглутид · 0,25 мг». A screen holding an id
+        // would need a repository to turn it into a word, which is exactly
+        // what a screen is not allowed to have.
+        assertEquals("SEMA", rowsOn(LocalDate(2026, 5, 20)).first().compound?.nameRu)
+    }
+
+    @Test
+    fun anItemWithNoCompoundHasNoneRatherThanTheWrongOne() {
+        val noSuchCompound = ProtocolPlan(plan().protocol, ITEMS, PHASES)
+
+        assertEquals(
+            null,
+            weekProtocolRows(noSuchCompound, emptyList(), emptyList(), LocalDate(2026, 5, 20)).first().compound,
+        )
     }
 
     @Test

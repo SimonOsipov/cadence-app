@@ -1,8 +1,10 @@
 package app.cadence.shared.repository
 
+import app.cadence.shared.domain.Compound
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Occurrence
 import app.cadence.shared.domain.PartOfDay
+import app.cadence.shared.domain.ProtocolRow
 import app.cadence.shared.domain.ReorderHint
 import kotlinx.datetime.LocalDate
 
@@ -26,6 +28,10 @@ data class TodaySummary(
     val partOfDay: PartOfDay,
     val cycleWeek: Int?,
     val nextDose: Occurrence?,
+    /** What the hero card names above the dose. */
+    val nextDoseCompound: Compound?,
+    /** «Протокол этой недели», from the same generator the calendar reads. */
+    val weekProtocol: List<ProtocolRow>,
     val doseLoggedToday: Boolean,
     val mealCount: Int,
     val mealKcal: Int,
