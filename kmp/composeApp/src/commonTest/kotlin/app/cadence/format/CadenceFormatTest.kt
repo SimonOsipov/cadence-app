@@ -11,10 +11,10 @@ class CadenceFormatTest {
         // and its hundreds.
         assertEquals("0", formatInteger(0))
         assertEquals("999", formatInteger(999))
-        assertEquals("1 000", formatInteger(1000))
-        assertEquals("1 240", formatInteger(1240))
-        assertEquals("12 345", formatInteger(12345))
-        assertEquals("1 234 567", formatInteger(1234567))
+        assertEquals("1\u00A0000", formatInteger(1000))
+        assertEquals("1\u00A0240", formatInteger(1240))
+        assertEquals("12\u00A0345", formatInteger(12345))
+        assertEquals("1\u00A0234\u00A0567", formatInteger(1234567))
     }
 
     @Test
@@ -22,7 +22,7 @@ class CadenceFormatTest {
         // No call site passes one today; the guard exists because the obvious
         // implementation groups the minus sign into the first triple, and
         // whether that renders right is then a matter of digit count.
-        assertEquals("-1 234", formatInteger(-1234))
+        assertEquals("-1\u00A0234", formatInteger(-1234))
         assertEquals("-999", formatInteger(-999))
         assertEquals("-100", formatInteger(-100))
     }
@@ -32,8 +32,8 @@ class CadenceFormatTest {
         // -Int.MIN_VALUE is Int.MIN_VALUE. An implementation that negates in
         // Int returns the value unchanged and formats a very negative number
         // as a very positive one.
-        assertEquals("2 147 483 647", formatInteger(Int.MAX_VALUE))
-        assertEquals("-2 147 483 648", formatInteger(Int.MIN_VALUE))
+        assertEquals("2\u00A0147\u00A0483\u00A0647", formatInteger(Int.MAX_VALUE))
+        assertEquals("-2\u00A0147\u00A0483\u00A0648", formatInteger(Int.MIN_VALUE))
     }
 
     @Test

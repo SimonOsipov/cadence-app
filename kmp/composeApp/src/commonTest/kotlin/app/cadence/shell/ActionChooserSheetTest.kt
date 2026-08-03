@@ -88,7 +88,7 @@ class ActionChooserSheetTest {
             // the first version of this line carried a plain space and
             // failed against a correct implementation, which is what an
             // invisible character does to a literal.
-            onNodeWithText("2 приёма сегодня · 1 240 ккал").assertIsDisplayed()
+            onNodeWithText("2 приёма сегодня · 1\u00A0240 ккал").assertIsDisplayed()
         }
 
     @Test
@@ -99,7 +99,7 @@ class ActionChooserSheetTest {
             // test was added because a mutation survived.
             openSheet(mealCount = 5, mealKcal = 2100)
 
-            onNodeWithText("5 приёмов сегодня · 2 100 ккал").assertIsDisplayed()
+            onNodeWithText("5 приёмов сегодня · 2\u00A0100 ккал").assertIsDisplayed()
         }
 
     @Test

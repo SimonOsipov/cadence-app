@@ -1,7 +1,13 @@
 package app.cadence.shell
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
@@ -10,10 +16,71 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.cadence.design.CadenceDestination
+import kotlinx.coroutines.delay
 
 /** Stand-ins until the meal wizard lands in step 8 of the block. */
 private const val PLACEHOLDER_MEAL_NAME = "Обед"
-private const val PLACEHOLDER_MEAL_KCAL = 520
+private const val PLACEHOLDER_MEAL_KCAL = 1240
+
+/** The day's target — `MEAL_TARGETS.kcal` in the prototype's meal data. */
+private const val PLACEHOLDER_KCAL_TARGET = 2100
+
+/**
+ * The whole after-sign-in surface: the graph, the sheet the `+` opens, and the
+ * card a logged meal raises.
+ *
+ * Two pieces of state, both about what is on screen right now and neither
+ * derived from anything: whether the sheet is open, and what the toast is
+ * showing. Both are the prototype's — `actionSheetOpen` in the navigator,
+ * `confirmSheet` in the app state.
+ *
+ * The timer lives here rather than in [ConfirmToast] because how long something
+ * stays on screen is a property of the screen. `showConfirm` in the prototype
+ * puts it in the same place, for the same reason.
+ */
+@Composable
+fun CadenceApp(
+    navController: NavHostController = rememberNavController(),
+    modifier: Modifier = Modifier,
+) {
+    var actionsOpen by remember { mutableStateOf(false) }
+    var toast by remember { mutableStateOf<ConfirmToastState?>(null) }
+
+    LaunchedEffect(toast) {
+        if (toast != null) {
+            delay(CADENCE_CONFIRM_TOAST_MS)
+            toast = null
+        }
+    }
+
+    Box(modifier.fillMaxSize()) {
+        CadenceShell(
+            navController = navController,
+            onOpenActions = { actionsOpen = true },
+            onMealLogged = { name, kcal -> toast = ConfirmToastState(name, kcal) },
+        )
+
+        ActionChooserSheet(
+            open = actionsOpen,
+            // The zero-state, until the repositories land with the next
+            // subtask. Wire these three to them and nothing else here changes.
+            doseLogged = false,
+            mealCount = 0,
+            mealKcal = 0,
+            onDismiss = { actionsOpen = false },
+            onPickDose = {
+                actionsOpen = false
+                navController.openRoute(CadenceRoute.LogDose)
+            },
+            onPickMeal = {
+                actionsOpen = false
+                navController.openRoute(CadenceRoute.LogMeal)
+            },
+        )
+
+        ConfirmToast(state = toast, targetKcal = PLACEHOLDER_KCAL_TARGET)
+    }
+}
 
 /**
  * The after-sign-in host: the screen graph and the overlays above it.

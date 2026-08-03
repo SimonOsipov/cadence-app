@@ -51,7 +51,14 @@ object CadenceColors {
     val infoBg = Color(0xFFDFE6E9)
 
     val hairline = Color(0xFF1A1A1A).copy(alpha = 0.08f)
-    val glassDark = Color(0xFF142C1F).copy(alpha = 0.35f)
+
+    // The prototype's theme names only `glassDark: 'rgba(20,44,31,.35)'` and
+    // writes the toast's `rgba(20,44,31,.25)` inline in ConfirmToast.tsx. Same
+    // ink at two weights — named once here so neither is a literal at a call
+    // site, which is the whole point of this file.
+    private val forestScrim = Color(0xFF142C1F)
+    val glassDark = forestScrim.copy(alpha = 0.35f)
+    val glassSoft = forestScrim.copy(alpha = 0.25f)
 }
 
 /**
@@ -83,6 +90,7 @@ data class CadencePalette(
     val sand1: Color,
     val sand7: Color,
     val glassDark: Color,
+    val glassSoft: Color,
     val hairline: Color,
     val onForest: Color,
 )
@@ -109,6 +117,7 @@ val CadenceLightPalette =
         sand1 = CadenceColors.sand100,
         sand7 = CadenceColors.sand700,
         glassDark = CadenceColors.glassDark,
+        glassSoft = CadenceColors.glassSoft,
         hairline = CadenceColors.hairline,
         onForest = CadenceColors.cream,
     )
