@@ -1,5 +1,6 @@
 package app.cadence.shell
 
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
@@ -12,9 +13,17 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.ProtocolCadence
+import app.cadence.shared.domain.ProtocolItemId
+import app.cadence.shared.domain.ProtocolItemKind
+import app.cadence.shared.domain.ProtocolRow
 import app.cadence.shared.mock.CadenceMocks
+import app.cadence.shared.mock.MockSeed
+import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 private val ZONE = TimeZone.of("Europe/Moscow")
@@ -23,8 +32,64 @@ private val ZONE = TimeZone.of("Europe/Moscow")
 @OptIn(ExperimentalTestApi::class)
 private fun mocks(iso: String = "2026-05-31T09:00:00Z") = CadenceMocks(FixedCadenceClock.at(iso), ZONE)
 
+/** A slot time for a hand-built row; nothing reads the hour. */
+private val MORNING = LocalTime.parse("08:00")
+
 @OptIn(ExperimentalTestApi::class)
 class CadenceShellDataTest {
+    /** A row with the cadence and slot count a case needs, and nothing else real. */
+    private fun row(
+        cadence: ProtocolCadence,
+        times: Int,
+    ) = ProtocolRow(
+        itemId = ProtocolItemId("item"),
+        kind = ProtocolItemKind.SUPPLEMENT,
+        compound = MockSeed.glycine,
+        dose = null,
+        times = List(times) { MORNING },
+        cadence = cadence,
+        todayStatus = null,
+        loggable = true,
+    )
+
+    /** Walk an already-open wizard to the end, injecting [into]. */
+    private fun ComposeUiTest.logTheSameDoseAgain(into: String) {
+        onNodeWithText("Семаглутид").performClick()
+        waitForIdle()
+        repeat(2) {
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+        }
+        onNodeWithContentDescription(into).performScrollTo().performClick()
+        waitForIdle()
+        repeat(2) {
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+        }
+        onNodeWithText("Сохранить дозу").performClick()
+        waitForIdle()
+    }
+
+    /** Open the wizard from the hero and finish it, injecting [into]. */
+    private fun ComposeUiTest.logADoseThroughTheWizard(into: String) {
+        onNodeWithText("Записать →").performClick()
+        waitForIdle()
+        onNodeWithText("Семаглутид").performClick()
+        waitForIdle()
+        repeat(2) {
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+        }
+        onNodeWithContentDescription(into).performScrollTo().performClick()
+        waitForIdle()
+        repeat(2) {
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+        }
+        onNodeWithText("Сохранить дозу").performClick()
+        waitForIdle()
+    }
+
     @Test
     fun theSheetShowsTheDayTheRepositoryReportsAndNotAConstant() =
         runComposeUiTest {
@@ -69,6 +134,103 @@ class CadenceShellDataTest {
         }
 
     @Test
+    fun theWizardIsOfferedTheProtocolsLoggableItemsAndNothingElse() =
+        runTest {
+            // The mapping on its own, because the seed has no loggable item
+            // that is not an injection — so through the screen a wizard that
+            // stamped INJECTION on everything is invisible.
+            val options = mocks().today.today().doseOptions()
+
+            assertEquals(
+                listOf("Семаглутид", "BPC-157"),
+                options.map { it.nameRu },
+                "the wizard offers something the protocol does not mark loggable",
+            )
+            // No kind assertion here: both seeded loggable items are
+            // injections, so one would guard nothing. `DoseWizardTest
+            // .anItemThatIsNotAnInjectionNeedsNoZoneToGetPast` covers the
+            // non-injection path where it is observable.
+            assertEquals(listOf(true, true), options.map { it.dueToday })
+            assertEquals("п/к · еженедельно", options.first().modeRu)
+            assertEquals("п/к · 2× в день", options.last().modeRu)
+        }
+
+    @Test
+    fun onlyTheItemsDueTodayCarryTheBadge() =
+        runTest {
+            // A Tuesday: the daily injection is due, the weekly one is not.
+            // Every earlier assertion ran on the seeded Sunday, where both are
+            // — so a `dueToday` hardcoded to true was invisible, and a patient
+            // on a Tuesday would be told their Sunday injection is due now.
+            val options = mocks("2026-06-02T09:00:00Z").today.today().doseOptions()
+
+            assertEquals(listOf("Семаглутид", "BPC-157"), options.map { it.nameRu })
+            assertEquals(listOf(false, true), options.map { it.dueToday })
+        }
+
+    @Test
+    fun theModeNamesEveryCadenceTheProtocolCanHave() =
+        runTest {
+            // Two of the three branches are unreachable from the seed: its only
+            // daily item has two times, and nothing is N-per-week at all.
+            assertEquals("внутрь · ежедневно", modeRu(row(ProtocolCadence.DAILY, times = 1)))
+            assertEquals("внутрь · 3× в день", modeRu(row(ProtocolCadence.DAILY, times = 3)))
+            assertEquals("внутрь · 2× в неделю", modeRu(row(ProtocolCadence.N_PER_WEEK, times = 2)))
+        }
+
+    @Test
+    fun theWizardOpensOnAZoneTheRotationHasNotJustUsed() =
+        runComposeUiTest {
+            // The suggestion has to *reach* the site step. With no history it
+            // happens to be the first zone, so a wizard handed a constant looks
+            // identical — until a dose has been logged.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            // Into the *first* zone of the set, deliberately: with no history
+            // the suggestion is already that one, so injecting anywhere else
+            // leaves a wizard handed a constant looking identical to a wizard
+            // handed the rotation.
+            logADoseThroughTheWizard(into = "Левый живот")
+
+            onNodeWithContentDescription("Записать").performClick()
+            waitForIdle()
+            onNodeWithText("Записать дозу").performClick()
+            waitForIdle()
+            onNodeWithText("Семаглутид").performClick()
+            waitForIdle()
+            repeat(2) {
+                onNodeWithText("Дальше").performClick()
+                waitForIdle()
+            }
+
+            // The next zone in the rotation, named. A constant would still say
+            // «Левый живот» — the zone the patient has just used.
+            onNodeWithText("Предложено: Правый живот", substring = true).assertExists()
+        }
+
+    @Test
+    fun aRefusedWriteKeepsTheWizardOpenAndSaysWhy() =
+        runComposeUiTest {
+            // The same occurrence twice. §03 has one event per occurrence, so
+            // the second «Сохранить дозу» writes nothing — and a wizard that
+            // closed anyway would throw away five steps of the patient's
+            // answers without a word.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            logADoseThroughTheWizard(into = "Правое плечо")
+            onNodeWithContentDescription("Записать").performClick()
+            waitForIdle()
+            onNodeWithText("Записать дозу").performClick()
+            waitForIdle()
+            logTheSameDoseAgain(into = "Левое плечо")
+
+            onNodeWithText("Эта доза уже записана сегодня.").assertIsDisplayed()
+            // Still on the review, with everything the patient entered.
+            onNodeWithText("Сохранить дозу").assertIsDisplayed()
+            onNodeWithText("Левое плечо").assertIsDisplayed()
+        }
+
+    @Test
     fun theHeroOpensTheDoseWizard() =
         runComposeUiTest {
             lateinit var nav: NavHostController
@@ -80,7 +242,72 @@ class CadenceShellDataTest {
             onNodeWithText("Записать →").performClick()
             waitForIdle()
 
-            onNodeWithText("Экран «Записать дозу»").assertIsDisplayed()
+            // The wizard itself now, not the placeholder that stood in for it.
+            onNodeWithText("Шаг 1 · Препарат", ignoreCase = true).assertIsDisplayed()
+            onNodeWithText("Шаг 1 из 5").assertIsDisplayed()
+        }
+
+    @Test
+    fun theWizardOffersTheProtocolsOwnItemsWithTodaysDose() =
+        runComposeUiTest {
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithText("Записать →").performClick()
+            waitForIdle()
+
+            // The seeded protocol's two injections, and the daily one is not
+            // due «сегодня» in the badge sense on this Sunday — the weekly one
+            // is. A wizard built from a literal list would name whatever the
+            // prototype's `COMPOUNDS` held.
+            onNodeWithText("Семаглутид").assertIsDisplayed()
+            onNodeWithText("BPC-157").assertIsDisplayed()
+            onNodeWithText("0,25 мг", substring = true).assertIsDisplayed()
+        }
+
+    @Test
+    fun finishingTheWizardLogsTheDoseAndReturnsToToday() =
+        runComposeUiTest {
+            // Task 6's whole assertion: the hero opens the wizard, the wizard
+            // writes through the repository, and Today reads the write back.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithText("Записать →").performClick()
+            waitForIdle()
+            onNodeWithText("Семаглутид").performClick()
+            waitForIdle()
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("Правое плечо").performScrollTo().performClick()
+            waitForIdle()
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+            onNodeWithText("Сохранить дозу").performClick()
+            waitForIdle()
+
+            // Both places the day reads as logged. The strip's word is
+            // lowercase and the hero's is not, and `onAllNodesWithText` is
+            // case-sensitive — one query looked like it covered both and
+            // matched only the hero.
+            assertTrue(
+                onAllNodesWithText("Записано", substring = true).fetchSemanticsNodes().isNotEmpty(),
+                "the hero does not say the dose was recorded",
+            )
+            assertTrue(
+                onAllNodesWithText("записано", substring = true).fetchSemanticsNodes().isNotEmpty(),
+                "the protocol strip does not say the dose was recorded",
+            )
+            assertTrue(
+                onAllNodesWithText("Записать →").fetchSemanticsNodes().isEmpty(),
+                "the hero still offers a dose it already has",
+            )
+            // The vial's decrement is asserted through the repository, in
+            // `MockRepositoryTest.aLoggedDoseComesOutOfTheVialItWasDrawnFrom`.
+            // Asserting the rendered count here would pin a copy string that
+            // says nothing more about the wiring.
         }
 
     @Test
@@ -112,8 +339,20 @@ class CadenceShellDataTest {
             onNodeWithText("Записать дозу").performClick()
             waitForIdle()
 
-            onNodeWithText("Экран «Записать дозу»").assertIsDisplayed()
-            onNodeWithText("Записать").performClick()
+            onNodeWithText("Шаг 1 · Препарат", ignoreCase = true).assertIsDisplayed()
+            onNodeWithText("Семаглутид").performClick()
+            waitForIdle()
+            repeat(2) {
+                onNodeWithText("Дальше").performClick()
+                waitForIdle()
+            }
+            onNodeWithContentDescription("Правое плечо").performScrollTo().performClick()
+            waitForIdle()
+            repeat(2) {
+                onNodeWithText("Дальше").performClick()
+                waitForIdle()
+            }
+            onNodeWithText("Сохранить дозу").performClick()
             waitForIdle()
 
             onNodeWithContentDescription("Записать").performClick()

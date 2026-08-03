@@ -110,9 +110,10 @@ class AppTest {
             // Swapping the two rows' targets — dose opening the meal wizard —
             // left the whole suite green, because both tests named after this
             // wiring asserted only that a «Назад» existed.
-            onNodeWithText("Экран «Записать дозу»").assertIsDisplayed()
+            onNodeWithText("Шаг 1 из 5").assertIsDisplayed()
             // And the sheet closed behind the modal rather than staying under
-            // it, as the prototype closes it before it navigates.
-            assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
+            // it, as the prototype closes it before it navigates. Keyed on the
+            // sheet's other row: «Отмена» is now the wizard's own header.
+            assertTrue(onAllNodesWithText("Записать приём пищи").fetchSemanticsNodes().isEmpty())
         }
 }

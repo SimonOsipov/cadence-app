@@ -106,6 +106,8 @@ fun DoseWizard(
     options: List<DoseOption>,
     suggestedSite: InjectionSite,
     modifier: Modifier = Modifier,
+    /** Why the last «Сохранить дозу» did not write, if it did not. */
+    notice: String? = null,
     lastUsedSites: List<InjectionSite> = emptyList(),
     onDraft: (DoseDraft) -> Unit = { },
     onStep: (DoseStep) -> Unit = { },
@@ -143,6 +145,14 @@ fun DoseWizard(
                 suggestedSite = suggestedSite,
                 lastUsedSites = lastUsedSites,
                 onDraft = onDraft,
+            )
+        }
+
+        notice?.let {
+            CadenceBody(
+                it,
+                modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+                color = CadenceColors.danger,
             )
         }
 

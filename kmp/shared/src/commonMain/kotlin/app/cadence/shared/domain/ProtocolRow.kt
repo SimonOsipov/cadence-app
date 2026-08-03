@@ -29,6 +29,12 @@ data class ProtocolRow(
     val times: List<LocalTime>,
     val cadence: ProtocolCadence,
     val todayStatus: OccurrenceStatus?,
+    /**
+     * §03's `protocol_items.loggable`. The strip draws every item; the dose
+     * wizard may only offer the ones a patient can record — a weigh-in is on
+     * the protocol and is not a dose.
+     */
+    val loggable: Boolean,
 )
 
 /**
@@ -47,7 +53,9 @@ fun weekProtocolRows(
     today: LocalDate,
 ): List<ProtocolRow> {
     if (plan.protocol.status == ProtocolStatus.CANCELLED) return emptyList()
-    val week = cycleWeek(plan.protocol, today) ?: return emptyList()
+    // A date outside the protocol's window has no week and so no strip; the
+    // dose each row carries is [phaseDose]'s answer for the same day.
+    if (cycleWeek(plan.protocol, today) == null) return emptyList()
     val todays = occurrencesFor(plan, events, today, today)
 
     return plan.items.map { item ->
@@ -55,12 +63,13 @@ fun weekProtocolRows(
             itemId = item.id,
             kind = item.kind,
             compound = compounds.firstOrNull { it.id == item.compoundId },
-            dose = plan.phases[item.id]?.firstOrNull { it.covers(week) }?.dose,
+            dose = phaseDose(plan, item.id, today),
             times = item.times,
             cadence = item.cadence,
             // The day's own occurrences decide, so a logged dose greys the row
             // for the same reason it greys the calendar cell.
             todayStatus = todays.firstOrNull { it.itemId == item.id }?.status,
+            loggable = item.loggable,
         )
     }
 }

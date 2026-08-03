@@ -17,10 +17,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.cadence.design.CadenceDestination
+import app.cadence.screens.dose.DoseOption
+import app.cadence.screens.dose.DoseWizard
 import app.cadence.screens.schedule.ScheduleScreen
 import app.cadence.screens.schedule.ScheduleState
 import app.cadence.screens.today.TodayScreen
 import app.cadence.shared.domain.DoseDraft
+import app.cadence.shared.domain.DoseStep
+import app.cadence.shared.domain.InjectionSite
+import app.cadence.shared.domain.ProtocolCadence
+import app.cadence.shared.domain.ProtocolRow
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.TodaySummary
@@ -122,11 +128,10 @@ fun CadenceApp(
         CadenceShell(
             navController = navController,
             onOpenActions = { actionsOpen = true },
-            onDoseLogged = {
-                scope.launch {
-                    summary?.let { mocks.dosing.submit(it.oneTapDraft()).announce() }
-                    reloads++
-                }
+            onDoseLogged = { draft ->
+                val result = mocks.dosing.submit(draft)
+                reloads++
+                result
             },
             summary = summary,
             schedule = schedule,
@@ -176,7 +181,7 @@ fun CadenceShell(
     modifier: Modifier = Modifier,
     onOpenActions: () -> Unit = { },
     onMealLogged: (String) -> Unit = { },
-    onDoseLogged: () -> Unit = { },
+    onDoseLogged: suspend (DoseDraft) -> DoseLogResult = { DoseLogResult.Incomplete },
     // The two sections that are ported. The rest of the graph still draws
     // placeholders, and a null summary means the first read has not landed —
     // the screen is not composed until it has, rather than being shown a day
@@ -201,7 +206,7 @@ fun CadenceShell(
     ) {
         tabRoutes(navController, onOpenActions, summary)
         pushedRoutes(navController, schedule)
-        modalRoutes(navController, onMealLogged, onDoseLogged)
+        modalRoutes(navController, onMealLogged, onDoseLogged, summary)
     }
 }
 
@@ -325,23 +330,57 @@ private fun NavGraphBuilder.pushedRoutes(
 private fun NavGraphBuilder.modalRoutes(
     nav: NavHostController,
     onMealLogged: (String) -> Unit,
-    onDoseLogged: () -> Unit,
+    onDoseLogged: suspend (DoseDraft) -> DoseLogResult,
+    summary: TodaySummary?,
 ) {
     val back = back(nav)
 
     modal<CadenceRoute.LogDose> {
-        PlaceholderScreen(
-            title = "Записать дозу",
-            onBack = back,
-            // The placeholder writes through the repository rather than merely
-            // dismissing. It is the shortest path to showing that a screen can
-            // change the world without knowing whose world it is.
-            action =
-                "Записать" to {
-                    onDoseLogged()
-                    back()
+        // Gated on the read, like the other two ported routes. Composed against
+        // a null summary the wizard draws no compounds, so «Дальше» is dead on
+        // step 1 and the only way out is «Отмена» — a full-screen dead end,
+        // one frame wide against the mock and a network round trip against the
+        // client this file already anticipates.
+        val today = summary
+
+        if (today == null) {
+            PlaceholderScreen(title = "Записать дозу", onBack = back)
+        } else {
+            // The wizard holds its own draft and step for as long as it is on
+            // screen: neither is a fact about the patient until «Сохранить
+            // дозу», and a draft hoisted into the shell would outlive a cancel.
+            var draft by remember { mutableStateOf(DoseDraft()) }
+            var step by remember { mutableStateOf(DoseStep.COMPOUND) }
+            var refusal by remember { mutableStateOf<String?>(null) }
+            val scope = rememberCoroutineScope()
+
+            DoseWizard(
+                draft = draft,
+                step = step,
+                options = today.doseOptions(),
+                suggestedSite = today.suggestedSite,
+                notice = refusal,
+                onDraft = {
+                    draft = it
+                    refusal = null
                 },
-        )
+                onStep = { step = it },
+                onSubmit = {
+                    scope.launch {
+                        // Pop only on a write. A repository that refuses —
+                        // the day rolled over, the occurrence is already
+                        // logged — and a wizard that closed anyway would
+                        // throw away five steps of the patient's answers and
+                        // say nothing at all.
+                        when (val result = onDoseLogged(draft)) {
+                            is DoseLogResult.Written -> back()
+                            else -> refusal = result.reasonRu()
+                        }
+                    }
+                },
+                onCancel = back,
+            )
+        }
     }
     modal<CadenceRoute.LogMeal> {
         PlaceholderScreen(
@@ -378,38 +417,55 @@ private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(noinli
 }
 
 /**
- * What the placeholder has to say about a check-in, which today is nothing.
+ * What the wizard says when the repository refuses.
  *
- * Exhaustive with no `else`, deliberately. `DoseLogResult` exists so a screen
- * can tell «эта доза уже записана» from «что-то пошло не так», and a
- * placeholder with one button has nowhere to put either sentence — but a
- * `when` over the sealed type means task 6's wizard cannot inherit the silence
- * by accident. A branch it forgets will not compile, and the copy lands there.
+ * Exhaustive with no `else`: a fifth answer added to `DoseLogResult` has to be
+ * given words here or it will not compile, which is the whole reason the result
+ * is a sealed type rather than a nullable id.
  */
-private fun DoseLogResult.announce() {
+private fun DoseLogResult.reasonRu(): String? =
     when (this) {
-        is DoseLogResult.Written -> Unit
-        DoseLogResult.AlreadyLogged -> Unit
-        DoseLogResult.NotScheduledToday -> Unit
-        DoseLogResult.Incomplete -> Unit
+        is DoseLogResult.Written -> null
+        DoseLogResult.AlreadyLogged -> "Эта доза уже записана сегодня."
+        DoseLogResult.NotScheduledToday -> "На сегодня эта доза не запланирована."
+        DoseLogResult.Incomplete -> "Не хватает данных — вернитесь на шаг назад."
     }
-}
 
 /**
- * What the placeholder's one button can send, until task 6 of the dose-wizard
- * plan replaces it with the wizard itself.
+ * What «Что вы приняли?» offers, from the week's protocol.
  *
- * **It fabricates the zone, and that is a known cost, not a detail.** `submit`
- * refuses an injection without one and a single button cannot ask, so this
- * sends the rotation's own suggestion. The record is then indistinguishable
- * from a zone the patient chose, and `suggestNextSite` reads it back — so one
- * tap moves the rotation on evidence nobody gave. Recorded in
- * `docs/prototype-divergences.md`; it goes away with the wizard, which asks.
+ * `weekProtocol` already resolves the compound, the dose in force and today's
+ * status, so the wizard needs no repository of its own — and cannot disagree
+ * with the strip about what today's dose is. Only loggable items: a weigh-in is
+ * on the protocol and is not a dose.
  *
- * An empty draft when no dose is due today, which `submit` answers with
- * `Incomplete` — the item is missing before the schedule is ever consulted.
+ * `syringeUnits` is null until a vial says what the concentration is — see
+ * `docs/prototype-divergences.md`.
  */
-private fun TodaySummary.oneTapDraft(): DoseDraft =
-    nextDose?.let {
-        DoseDraft(itemId = it.itemId, kind = it.kind, dose = it.dose, site = suggestedSite)
-    } ?: DoseDraft()
+internal fun TodaySummary?.doseOptions(): List<DoseOption> =
+    this
+        ?.weekProtocol
+        .orEmpty()
+        .filter { it.loggable && it.dose != null }
+        .map { row ->
+            DoseOption(
+                itemId = row.itemId,
+                nameRu = row.compound?.nameRu ?: "—",
+                kind = row.kind,
+                dose = row.dose,
+                syringeUnits = null,
+                modeRu = modeRu(row),
+                dueToday = row.todayStatus != null,
+            )
+        }
+
+/** «п/к · еженедельно» — the route the clinic wrote, and the cadence. */
+internal fun modeRu(row: ProtocolRow): String =
+    listOfNotNull(
+        row.compound?.route,
+        when (row.cadence) {
+            ProtocolCadence.WEEKLY -> "еженедельно"
+            ProtocolCadence.DAILY -> if (row.times.size > 1) "${row.times.size}× в день" else "ежедневно"
+            ProtocolCadence.N_PER_WEEK -> "${row.times.size}× в неделю"
+        },
+    ).joinToString(" · ")

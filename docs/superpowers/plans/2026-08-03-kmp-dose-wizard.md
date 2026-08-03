@@ -178,6 +178,26 @@ Five steps with a rule each. This is why the state is in `shared`.
 - [ ] **Step 5: Check the acceptance criterion by diff.** `git diff --name-only` must not contain `ActionChooserSheet.kt`; `TodayScreen.kt` should appear only if the hero genuinely needed a new parameter.
 - [ ] **Step 6:** gate, both suites, commit.
 
+> [!deviation] 2026-08-03
+> Spec said: two files, and «the vial down by one» asserted in this test.
+> Actually done: `ProtocolRow` gained `loggable`, and the vial assertion stayed
+> in `MockRepositoryTest`.
+>
+> `ProtocolRow` carries `loggable` because the wizard's compound list is derived
+> from `TodaySummary.weekProtocol` rather than from a repository call of its
+> own — which is what stops the wizard and the Today strip from disagreeing
+> about today's dose. A weigh-in is on the protocol and is not a dose.
+>
+> The vial's decrement has no rendered form: no screen in `composeApp` draws
+> `TodaySummary.vialDosesLeft`, so a shell test could only pin a copy string
+> that says nothing about the wiring. It is asserted end to end through the
+> repository in `MockRepositoryTest.aLoggedDoseComesOutOfTheVialItWasDrawnFrom`.
+>
+> The wizard pops only on `Written`. A repository that refuses — the day rolled
+> over, the occurrence is already logged — leaves it open with the reason in
+> Russian, because closing anyway would throw away five steps of the patient's
+> answers and say nothing.
+
 ---
 
 ### Task 7: Divergences

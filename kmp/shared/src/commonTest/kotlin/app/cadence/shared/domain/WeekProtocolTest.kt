@@ -181,4 +181,17 @@ class WeekProtocolTest {
         assertTrue(rowsOn(LocalDate(2026, 5, 9)).isEmpty())
         assertTrue(rowsOn(LocalDate(2026, 8, 3)).isEmpty())
     }
+
+    @Test
+    fun theStripCarriesWhichItemsCanBeLogged() {
+        // The dose wizard offers only loggable rows, and this is the one line
+        // that decides. Guarded here rather than only through a simulator UI
+        // test: a mapping in `shared` should fail in `shared`.
+        val rows = rowsOn(LocalDate(2026, 5, 20))
+
+        assertEquals(
+            mapOf(ProtocolItemKind.INJECTION to true, ProtocolItemKind.SUPPLEMENT to false),
+            rows.associate { it.kind to it.loggable },
+        )
+    }
 }
