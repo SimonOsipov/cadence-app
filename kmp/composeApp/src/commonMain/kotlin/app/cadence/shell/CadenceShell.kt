@@ -103,7 +103,7 @@ fun CadenceApp(
             onMealLogged = { name ->
                 // The day's running total, from the repository — §03 puts
                 // exactly that in the toast, not the meal's own figure.
-                toast = ConfirmToastState(name, summary?.mealKcal ?: 0)
+                toast = ConfirmToastState(name, summary?.mealMacros?.kcal ?: 0)
                 raisedAt++
             },
         )
@@ -112,7 +112,7 @@ fun CadenceApp(
             open = actionsOpen,
             doseLogged = summary?.doseLoggedToday == true,
             mealCount = summary?.mealCount ?: 0,
-            mealKcal = summary?.mealKcal ?: 0,
+            mealKcal = summary?.mealMacros?.kcal ?: 0,
             onDismiss = { actionsOpen = false },
             onPickDose = {
                 actionsOpen = false

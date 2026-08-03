@@ -4,6 +4,7 @@ import app.cadence.shared.domain.CadenceClock
 import app.cadence.shared.domain.DoseEvent
 import app.cadence.shared.domain.DoseEventId
 import app.cadence.shared.domain.InjectionSite
+import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.ProtocolItemId
@@ -99,7 +100,15 @@ class CadenceMocks(
                 // own numbers survived, because on the seeded day the two
                 // happen to agree.
                 mealCount = todaysMeals.size,
-                mealKcal = todaysMeals.sumOf { it.totals.kcal },
+                mealMacros =
+                    todaysMeals.fold(Macros(0, 0, 0, 0)) { acc, meal ->
+                        Macros(
+                            kcal = acc.kcal + meal.totals.kcal,
+                            proteinG = acc.proteinG + meal.totals.proteinG,
+                            carbsG = acc.carbsG + meal.totals.carbsG,
+                            fatG = acc.fatG + meal.totals.fatG,
+                        )
+                    },
                 targets = MockSeed.targets,
                 // «Latest reading wins», §03 — by `measuredAt` and for this metric,
                 // not by position in a list. The same defect as the unfiltered

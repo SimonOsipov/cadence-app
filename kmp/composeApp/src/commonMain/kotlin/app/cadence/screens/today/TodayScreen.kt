@@ -45,6 +45,9 @@ fun TodayScreen(
     onOpenSchedule: () -> Unit = { },
     onOpenLearn: () -> Unit = { },
     onOpenProfile: () -> Unit = { },
+    onLogMeal: () -> Unit = { },
+    onOpenRecipes: () -> Unit = { },
+    onOpenNutrition: () -> Unit = { },
 ) {
     Column(modifier.fillMaxSize()) {
         TodayHeader(
@@ -75,6 +78,21 @@ fun TodayScreen(
             )
 
             WellbeingNudge(onOpen = onOpenJournal)
+
+            ProtocolStrip(rows = summary.weekProtocol, onOpenSchedule = onOpenSchedule)
+
+            MealHero(
+                eaten = summary.mealMacros,
+                targets = summary.targets,
+                onLogMeal = onLogMeal,
+                onOpenRecipes = onOpenRecipes,
+            )
+
+            TodayMeals(
+                eaten = summary.mealMacros,
+                targets = summary.targets,
+                onOpenNutrition = onOpenNutrition,
+            )
 
             summary.reorder?.let { hint ->
                 ReorderCard(

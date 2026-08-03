@@ -34,7 +34,8 @@ data class TodaySummary(
     val weekProtocol: List<ProtocolRow>,
     val doseLoggedToday: Boolean,
     val mealCount: Int,
-    val mealKcal: Int,
+    /** All four numbers, because the meals card draws P/C/F against target. */
+    val mealMacros: Macros,
     val targets: Macros,
     val weightKg: Double?,
     /** The same seven points the biomarker glance draws, oldest first. */

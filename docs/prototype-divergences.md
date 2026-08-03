@@ -264,3 +264,51 @@ opposite. Pinned now by
 `CadenceNavigationTest.theScreenBeneathAModalDoesNotMove`, its negative
 `anOrdinaryPushDoesMoveTheScreenBeneath`, and
 `aModalArrivesFromBelowAndAPushFromTheSide`.
+
+## The protocol strip is computed, and it titrates
+
+**What the prototype does:** `TodayScreen.tsx:100-133` is a literal array of
+three rows. The semaglutide row reads «Семаглутид · 0,25 мг» for all twelve
+weeks, and its state is a hand-wired boolean.
+
+**What we do:** `weekProtocolRows` projects the same occurrences the Schedule
+screen renders — dose from the phase covering the current cycle week, today's
+state from the day's occurrence.
+
+**Why:** §03 names it directly: «Today-screen protocol strip hardcoded, diverges
+from schedule data · both render the same generated occurrences endpoint». The
+two cannot disagree now, by construction, which is why both screens are one
+subtask.
+
+Rows come from the week's *items*, not the day's occurrences: «Протокол этой
+недели» carries the weekly injection on a Wednesday too. `todayStatus` is
+nullable so a row on a day it is not due says nothing about «сегодня».
+
+## «Вес · 7 дней» becomes «Вес · 7 недель»
+
+**What the prototype does:** captions the headline glance «Вес · 7 дней» and
+draws seven hardcoded points with a literal «↓ 0,6 кг» beneath them.
+
+**What we do:** caption the number of readings the series actually holds, and
+compute the delta from its last two points.
+
+**Why:** the prototype's own schedule weighs the patient **weekly**
+(«Взвешивание · Воскресенье» in `schedule/data.ts`), so seven readings are seven
+weeks. The caption followed a number nobody had rechecked against the data
+beside it. This is the same class as the two disconnected vial datasets — two
+parts of one prototype disagreeing — and the resolution is the same: the data
+wins.
+
+## The meal hero arrives without its suggestion
+
+**What the prototype does:** `MealHero` picks a dish from the recipe library via
+`suggestNextMeal(meals, now)` and titles the card with it.
+
+**What we do:** render the half that is arithmetic — «Осталось 960 ккал · 80 г
+белка», computed against the day's targets — plus the two ways out.
+
+**Why:** the library and the rule that picks from it belong to the nutrition
+section, step 8 of the block. Porting a suggestion with no recipes behind it
+would mean seeding a second, parallel set of dishes — which is exactly the
+prototype mistake §03 spends its reconciliation table undoing. Completed when
+step 8 lands; recorded here so it is not mistaken for an oversight.

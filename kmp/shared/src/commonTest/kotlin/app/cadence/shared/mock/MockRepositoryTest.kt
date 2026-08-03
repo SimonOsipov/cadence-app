@@ -214,8 +214,8 @@ class MockRepositoryTest {
             // Numbers, not «1 240 ккал» — the formatting lives on the UI side
             // and this is what it is handed.
             assertTrue(summary.mealCount > 0)
-            assertTrue(summary.mealKcal > 0)
-            assertTrue(summary.targets.kcal > summary.mealKcal)
+            assertTrue(summary.mealMacros.kcal > 0)
+            assertTrue(summary.targets.kcal > summary.mealMacros.kcal)
         }
 
     @Test
@@ -227,6 +227,6 @@ class MockRepositoryTest {
             val summary = mocks("2026-06-07T09:00:00Z").today.today()
 
             assertEquals(0, summary.mealCount)
-            assertEquals(0, summary.mealKcal)
+            assertEquals(0, summary.mealMacros.kcal)
         }
 }

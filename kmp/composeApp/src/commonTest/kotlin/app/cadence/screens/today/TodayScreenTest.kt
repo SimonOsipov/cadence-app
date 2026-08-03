@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.domain.FixedCadenceClock
@@ -18,6 +19,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 private val ZONE = TimeZone.of("Europe/Moscow")
+
+/** Семаглутид, BPC-157 and the nightly supplement — the seeded protocol. */
+private const val PROTOCOL_ITEMS = 3
 
 /** The seeded day, read through the repository the screen will be handed. */
 private fun summary(iso: String = "2026-05-31T04:00:00Z"): TodaySummary =
@@ -132,8 +136,8 @@ class TodayScreenTest {
             setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
 
             // Four doses at one a week, no sealed spare — the seeded state.
-            onNodeWithText("Семаглутид закончится через ~4 недели").assertIsDisplayed()
-            onNodeWithText("Запасного флакона нет").assertIsDisplayed()
+            onNodeWithText("Семаглутид закончится через ~4 недели").assertExists()
+            onNodeWithText("Запасного флакона нет").assertExists()
         }
 
     @Test
@@ -149,6 +153,110 @@ class TodayScreenTest {
             }
 
             assertTrue(onAllNodesWithText("Запасного флакона нет").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
+    fun theProtocolStripDrawsOneRowPerItemOfTheWeek() =
+        runComposeUiTest {
+            setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
+
+            // The prototype's three rows, now a projection of the same
+            // occurrences the calendar reads. The supplement has no phases, so
+            // its row has no dose — which is what makes the column optional.
+            // assertExists, not assertIsDisplayed: the screen scrolls and these
+            // sit below the fold in the test's viewport. What is being asserted
+            // is that the strip renders them at all.
+            onNodeWithText("Протокол этой недели".uppercase()).assertExists()
+            onNodeWithText("Семаглутид").assertExists()
+            onNodeWithText("BPC-157").assertExists()
+            onNodeWithText("Глицин + магний").assertExists()
+            onNodeWithText("0,25 мг").assertExists()
+        }
+
+    @Test
+    fun theStripSaysWhatIsStillOwedToday() =
+        runComposeUiTest {
+            setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
+
+            // All three items are due today — the weekly injection because it
+            // is Sunday, the other two because they are daily — so three rows
+            // say «ждёт». Expecting one was the assertion being wrong, not the
+            // strip.
+            assertEquals(PROTOCOL_ITEMS, onAllNodesWithText("ждёт").fetchSemanticsNodes().size)
+        }
+
+    @Test
+    fun theStripFollowsTheDoseOnceItIsLogged() =
+        runComposeUiTest {
+            val m = CadenceMocks(FixedCadenceClock.at("2026-05-31T04:00:00Z"), ZONE)
+            val after =
+                runBlocking {
+                    m.dosing.logDose(
+                        m.today
+                            .today()
+                            .nextDose!!
+                            .itemId,
+                        null,
+                    )
+                    m.today.today()
+                }
+
+            setContent { CadenceTheme { TodayScreen(summary = after, patientName = "Марина") } }
+
+            assertEquals(1, onAllNodesWithText("записано").fetchSemanticsNodes().size)
+            assertEquals(2, onAllNodesWithText("ждёт").fetchSemanticsNodes().size)
+        }
+
+    @Test
+    fun aRowSaysNothingAboutADayItIsNotDueOn() =
+        runComposeUiTest {
+            // Wednesday: the weekly injection is on the strip — it is the
+            // week's protocol — but it is not due, so it carries no «сегодня».
+            // On the seeded Sunday all three items are due, which is why a
+            // mutation putting a status on every row survived until this test.
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary("2026-05-20T04:00:00Z"), patientName = "Марина")
+                }
+            }
+
+            onNodeWithText("Семаглутид").assertExists()
+            assertEquals(2, onAllNodesWithText("ждёт").fetchSemanticsNodes().size)
+        }
+
+    @Test
+    fun theWholeScheduleIsOneTapAway() =
+        runComposeUiTest {
+            var opened = 0
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary(), patientName = "Марина", onOpenSchedule = { opened++ })
+                }
+            }
+
+            onNodeWithText("Весь график").performScrollTo().performClick()
+
+            assertEquals(1, opened)
+        }
+
+    @Test
+    fun theMealsCardCountsTheDayAgainstItsTarget() =
+        runComposeUiTest {
+            setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
+
+            // Two seeded meals: 320 + 520 kcal against a target of 1 800.
+            onNodeWithText("ПРИЁМЫ СЕГОДНЯ").assertExists()
+            onNodeWithText("840").assertExists()
+            onNodeWithText("/ 1\u00A0800 ккал").assertExists()
+        }
+
+    @Test
+    fun theMealHeroSaysWhatIsLeftOfTheDay() =
+        runComposeUiTest {
+            setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
+
+            // 1 800 − 840 and 140 − 60, both computed rather than written.
+            onNodeWithText("Осталось 960 ккал · 80 г белка").assertExists()
         }
 
     @Test
