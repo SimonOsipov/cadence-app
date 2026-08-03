@@ -25,6 +25,8 @@ data class TodaySummary(
     val mealKcal: Int,
     val targets: Macros,
     val weightKg: Double?,
+    /** The same seven points the biomarker glance draws, oldest first. */
+    val weightSeries: List<Double>,
     val targetWeightKg: Double?,
     val vialDosesLeft: Int,
     val reorder: ReorderHint?,

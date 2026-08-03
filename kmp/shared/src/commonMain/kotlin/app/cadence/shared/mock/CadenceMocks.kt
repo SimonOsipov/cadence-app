@@ -16,6 +16,8 @@ import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
 import app.cadence.shared.domain.today
 import app.cadence.shared.repository.DoseLogRepository
+import app.cadence.shared.repository.MeasurementsRepository
+import app.cadence.shared.repository.MetricSeries
 import app.cadence.shared.repository.ScheduleDay
 import app.cadence.shared.repository.ScheduleRepository
 import app.cadence.shared.repository.TodayRepository
@@ -56,6 +58,7 @@ class CadenceMocks(
     val today: TodayRepository = MockTodayRepository()
     val schedule: ScheduleRepository = MockScheduleRepository()
     val dosing: DoseLogRepository = MockDoseLogRepository()
+    val measurements: MeasurementsRepository = MockMeasurementsRepository()
 
     private fun currentDate(): LocalDate = clock.today(zone)
 
@@ -64,6 +67,11 @@ class CadenceMocks(
             val date = currentDate()
             val todays = occurrencesFor(MockSeed.plan, events, date, date)
             val vial = MockSeed.vials.first()
+            val weightSeries =
+                MockSeed.measurements
+                    .filter { it.metric == Metric.WEIGHT }
+                    .sortedBy { it.measuredAt }
+                    .takeLast(MeasurementsRepository.DEFAULT_POINTS)
             val todaysMeals = MockSeed.meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
 
             return TodaySummary(
@@ -90,6 +98,7 @@ class CadenceMocks(
                 // «Latest reading wins», §03 — by `measuredAt` and for this metric,
                 // not by position in a list. The same defect as the unfiltered
                 // meals, hidden by a seed holding exactly one measurement.
+                weightSeries = weightSeries.map { it.value },
                 weightKg =
                     MockSeed.measurements
                         .filter { it.metric == Metric.WEIGHT }
@@ -105,6 +114,23 @@ class CadenceMocks(
                     ),
             )
         }
+    }
+
+    private inner class MockMeasurementsRepository : MeasurementsRepository {
+        override suspend fun series(
+            metric: Metric,
+            points: Int,
+        ): MetricSeries =
+            MetricSeries(
+                metric = metric,
+                // takeLast, not take: a chart of the patient's first seven
+                // weeks would never move again.
+                points =
+                    MockSeed.measurements
+                        .filter { it.metric == metric }
+                        .sortedBy { it.measuredAt }
+                        .takeLast(points),
+            )
     }
 
     private inner class MockScheduleRepository : ScheduleRepository {

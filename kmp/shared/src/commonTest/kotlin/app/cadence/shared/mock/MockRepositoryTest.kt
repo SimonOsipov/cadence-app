@@ -2,6 +2,7 @@ package app.cadence.shared.mock
 
 import app.cadence.shared.domain.DoseUnit
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
@@ -115,6 +116,46 @@ class MockRepositoryTest {
 
             assertEquals(4, today.cycleWeek)
             assertTrue(today.anyPending, "today has occurrences nobody has logged")
+        }
+
+    @Test
+    fun aSeriesIsOldestFirstAndKeepsTheMostRecentPoints() =
+        runTest {
+            // Ordered because a chart is drawn left to right, and truncated
+            // from the *end*: `take` instead of `takeLast` would draw the
+            // patient's first seven weeks forever.
+            val series = mocks().measurements.series(Metric.WEIGHT, points = 3)
+
+            assertEquals(3, series.points.size)
+            assertEquals(series.points.sortedBy { it.measuredAt }, series.points)
+            assertEquals(series.points.last(), series.latest)
+            assertEquals(98.4, series.latest?.value)
+        }
+
+    @Test
+    fun aMetricWithNoReadingsIsEmptyRatherThanAbsent() =
+        runTest {
+            // A blank chart beside a caption reads as «failed to load», so the
+            // caller has to be able to tell «nothing measured» apart from an
+            // error — which means not throwing.
+            val series = mocks().measurements.series(Metric.CHEST)
+
+            assertTrue(series.points.isEmpty())
+            assertEquals(null, series.latest)
+        }
+
+    @Test
+    fun theWeightSeriesOnTodayIsTheSameSevenPoints() =
+        runTest {
+            val m = mocks()
+
+            assertEquals(
+                m.measurements
+                    .series(Metric.WEIGHT)
+                    .points
+                    .map { it.value },
+                m.today.today().weightSeries,
+            )
         }
 
     @Test

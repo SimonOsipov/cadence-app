@@ -185,36 +185,29 @@ object MockSeed {
     /** §03: «kcal 1800 · protein 140 · carbs 200 · fat 60». */
     val targets = Macros(kcal = 1800, proteinG = 140, carbsG = 200, fatG = 60)
 
+    /**
+     * Seven weekly weights and one HRV.
+     *
+     * Seven because §11 asks for a «7-pt series per metric»; weekly because the
+     * protocol weighs in weekly. The HRV sits later than the last weight on
+     * purpose, so «latest weight» cannot be «latest reading» and pass.
+     */
     val measurements =
         listOf(
+            // Eight readings for a seven-point series, so `take` and `takeLast`
+            // cannot agree; and one of them out of list order, so the sort has
+            // something to do. Both mutations survived a seed that was already
+            // sorted and exactly seven long.
+            weight("2026-04-26T06:00:00Z", 100.8),
+            weight("2026-04-12T06:00:00Z", 101.9),
+            weight("2026-04-19T06:00:00Z", 101.2),
+            weight("2026-05-03T06:00:00Z", 100.1),
+            weight("2026-05-10T06:00:00Z", 99.9),
+            weight("2026-05-17T06:00:00Z", 99.2),
+            weight("2026-05-24T06:00:00Z", 98.8),
+            weight("2026-05-31T06:00:00Z", 98.4),
             Measurement(
-                id = MeasurementId("m-1"),
-                patientId = patientId,
-                metric = Metric.WEIGHT,
-                value = 98.4,
-                unit = "kg",
-                measuredAt = Instant.parse("2026-05-31T06:00:00Z"),
-                source = MeasurementSource.MANUAL,
-                externalId = null,
-                note = null,
-            ),
-            // An *earlier* weight, sitting later in the list, so «latest» cannot
-            // be «last in the list» and pass by position.
-            Measurement(
-                id = MeasurementId("m-0"),
-                patientId = patientId,
-                metric = Metric.WEIGHT,
-                value = 99.6,
-                unit = "kg",
-                measuredAt = Instant.parse("2026-05-24T06:00:00Z"),
-                source = MeasurementSource.MANUAL,
-                externalId = null,
-                note = null,
-            ),
-            // A later reading of another metric, so «latest weight» cannot be
-            // «last of any metric» either.
-            Measurement(
-                id = MeasurementId("m-2"),
+                id = MeasurementId("m-hrv"),
                 patientId = patientId,
                 metric = Metric.HRV,
                 value = 58.0,
@@ -225,6 +218,21 @@ object MockSeed {
                 note = null,
             ),
         )
+
+    private fun weight(
+        at: String,
+        kg: Double,
+    ) = Measurement(
+        id = MeasurementId("m-$at"),
+        patientId = patientId,
+        metric = Metric.WEIGHT,
+        value = kg,
+        unit = "kg",
+        measuredAt = Instant.parse(at),
+        source = MeasurementSource.MANUAL,
+        externalId = null,
+        note = null,
+    )
 
     val meals =
         listOf(
