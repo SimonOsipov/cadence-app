@@ -65,33 +65,45 @@ fun TodayHero(
                 .padding(HERO_PADDING),
         verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
     ) {
-        HeroBadge(logged)
+        // The prototype's day is frozen to a Sunday with a dose on it, so it
+        // has no no-dose state at all. Six days in seven it is wrong, and after
+        // the twelve weeks end it is wrong every day — the card claimed an
+        // injection was scheduled, under a compound name with no dose beside
+        // it, over a button whose tap opened the wizard and logged nothing.
+        val due = dose != null
 
-        val (value, unit) = dose?.let(::formatDose) ?: ("" to "")
-        CadenceTitle(
-            text =
-                cadenceEmphasisedTitle(
-                    prefix = if (compoundName == null) "" else "$compoundName\n",
-                    emphasis = if (dose == null) "" else "$value $unit",
-                    emphasisColor = CadenceColors.sand300,
-                ),
-            size = HERO_TITLE,
-            color = CadenceColors.cream,
-        )
+        HeroBadge(logged, due)
+
+        if (due) {
+            val (value, unit) = formatDose(dose)
+            CadenceTitle(
+                text =
+                    cadenceEmphasisedTitle(
+                        prefix = if (compoundName == null) "" else "$compoundName\n",
+                        emphasis = "$value $unit",
+                        emphasisColor = CadenceColors.sand300,
+                    ),
+                size = HERO_TITLE,
+                color = CadenceColors.cream,
+            )
+        } else {
+            CadenceTitle("Сегодня инъекции нет", size = HERO_TITLE, color = CadenceColors.cream)
+        }
 
         BasicText(
             text =
-                if (logged) {
-                    "Записано · ротация."
-                } else {
-                    "Недельная инъекция, запланирована на сегодня."
+                when {
+                    !due -> "Следующая — по расписанию курса."
+                    logged -> "Записано · ротация."
+                    else -> "Недельная инъекция, запланирована на сегодня."
                 },
             style = Cadence.typography.body.copy(color = palette.onForest.copy(alpha = 0.75f)),
         )
 
-        HeroAction(logged, onLogDose)
+        // No button on a day with nothing to log.
+        if (due) HeroAction(logged, onLogDose)
 
-        if (logged) {
+        if (logged && due) {
             // The prototype only offers the check-in once there is a dose to
             // check in about, which is also the only time the question means
             // anything.
@@ -101,7 +113,10 @@ fun TodayHero(
 }
 
 @Composable
-private fun HeroBadge(logged: Boolean) {
+private fun HeroBadge(
+    logged: Boolean,
+    due: Boolean,
+) {
     Row(
         modifier =
             Modifier
@@ -113,7 +128,12 @@ private fun HeroBadge(logged: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BasicText(
-            text = if (logged) "Записано сегодня" else "Сегодня утром",
+            text =
+                when {
+                    !due -> "Курс идёт"
+                    logged -> "Записано сегодня"
+                    else -> "Сегодня"
+                },
             style = Cadence.typography.label.copy(color = CadenceColors.sand300, fontSize = 11.sp),
         )
     }

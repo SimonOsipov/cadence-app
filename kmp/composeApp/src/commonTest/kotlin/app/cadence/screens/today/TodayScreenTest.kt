@@ -222,6 +222,39 @@ class TodayScreenTest {
 
             onNodeWithText("Семаглутид").assertExists()
             assertEquals(2, onAllNodesWithText("ждёт").fetchSemanticsNodes().size)
+
+            // And the hero says nothing about a dose there is none of. It used
+            // to name the compound, print «Недельная инъекция, запланирована на
+            // сегодня» and offer «Записать →» — a button whose tap opened the
+            // wizard, confirmed, and logged nothing, because the shell's
+            // `nextDose?.let` had nothing to let.
+            assertTrue(onAllNodesWithText("Записать →").fetchSemanticsNodes().isEmpty())
+            assertTrue(
+                onAllNodesWithText("Недельная инъекция, запланирована на сегодня.")
+                    .fetchSemanticsNodes()
+                    .isEmpty(),
+            )
+            onNodeWithText("Сегодня инъекции нет").assertIsDisplayed()
+        }
+
+    @Test
+    fun aSingleReadingDrawsWithoutADelta() =
+        runComposeUiTest {
+            // One weigh-in is where a patient starts, and `it[it.size - 2]` on
+            // a one-point series throws. The guard is `size >= 2`; loosening it
+            // to `>= 1` crashes and every test stayed green, because no fixture
+            // ever had exactly one point.
+            setContent {
+                CadenceTheme {
+                    TodayScreen(
+                        summary = summary().copy(weightSeries = listOf(98.4), weightKg = 98.4),
+                        patientName = "Марина",
+                    )
+                }
+            }
+
+            onNodeWithText("98,4").assertIsDisplayed()
+            assertTrue(onAllNodesWithText("↓ 0,4 кг").fetchSemanticsNodes().isEmpty())
         }
 
     @Test
