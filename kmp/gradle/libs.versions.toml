@@ -23,6 +23,7 @@ androidx-activity-compose = "1.13.0"
 # and compose 1.10.0 transitively, and nothing here needs what it adds.
 navigation-compose = "2.9.2"
 kotlinx-serialization = "1.11.0"
+kotlinx-datetime = "0.7.1"
 
 android-minSdk = "28"
 android-targetSdk = "36"
@@ -39,6 +40,7 @@ compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "
 compose-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
 navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "navigation-compose" }
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

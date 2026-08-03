@@ -43,9 +43,17 @@ style:
     # specification written out. A named constant for 1240 would hide the one
     # thing the row exists to state. The rule still applies to the formatter
     # itself — its group size and teen range are named there.
+    #
+    # `shared`'s tests are the third, for the same reason: they fix calendar
+    # dates and doses as literals — `LocalDate(2026, 5, 31)`, `Dose(0.25, MG)` —
+    # and the literal is the case being pinned. Naming 2026 would hide which
+    # week of which protocol the assertion is about. The rule keeps applying to
+    # `shared/src/commonMain`, which is where the thresholds this rule exists
+    # for actually live: the 25% low-stock line, the 14-day expiry window.
     excludes:
       - '**/app/cadence/design/**'
       - '**/CadenceFormatTest.kt'
+      - '**/shared/src/commonTest/**'
   MaxLineLength:
     maxLineLength: 120
     # CadenceIcons.kt is generated path data carried over from the prototype.
