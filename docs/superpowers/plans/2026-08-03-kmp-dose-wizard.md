@@ -49,10 +49,10 @@
 
 **Files:** `shared/domain/InjectionRotation.kt`, its test.
 
-- [ ] **Step 1: Write the failing test.** With no history, the suggestion is the first zone. With a history, it is the least-recently-used zone — and never the one used last. Zones used equally often break ties by which was used longest ago. A history containing a zone not in the current set does not crash.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** A suggestion that ignores history; one that returns the *most* recent; one that ties by declaration order rather than by recency.
-- [ ] **Step 6:** gate, commit.
+- [x] **Step 1: Write the failing test.** With no history, the suggestion is the first zone. With a history, it is the least-recently-used zone — and never the one used last. Zones used equally often break ties by which was used longest ago. A history containing a zone not in the current set does not crash.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** A suggestion that ignores history; one that returns the *most* recent; one that ties by declaration order rather than by recency.
+- [x] **Step 6:** gate, commit.
 
 ---
 
@@ -62,10 +62,10 @@ Five steps with a rule each. This is why the state is in `shared`.
 
 **Files:** `shared/domain/DoseDraft.kt`, its test.
 
-- [ ] **Step 1: Write the failing test.** A draft with no compound cannot leave step 1; with no dose cannot leave step 2; with no site cannot leave step 3; step 4 is entirely optional and always advances; step 5 is the review and has no «next». Changing the compound resets the dose to that compound's current phase, not to the previous compound's number. The dose is a `Dose`, and nothing in the draft is a rendered string.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** Each guard dropped in turn; a compound change that keeps the old dose.
-- [ ] **Step 6:** gate, commit.
+- [x] **Step 1: Write the failing test.** A draft with no compound cannot leave step 1; with no dose cannot leave step 2; with no site cannot leave step 3; step 4 is entirely optional and always advances; step 5 is the review and has no «next». Changing the compound resets the dose to that compound's current phase, not to the previous compound's number. The dose is a `Dose`, and nothing in the draft is a rendered string.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** Each guard dropped in turn; a compound change that keeps the old dose.
+- [x] **Step 6:** gate, commit.
 
 > [!deviation] 2026-08-03
 > Spec said: the draft holds selected item, dose, site, mood, side effects, note,
@@ -88,10 +88,10 @@ Five steps with a rule each. This is why the state is in `shared`.
 
 **Files:** `shared/repository/DoseLogRepository.kt`, `mock/CadenceMocks.kt`, `MockRepositoryTest`.
 
-- [ ] **Step 1: Write the failing test.** Submitting a draft writes a `DoseEvent` *and* a `JournalEntry` for the same date with `source = DOSE`, carrying the draft's mood and its side effects as tags. The vial is decremented. Submitting twice for one occurrence does not write two events. The journal entry upserts — §03 has `UNIQUE(patient, date)`.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** The journal write dropped; the tags dropped; the vial not carried; two submissions accepted.
-- [ ] **Step 6:** gate, commit.
+- [x] **Step 1: Write the failing test.** Submitting a draft writes a `DoseEvent` *and* a `JournalEntry` for the same date with `source = DOSE`, carrying the draft's mood and its side effects as tags. The vial is decremented. Submitting twice for one occurrence does not write two events. The journal entry upserts — §03 has `UNIQUE(patient, date)`.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** The journal write dropped; the tags dropped; the vial not carried; two submissions accepted.
+- [x] **Step 6:** gate, commit.
 
 > [!deviation] 2026-08-03
 > Spec said: three files — `DoseLogRepository.kt`, `CadenceMocks.kt`,
@@ -119,10 +119,10 @@ Five steps with a rule each. This is why the state is in `shared`.
 
 **Files:** `design/CadenceBodyMap.kt`, `design/CadenceStepper.kt`, `design/CadenceSlider.kt`, design tests.
 
-- [ ] **Step 1: Write the failing test.** The body map draws ten zones, each named for a screen reader and each reporting its own id when tapped; the selected one says it is selected. The stepper reports increments and decrements and never goes below zero. The slider reports the value it lands on. The syringe fill is a fraction of its max, clamped.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** A zone reporting its neighbour's id; a stepper that ignores its step size; a fill that is not clamped.
-- [ ] **Step 6:** gate, commit.
+- [x] **Step 1: Write the failing test.** The body map draws ten zones, each named for a screen reader and each reporting its own id when tapped; the selected one says it is selected. The stepper reports increments and decrements and never goes below zero. The slider reports the value it lands on. The syringe fill is a fraction of its max, clamped.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** A zone reporting its neighbour's id; a stepper that ignores its step size; a fill that is not clamped.
+- [x] **Step 6:** gate, commit.
 
 > [!deviation] 2026-08-03
 > Spec said: three files in `design/`. Actually done: three files, plus
@@ -144,10 +144,10 @@ Five steps with a rule each. This is why the state is in `shared`.
 
 **Files:** the five `screens/dose/*Step.kt`, `DoseWizard.kt`, tests.
 
-- [ ] **Step 1: Write the failing test.** Each step renders its eyebrow («Шаг 1 · Препарат») and its emphasised title. «Дальше» is disabled until the step's rule is met and enabled once it is. The last step's button reads «Сохранить дозу». Back returns to the previous step and keeps what was entered. The review names the compound, the dose as two runs, and the zone in Russian.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** The next button ignoring `canAdvance`; back losing the draft; the review reading the compound's default rather than the draft's dose.
-- [ ] **Step 6:** gate, commit.
+- [x] **Step 1: Write the failing test.** Each step renders its eyebrow («Шаг 1 · Препарат») and its emphasised title. «Дальше» is disabled until the step's rule is met and enabled once it is. The last step's button reads «Сохранить дозу». Back returns to the previous step and keeps what was entered. The review names the compound, the dose as two runs, and the zone in Russian.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** The next button ignoring `canAdvance`; back losing the draft; the review reading the compound's default rather than the draft's dose.
+- [x] **Step 6:** gate, commit.
 
 > [!deviation] 2026-08-03
 > Spec said: five `screens/dose/*Step.kt` files. Actually done: one
@@ -173,10 +173,10 @@ Five steps with a rule each. This is why the state is in `shared`.
 
 **Files:** `shell/CadenceShell.kt`, `shell/CadenceShellDataTest.kt`.
 
-- [ ] **Step 1: Write the failing test.** The hero's «Записать →» opens the wizard; completing it returns to Today with the dose logged, the strip saying «записано», and the vial down by one.
-- [ ] **Step 2–4:** run red, wire, run green.
-- [ ] **Step 5: Check the acceptance criterion by diff.** `git diff --name-only` must not contain `ActionChooserSheet.kt`; `TodayScreen.kt` should appear only if the hero genuinely needed a new parameter.
-- [ ] **Step 6:** gate, both suites, commit.
+- [x] **Step 1: Write the failing test.** The hero's «Записать →» opens the wizard; completing it returns to Today with the dose logged, the strip saying «записано», and the vial down by one.
+- [x] **Step 2–4:** run red, wire, run green.
+- [x] **Step 5: Check the acceptance criterion by diff.** `git diff --name-only` must not contain `ActionChooserSheet.kt`; `TodayScreen.kt` should appear only if the hero genuinely needed a new parameter.
+- [x] **Step 6:** gate, both suites, commit.
 
 > [!deviation] 2026-08-03
 > Spec said: two files, and «the vial down by one» asserted in this test.
@@ -202,8 +202,8 @@ Five steps with a rule each. This is why the state is in `shared`.
 
 ### Task 7: Divergences
 
-- [ ] Record: the photo upload deferred to the storage work; the prototype's dose-as-string replaced by `{value, unit}` (the subtask's prohibition, so it is a *correction* rather than a divergence, but the registry is where the next reader looks); anything the five steps drop.
-- [ ] Gate, commit.
+- [x] Record: the photo upload deferred to the storage work; the prototype's dose-as-string replaced by `{value, unit}` (the subtask's prohibition, so it is a *correction* rather than a divergence, but the registry is where the next reader looks); anything the five steps drop.
+- [x] Gate, commit.
 
 ---
 

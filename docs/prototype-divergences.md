@@ -503,3 +503,42 @@ warm confirmation sheet after saving, which auto-dismisses after 2,6 s.
 **The disabled button** is alpha only. The prototype also swaps the background
 to `sunk` and the label to `subtle`, so its dead button reads grey where ours
 reads like a faded primary.
+
+## The dose is `{value, unit}`, and the prototype's string is not ported
+
+**What the prototype does:** `COMPOUNDS` in `log-dose/data.ts` carries
+`default: '0.25'` as a **string**, `LogState` holds `dose: string` beside
+`unit: string`, and `DoseStepper` does `parseFloat` on every tap and hands back
+`n.toFixed(2).replace(/\.?0+$/, '')`. The rendered comma is produced by
+`fmtDose`, which is a `String.replace` over the same value.
+
+**What we do:** `Dose(value: Double, unit: DoseUnit)` from `shared`, everywhere.
+`DoseDraft` holds it, `DoseEvent` stores it, `CadenceDoseStepper` does the
+arithmetic on the number and `formatDose` returns the two runs the screen sets
+in two faces. Nothing between the protocol and the screen holds «0,25 мг».
+
+**Why this is a correction and not a divergence:** it is the subtask's one
+explicit prohibition — «Доза хранится `{value, unit}`, а не строкой "1,0 мг".
+Форматтер один на поверхность.» It is written here because this file is where
+the next reader looks, and because the arithmetic changed with it: the stepper
+rounds to three places where the prototype's `toFixed(3)` does, and truncating
+instead would record 0,399 while the screen read «0,4 мг».
+
+## What the dose wizard still owes
+
+One list, so step 11's side-by-side run has somewhere to start. Each is written
+out where it was made; this is the index.
+
+- **The photo upload.** The slot renders and reports a tap, `DoseDraft` carries
+  `photoAttached`, and the write drops it — §03 routes photos straight to object
+  storage under a path convention, and that lands with the storage work.
+- **The vial picker**, and with it the review's «Флакон · N доз» row, the
+  syringe barrel's reading, and any answer for a patient with two open vials of
+  one compound.
+- **The warm confirmation sheet** after «Сохранить дозу», which the prototype
+  shows for 2,6 s before returning.
+- **The «Ничего» chip** and the review's «Без замечаний».
+- **`FadeIn`** between steps, the footer's gradient scrim, and the two button
+  icons.
+- **A one-tap path that invents a zone** is gone: the placeholder that did it is
+  replaced by the wizard, which asks.
