@@ -119,3 +119,32 @@ first tap of the centre button.
 
 Also renamed: the prototype's `insights` is `TRENDS` here, matching the screen's
 own name («Тренды») rather than its route key.
+
+## Russian plurals: the rule, not the prototype's approximation of it
+
+**What the prototype does:** `ActionChooserSheet.tsx` picks the meal noun with
+`mealCount === 1 ? 'приём' : mealCount < 5 ? 'приёма' : 'приёмов'`.
+
+**What we do:** `pluralMeals` in `app.cadence.format` applies the actual rule —
+11–14 take «приёмов», then the last digit decides.
+
+**Why:** the ternary is right through 20 and wrong from 21 up («21 приёмов»).
+No count the sheet can reach today leaves that range, so nothing on screen
+changes; what changes is that the next screen counting something copies a rule
+that holds instead of one that happens to. Pinned by
+`CadenceFormatTest.mealsTakeTheRussianPluralAndNotThePrototypesApproximationOfIt`,
+which asserts exactly the counts where the two disagree.
+
+## Number grouping: hand-rolled, because Kotlin/Native has no ICU
+
+**What the prototype does:** `(1240).toLocaleString('ru-RU')` → «1 240», with
+U+00A0 between the groups.
+
+**What we do:** `formatInteger` in `app.cadence.format` produces the same
+string from the same rule.
+
+**Why:** there is no `toLocaleString` that works on both platforms —
+Kotlin/Native carries no ICU, so a locale API would be an expect/actual pair
+over two different implementations for a rule that is three lines. The
+separator is asserted as the code point, not as «looks spaced»: a plain space
+would let a kcal count wrap between its thousands and its hundreds.

@@ -37,7 +37,15 @@ style:
     # The design package is the one place where a literal *is* the definition —
     # `val paper = Color(0xFFFBF8F3)` names it. Everywhere else reads these
     # tokens instead of writing its own numbers, which is what the rule is for.
-    excludes: ['**/app/cadence/design/**']
+    #
+    # CadenceFormatTest is the second: it is a table mapping numbers to the
+    # Russian text they render as, and `formatInteger(1240) == "1 240"` is the
+    # specification written out. A named constant for 1240 would hide the one
+    # thing the row exists to state. The rule still applies to the formatter
+    # itself — its group size and teen range are named there.
+    excludes:
+      - '**/app/cadence/design/**'
+      - '**/CadenceFormatTest.kt'
   MaxLineLength:
     maxLineLength: 120
     # CadenceIcons.kt is generated path data carried over from the prototype.
