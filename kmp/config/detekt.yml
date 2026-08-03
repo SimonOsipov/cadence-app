@@ -34,6 +34,9 @@ style:
     # blanket pass: in a product whose domain is doses and titration thresholds,
     # an unnamed number in a property is exactly the case worth catching.
     ignoreAnnotated: ['Composable']
+    # An enum entry's argument is a definition, and the entry name is the name
+    # the rule asks for: `FIFTEEN(15)` cannot be made clearer by extracting 15.
+    ignoreEnums: true
     # The design package is the one place where a literal *is* the definition —
     # `val paper = Color(0xFFFBF8F3)` names it. Everywhere else reads these
     # tokens instead of writing its own numbers, which is what the rule is for.
