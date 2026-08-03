@@ -11,6 +11,13 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
+/**
+ * The tab, not the word. `ProtocolStripRow` also renders «Сегодня» once per due
+ * item, so `onNodeWithText` finds four nodes the moment the seeded protocol
+ * covers the real date — and `App()` runs on the system clock.
+ */
+private const val TODAY_TAB = "Сегодня"
+
 @OptIn(ExperimentalTestApi::class)
 class AppTest {
     @Test
@@ -29,7 +36,7 @@ class AppTest {
             // ported screen is what the app opens on — the placeholder had no
             // name on it.
             onNodeWithText("Марина").assertIsDisplayed()
-            onNodeWithText("Сегодня").assertIsSelected()
+            onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 
     @Test
@@ -46,7 +53,7 @@ class AppTest {
             // green, because the sheet's own suite checks that it *reports* the
             // tap, not that the shell acts on it.
             assertTrue(onAllNodesWithText("Отмена").fetchSemanticsNodes().isEmpty())
-            onNodeWithText("Сегодня").assertIsSelected()
+            onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 
     @Test
@@ -75,7 +82,7 @@ class AppTest {
             // than fall back, so reaching any screen at all is the assertion.
             setContent { App() }
 
-            onNodeWithText("Сегодня").assertIsSelected()
+            onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 
     @Test
@@ -87,7 +94,7 @@ class AppTest {
 
             onNodeWithText("Отмена").assertIsDisplayed()
             // And the bar did not treat the action as a place.
-            onNodeWithText("Сегодня").assertIsSelected()
+            onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 
     @Test

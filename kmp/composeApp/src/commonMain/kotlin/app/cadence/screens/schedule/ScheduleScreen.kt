@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -47,6 +48,9 @@ import kotlinx.datetime.LocalDate
 
 private val CARD_RADIUS = 18.dp
 private val DOT = 5.dp
+
+/** The injection dot has no text, so this is the only handle a test has on it. */
+const val INJECTION_DOT_TAG: String = "schedule-injection-dot"
 private const val WEEK_COLUMNS = 7
 
 /**
@@ -207,7 +211,7 @@ private fun DayCell(
                     } else {
                         Modifier
                     },
-                ).semantics { contentDescription = describe(day) },
+                ).semantics { contentDescription = describe(day, isToday) },
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -220,9 +224,13 @@ private fun DayCell(
                 ),
         )
         if (day.hasInjection) {
+            // Tagged because a dot carries no text: `describe` is built from
+            // the same field, so it cannot witness the dot's own presence —
+            // deleting the Box left every assertion green.
             Box(
                 Modifier
                     .padding(top = 2.dp)
+                    .testTag(INJECTION_DOT_TAG)
                     .size(DOT)
                     .background(CadenceColors.forest700, RoundedCornerShape(CadenceRadius.pill)),
             )
@@ -234,12 +242,16 @@ private fun DayCell(
  * What a screen reader says about a cell — and what a test can grab hold of,
  * since a dot has no text.
  */
-private fun describe(day: ScheduleDay): String {
+private fun describe(
+    day: ScheduleDay,
+    isToday: Boolean,
+): String {
+    val today = if (isToday) " · сегодня" else ""
     val suffix =
         when {
             day.cycleWeek == null -> " · вне курса"
             day.hasInjection -> " · инъекция"
             else -> ""
         }
-    return dayAndMonth(day.date) + suffix
+    return dayAndMonth(day.date) + today + suffix
 }

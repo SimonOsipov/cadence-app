@@ -21,9 +21,15 @@ class PartOfDayTest {
     }
 
     @Test
-    fun everyHourOfTheDayHasAnAnswer() {
-        // A `when` over hours with a gap would throw on the hour it forgot,
-        // and the greeting is the first thing on the screen.
-        assertEquals(24, (0..23).map { partOfDay(LocalTime(it, 0)) }.size)
+    fun theDayIsDividedAndNotJustLabelled() {
+        // The previous version asserted that mapping 24 hours yields 24
+        // results, which is true of any function at all — a stub returning
+        // NIGHT for every hour passed it. This asserts the division.
+        val hours = (0..23).map { partOfDay(LocalTime(it, 0)) }
+
+        assertEquals(5, hours.count { it == PartOfDay.NIGHT }, "00:00–04:59")
+        assertEquals(7, hours.count { it == PartOfDay.MORNING }, "05:00–11:59")
+        assertEquals(6, hours.count { it == PartOfDay.AFTERNOON }, "12:00–17:59")
+        assertEquals(6, hours.count { it == PartOfDay.EVENING }, "18:00–23:59")
     }
 }

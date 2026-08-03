@@ -3,6 +3,8 @@ package app.cadence.screens.schedule
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -88,7 +90,7 @@ class ScheduleScreenTest {
             // 31 May is a Sunday inside the course, so its cell announces the
             // injection too — the description is what a screen reader says and
             // what a test can grab, since a dot has no text.
-            onNodeWithContentDescription("31 мая · инъекция").performScrollTo().performClick()
+            onNodeWithContentDescription("31 мая · сегодня · инъекция").performScrollTo().performClick()
 
             assertEquals(LocalDate(2026, 5, 31), opened)
         }
@@ -102,6 +104,33 @@ class ScheduleScreenTest {
             // first day. A grid that marked them would be inventing a course.
             onNodeWithContentDescription("1 мая · вне курса").assertExists()
             onNodeWithContentDescription("10 мая · инъекция").assertExists()
+        }
+
+    @Test
+    fun theInjectionDaysCarryADotAndTheOthersDoNot() =
+        runComposeUiTest {
+            setContent { CadenceTheme { ScheduleScreen(state = mayState()) } }
+
+            // Four Sundays inside the cycle in May 2026 — the 10th, 17th, 24th
+            // and 31st. `describe` is built from the same field, so it cannot
+            // witness the dot: deleting the Box left every assertion green.
+            // useUnmergedTree: the cell is clickable, and a clickable merges its
+            // descendants, so the dot's tag is invisible in the merged tree.
+            assertEquals(
+                4,
+                onAllNodesWithTag(INJECTION_DOT_TAG, useUnmergedTree = true).fetchSemanticsNodes().size,
+            )
+        }
+
+    @Test
+    fun todayIsMarkedAndSaysSo() =
+        runComposeUiTest {
+            setContent { CadenceTheme { ScheduleScreen(state = mayState()) } }
+
+            // The ring around today draws nothing a test can read, so the day
+            // announces itself instead — which the screen reader needed anyway.
+            onNodeWithContentDescription("31 мая · сегодня · инъекция").assertExists()
+            assertEquals(1, onAllNodesWithContentDescription("30 мая").fetchSemanticsNodes().size)
         }
 
     @Test

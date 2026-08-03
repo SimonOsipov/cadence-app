@@ -152,6 +152,11 @@ private fun Destination(
                 .semantics {
                     selected = current
                     role = Role.Tab
+                    // Named as well as labelled: the label is a word other
+                    // components also draw — «Сегодня» appears on every due
+                    // protocol row — so a test matching text finds the wrong
+                    // node the moment a screen says the same thing.
+                    contentDescription = destination.label
                 }.padding(vertical = CadenceSpacing.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),

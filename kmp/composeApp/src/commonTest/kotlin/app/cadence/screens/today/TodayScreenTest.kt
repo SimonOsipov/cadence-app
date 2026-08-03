@@ -4,6 +4,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -125,6 +126,8 @@ class TodayScreenTest {
 
             onNodeWithText("98,4").assertIsDisplayed()
             onNodeWithText("кг").assertIsDisplayed()
+            // The chart itself, which no text assertion can see.
+            onNodeWithTag(GLANCE_SPARK_TAG, useUnmergedTree = true).assertIsDisplayed()
             // 98,8 a week earlier: the delta is computed from the series, not
             // hardcoded the way «↓ 0,6 кг» is in the prototype.
             onNodeWithText("↓ 0,4 кг").assertIsDisplayed()
@@ -284,6 +287,19 @@ class TodayScreenTest {
         }
 
     @Test
+    fun theMacroLegsCountEachMacroAgainstItsOwnTarget() =
+        runComposeUiTest {
+            setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
+
+            // Three near-identical call lines — the shape that invites a
+            // copy-paste swap — and nothing looked at them. The seeded values
+            // are all distinct, so a transposed pair fails.
+            onNodeWithText("Б 60/140").assertExists()
+            onNodeWithText("Ж 18/60").assertExists()
+            onNodeWithText("У 100/200").assertExists()
+        }
+
+    @Test
     fun theMealHeroSaysWhatIsLeftOfTheDay() =
         runComposeUiTest {
             setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
@@ -305,6 +321,40 @@ class TodayScreenTest {
             waitForIdle()
 
             onNodeWithText("Открыть детали тренда").assertIsDisplayed()
+        }
+
+    @Test
+    fun everyControlInTheBodyReportsItself() =
+        runComposeUiTest {
+            // Six of the screen's fourteen callbacks had no test. Swap
+            // `onOpenVials` and `onOpenRecipes` at the call sites and «В
+            // аптечку» on a low-stock warning lands in the recipe list, green.
+            val seen = mutableListOf<String>()
+            setContent {
+                CadenceTheme {
+                    TodayScreen(
+                        summary = summary(),
+                        patientName = "Марина",
+                        onOpenJournal = { seen += "journal" },
+                        onOpenVials = { seen += "vials" },
+                        onLogMeal = { seen += "meal" },
+                        onOpenRecipes = { seen += "recipes" },
+                        onOpenNutrition = { seen += "nutrition" },
+                    )
+                }
+            }
+
+            listOf(
+                "Как вы себя чувствуете?" to "journal",
+                "Рецепты" to "recipes",
+                "Записать приём" to "meal",
+                "ПРИЁМЫ СЕГОДНЯ" to "nutrition",
+                "Запасного флакона нет" to "vials",
+            ).forEach { (label, _) ->
+                onNodeWithText(label).performScrollTo().performClick()
+            }
+
+            assertEquals(listOf("journal", "recipes", "meal", "nutrition", "vials"), seen)
         }
 
     @Test

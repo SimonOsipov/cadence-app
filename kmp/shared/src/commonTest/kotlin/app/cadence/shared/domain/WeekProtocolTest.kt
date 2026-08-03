@@ -141,12 +141,33 @@ class WeekProtocolTest {
     }
 
     @Test
-    fun anItemWithNoCompoundHasNoneRatherThanTheWrongOne() {
-        val noSuchCompound = ProtocolPlan(plan().protocol, ITEMS, PHASES)
-
+    fun eachRowGetsItsOwnCompoundAndNotTheFirstOne() {
+        // The previous version passed an empty compound list, so it asserted
+        // «no compounds at all» rather than the per-row mapping — and
+        // `firstOrNull { it.id.raw.isNotEmpty() }` survived it.
         assertEquals(
-            null,
-            weekProtocolRows(noSuchCompound, emptyList(), emptyList(), LocalDate(2026, 5, 20)).first().compound,
+            listOf("SEMA", "BPC", "GLYCINE"),
+            rowsOn(LocalDate(2026, 5, 20)).map { it.compound?.nameRu },
+        )
+    }
+
+    @Test
+    fun anItemReferencingAnUnknownCompoundHasNoneRatherThanTheWrongOne() {
+        val onlyBpc = COMPOUNDS.filter { it.id.raw == BPC.raw }
+
+        val rows = weekProtocolRows(plan(), onlyBpc, emptyList(), LocalDate(2026, 5, 20))
+
+        assertEquals(null, rows.first { it.itemId == SEMA }.compound)
+        assertEquals("BPC", rows.first { it.itemId == BPC }.compound?.nameRu)
+    }
+
+    @Test
+    fun theRowCarriesTheKindTheStripDrawsItBy() {
+        // The supplement's whole treatment — its tile colour and its subtitle —
+        // hangs off this, and nothing asserted it.
+        assertEquals(
+            listOf(ProtocolItemKind.INJECTION, ProtocolItemKind.INJECTION, ProtocolItemKind.SUPPLEMENT),
+            rowsOn(LocalDate(2026, 5, 20)).map { it.kind },
         )
     }
 

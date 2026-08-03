@@ -5,6 +5,7 @@ import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.PartOfDay
+import app.cadence.shared.repository.MeasurementsRepository
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -170,6 +171,15 @@ class MockRepositoryTest {
                     .points
                     .map { it.value },
                 m.today.today().weightSeries,
+            )
+            // And it is seven, not «whatever the default happens to be»: the
+            // seed holds eight readings, so the constant is load-bearing, and
+            // comparing two calls that both use it proved nothing about it.
+            assertEquals(
+                MeasurementsRepository.DEFAULT_POINTS,
+                m.today
+                    .today()
+                    .weightSeries.size,
             )
         }
 

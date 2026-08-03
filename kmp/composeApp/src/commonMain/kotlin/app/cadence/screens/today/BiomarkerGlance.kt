@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
@@ -35,6 +36,9 @@ import app.cadence.format.unitRu
 private val CARD_RADIUS = 18.dp
 private const val WEIGHT_DIGITS = 1
 private val GLANCE_SPARK_HEIGHT = 70.dp
+
+/** The glance's chart, which has no text to find it by. */
+const val GLANCE_SPARK_TAG: String = "glance-spark"
 
 /**
  * «Вес · 7 недель» — the headline biomarker, with its own history beside it.
@@ -84,7 +88,9 @@ fun BiomarkerGlance(
 
         CadenceSpark(
             data = series.map { it.toFloat() },
-            modifier = Modifier.weight(1f),
+            // A chart draws no text; without a handle, deleting it leaves the
+            // whole suite green — which it did.
+            modifier = Modifier.weight(1f).testTag(GLANCE_SPARK_TAG),
             fill = CadenceColors.forest50,
             height = GLANCE_SPARK_HEIGHT,
         )

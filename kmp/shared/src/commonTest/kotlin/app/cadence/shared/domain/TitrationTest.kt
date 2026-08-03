@@ -48,6 +48,7 @@ class TitrationTest {
         // dates. Both are functions of the phases and the protocol's start.
         val step = titrationStepAfter(PLAN, SEMA, LocalDate(2026, 5, 31))
 
+        assertEquals(5, step?.week, "the week the new band begins")
         assertEquals(Dose(0.25, DoseUnit.MG), step?.from)
         assertEquals(Dose(0.5, DoseUnit.MG), step?.to)
         // Week 5 begins seven days after week 4's Sunday.
