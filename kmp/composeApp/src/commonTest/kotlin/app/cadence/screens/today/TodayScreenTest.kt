@@ -10,13 +10,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
+import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.ProtocolItemKind
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 private val ZONE = TimeZone.of("Europe/Moscow")
@@ -96,12 +99,14 @@ class TodayScreenTest {
             val m = CadenceMocks(FixedCadenceClock.at("2026-05-31T04:00:00Z"), ZONE)
             val after =
                 runBlocking {
-                    m.dosing.logDose(
-                        m.today
-                            .today()
-                            .nextDose!!
-                            .itemId,
-                        null,
+                    val before = m.today.today()
+                    m.dosing.submit(
+                        DoseDraft(
+                            itemId = assertNotNull(before.nextDose).itemId,
+                            kind = ProtocolItemKind.INJECTION,
+                            dose = before.nextDose?.dose,
+                            site = before.suggestedSite,
+                        ),
                     )
                     m.today.today()
                 }
@@ -194,12 +199,14 @@ class TodayScreenTest {
             val m = CadenceMocks(FixedCadenceClock.at("2026-05-31T04:00:00Z"), ZONE)
             val after =
                 runBlocking {
-                    m.dosing.logDose(
-                        m.today
-                            .today()
-                            .nextDose!!
-                            .itemId,
-                        null,
+                    val before = m.today.today()
+                    m.dosing.submit(
+                        DoseDraft(
+                            itemId = assertNotNull(before.nextDose).itemId,
+                            kind = ProtocolItemKind.INJECTION,
+                            dose = before.nextDose?.dose,
+                            site = before.suggestedSite,
+                        ),
                     )
                     m.today.today()
                 }

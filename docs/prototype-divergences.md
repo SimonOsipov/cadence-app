@@ -421,8 +421,10 @@ its `COMPOUNDS` list is subcutaneous.
 **What the prototype does:** step 2 renders a `VialPicker` under the stepper and
 `LogState` carries `vialId`; step 5 names the vial in the review.
 
-**What we do:** `DoseDraft` carries no vial. The write resolves the active vial
-for the compound itself, which is what the narrow `logDose` already did.
+**What we do:** `DoseDraft` carries no vial. The write resolves the first vial
+of that compound itself, which is what the narrow `logDose` already did — and
+it does not read `disposedAt`, because the seed holds one vial per compound
+and a disposal branch would be a line no test can reach.
 
 **Why:** the plan's field list for the draft is the patient's choices, and which
 vial a dose came out of is a choice the app can make correctly on its own while
@@ -433,3 +435,24 @@ prototype's own `VIALS` seed contains it (`v1` and `v2`, both semaglutide).
 **Owed:** the picker, and with it a `vialId` on the draft. Until then a patient
 with two open vials cannot say which one they used. Named here rather than in a
 comment because step 11 measures this file.
+
+## One tap on the placeholder invents a zone, and the rotation reads it back
+
+**What the prototype does:** its wizard asks. There is no one-tap path.
+
+**What we do, until task 6 of the dose-wizard plan:** the «Записать дозу»
+placeholder has one button, and `submit` refuses an injection with no zone, so
+`TodaySummary.oneTapDraft()` sends the rotation's own suggestion.
+
+**Why this is a cost and not a detail:** the record is indistinguishable from a
+zone the patient chose, and `suggestNextSite` reads events back — so one tap
+moves the rotation on evidence nobody gave. Nothing on `DoseEvent` marks a zone
+as assumed, so a history built this way cannot be separated afterwards.
+
+**Owed:** it goes away when the wizard replaces the placeholder, because the
+wizard asks. Until then, nothing should be read into a mock rotation.
+
+**Also deferred:** `photoAttached` on the draft reaches the write and is
+dropped — `photoPath` is always null, and `Written` still reports success. §03
+routes photos straight to object storage under a path convention, and the
+upload lands with the storage work.

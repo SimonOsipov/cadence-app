@@ -93,6 +93,24 @@ Five steps with a rule each. This is why the state is in `shared`.
 - [ ] **Step 5: Mutate.** The journal write dropped; the tags dropped; the vial not carried; two submissions accepted.
 - [ ] **Step 6:** gate, commit.
 
+> [!deviation] 2026-08-03
+> Spec said: three files — `DoseLogRepository.kt`, `CadenceMocks.kt`,
+> `MockRepositoryTest`; the repository «returns both ids». Actually done: two
+> more files, and the second id is a date.
+>
+> `JournalRepository.kt` is new because the second fact has to be observable —
+> a write nothing can read back is a write nobody can show to work — and the
+> journal entry has no id of its own, since §03 keys it `UNIQUE(patient,
+> date)`. `TodaySummary.suggestedSite` is new because `submit` refuses an
+> injection without a zone, so the interim one-tap write needs one; it is task
+> 5's input arriving early, and it is also the only thing that makes
+> `DoseEvent.site` observable.
+>
+> `AlreadyLogged` carries no id and fires only when *every* slot the item has
+> today is logged: §03 gives BPC-157 `times = [08:00, 20:00]`, and resolving
+> «the first occurrence» rather than «the first still open» meant a twice-daily
+> item could only ever record its morning dose.
+
 ---
 
 ### Task 4: The drawn primitives

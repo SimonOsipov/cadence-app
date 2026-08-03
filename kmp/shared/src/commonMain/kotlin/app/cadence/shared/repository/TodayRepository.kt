@@ -1,6 +1,7 @@
 package app.cadence.shared.repository
 
 import app.cadence.shared.domain.Compound
+import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Occurrence
 import app.cadence.shared.domain.PartOfDay
@@ -31,6 +32,11 @@ data class TodaySummary(
     val nextDose: Occurrence?,
     /** What the hero card names above the dose. */
     val nextDoseCompound: Compound?,
+    /**
+     * «Предложим следующую зону по ротации» — the wizard's site step opens on
+     * this one, and the prototype ships it as a frozen constant.
+     */
+    val suggestedSite: InjectionSite,
     /** «Протокол этой недели», from the same generator the calendar reads. */
     val weekProtocol: List<ProtocolRow>,
     val doseLoggedToday: Boolean,

@@ -20,7 +20,9 @@ import app.cadence.design.CadenceDestination
 import app.cadence.screens.schedule.ScheduleScreen
 import app.cadence.screens.schedule.ScheduleState
 import app.cadence.screens.today.TodayScreen
+import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.mock.CadenceMocks
+import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -122,7 +124,7 @@ fun CadenceApp(
             onOpenActions = { actionsOpen = true },
             onDoseLogged = {
                 scope.launch {
-                    summary?.nextDose?.let { mocks.dosing.logDose(it.itemId, site = null) }
+                    summary?.let { mocks.dosing.submit(it.oneTapDraft()).announce() }
                     reloads++
                 }
             },
@@ -374,3 +376,40 @@ private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(noinli
     // modal, or a modal as an ordinary push, does not compile.
     composable<T> { content() }
 }
+
+/**
+ * What the placeholder has to say about a check-in, which today is nothing.
+ *
+ * Exhaustive with no `else`, deliberately. `DoseLogResult` exists so a screen
+ * can tell «эта доза уже записана» from «что-то пошло не так», and a
+ * placeholder with one button has nowhere to put either sentence — but a
+ * `when` over the sealed type means task 6's wizard cannot inherit the silence
+ * by accident. A branch it forgets will not compile, and the copy lands there.
+ */
+private fun DoseLogResult.announce() {
+    when (this) {
+        is DoseLogResult.Written -> Unit
+        DoseLogResult.AlreadyLogged -> Unit
+        DoseLogResult.NotScheduledToday -> Unit
+        DoseLogResult.Incomplete -> Unit
+    }
+}
+
+/**
+ * What the placeholder's one button can send, until task 6 of the dose-wizard
+ * plan replaces it with the wizard itself.
+ *
+ * **It fabricates the zone, and that is a known cost, not a detail.** `submit`
+ * refuses an injection without one and a single button cannot ask, so this
+ * sends the rotation's own suggestion. The record is then indistinguishable
+ * from a zone the patient chose, and `suggestNextSite` reads it back — so one
+ * tap moves the rotation on evidence nobody gave. Recorded in
+ * `docs/prototype-divergences.md`; it goes away with the wizard, which asks.
+ *
+ * An empty draft when no dose is due today, which `submit` answers with
+ * `Incomplete` — the item is missing before the schedule is ever consulted.
+ */
+private fun TodaySummary.oneTapDraft(): DoseDraft =
+    nextDose?.let {
+        DoseDraft(itemId = it.itemId, kind = it.kind, dose = it.dose, site = suggestedSite)
+    } ?: DoseDraft()

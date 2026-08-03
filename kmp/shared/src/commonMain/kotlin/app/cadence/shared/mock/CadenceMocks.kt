@@ -1,25 +1,32 @@
 package app.cadence.shared.mock
 
 import app.cadence.shared.domain.CadenceClock
+import app.cadence.shared.domain.Dose
+import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseEvent
 import app.cadence.shared.domain.DoseEventId
-import app.cadence.shared.domain.InjectionSite
+import app.cadence.shared.domain.JournalEntry
+import app.cadence.shared.domain.JournalSource
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.SystemCadenceClock
+import app.cadence.shared.domain.Vial
 import app.cadence.shared.domain.cycleWeek
 import app.cadence.shared.domain.dosesPerWeek
 import app.cadence.shared.domain.occurrencesFor
 import app.cadence.shared.domain.partOfDay
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
+import app.cadence.shared.domain.suggestNextSite
 import app.cadence.shared.domain.titrationStepAfter
 import app.cadence.shared.domain.today
 import app.cadence.shared.domain.weekProtocolRows
 import app.cadence.shared.repository.DoseLogRepository
+import app.cadence.shared.repository.DoseLogResult
+import app.cadence.shared.repository.JournalRepository
 import app.cadence.shared.repository.MeasurementsRepository
 import app.cadence.shared.repository.MetricSeries
 import app.cadence.shared.repository.ScheduleDay
@@ -28,6 +35,7 @@ import app.cadence.shared.repository.TodayRepository
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
@@ -59,9 +67,15 @@ class CadenceMocks(
     private val events = mutableListOf<DoseEvent>()
     private var nextEventId = 0
 
+    // §03 keys `journal_entries` `UNIQUE(patient, date)`, so a map by date is
+    // the table's own constraint rather than a convenience — there is nowhere
+    // for a second entry on one day to go.
+    private val journalByDate = mutableMapOf<LocalDate, JournalEntry>()
+
     val today: TodayRepository = MockTodayRepository()
     val schedule: ScheduleRepository = MockScheduleRepository()
     val dosing: DoseLogRepository = MockDoseLogRepository()
+    val journal: JournalRepository = MockJournalRepository()
     val measurements: MeasurementsRepository = MockMeasurementsRepository()
 
     private fun currentDate(): LocalDate = clock.today(zone)
@@ -90,6 +104,7 @@ class CadenceMocks(
                 // screen; the daily item is a strip, not a call to action.
                 nextDose = todays.firstOrNull { it.itemId == MockSeed.semaItemId },
                 nextDoseCompound = MockSeed.semaglutide,
+                suggestedSite = suggestNextSite(events),
                 weekProtocol = weekProtocolRows(MockSeed.plan, MockSeed.compounds, events, date),
                 doseLoggedToday =
                     todays.any {
@@ -172,42 +187,149 @@ class CadenceMocks(
         override suspend fun day(date: LocalDate) = occurrencesFor(MockSeed.plan, events, date, currentDate())
     }
 
+    private inner class MockJournalRepository : JournalRepository {
+        override suspend fun entry(date: LocalDate): JournalEntry? = journalByDate[date]
+    }
+
     private inner class MockDoseLogRepository : DoseLogRepository {
-        override suspend fun logDose(
-            itemId: ProtocolItemId,
-            site: InjectionSite?,
-        ): DoseEventId? {
+        override suspend fun submit(draft: DoseDraft): DoseLogResult {
+            val itemId = draft.itemId
+            val dose = draft.dose
+            // `canSubmit` and these two reads answer the same question, and the
+            // reads are what make the answer a non-null `ProtocolItemId` and
+            // `Dose` rather than a `!!` at the write.
+            if (!draft.canSubmit() || itemId == null || dose == null) return DoseLogResult.Incomplete
+
             val date = currentDate()
             // firstOrNull, not first: `summary` is a snapshot, and an app left
             // open across midnight taps «Записать» against yesterday's
             // occurrence. Throwing inside `scope.launch` with no handler is the
             // failure this mock is not supposed to have.
-            val occurrence =
-                occurrencesFor(MockSeed.plan, events, date, date).firstOrNull { it.itemId == itemId }
-                    ?: return null
-            val id = DoseEventId("mock-event-${nextEventId++}")
+            // `loggable`, on the write rather than only in `selectItem`: the
+            // rule belongs where the row is created, because a caller building
+            // a draft with the constructor never passes through the chooser.
+            val loggable = MockSeed.plan.items.any { it.id == itemId && it.loggable }
+            val todays =
+                occurrencesFor(MockSeed.plan, events, date, date)
+                    .filter { loggable && it.itemId == itemId }
+            // The first slot still open, not the first slot. §03 gives BPC-157
+            // `times = [08:00, 20:00]`, so «the first occurrence» would let a
+            // patient log the morning dose and then be told the evening one was
+            // already recorded — the same defect `statusOf` was fixed for.
+            val open = todays.firstOrNull { it.status != OccurrenceStatus.DONE }
 
-            events +=
-                DoseEvent(
-                    id = id,
-                    patientId = MockSeed.patientId,
-                    protocolItemId = itemId,
-                    // §03's third correction is only real if the write carries
-                    // the vial: without it the subtraction has nothing to
-                    // subtract, which is the prototype's bug exactly.
-                    vialId = MockSeed.vials.first().id,
-                    scheduledForDate = date,
-                    scheduledForTime = occurrence.time,
-                    injectedAt = clock.now(),
-                    dose = occurrence.dose ?: error("a loggable occurrence with no dose: $itemId"),
-                    site = site,
-                    mood = null,
-                    sideEffects = emptyList(),
-                    note = null,
-                    photoPath = null,
-                    createdAt = clock.now(),
-                )
-            return id
+            return when {
+                todays.isEmpty() -> DoseLogResult.NotScheduledToday
+
+                // §03 has one event per occurrence. Re-tapping «Сохранить» — or
+                // a retry after a lost response — must not take another dose
+                // out of the vial.
+                open == null -> DoseLogResult.AlreadyLogged
+
+                else -> record(draft, itemId, dose, date, open.time)
+            }
         }
+    }
+
+    /** Both facts, written together — the whole point of one call. */
+    private fun record(
+        draft: DoseDraft,
+        itemId: ProtocolItemId,
+        dose: Dose,
+        date: LocalDate,
+        time: LocalTime,
+    ): DoseLogResult.Written {
+        val id = DoseEventId("mock-event-${nextEventId++}")
+        val event =
+            DoseEvent(
+                id = id,
+                patientId = MockSeed.patientId,
+                protocolItemId = itemId,
+                // §03's third correction is only real if the write carries the
+                // vial: without it the subtraction has nothing to subtract,
+                // which is the prototype's bug exactly. Null when the patient
+                // has no vial of this compound — the honest answer, where
+                // decrementing whatever vial came first in the list is the same
+                // disconnected inventory wearing a new shape.
+                vialId = vialFor(itemId)?.id,
+                scheduledForDate = date,
+                scheduledForTime = time,
+                injectedAt = clock.now(),
+                dose = dose,
+                site = draft.site,
+                mood = draft.mood,
+                sideEffects = draft.sideEffects,
+                note = draft.note,
+                // The upload lands with the storage work: §03 routes photos
+                // straight to object storage under a path convention, and the
+                // wizard's slot only reports a tap.
+                photoPath = null,
+                createdAt = clock.now(),
+            )
+
+        events += event
+        // From the event, not from the draft a second time: «one action, two
+        // facts» is only true if the two cannot disagree, and reading the
+        // draft twice is two chances to carry a different answer.
+        journalByDate[date] = mergedJournalEntry(date, event)
+
+        return DoseLogResult.Written(eventId = id, journalDate = date, dose = event.dose)
+    }
+
+    /**
+     * The patient's vial of this item's compound, if they have one.
+     *
+     * `vialFor` and not `activeVialFor`: it does not read `disposedAt`.
+     *
+     * No filter on `disposedAt`, deliberately: the seed holds one vial per
+     * compound, so a disposal branch here would be a line no test can reach.
+     * Choosing between several vials of one compound is the Аптечка section's
+     * problem, and it arrives with the picker this block still owes —
+     * `docs/prototype-divergences.md`.
+     */
+    private fun vialFor(itemId: ProtocolItemId): Vial? {
+        val compoundId =
+            MockSeed.plan.items
+                .firstOrNull { it.id == itemId }
+                ?.compoundId ?: return null
+        return MockSeed.vials.firstOrNull { it.compoundId == compoundId }
+    }
+
+    /**
+     * The day's journal entry after this check-in — §03's `UNIQUE(patient,
+     * date)` means there is one, so a second dose updates it rather than
+     * adding.
+     *
+     * Fields the patient skipped keep what an earlier check-in recorded: step 4
+     * is «всё по желанию», so an unanswered question means «пропущено» and not
+     * «сотрите то, что я сказал утром». Tags accumulate for the same reason — a
+     * side effect reported this morning did not stop being true by evening.
+     */
+    private fun mergedJournalEntry(
+        date: LocalDate,
+        event: DoseEvent,
+    ): JournalEntry {
+        val existing = journalByDate[date]
+
+        return JournalEntry(
+            patientId = MockSeed.patientId,
+            entryDate = date,
+            mood = event.mood ?: existing?.mood,
+            // Neither is asked by the dose wizard; they belong to the diary's
+            // own check-in, which arrives in step 7. Both are the placeholder
+            // for that writer — nothing can make either non-null yet, and they
+            // are kept rather than deleted so step 7 has the merge already
+            // shaped.
+            energy = existing?.energy,
+            sleep = existing?.sleep,
+            tags = ((existing?.tags ?: emptyList()) + event.sideEffects).distinct(),
+            note = event.note ?: existing?.note,
+            // Unconditional, and that is deferred rather than decided: once
+            // step 7 writes a MANUAL entry, a dose check-in afterwards will
+            // keep the patient's own note and relabel its provenance. The two
+            // columns §03 keeps apart need a rule then — probably that the
+            // first writer owns `source`, or a third value for both.
+            source = JournalSource.DOSE,
+        )
     }
 }

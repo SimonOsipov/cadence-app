@@ -1,10 +1,19 @@
 package app.cadence.shared.mock
 
+import app.cadence.shared.domain.Dose
+import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseUnit
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.InjectionSite
+import app.cadence.shared.domain.JournalSource
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.PartOfDay
+import app.cadence.shared.domain.ProtocolItemId
+import app.cadence.shared.domain.ProtocolItemKind
+import app.cadence.shared.domain.SideEffect
+import app.cadence.shared.domain.selectItem
+import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.MeasurementsRepository
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
@@ -12,13 +21,29 @@ import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private val ZONE = TimeZone.of("Europe/Moscow")
 
+/** The day the seed's weekly injection falls on, in [ZONE]. */
+private val SEEDED_SUNDAY = LocalDate(2026, 5, 31)
+
 /** The mock wound to a moment, so «today» is the test's choice and not the machine's. */
 private fun mocks(iso: String = "2026-05-31T09:00:00Z") = CadenceMocks(clock = FixedCadenceClock.at(iso), zone = ZONE)
+
+/**
+ * A draft a patient could actually have finished: item chosen from the plan, so
+ * the dose comes from the phase in force, and a zone, because an injection
+ * needs one.
+ */
+private fun injectionDraft(
+    itemId: ProtocolItemId,
+    on: LocalDate = SEEDED_SUNDAY,
+) = DoseDraft().selectItem(MockSeed.plan, itemId, on).copy(site = InjectionSite.LEFT_THIGH)
 
 class MockRepositoryTest {
     @Test
@@ -64,7 +89,7 @@ class MockRepositoryTest {
             val before = m.today.today()
             assertFalse(before.doseLoggedToday, "the seeded day starts unlogged")
 
-            m.dosing.logDose(before.nextDose!!.itemId, site = null)
+            m.dosing.submit(injectionDraft(assertNotNull(before.nextDose).itemId))
 
             assertTrue(m.today.today().doseLoggedToday)
         }
@@ -77,15 +102,255 @@ class MockRepositoryTest {
             val m = mocks()
             val before = m.today.today().vialDosesLeft
 
-            m.dosing.logDose(
-                m.today
-                    .today()
-                    .nextDose!!
-                    .itemId,
-                site = null,
-            )
+            m.dosing.submit(injectionDraft(assertNotNull(m.today.today().nextDose).itemId))
 
             assertEquals(before - 1, m.today.today().vialDosesLeft)
+        }
+
+    @Test
+    fun oneCheckInWritesADoseEventAndAJournalEntryForTheSameDay() =
+        runTest {
+            // §03's «one action, two facts». Two calls from a screen can
+            // half-fail, and a dose recorded without the side effect the
+            // patient reported is worse than a check-in that failed outright.
+            val m = mocks()
+            val draft =
+                injectionDraft(assertNotNull(m.today.today().nextDose).itemId)
+                    .copy(
+                        mood = 4,
+                        sideEffects = listOf(SideEffect.NAUSEA, SideEffect.FATIGUE),
+                        note = "чуть тянет",
+                    )
+
+            val written = assertIs<DoseLogResult.Written>(m.dosing.submit(draft))
+
+            assertEquals(SEEDED_SUNDAY, written.journalDate)
+            val entry = assertNotNull(m.journal.entry(written.journalDate), "the second fact")
+            assertEquals(JournalSource.DOSE, entry.source)
+            assertEquals(4, entry.mood)
+            assertEquals(listOf(SideEffect.NAUSEA, SideEffect.FATIGUE), entry.tags)
+            assertEquals("чуть тянет", entry.note)
+            assertEquals(written.journalDate, entry.entryDate)
+        }
+
+    @Test
+    fun submittingTheSameOccurrenceTwiceWritesOneEventAndTakesOneDose() =
+        runTest {
+            val m = mocks()
+            val itemId = assertNotNull(m.today.today().nextDose).itemId
+            val before = m.today.today().vialDosesLeft
+
+            assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(itemId)))
+            val second = m.dosing.submit(injectionDraft(itemId))
+
+            // Named, not merely refused: the screen has to be able to say «эта
+            // доза уже записана» rather than «что-то пошло не так».
+            assertEquals(DoseLogResult.AlreadyLogged, second)
+            assertEquals(before - 1, m.today.today().vialDosesLeft, "the vial paid once")
+        }
+
+    @Test
+    fun anItemDosedTwiceADayCanBeLoggedTwiceAndThenNoMore() =
+        runTest {
+            // §03 gives BPC-157 `times = [08:00, 20:00]`. Resolving «the first
+            // occurrence» rather than «the first one still open» would let the
+            // patient log the morning dose and then be told the evening one was
+            // already recorded — the defect `statusOf` was fixed for, one layer
+            // up.
+            val m = mocks()
+
+            val morning = assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.bpcItemId)))
+            val evening = assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.bpcItemId)))
+            val third = m.dosing.submit(injectionDraft(MockSeed.bpcItemId))
+
+            assertNotEquals(morning.eventId, evening.eventId, "two slots, two events")
+            assertEquals(DoseLogResult.AlreadyLogged, third)
+        }
+
+    @Test
+    fun theEventCarriesTheZoneThePatientChoseAndNotTheOneItSuggested() =
+        runTest {
+            // The one path on which `DoseEvent.site` is observable today, and
+            // the reason to have it: the rotation reads the events back.
+            //
+            // The chosen zone is deliberately *not* the suggested one. A write
+            // that stamped `suggestNextSite(events)` instead of the draft's
+            // zone would pass a test that injected into the suggestion, and it
+            // is the same defect as recording the planned dose instead of the
+            // taken one.
+            // Two check-ins, in two mocks, because one does not separate the
+            // two ways this can be wrong. Injecting into the *suggested* zone
+            // proves the write carried a zone at all — drop it and the
+            // suggestion never moves. Injecting into a *different* one proves
+            // it carried the patient's rather than the app's.
+            val intoTheSuggestion = mocks()
+            val suggested = intoTheSuggestion.today.today().suggestedSite
+
+            intoTheSuggestion.dosing.submit(
+                injectionDraft(assertNotNull(intoTheSuggestion.today.today().nextDose).itemId)
+                    .copy(site = suggested),
+            )
+
+            assertNotEquals(suggested, intoTheSuggestion.today.today().suggestedSite, "the rotation did not move")
+
+            val intoAnother = mocks()
+            val chosen = InjectionSite.entries.first { it != suggested }
+
+            intoAnother.dosing.submit(
+                injectionDraft(assertNotNull(intoAnother.today.today().nextDose).itemId).copy(site = chosen),
+            )
+
+            // One zone used, so the answer is the first zone that is not it.
+            assertEquals(InjectionSite.entries.first { it != chosen }, intoAnother.today.today().suggestedSite)
+        }
+
+    @Test
+    fun theEventCarriesTheDoseTheDraftHeldAndNotThePlansOwnNumber() =
+        runTest {
+            // A patient who steps the dose down records what they took. A write
+            // that read `phaseDose` again would stamp the prescription over the
+            // fact, which is the prototype's «re-apply comp.default» bug moved
+            // one layer down.
+            val m = mocks()
+            val stepped = Dose(0.2, DoseUnit.MG)
+            val draft = injectionDraft(assertNotNull(m.today.today().nextDose).itemId).copy(dose = stepped)
+
+            val written = assertIs<DoseLogResult.Written>(m.dosing.submit(draft))
+
+            assertEquals(stepped, written.dose)
+        }
+
+    @Test
+    fun anItemTheProtocolDoesNotMarkLoggableIsRefusedByTheWriteItself() =
+        runTest {
+            // The rule lives in `selectItem` too, but a caller that built its
+            // draft with the constructor never went through the chooser — and
+            // the app's own placeholder does exactly that.
+            val m = mocks()
+            val draft =
+                DoseDraft(
+                    itemId = MockSeed.glycineItemId,
+                    kind = ProtocolItemKind.SUPPLEMENT,
+                    dose = Dose(1.0, DoseUnit.MG),
+                )
+
+            assertEquals(DoseLogResult.NotScheduledToday, m.dosing.submit(draft))
+            assertNull(m.journal.entry(SEEDED_SUNDAY))
+        }
+
+    @Test
+    fun oneSideEffectReportedTwiceInADayIsOneTag() =
+        runTest {
+            val m = mocks()
+            m.dosing.submit(injectionDraft(MockSeed.bpcItemId).copy(sideEffects = listOf(SideEffect.NAUSEA)))
+
+            val second =
+                assertIs<DoseLogResult.Written>(
+                    m.dosing.submit(
+                        injectionDraft(assertNotNull(m.today.today().nextDose).itemId)
+                            .copy(sideEffects = listOf(SideEffect.NAUSEA, SideEffect.FATIGUE)),
+                    ),
+                )
+
+            assertEquals(
+                listOf(SideEffect.NAUSEA, SideEffect.FATIGUE),
+                assertNotNull(m.journal.entry(second.journalDate)).tags,
+            )
+        }
+
+    @Test
+    fun theJournalAnswersForTheDayItWasAskedAbout() =
+        runTest {
+            // §03 keys the entry by date. A read that returned whatever entry
+            // existed would look right for as long as there was only one.
+            val m = mocks()
+            val written =
+                assertIs<DoseLogResult.Written>(
+                    m.dosing.submit(injectionDraft(assertNotNull(m.today.today().nextDose).itemId)),
+                )
+
+            assertNotNull(m.journal.entry(written.journalDate))
+            assertNull(m.journal.entry(LocalDate(2026, 5, 30)), "yesterday has no entry")
+            assertNull(m.journal.entry(LocalDate(2026, 6, 1)), "nor does tomorrow")
+        }
+
+    @Test
+    fun aSecondCheckInOnTheSameDayUpdatesTheOneJournalEntry() =
+        runTest {
+            // §03 keys the journal `UNIQUE(patient, date)`. The seeded Sunday
+            // carries both the weekly injection and the twice-daily one, so two
+            // check-ins on one day is the ordinary case and not an edge.
+            val m = mocks()
+            val morning = injectionDraft(MockSeed.bpcItemId).copy(mood = 2, sideEffects = listOf(SideEffect.NAUSEA))
+            val later =
+                injectionDraft(assertNotNull(m.today.today().nextDose).itemId)
+                    .copy(mood = 5, sideEffects = listOf(SideEffect.HEADACHE))
+
+            val first = assertIs<DoseLogResult.Written>(m.dosing.submit(morning))
+            val second = assertIs<DoseLogResult.Written>(m.dosing.submit(later))
+
+            assertEquals(first.journalDate, second.journalDate, "one entry, not two")
+            val entry = assertNotNull(m.journal.entry(second.journalDate))
+            assertEquals(5, entry.mood, "the latest answer to «как вы себя чувствуете»")
+            assertEquals(
+                listOf(SideEffect.NAUSEA, SideEffect.HEADACHE),
+                entry.tags,
+                "a side effect reported this morning did not stop being true by evening",
+            )
+        }
+
+    @Test
+    fun aCheckInThatSkipsTheContextDoesNotEraseWhatAnEarlierOneSaid() =
+        runTest {
+            // Step 4 is «всё по желанию», so an unanswered field means
+            // «пропущено» and not «сотрите то, что я сказал утром».
+            val m = mocks()
+            m.dosing.submit(injectionDraft(MockSeed.bpcItemId).copy(mood = 2, note = "тяжело"))
+
+            val second =
+                assertIs<DoseLogResult.Written>(
+                    m.dosing.submit(injectionDraft(assertNotNull(m.today.today().nextDose).itemId)),
+                )
+
+            val entry = assertNotNull(m.journal.entry(second.journalDate))
+            assertEquals(2, entry.mood)
+            assertEquals("тяжело", entry.note)
+        }
+
+    @Test
+    fun anIncompleteDraftWritesNeitherFact() =
+        runTest {
+            val m = mocks()
+            val noSite = injectionDraft(assertNotNull(m.today.today().nextDose).itemId).copy(site = null)
+
+            assertEquals(DoseLogResult.Incomplete, m.dosing.submit(noSite))
+            assertFalse(m.today.today().doseLoggedToday)
+            assertNull(m.journal.entry(SEEDED_SUNDAY), "no half-write")
+        }
+
+    @Test
+    fun anItemWithNoOccurrenceTodayWritesNeitherFact() =
+        runTest {
+            // The weekly injection falls on Sunday; this is the Monday after.
+            val m = mocks("2026-06-01T09:00:00Z")
+
+            assertEquals(DoseLogResult.NotScheduledToday, m.dosing.submit(injectionDraft(MockSeed.semaItemId)))
+            assertNull(m.journal.entry(LocalDate(2026, 6, 1)))
+        }
+
+    @Test
+    fun aCompoundWithNoVialIsStillLoggedAndTakesNothingFromAnotherCompoundsVial() =
+        runTest {
+            // The seed stocks semaglutide and nothing else. A dose event whose
+            // `vialId` is null is honest; one that decremented whatever vial
+            // came first in the list is the prototype's disconnected inventory
+            // wearing a different shape.
+            val m = mocks()
+            val before = m.today.today().vialDosesLeft
+
+            assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.bpcItemId)))
+
+            assertEquals(before, m.today.today().vialDosesLeft)
         }
 
     @Test
