@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraphBuilder
@@ -16,19 +17,19 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.cadence.design.CadenceDestination
+import app.cadence.shared.mock.CadenceMocks
+import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * Stand-ins until the meal wizard lands in step 8 of the block.
+ * The one stand-in left, until the meal wizard lands in step 8 of the block.
  *
- * The kcal figure is the *day's* total after the meal, not the meal's own —
- * see [ConfirmToastState].
+ * The day's totals and target are no longer constants — they come from the
+ * repository. What the wizard still owes is which meal was logged, and that
+ * needs the wizard.
  */
 private const val PLACEHOLDER_MEAL_NAME = "Обед"
-private const val PLACEHOLDER_DAY_KCAL = 1240
-
-/** The day's target — `MEAL_TARGETS.kcal` in the prototype's meal data. */
-private const val PLACEHOLDER_KCAL_TARGET = 2100
 
 /**
  * The whole after-sign-in surface: the graph, the sheet the `+` opens, and the
@@ -47,7 +48,17 @@ private const val PLACEHOLDER_KCAL_TARGET = 2100
 fun CadenceApp(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier,
+    mocks: CadenceMocks = remember { CadenceMocks() },
 ) {
+    val scope = rememberCoroutineScope()
+    var summary by remember { mutableStateOf<TodaySummary?>(null) }
+    // Bumped by every write, so the next read goes back to the repository
+    // rather than to a snapshot taken before it. The real client will invalidate
+    // the same way; nothing about this line knows it is talking to a mock.
+    var reloads by remember { mutableStateOf(0) }
+
+    LaunchedEffect(reloads) { summary = mocks.today.today() }
+
     var actionsOpen by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<ConfirmToastState?>(null) }
     // Keyed on a counter rather than on the toast itself. ConfirmToastState is a
@@ -77,19 +88,25 @@ fun CadenceApp(
         CadenceShell(
             navController = navController,
             onOpenActions = { actionsOpen = true },
-            onMealLogged = { name, dayKcal ->
-                toast = ConfirmToastState(name, dayKcal)
+            onDoseLogged = {
+                scope.launch {
+                    summary?.nextDose?.let { mocks.dosing.logDose(it.itemId, site = null) }
+                    reloads++
+                }
+            },
+            onMealLogged = { name ->
+                // The day's running total, from the repository — §03 puts
+                // exactly that in the toast, not the meal's own figure.
+                toast = ConfirmToastState(name, summary?.mealKcal ?: 0)
                 raisedAt++
             },
         )
 
         ActionChooserSheet(
             open = actionsOpen,
-            // The zero-state, until the repositories land with the next
-            // subtask. Wire these three to them and nothing else here changes.
-            doseLogged = false,
-            mealCount = 0,
-            mealKcal = 0,
+            doseLogged = summary?.doseLoggedToday == true,
+            mealCount = summary?.mealCount ?: 0,
+            mealKcal = summary?.mealKcal ?: 0,
             onDismiss = { actionsOpen = false },
             onPickDose = {
                 actionsOpen = false
@@ -101,7 +118,7 @@ fun CadenceApp(
             },
         )
 
-        ConfirmToast(state = toast, targetKcal = PLACEHOLDER_KCAL_TARGET)
+        ConfirmToast(state = toast, targetKcal = summary?.targets?.kcal ?: 0)
     }
 }
 
@@ -122,7 +139,8 @@ fun CadenceShell(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier,
     onOpenActions: () -> Unit = { },
-    onMealLogged: (String, Int) -> Unit = { _, _ -> },
+    onMealLogged: (String) -> Unit = { },
+    onDoseLogged: () -> Unit = { },
 ) {
     NavHost(
         navController = navController,
@@ -141,7 +159,7 @@ fun CadenceShell(
     ) {
         tabRoutes(navController, onOpenActions)
         pushedRoutes(navController)
-        modalRoutes(navController, onMealLogged)
+        modalRoutes(navController, onMealLogged, onDoseLogged)
     }
 }
 
@@ -220,12 +238,24 @@ private fun NavGraphBuilder.pushedRoutes(nav: NavHostController) {
  */
 private fun NavGraphBuilder.modalRoutes(
     nav: NavHostController,
-    onMealLogged: (String, Int) -> Unit,
+    onMealLogged: (String) -> Unit,
+    onDoseLogged: () -> Unit,
 ) {
     val back = back(nav)
 
     modal<CadenceRoute.LogDose> {
-        PlaceholderScreen("Записать дозу", onBack = back, action = "Записать" to back)
+        PlaceholderScreen(
+            title = "Записать дозу",
+            onBack = back,
+            // The placeholder writes through the repository rather than merely
+            // dismissing. It is the shortest path to showing that a screen can
+            // change the world without knowing whose world it is.
+            action =
+                "Записать" to {
+                    onDoseLogged()
+                    back()
+                },
+        )
     }
     modal<CadenceRoute.LogMeal> {
         PlaceholderScreen(
@@ -236,7 +266,7 @@ private fun NavGraphBuilder.modalRoutes(
             // so the toast is reachable before the wizard is ported.
             action =
                 "Записать" to {
-                    onMealLogged(PLACEHOLDER_MEAL_NAME, PLACEHOLDER_DAY_KCAL)
+                    onMealLogged(PLACEHOLDER_MEAL_NAME)
                     back()
                 },
         )

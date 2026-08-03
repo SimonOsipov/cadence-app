@@ -121,4 +121,16 @@ class MockRepositoryTest {
             assertTrue(summary.mealKcal > 0)
             assertTrue(summary.targets.kcal > summary.mealKcal)
         }
+
+    @Test
+    fun anotherDayHasItsOwnMealsAndNotTheSeededDays() =
+        runTest {
+            // A day the seed has no meals for. Without a date filter the app
+            // reports a breakfast eaten three weeks earlier as eaten today,
+            // and «сегодня» stops meaning anything.
+            val summary = mocks("2026-06-07T09:00:00Z").today.today()
+
+            assertEquals(0, summary.mealCount)
+            assertEquals(0, summary.mealKcal)
+        }
 }

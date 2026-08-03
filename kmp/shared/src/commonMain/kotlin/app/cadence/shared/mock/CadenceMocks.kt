@@ -22,6 +22,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * Everything a screen can ask for, and one place it is assembled.
@@ -53,6 +54,7 @@ class CadenceMocks(
             val date = currentDate()
             val todays = occurrencesFor(MockSeed.plan, events, date, date)
             val vial = MockSeed.vials.first()
+            val todaysMeals = MockSeed.meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
 
             return TodaySummary(
                 cycleWeek = cycleWeek(MockSeed.plan.protocol, date),
@@ -63,8 +65,13 @@ class CadenceMocks(
                     todays.any {
                         it.itemId == MockSeed.semaItemId && it.status == OccurrenceStatus.DONE
                     },
-                mealCount = MockSeed.meals.size,
-                mealKcal = MockSeed.meals.sumOf { it.totals.kcal },
+                // Today's meals, not every meal ever seeded. Without the
+                // filter the app shows a breakfast eaten three weeks ago as
+                // eaten today — and a mutation replacing this with the seed's
+                // own numbers survived, because on the seeded day the two
+                // happen to agree.
+                mealCount = todaysMeals.size,
+                mealKcal = todaysMeals.sumOf { it.totals.kcal },
                 targets = MockSeed.targets,
                 weightKg = MockSeed.measurements.lastOrNull()?.value,
                 targetWeightKg = MockSeed.profile.targetWeightKg,

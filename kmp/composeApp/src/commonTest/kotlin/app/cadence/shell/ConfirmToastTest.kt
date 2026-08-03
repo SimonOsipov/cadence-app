@@ -11,6 +11,9 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import app.cadence.design.CadenceTheme
+import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.mock.CadenceMocks
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -23,6 +26,15 @@ import kotlin.test.assertTrue
  */
 private const val TARGET_KCAL = 2100
 private const val DAY_KCAL = 1240
+
+/**
+ * The mocks wound to the day the seed has meals on.
+ *
+ * Not the default `CadenceMocks()`: that reads the system clock, and once the
+ * repository began filtering meals by date, a test running on any other day saw
+ * an empty one. A test whose result depends on when it runs is not a test.
+ */
+private fun seededDay() = CadenceMocks(FixedCadenceClock.at("2026-05-31T09:00:00Z"), TimeZone.of("Europe/Moscow"))
 
 @OptIn(ExperimentalTestApi::class)
 class ConfirmToastTest {
@@ -63,7 +75,7 @@ class ConfirmToastTest {
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
-                CadenceTheme { CadenceApp(navController = nav) }
+                CadenceTheme { CadenceApp(navController = nav, mocks = seededDay()) }
             }
 
             runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
@@ -96,7 +108,7 @@ class ConfirmToastTest {
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
-                CadenceTheme { CadenceApp(navController = nav) }
+                CadenceTheme { CadenceApp(navController = nav, mocks = seededDay()) }
             }
 
             runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
@@ -107,7 +119,9 @@ class ConfirmToastTest {
 
             // The unit tests above supply their own numbers, so nothing pinned
             // what the shell actually passes: a target of 0 went unnoticed.
-            onNodeWithText("1\u00A0240 / 2\u00A0100 ккал сегодня").assertIsDisplayed()
+            // 840 is the seeded day's two meals, 1 800 the seeded target — both
+            // from the repository now, where the shell used to hold constants.
+            onNodeWithText("840 / 1\u00A0800 ккал сегодня").assertIsDisplayed()
         }
 
     @Test
@@ -117,7 +131,7 @@ class ConfirmToastTest {
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
-                CadenceTheme { CadenceApp(navController = nav) }
+                CadenceTheme { CadenceApp(navController = nav, mocks = seededDay()) }
             }
 
             logAMeal(nav)
