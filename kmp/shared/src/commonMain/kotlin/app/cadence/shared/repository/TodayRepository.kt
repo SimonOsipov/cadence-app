@@ -6,6 +6,7 @@ import app.cadence.shared.domain.Occurrence
 import app.cadence.shared.domain.PartOfDay
 import app.cadence.shared.domain.ProtocolRow
 import app.cadence.shared.domain.ReorderHint
+import app.cadence.shared.domain.TitrationStep
 import kotlinx.datetime.LocalDate
 
 /**
@@ -43,6 +44,8 @@ data class TodaySummary(
     val targetWeightKg: Double?,
     val vialDosesLeft: Int,
     val reorder: ReorderHint?,
+    /** «Доза растёт: 0,25 мг → 0,5 мг», derived from the phases. */
+    val nextTitration: TitrationStep?,
 )
 
 /**

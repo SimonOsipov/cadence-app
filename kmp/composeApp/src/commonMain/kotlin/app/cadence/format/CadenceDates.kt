@@ -3,6 +3,7 @@ package app.cadence.format
 import app.cadence.shared.domain.PartOfDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.isoDayNumber
 
 // Russian calendar names. Hand-written for the same reason the number
 // formatting is: Kotlin/Native carries no ICU, so there is no locale API that
@@ -40,3 +41,31 @@ fun greeting(
     val head = "${weekdayNominative(date.dayOfWeek)}, ${partOfDay.ru}"
     return if (cycleWeek == null) head else "$head · ${cycleWeekLabel(cycleWeek)}"
 }
+
+private val MONTHS_GENITIVE =
+    listOf(
+        "января",
+        "февраля",
+        "марта",
+        "апреля",
+        "мая",
+        "июня",
+        "июля",
+        "августа",
+        "сентября",
+        "октября",
+        "ноября",
+        "декабря",
+    )
+
+/** «7 июня» — the genitive the date reads in, not the nominative «Июнь». */
+fun dayAndMonth(date: LocalDate): String = "${date.day} ${MONTHS_GENITIVE[date.month.ordinal]}"
+
+private val WEEKDAYS_SHORT =
+    listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+
+/** The calendar's column headings, Monday first as the prototype draws them. */
+fun weekdayHeadings(): List<String> = WEEKDAYS_SHORT
+
+/** How many blanks precede the first of the month in a Monday-first grid. */
+fun leadingBlanks(firstOfMonth: LocalDate): Int = firstOfMonth.dayOfWeek.isoDayNumber - 1

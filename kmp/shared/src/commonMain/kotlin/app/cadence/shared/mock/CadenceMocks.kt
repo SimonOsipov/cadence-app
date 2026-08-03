@@ -16,6 +16,7 @@ import app.cadence.shared.domain.occurrencesFor
 import app.cadence.shared.domain.partOfDay
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
+import app.cadence.shared.domain.titrationStepAfter
 import app.cadence.shared.domain.today
 import app.cadence.shared.domain.weekProtocolRows
 import app.cadence.shared.repository.DoseLogRepository
@@ -121,6 +122,7 @@ class CadenceMocks(
                         ?.value,
                 targetWeightKg = MockSeed.profile.targetWeightKg,
                 vialDosesLeft = remainingDoses(vial, events),
+                nextTitration = titrationStepAfter(MockSeed.plan, MockSeed.semaItemId, date),
                 reorder =
                     reorderHint(
                         item = MockSeed.plan.items.first { it.id == MockSeed.semaItemId },

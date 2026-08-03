@@ -61,6 +61,11 @@ style:
       # formatters themselves are not excluded — their group size, teen range
       # and rounding half are named where they live.
       - '**/commonTest/**/app/cadence/format/**'
+      # And the screen tests, for the third time with the same reason: a
+      # `LocalDate(2026, 5, 1)` is which day the assertion is about, and a
+      # `cycleWeeks = 12` is the protocol under test. Naming them would move
+      # the specification one hop away from the case that states it.
+      - '**/commonTest/**/app/cadence/screens/**'
       - '**/shared/src/commonTest/**'
       # And MockSeed, which is a fixture: one patient, one protocol, two meals,
       # written out. Naming `LocalDate(2026, 5, 10)` as three constants would
