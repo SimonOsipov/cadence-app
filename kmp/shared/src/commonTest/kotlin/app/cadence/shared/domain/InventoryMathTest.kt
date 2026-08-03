@@ -1,6 +1,8 @@
 package app.cadence.shared.domain
 
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -27,6 +29,21 @@ private fun vial(
     locationRu = null,
     disposedAt = null,
     labelPhotoPath = null,
+)
+
+/** An item whose cadence gives the weekly rate each case needs. */
+private fun weeklyItem(
+    compound: CompoundId = SEMA,
+    daysAWeek: Int = 1,
+) = ProtocolItem(
+    id = ProtocolItemId("item-${compound.raw}"),
+    protocolId = ProtocolId("pr"),
+    kind = ProtocolItemKind.INJECTION,
+    compoundId = compound,
+    cadence = ProtocolCadence.WEEKLY,
+    daysOfWeek = DayOfWeek.entries.take(daysAWeek),
+    times = listOf(LocalTime(7, 0)),
+    loggable = true,
 )
 
 private fun doseFrom(v: Vial) =
@@ -139,8 +156,8 @@ class InventoryMathTest {
         val bpcSpare =
             vial(totalDoses = 30).copy(id = VialId("v-bpc"), compoundId = CompoundId("bpc"))
 
-        val alone = reorderHint(SEMA, listOf(sema), emptyList(), dosesPerWeek = 1.0)
-        val withOtherCompound = reorderHint(SEMA, listOf(sema, bpcSpare), emptyList(), dosesPerWeek = 1.0)
+        val alone = reorderHint(weeklyItem(), listOf(sema), emptyList())
+        val withOtherCompound = reorderHint(weeklyItem(), listOf(sema, bpcSpare), emptyList())
 
         assertEquals(alone, withOtherCompound, "a vial of another compound changed the answer")
         assertEquals(SEMA, alone?.compoundId)
@@ -159,15 +176,15 @@ class InventoryMathTest {
         val spare = vial(totalDoses = 1)
 
         assertNull(
-            reorderHint(SEMA, listOf(open, spare), List(3) { doseFrom(open) }, dosesPerWeek = 1.0),
+            reorderHint(weeklyItem(), listOf(open, spare), List(3) { doseFrom(open) }),
             "a sealed spare is exactly what makes reordering unnecessary",
         )
         assertNull(
-            reorderHint(SEMA, listOf(open), emptyList(), dosesPerWeek = 0.2),
+            reorderHint(weeklyItem(daysAWeek = 0), listOf(open), emptyList()),
             "four doses at one every five weeks is twenty weeks of supply",
         )
 
-        val hint = reorderHint(SEMA, listOf(open), List(1) { doseFrom(open) }, dosesPerWeek = 1.0)
+        val hint = reorderHint(weeklyItem(), listOf(open), List(1) { doseFrom(open) })
 
         assertEquals(3, hint?.weeksLeft)
         assertEquals(SEMA, hint?.compoundId)
@@ -180,7 +197,7 @@ class InventoryMathTest {
 
         // The binned vial must not count as the sealed spare that suppresses
         // the hint, and its doses must not count as supply.
-        val hint = reorderHint(SEMA, listOf(open, binned), List(1) { doseFrom(open) }, dosesPerWeek = 1.0)
+        val hint = reorderHint(weeklyItem(), listOf(open, binned), List(1) { doseFrom(open) })
 
         assertEquals(3, hint?.weeksLeft)
     }

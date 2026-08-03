@@ -131,7 +131,10 @@ object MockSeed {
                 patientId = patientId,
                 compoundId = semaglutide.id,
                 concentrationLabel = "1 мг/мл",
-                totalDoses = 8,
+                // Four weekly doses and nothing behind it: the prototype's
+                // «0 sealed spares, running low» state, which is what makes the
+                // reorder hint fire at all.
+                totalDoses = 4,
                 openedAt = LocalDate(2026, 5, 10),
                 expiresOn = LocalDate(2026, 9, 1),
                 lot = "A-2261",
@@ -167,8 +170,21 @@ object MockSeed {
                 externalId = null,
                 note = null,
             ),
+            // An *earlier* weight, sitting later in the list, so «latest» cannot
+            // be «last in the list» and pass by position.
+            Measurement(
+                id = MeasurementId("m-0"),
+                patientId = patientId,
+                metric = Metric.WEIGHT,
+                value = 99.6,
+                unit = "kg",
+                measuredAt = Instant.parse("2026-05-24T06:00:00Z"),
+                source = MeasurementSource.MANUAL,
+                externalId = null,
+                note = null,
+            ),
             // A later reading of another metric, so «latest weight» cannot be
-            // «last in the list» and pass.
+            // «last of any metric» either.
             Measurement(
                 id = MeasurementId("m-2"),
                 patientId = patientId,

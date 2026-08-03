@@ -33,7 +33,7 @@ fun remainingDoses(
  * disposed is a fact about the vial, expiry is the one condition with a
  * deadline attached, and low stock is the softest of the three.
  */
-enum class VialStatus { DISPOSED, SEALED, EXPIRING, LOW, ACTIVE }
+enum class VialStatus { DISPOSED, EXPIRING, SEALED, LOW, ACTIVE }
 
 fun vialStatus(
     vial: Vial,
@@ -82,11 +82,17 @@ data class ReorderHint(
 )
 
 fun reorderHint(
-    compoundId: CompoundId,
+    item: ProtocolItem,
     vials: List<Vial>,
     events: List<DoseEvent>,
-    dosesPerWeek: Double,
 ): ReorderHint? {
+    // Compound and rate come off the same item, so they cannot disagree. Passed
+    // separately they could: BPC's fourteen doses a week against semaglutide's
+    // stock reads as «0 weeks left», silently and plausibly. The same argument
+    // that made ProtocolPlan a type.
+    val compoundId = item.compoundId ?: return null
+    val dosesPerWeek = item.dosesPerWeek()
+
     // One compound at a time. Without the filter an unopened vial of anything
     // else counted as the sealed spare that suppresses the hint, its doses
     // counted as this compound's supply, and the hint named whichever vial

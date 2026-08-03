@@ -3,27 +3,18 @@ package app.cadence.shared.domain
 import kotlinx.datetime.LocalDate
 
 /**
- * §03: «tags[] (7 fixed)». A closed set, so a client cannot invent one.
+ * §03: «tags[] (7 fixed)» — and they are [SideEffect], not a second set.
  *
- * The seven are the prototype's (`TAGS` in
- * `mobile/src/features/journal/data.ts`, whose own comment reads «tags —
- * side-effect ids»), and they are deliberately the same seven as [SideEffect].
- * §03 requires it: «The wizard's mood/sides check-in also writes today's
- * journal_entry with source dose — one action, two facts». A first version of
- * this enum invented `MOOD`, `ENERGY` and `SLEEP`, which duplicated the three
- * 1–5 columns on the row and left the wizard's side effects with nowhere to go.
+ * The prototype's own comment reads «tags — side-effect ids», and §03 requires
+ * «one action, two facts»: the dose wizard's check-in writes a dose event and a
+ * journal entry at once. A first version invented `MOOD`, `ENERGY` and `SLEEP`,
+ * which duplicated three columns already on the row and left the side effects
+ * nowhere to go; a second declared seven identical members alongside
+ * [SideEffect] with a test forbidding them to differ — which is the type system
+ * saying there is one type. §03 has two columns; the client has one vocabulary,
+ * and the alias keeps the column's name at the call sites.
  */
-enum class JournalTag(
-    val code: String,
-) {
-    NAUSEA("nausea"),
-    FATIGUE("fatigue"),
-    HEADACHE("headache"),
-    BLOATING("bloating"),
-    INSOMNIA("insomnia"),
-    SITE("site"),
-    APPETITE("appetite"),
-}
+typealias JournalTag = SideEffect
 
 /** §03: `source manual|dose` — the dose wizard's check-in writes one of these. */
 enum class JournalSource(

@@ -42,10 +42,11 @@ class CadenceMocks(
     private val clock: CadenceClock = SystemCadenceClock,
     // The device's zone, and that is temporary: CadenceClock's own KDoc calls
     // reading a default the wrong answer, and §03 derives cycle position from
-    // «protocols.start_date + patient timezone». The seed has a profile with a
-    // zone on it now, and the shell will pass it once sign-in exists to say
-    // whose profile it is — until then a patient in Kaliningrad with a phone on
-    // Moscow time sees a different week than the server.
+    // «protocols.start_date + patient timezone». There is nowhere better yet —
+    // §03 puts the zone on `profiles` and the seed has no `Profile`, only a
+    // `PatientProfile` — so until sign-in says whose profile it is, a patient
+    // in Kaliningrad with a phone on Moscow time sees a different week than the
+    // server does.
     private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) {
     private val events = mutableListOf<DoseEvent>()
@@ -93,16 +94,9 @@ class CadenceMocks(
                 vialDosesLeft = remainingDoses(vial, events),
                 reorder =
                     reorderHint(
-                        compoundId = MockSeed.semaglutide.id,
+                        item = MockSeed.plan.items.first { it.id == MockSeed.semaItemId },
                         vials = MockSeed.vials,
                         events = events,
-                        // Derived from the protocol item, not seeded: a stored
-                        // rate is the sort of thing that goes stale the first
-                        // time a doctor edits the schedule.
-                        dosesPerWeek =
-                            MockSeed.plan.items
-                                .first { it.id == MockSeed.semaItemId }
-                                .dosesPerWeek(),
                     ),
             )
         }
@@ -134,10 +128,15 @@ class CadenceMocks(
         override suspend fun logDose(
             itemId: ProtocolItemId,
             site: InjectionSite?,
-        ): DoseEventId {
+        ): DoseEventId? {
             val date = currentDate()
+            // firstOrNull, not first: `summary` is a snapshot, and an app left
+            // open across midnight taps «Записать» against yesterday's
+            // occurrence. Throwing inside `scope.launch` with no handler is the
+            // failure this mock is not supposed to have.
             val occurrence =
-                occurrencesFor(MockSeed.plan, events, date, date).first { it.itemId == itemId }
+                occurrencesFor(MockSeed.plan, events, date, date).firstOrNull { it.itemId == itemId }
+                    ?: return null
             val id = DoseEventId("mock-event-${nextEventId++}")
 
             events +=

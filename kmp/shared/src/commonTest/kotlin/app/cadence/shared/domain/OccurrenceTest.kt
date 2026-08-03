@@ -238,16 +238,48 @@ class OccurrenceTest {
     }
 
     @Test
-    fun aProtocolThatIsNoLongerActiveGeneratesNothing() {
-        // Measured before it was fixed: a CANCELLED protocol produced a full
-        // schedule. §03 gives `protocols.status` three values and nothing was
-        // reading it, so a patient whose course had been stopped kept being
-        // told to inject.
+    fun aCancelledProtocolGeneratesNothing() {
+        // Measured before it was fixed: a stopped course produced a full
+        // schedule and kept telling the patient to inject. §03 gives
+        // `protocols.status` three values and nothing was reading it.
         val date = LocalDate(2026, 5, 18)
+        val cancelled = ProtocolPlan(PROTOCOL.copy(status = ProtocolStatus.CANCELLED), ITEMS, PHASES)
 
-        listOf(ProtocolStatus.CANCELLED, ProtocolStatus.COMPLETED).forEach { status ->
-            val stopped = ProtocolPlan(PROTOCOL.copy(status = status), ITEMS, PHASES)
-            assertTrue(occurrencesFor(stopped, emptyList(), date, date).isEmpty(), "$status still generated")
-        }
+        assertTrue(occurrencesFor(cancelled, emptyList(), date, date).isEmpty())
+    }
+
+    @Test
+    fun aCompletedProtocolKeepsItsHistory() {
+        // The first version of the guard blanked COMPLETED too, and every
+        // patient reaches COMPLETED after twelve weeks — their calendar would
+        // have emptied retroactively, losing the dots from days they actually
+        // injected. `cycleWeek` already bounds generation to the protocol
+        // window, so a finished course yields exactly the DONE/MISSED history
+        // §11's schedule endpoint is defined to render.
+        val date = LocalDate(2026, 5, 18)
+        val done = ProtocolPlan(PROTOCOL.copy(status = ProtocolStatus.COMPLETED), ITEMS, PHASES)
+
+        assertEquals(
+            occurrencesFor(ProtocolPlan(PROTOCOL, ITEMS, PHASES), emptyList(), date, date),
+            occurrencesFor(done, emptyList(), date, date),
+        )
+    }
+
+    @Test
+    fun theWeeklyRateFollowsTheCadenceAndTheTimes() {
+        // `dosesPerWeek` is what the reorder hint divides stock by, and it had
+        // no test: replacing its body with 0.0 or with 1.0 — the seeded value —
+        // left the whole suite green and the hint would have quietly vanished.
+        val weekly = ITEMS.first { it.id == SEMA }
+        val daily = ITEMS.first { it.id == BPC }
+        val thrice =
+            weekly.copy(
+                cadence = ProtocolCadence.N_PER_WEEK,
+                daysOfWeek = listOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY),
+            )
+
+        assertEquals(1.0, weekly.dosesPerWeek(), "one day, one time")
+        assertEquals(14.0, daily.dosesPerWeek(), "seven days, two times")
+        assertEquals(3.0, thrice.dosesPerWeek(), "three days, one time")
     }
 }

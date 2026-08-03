@@ -79,10 +79,14 @@ fun occurrencesFor(
     date: LocalDate,
     today: LocalDate,
 ): List<Occurrence> {
-    // A stopped course stops generating. §03 gives `protocols.status` three
-    // values and this was reading none of them, so a patient whose protocol had
-    // been cancelled kept being told to inject.
-    if (plan.protocol.status != ProtocolStatus.ACTIVE) return emptyList()
+    // CANCELLED only, and the narrowing matters. A cancelled course has no
+    // defensible history — §03 gives `protocols` no `cancelled_at` to bound one
+    // with — so it generates nothing. A COMPLETED one is every patient after
+    // twelve weeks, and blanking it would erase the dots from days they
+    // actually injected: `cycleWeek` already bounds generation to the protocol
+    // window, so a finished course yields exactly the DONE/MISSED history §11's
+    // `GET /me/schedule?month` is defined to render.
+    if (plan.protocol.status == ProtocolStatus.CANCELLED) return emptyList()
 
     val week = cycleWeek(plan.protocol, date) ?: return emptyList()
 
@@ -110,10 +114,13 @@ fun occurrencesFor(
  * `7 × times` for a daily one, and a stored copy is the sort of thing that goes
  * stale the first time a protocol is edited.
  */
-fun ProtocolItem.dosesPerWeek(): Double =
+fun ProtocolItem.dosesPerWeek(): Double = scheduledDaysPerWeek() * times.size
+
+/** Shared with [fallsOn], so the two readings of `cadence` cannot drift apart. */
+private fun ProtocolItem.scheduledDaysPerWeek(): Double =
     when (cadence) {
-        ProtocolCadence.DAILY -> DAYS_PER_WEEK.toDouble() * times.size
-        ProtocolCadence.WEEKLY, ProtocolCadence.N_PER_WEEK -> daysOfWeek.size.toDouble() * times.size
+        ProtocolCadence.DAILY -> DAYS_PER_WEEK.toDouble()
+        ProtocolCadence.WEEKLY, ProtocolCadence.N_PER_WEEK -> daysOfWeek.size.toDouble()
     }
 
 /** §03's `cadence` and `days_of_week[]`, read together. */

@@ -16,8 +16,9 @@ import app.cadence.shared.domain.ProtocolItemId
  * block. This is deliberately the narrow version.
  */
 interface DoseLogRepository {
+    /** Null when the item has no occurrence today — the day rolled over under an open app. */
     suspend fun logDose(
         itemId: ProtocolItemId,
         site: InjectionSite?,
-    ): DoseEventId
+    ): DoseEventId?
 }

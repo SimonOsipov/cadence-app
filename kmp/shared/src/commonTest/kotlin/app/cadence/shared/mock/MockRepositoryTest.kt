@@ -118,6 +118,18 @@ class MockRepositoryTest {
         }
 
     @Test
+    fun theReorderHintReachesTheScreenPayload() =
+        runTest {
+            // The only thing wiring `dosesPerWeek()` to what a patient sees.
+            // Nothing asserted `reorder` at all, so the hint could disappear
+            // for every patient with the gate green.
+            val hint = mocks().today.today().reorder
+
+            assertEquals(MockSeed.semaglutide.id, hint?.compoundId)
+            assertEquals(4, hint?.weeksLeft, "four doses at one a week")
+        }
+
+    @Test
     fun theLatestWeightIsTheLatestWeightAndNotTheLatestReading() =
         runTest {
             // The seed's most recent measurement is an HRV of 58. «Latest
