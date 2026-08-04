@@ -4,7 +4,7 @@
 
 **Goal:** Port `inventory/VialsScreen.tsx` (822), `VialDetailSheet.tsx` (420) and `AddVialScreen.tsx` (475) — «Аптечка» — against one vial set whose remaining count, statuses and reorder hints are all computed, and close the vial picker the dose wizard was left owing.
 
-**Architecture:** The clinical maths already exists in `shared`: `remainingDoses`, `vialStatus` and `reorderHint` in `domain/InventoryMath.kt`, written for the Today hero in step 4. The cabinet is a reader of those, not a second implementation. What is new is one repository, one summary function that aggregates across compounds, three screens, and the seed growing from one vial to the prototype's five — which is what makes any of it visible, and what unblocks the picker.
+**Architecture:** The clinical maths already exists in `shared`: `remainingDoses`, `vialStatus` and `reorderHint` in `domain/InventoryMath.kt`, written for the Today hero in step 4. The cabinet is a reader of those, not a second implementation. What is new is one repository, one summary function that aggregates across compounds, three screens, and the seed growing from one vial to five — which is what makes any of it visible, and what unblocks the picker.
 
 **Tech Stack:** Compose Multiplatform, the ported design system, `shared`'s domain and repositories, `app.cadence.format`.
 
@@ -29,7 +29,7 @@
 - tests for each
 
 **Modified in `shared`:**
-- `mock/MockSeed.kt` — five vials and the dose events behind their remaining counts
+- `mock/MockSeed.kt` — five vials and the dose events behind their remaining counts (read Task 1's `[!question]` first)
 - `mock/CadenceMocks.kt` — the inventory repository, and `vialFor` gaining back its disposal filter now that the seed can reach it
 
 **Created in `composeApp`:**
@@ -51,15 +51,50 @@
 
 ### Task 1: One vial set, and a remaining count nothing stores
 
-The seed has one vial. Everything the cabinet shows — sealed spares, an expiring vial, a low one — is invisible until it has the prototype's five, and the picker the dose wizard owes cannot exist while a compound has at most one.
+The seed has one vial. Everything the cabinet shows — sealed spares, an expiring vial, a low one — is invisible until it has more, and the picker the dose wizard owes cannot exist while a compound has at most one.
 
 **Files:** `shared/mock/MockSeed.kt`, `shared/mock/CadenceMocks.kt`, `MockRepositoryTest`.
 
-- [ ] **Step 1: Write the failing test.** The seed holds five vials across four compounds. Semaglutide has an open one and a sealed spare; BPC-157 has an open one expiring within fourteen days and a sealed spare; TB-500 has one below a quarter remaining; Tesamorelin has one opened yesterday with no spare. Every remaining count is `totalDoses` minus the seeded events for that vial — no vial carries a number that was typed. `vialStatus` answers SEALED, EXPIRING, LOW and ACTIVE across the set, one each at least.
+- [ ] **Step 1: Write the failing test.** The seed holds five vials across the protocol's two injectables — see the `[!question]` below for why not the prototype's four. Semaglutide keeps its single open vial with no spare, untouched, because the Today screen's reorder hint depends on it. BPC-157 gains a sealed spare, an open vial expiring within fourteen days, an open vial below a quarter remaining, and a disposed one. Every remaining count is `totalDoses` minus the seeded events for that vial — no vial carries a number that was typed. `vialStatus` answers SEALED, EXPIRING, LOW, ACTIVE and DISPOSED across the set, one each at least.
 - [ ] **Step 2–4:** run red, seed, run green.
 - [ ] **Step 5: Fix what the growth breaks.** `MockTodayRepository` reads `MockSeed.vials.first()` for `vialDosesLeft` — make it read the open vial of the item's compound, which is `vialFor`'s job. Restore `vialFor`'s `disposedAt` filter, now that a seed with five vials can carry a disposed one, and test it.
 - [ ] **Step 6: Mutate.** A remaining count read from a stored field; `vialFor` returning the first vial in the list; the disposal filter dropped; a status boundary moved by a day.
 - [ ] **Step 7:** gate, both suites, commit.
+
+> [!question] Decide before starting Task 1 — 2026-08-04
+> **`MockSeed` has no dose events at all.** The list lives in `CadenceMocks`
+> (`private val events = mutableListOf<DoseEvent>()`) and starts empty, so every
+> seeded vial is currently full: `remainingDoses(vial-1) = 4 − 0 = 4`.
+>
+> «Остаток выводится из залогированных доз» therefore means seeding a history,
+> and a seeded history is not inert — `occurrencesFor` marks those days DONE, so
+> the Schedule's dots move, `suggestNextSite` stops answering `LEFT_ABDOMEN`,
+> and `doseLoggedToday` may flip. `WeekProtocolTest`, `OccurrenceTest` and
+> `MockRepositoryTest` all read that state.
+>
+> Two readings, and the first is probably right:
+>
+> 1. **Seed the history.** Truest to the prohibition and to a demo that «feels
+>    live», and it makes the cabinet's LOW and EXPIRING states reachable. Costs
+>    a pass over three test suites whose expectations were written against an
+>    empty history.
+> 2. **Seed only vials whose remaining count is their total**, and let the
+>    cabinet's other states arrive from doses logged in the app. Cheap and
+>    honest — nothing stores a remaining count either way — but the cabinet
+>    opens showing four identical full vials, and LOW is unreachable without
+>    tapping through the wizard sixteen times.
+>
+> A third constraint sits across both: **the seed cannot show every status
+> without inventing compounds.** The prototype's inventory has four (sema, bpc,
+> TB-500, Тезаморелин); this protocol has two injectables. And sema must keep
+> its four-dose, no-spare shape or the Today screen's reorder hint stops firing
+> — `reorderHint` requires no sealed spare, and `TodayScreenTest` asserts the
+> warning.
+>
+> So the reachable set is: sema untouched, and BPC-157 carrying the sealed
+> spare, the expiring vial, the low one and a disposed one. Two open vials of
+> one compound is a state §03 allows and the prototype's own `VIALS` contains —
+> and it is what makes `vialFor` need the picker Task 7 builds.
 
 ---
 
