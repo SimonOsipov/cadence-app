@@ -12,9 +12,9 @@ private fun summary(
     vials: List<Vial> = MockSeed.vials,
     events: List<DoseEvent> = MockSeed.history,
     today: LocalDate = TODAY,
-) = inventorySummary(MockSeed.plan, vials, events, today)
+) = inventorySummary(MockSeed.plan, vials, events, today, MockSeed.compounds)
 
-private fun ids(vials: List<Vial>) = vials.map { it.id.raw }.toSet()
+private fun ids(rows: List<VialRow>) = rows.map { it.id.raw }.toSet()
 
 class InventorySummaryTest {
     @Test
@@ -137,6 +137,7 @@ class InventorySummaryTest {
                 MockSeed.vials,
                 MockSeed.history,
                 TODAY,
+                MockSeed.compounds,
             )
 
         assertEquals(listOf(MockSeed.semaglutide.id), sum.reorder.map { it.compoundId })

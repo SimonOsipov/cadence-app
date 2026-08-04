@@ -60,7 +60,11 @@ private const val UNITS = 10
  * this changes nothing on screen — what it changes is that the next screen
  * counting something copies a rule that holds rather than one that happens to.
  */
+
 fun pluralMeals(count: Int): String = russianPlural(count, "приём", "приёма", "приёмов")
+
+/** «5 флаконов», «21 флакон» — the same rule, for the cabinet. */
+fun pluralVials(count: Int): String = russianPlural(count, "флакон", "флакона", "флаконов")
 
 /**
  * «неделю» / «недели» / «недель».
@@ -78,7 +82,7 @@ fun pluralWeeks(count: Int): String = russianPlural(count, "неделю", "не
  * counting something copies a rule that holds instead of one that happens to» —
  * which only works if the rule is callable.
  */
-private fun russianPlural(
+fun russianPlural(
     count: Int,
     one: String,
     few: String,

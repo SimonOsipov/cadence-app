@@ -17,11 +17,40 @@ import kotlinx.datetime.LocalDate
  * the Today screen's warning cannot disagree, because they are the same call.
  */
 data class InventorySummary(
-    val active: List<Vial>,
-    val sealed: List<Vial>,
-    val expiring: List<Vial>,
-    val low: List<Vial>,
+    val active: List<VialRow>,
+    val sealed: List<VialRow>,
+    val expiring: List<VialRow>,
+    val low: List<VialRow>,
     val reorder: List<ReorderHint>,
+) {
+    /** Every live vial, once, in the order the cabinet holds them. */
+    val all: List<VialRow> get() = (active + sealed).distinctBy { it.id }
+}
+
+/**
+ * One vial as a screen reads it.
+ *
+ * Resolved here rather than left as ids, for the same reason [ProtocolRow] is:
+ * a card that had to look a compound's name up, or count events to find what is
+ * left, would need a repository it is not allowed to have — and could disagree
+ * with the Today screen about the same number.
+ *
+ * `remaining` is a value on this row and a *subtraction* behind it. There is
+ * still nothing stored: [inventorySummary] computes it on every read, and
+ * [Vial] has no field to put it in.
+ */
+data class VialRow(
+    val id: VialId,
+    val compound: Compound?,
+    /** The dose in force for this compound today, or null if it is not prescribed. */
+    val dose: Dose?,
+    val remaining: Int,
+    val totalDoses: Int,
+    val status: VialStatus,
+    val openedAt: LocalDate?,
+    val expiresOn: LocalDate,
+    val lot: String?,
+    val locationRu: String?,
 )
 
 /**
@@ -36,18 +65,40 @@ fun inventorySummary(
     vials: List<Vial>,
     events: List<DoseEvent>,
     today: LocalDate,
+    // No default. An optional list means a caller that forgets it gets a
+    // cabinet of unnamed vials and no error — which is exactly what the first
+    // version of this screen shipped.
+    compounds: List<Compound>,
 ): InventorySummary {
     // A vial the patient threw away is history, not stock. The prototype has no
     // disposed state and so never had to decide; counting one would tell a
     // patient they have doses they do not have.
-    val live = vials.filter { it.disposedAt == null }
-    val status = live.associateWith { vialStatus(it, events, today) }
+    val rows =
+        vials
+            .filter { it.disposedAt == null }
+            .map { vial ->
+                VialRow(
+                    id = vial.id,
+                    compound = compounds.firstOrNull { it.id == vial.compoundId },
+                    dose =
+                        plan.items
+                            .firstOrNull { it.compoundId == vial.compoundId }
+                            ?.let { phaseDose(plan, it.id, today) },
+                    remaining = remainingDoses(vial, events),
+                    totalDoses = vial.totalDoses,
+                    status = vialStatus(vial, events, today),
+                    openedAt = vial.openedAt,
+                    expiresOn = vial.expiresOn,
+                    lot = vial.lot,
+                    locationRu = vial.locationRu,
+                )
+            }
 
     return InventorySummary(
-        active = live.filter { it.openedAt != null },
-        sealed = live.filter { it.openedAt == null },
-        expiring = live.filter { status[it] == VialStatus.EXPIRING },
-        low = live.filter { status[it] == VialStatus.LOW },
+        active = rows.filter { it.openedAt != null },
+        sealed = rows.filter { it.openedAt == null },
+        expiring = rows.filter { it.status == VialStatus.EXPIRING },
+        low = rows.filter { it.status == VialStatus.LOW },
         // One hint per prescribed compound, and none for a vial of something
         // the patient is not on: «weeks left» is stock divided by a rate, and
         // an unprescribed compound has no rate to divide by.
