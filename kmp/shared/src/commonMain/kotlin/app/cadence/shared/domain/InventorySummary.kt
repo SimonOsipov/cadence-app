@@ -73,26 +73,7 @@ fun inventorySummary(
     // A vial the patient threw away is history, not stock. The prototype has no
     // disposed state and so never had to decide; counting one would tell a
     // patient they have doses they do not have.
-    val rows =
-        vials
-            .filter { it.disposedAt == null }
-            .map { vial ->
-                VialRow(
-                    id = vial.id,
-                    compound = compounds.firstOrNull { it.id == vial.compoundId },
-                    dose =
-                        plan.items
-                            .firstOrNull { it.compoundId == vial.compoundId }
-                            ?.let { phaseDose(plan, it.id, today) },
-                    remaining = remainingDoses(vial, events),
-                    totalDoses = vial.totalDoses,
-                    status = vialStatus(vial, events, today),
-                    openedAt = vial.openedAt,
-                    expiresOn = vial.expiresOn,
-                    lot = vial.lot,
-                    locationRu = vial.locationRu,
-                )
-            }
+    val rows = vials.filter { it.disposedAt == null }.map { vialRow(plan, it, events, today, compounds) }
 
     return InventorySummary(
         active = rows.filter { it.openedAt != null },
@@ -105,3 +86,33 @@ fun inventorySummary(
         reorder = plan.items.mapNotNull { reorderHint(it, vials, events) }.distinctBy { it.compoundId },
     )
 }
+
+/**
+ * One vial, resolved.
+ *
+ * Shared by the cabinet and the detail sheet on purpose: two resolutions of the
+ * same vial are two chances to answer «сколько осталось» differently on two
+ * screens the patient moves between with one tap.
+ */
+fun vialRow(
+    plan: ProtocolPlan,
+    vial: Vial,
+    events: List<DoseEvent>,
+    today: LocalDate,
+    compounds: List<Compound>,
+): VialRow =
+    VialRow(
+        id = vial.id,
+        compound = compounds.firstOrNull { it.id == vial.compoundId },
+        dose =
+            plan.items
+                .firstOrNull { it.compoundId == vial.compoundId }
+                ?.let { phaseDose(plan, it.id, today) },
+        remaining = remainingDoses(vial, events),
+        totalDoses = vial.totalDoses,
+        status = vialStatus(vial, events, today),
+        openedAt = vial.openedAt,
+        expiresOn = vial.expiresOn,
+        lot = vial.lot,
+        locationRu = vial.locationRu,
+    )

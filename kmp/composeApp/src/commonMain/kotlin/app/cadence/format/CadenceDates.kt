@@ -3,6 +3,7 @@ package app.cadence.format
 import app.cadence.shared.domain.PartOfDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.daysUntil
 import kotlinx.datetime.isoDayNumber
 
 // Russian calendar names. Hand-written for the same reason the number
@@ -69,3 +70,25 @@ fun weekdayHeadings(): List<String> = WEEKDAYS_SHORT
 
 /** How many blanks precede the first of the month in a Monday-first grid. */
 fun leadingBlanks(firstOfMonth: LocalDate): Int = firstOfMonth.dayOfWeek.isoDayNumber - 1
+
+/** «сегодня» / «вчера» / «3 дн назад» / «2 нед назад» — the prototype's own scale. */
+fun relativeDay(
+    date: LocalDate,
+    today: LocalDate,
+): String {
+    val days = date.daysUntil(today)
+
+    return when {
+        days <= 0 -> "сегодня"
+
+        days == 1 -> "вчера"
+
+        days < DAYS_PER_WEEK -> "$days дн назад"
+
+        // Rounded, like the prototype's `Math.round(-day / 7)`: a patient
+        // reading «2 нед назад» is placing a dose, not measuring it.
+        else -> "${(days + DAYS_PER_WEEK / 2) / DAYS_PER_WEEK} нед назад"
+    }
+}
+
+private const val DAYS_PER_WEEK = 7
