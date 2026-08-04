@@ -61,40 +61,45 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 - [ ] **Step 6: Mutate.** A remaining count read from a stored field; `vialFor` returning the first vial in the list; the disposal filter dropped; a status boundary moved by a day.
 - [ ] **Step 7:** gate, both suites, commit.
 
-> [!question] Decide before starting Task 1 — 2026-08-04
-> **`MockSeed` has no dose events at all.** The list lives in `CadenceMocks`
-> (`private val events = mutableListOf<DoseEvent>()`) and starts empty, so every
-> seeded vial is currently full: `remainingDoses(vial-1) = 4 − 0 = 4`.
+> [!decision] 2026-08-04
+> **Seed the history, in full.** Every seeded vial's remaining count is
+> `totalDoses` minus real events, semaglutide included.
 >
-> «Остаток выводится из залогированных доз» therefore means seeding a history,
-> and a seeded history is not inert — `occurrencesFor` marks those days DONE, so
-> the Schedule's dots move, `suggestNextSite` stops answering `LEFT_ABDOMEN`,
-> and `doseLoggedToday` may flip. `WeekProtocolTest`, `OccurrenceTest` and
-> `MockRepositoryTest` all read that state.
+> **This resolves the semaglutide conflict rather than colliding with it.** The
+> protocol starts 10 May, «today» is 31 May, and semaglutide is weekly on
+> Sundays — so an honest history has three events (10, 17, 24 May) and none for
+> today, which is what `doseLoggedToday == false` already asserts. Four total
+> doses minus three leaves **one**, one week of supply, no sealed spare: the
+> reorder hint fires *because the patient is nearly out*, not because the seed
+> was tuned to make it fire. The Today hero will read «1 доза» where it reads
+> «4»; that is an expectation to update, not a behaviour to lose. The previous
+> state — four doses left in week four of a weekly protocol, with nothing ever
+> logged — was the incoherent one.
 >
-> Two readings, and the first is probably right:
+> **BPC-157 carries the rest of the statuses.** Daily × 2 from 10 May is 42
+> slots to the 30th:
 >
-> 1. **Seed the history.** Truest to the prohibition and to a demo that «feels
->    live», and it makes the cabinet's LOW and EXPIRING states reachable. Costs
->    a pass over three test suites whose expectations were written against an
->    empty history.
-> 2. **Seed only vials whose remaining count is their total**, and let the
->    cabinet's other states arrive from doses logged in the app. Cheap and
->    honest — nothing stores a remaining count either way — but the cabinet
->    opens showing four identical full vials, and LOW is unreachable without
->    tapping through the wizard sixteen times.
+> | vial | total | events | left | status |
+> |---|---|---|---|---|
+> | `bpc-1` | 30 | 30 (10–24 May) | 0 | DISPOSED — replaced when it ran out |
+> | `bpc-2` | 14 | 12 (25–30 May) | 2 | LOW (14 %), expires far |
+> | `bpc-3` | 30 | — | 30 | EXPIRING — sealed, expires within 14 days |
+> | `bpc-4` | 30 | — | 30 | SEALED — expires in October |
 >
-> A third constraint sits across both: **the seed cannot show every status
-> without inventing compounds.** The prototype's inventory has four (sema, bpc,
-> TB-500, Тезаморелин); this protocol has two injectables. And sema must keep
-> its four-dose, no-spare shape or the Today screen's reorder hint stops firing
-> — `reorderHint` requires no sealed spare, and `TodayScreenTest` asserts the
-> warning.
+> ACTIVE is the semaglutide vial. All five statuses reachable, no compound
+> invented, and `vialFor`'s disposal filter has something to filter.
 >
-> So the reachable set is: sema untouched, and BPC-157 carrying the sealed
-> spare, the expiring vial, the low one and a disposed one. Two open vials of
-> one compound is a state §03 allows and the prototype's own `VIALS` contains —
-> and it is what makes `vialFor` need the picker Task 7 builds.
+> **The ripple, accepted:** 45 events mark past days DONE, so the Schedule's
+> dots change for 10–30 May; `suggestNextSite` stops answering `LEFT_ABDOMEN`;
+> the body map's last-used dots finally have data, which is a gain — the
+> rotation suggestion has been unexplainable on screen until now. Expectations
+> to update live in `ScheduleScreenTest`, `MockRepositoryTest`, `TodayScreenTest`
+> and the two rotation tests in `CadenceShellDataTest` / `DoseWizardTest`.
+>
+> **Zones come from the rotation, not from a list of literals.** Seeding 45
+> hand-picked sites would be 45 chances to contradict `suggestNextSite`; the
+> seed walks it instead, which also makes the seeded history exemplary of the
+> rule the app follows.
 
 ---
 
