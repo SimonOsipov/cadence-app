@@ -55,11 +55,11 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 
 **Files:** `shared/mock/MockSeed.kt`, `shared/mock/CadenceMocks.kt`, `MockRepositoryTest`.
 
-- [ ] **Step 1: Write the failing test.** The seed holds five vials across the protocol's two injectables — see the `[!question]` below for why not the prototype's four. Semaglutide keeps its single open vial with no spare, untouched, because the Today screen's reorder hint depends on it. BPC-157 gains a sealed spare, an open vial expiring within fourteen days, an open vial below a quarter remaining, and a disposed one. Every remaining count is `totalDoses` minus the seeded events for that vial — no vial carries a number that was typed. `vialStatus` answers SEALED, EXPIRING, LOW, ACTIVE and DISPOSED across the set, one each at least.
-- [ ] **Step 2–4:** run red, seed, run green.
-- [ ] **Step 5: Fix what the growth breaks.** `MockTodayRepository` reads `MockSeed.vials.first()` for `vialDosesLeft` — make it read the open vial of the item's compound, which is `vialFor`'s job. Restore `vialFor`'s `disposedAt` filter, now that a seed with five vials can carry a disposed one, and test it.
-- [ ] **Step 6: Mutate.** A remaining count read from a stored field; `vialFor` returning the first vial in the list; the disposal filter dropped; a status boundary moved by a day.
-- [ ] **Step 7:** gate, both suites, commit.
+- [x] **Step 1: Write the failing test.** The seed holds five vials across the protocol's two injectables — see the `[!question]` below for why not the prototype's four. Semaglutide keeps its single open vial with no spare, untouched, because the Today screen's reorder hint depends on it. BPC-157 gains a sealed spare, an open vial expiring within fourteen days, an open vial below a quarter remaining, and a disposed one. Every remaining count is `totalDoses` minus the seeded events for that vial — no vial carries a number that was typed. `vialStatus` answers SEALED, EXPIRING, LOW, ACTIVE and DISPOSED across the set, one each at least.
+- [x] **Step 2–4:** run red, seed, run green.
+- [x] **Step 5: Fix what the growth breaks.** `MockTodayRepository` reads `MockSeed.vials.first()` for `vialDosesLeft` — make it read the open vial of the item's compound, which is `vialFor`'s job. Restore `vialFor`'s `disposedAt` filter, now that a seed with five vials can carry a disposed one, and test it.
+- [x] **Step 6: Mutate.** A remaining count read from a stored field; `vialFor` returning the first vial in the list; the disposal filter dropped; a status boundary moved by a day.
+- [x] **Step 7:** gate, both suites, commit.
 
 > [!decision] 2026-08-04
 > **Seed the history, in full.** Every seeded vial's remaining count is
@@ -109,10 +109,10 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 
 **Files:** `shared/domain/InventorySummary.kt`, its test.
 
-- [ ] **Step 1: Write the failing test.** `inventorySummary` returns the vials grouped as the prototype groups them: active (opened, including an opened one that is expiring), sealed (never opened, including an unopened one that is expiring), expiring (either), low (opened and under a quarter). A vial appears in more than one group where the prototype puts it in more than one, and the groups are named rather than counted. Reorder hints fire for a compound with **no** sealed spare and four weeks or less of total stock, and for no other; the weeks are `total doses ÷ doses per week`, floored, and the rate is `ProtocolItem.dosesPerWeek()` rather than a table.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** The sealed-spare condition dropped; the four-week threshold moved; a compound with no protocol item counted anyway; the groups made disjoint.
-- [ ] **Step 6:** gate, commit.
+- [x] **Step 1: Write the failing test.** `inventorySummary` returns the vials grouped as the prototype groups them: active (opened, including an opened one that is expiring), sealed (never opened, including an unopened one that is expiring), expiring (either), low (opened and under a quarter). A vial appears in more than one group where the prototype puts it in more than one, and the groups are named rather than counted. Reorder hints fire for a compound with **no** sealed spare and four weeks or less of total stock, and for no other; the weeks are `total doses ÷ doses per week`, floored, and the rate is `ProtocolItem.dosesPerWeek()` rather than a table.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** The sealed-spare condition dropped; the four-week threshold moved; a compound with no protocol item counted anyway; the groups made disjoint.
+- [x] **Step 6:** gate, commit.
 
 ---
 
@@ -122,10 +122,10 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 
 **Files:** `design/CadenceGauge.kt`, its test.
 
-- [ ] **Step 1: Write the failing test.** The gauge reports the fraction it fills, measured rather than described — a `Canvas` asserts nothing, and a meter painted full regardless survived that exact mistake in the dose wizard. It is clamped at both ends and draws nothing rather than dividing when the total is zero. It names its own numbers for a screen reader («8 из 12 доз»). The usage row draws one bar per week with the tallest at full height and the rest in proportion.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** A fill that ignores its fraction; a fill that is not clamped; a usage row whose bars are all the same height; a zero total dividing.
-- [ ] **Step 6:** gate, commit.
+- [x] **Step 1: Write the failing test.** The gauge reports the fraction it fills, measured rather than described — a `Canvas` asserts nothing, and a meter painted full regardless survived that exact mistake in the dose wizard. It is clamped at both ends and draws nothing rather than dividing when the total is zero. It names its own numbers for a screen reader («8 из 12 доз»). The usage row draws one bar per week with the tallest at full height and the rest in proportion.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** A fill that ignores its fraction; a fill that is not clamped; a usage row whose bars are all the same height; a zero total dividing.
+- [x] **Step 6:** gate, commit.
 
 ---
 
@@ -133,10 +133,10 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 
 **Files:** `screens/inventory/VialsScreen.kt`, `screens/inventory/VialCard.kt`, their tests.
 
-- [ ] **Step 1: Write the failing test.** The header counts the vials in Russian («5 флаконов в холодильнике» — the plural rule, not the prototype's approximation) and titles «Ваша аптечка» with «аптечка» emphasised. The summary card shows the four counts. The chips are «Все», «Активные», «Истекают», «Запас» and one per compound, each with its count, and tapping one filters the list to exactly the vials of that group — asserted by which vials are on screen, not by the chip's own state. «Истекают» carries a danger tone only when the count is above zero. The sealed section is collapsed and opens. An empty cabinet draws the empty state with its «Добавить флакон» action rather than an empty list. Each card names its compound, its dose through the formatter, its remaining count and its status pill; a card reports its own vial's id when tapped, and each is asserted separately.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** A chip that filters to the wrong group; a card reporting its neighbour's id; the status pill fixed to one label; the sealed section open from the start; the count read from a stored field.
-- [ ] **Step 6:** gate, both suites, commit.
+- [x] **Step 1: Write the failing test.** The header counts the vials in Russian («5 флаконов в холодильнике» — the plural rule, not the prototype's approximation) and titles «Ваша аптечка» with «аптечка» emphasised. The summary card shows the four counts. The chips are «Все», «Активные», «Истекают», «Запас» and one per compound, each with its count, and tapping one filters the list to exactly the vials of that group — asserted by which vials are on screen, not by the chip's own state. «Истекают» carries a danger tone only when the count is above zero. The sealed section is collapsed and opens. An empty cabinet draws the empty state with its «Добавить флакон» action rather than an empty list. Each card names its compound, its dose through the formatter, its remaining count and its status pill; a card reports its own vial's id when tapped, and each is asserted separately.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** A chip that filters to the wrong group; a card reporting its neighbour's id; the status pill fixed to one label; the sealed section open from the start; the count read from a stored field.
+- [x] **Step 6:** gate, both suites, commit.
 
 ---
 
@@ -144,10 +144,10 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 
 **Files:** `screens/inventory/VialDetailSheet.kt`, its test.
 
-- [ ] **Step 1: Write the failing test.** The sheet names the compound and the dose as two runs, shows «Открыт», «Истекает», «Лот» and «Хранится» as four fact cards with the dates through the formatter, lists the recent doses for **this vial** with their zone in Russian and a relative day label («сегодня», «вчера», «3 дн назад», «2 нед назад»), and draws the usage row. Its actions report: «Записать дозу» carries this vial's id; «Перенести в запас» and «Прикрепить фото» are present and disabled with a reason, because neither is built. A vial with no logged doses says so rather than drawing an empty list.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** The recent list unfiltered by vial; the day label off by one; «Записать дозу» reporting a fixed id; the dose rendered as one run.
-- [ ] **Step 6:** gate, both suites, commit.
+- [x] **Step 1: Write the failing test.** The sheet names the compound and the dose as two runs, shows «Открыт», «Истекает», «Лот» and «Хранится» as four fact cards with the dates through the formatter, lists the recent doses for **this vial** with their zone in Russian and a relative day label («сегодня», «вчера», «3 дн назад», «2 нед назад»), and draws the usage row. Its actions report: «Записать дозу» carries this vial's id; «Перенести в запас» and «Прикрепить фото» are present and disabled with a reason, because neither is built. A vial with no logged doses says so rather than drawing an empty list.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** The recent list unfiltered by vial; the day label off by one; «Записать дозу» reporting a fixed id; the dose rendered as one run.
+- [x] **Step 6:** gate, both suites, commit.
 
 ---
 
@@ -155,10 +155,10 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 
 **Files:** `screens/inventory/AddVialScreen.kt`, `shared/repository/InventoryRepository.kt` (the write), `MockRepositoryTest`.
 
-- [ ] **Step 1: Write the failing test.** The form takes a compound, a dose, a total-doses count, a lot, an expiry date and a location. «Сохранить» is dead until the compound, the dose and the expiry are given — the three a vial cannot exist without — and live once. The dose is entered as a number and a unit and stored as `Dose`, never as «0,25 мг». Saving writes through the repository and the new vial comes back out of `vials()` with `remaining == totalDoses`, because nothing has been drawn from it. An expiry already past is refused with a reason rather than saved.
-- [ ] **Step 2–4:** run red, implement, run green.
-- [ ] **Step 5: Mutate.** The save guard dropped; the expiry guard dropped; the dose stored as a string; a saved vial arriving with a remaining count of its own.
-- [ ] **Step 6:** gate, both suites, commit.
+- [x] **Step 1: Write the failing test.** The form takes a compound, a dose, a total-doses count, a lot, an expiry date and a location. «Сохранить» is dead until the compound, the dose and the expiry are given — the three a vial cannot exist without — and live once. The dose is entered as a number and a unit and stored as `Dose`, never as «0,25 мг». Saving writes through the repository and the new vial comes back out of `vials()` with `remaining == totalDoses`, because nothing has been drawn from it. An expiry already past is refused with a reason rather than saved.
+- [x] **Step 2–4:** run red, implement, run green.
+- [x] **Step 5: Mutate.** The save guard dropped; the expiry guard dropped; the dose stored as a string; a saved vial arriving with a remaining count of its own.
+- [x] **Step 6:** gate, both suites, commit.
 
 > [!deviation] 2026-08-04
 > Spec said: the form takes a dose, entered as a number and a unit and stored as
@@ -184,18 +184,18 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 
 **Files:** `shell/CadenceShell.kt`, `screens/dose/DoseSteps.kt`, `screens/dose/DoseOption.kt`, `CadenceShellDataTest`, `DoseWizardTest`.
 
-- [ ] **Step 1: Write the failing test.** The «Аптечка» tab draws the cabinet rather than a placeholder; a card opens the detail sheet; the `+` opens «Добавить флакон» and saving returns to a cabinet with one more vial. The dose wizard's step 2 gains the vial picker: it offers the open vials of the chosen compound, defaults to the one with the most doses left, and the chosen vial reaches `DoseEvent.vialId` — asserted by which vial's remaining count moves. With a vial chosen, the syringe barrel draws, because a vial says what the concentration is.
-- [ ] **Step 2–4:** run red, wire, run green.
-- [ ] **Step 5: Check the acceptance criterion by diff.** `git diff --name-only` must not contain `ActionChooserSheet.kt`, `TodayScreen.kt` or `CadenceBodyMap.kt`.
-- [ ] **Step 6: Mutate.** The picker offering sealed vials; the default picking the emptiest; the chosen vial not reaching the write; the barrel drawn without a concentration.
-- [ ] **Step 7:** gate, both suites, commit.
+- [x] **Step 1: Write the failing test.** The «Аптечка» tab draws the cabinet rather than a placeholder; a card opens the detail sheet; the `+` opens «Добавить флакон» and saving returns to a cabinet with one more vial. The dose wizard's step 2 gains the vial picker: it offers the open vials of the chosen compound, defaults to the one with the most doses left, and the chosen vial reaches `DoseEvent.vialId` — asserted by which vial's remaining count moves. With a vial chosen, the syringe barrel draws, because a vial says what the concentration is.
+- [x] **Step 2–4:** run red, wire, run green.
+- [x] **Step 5: Check the acceptance criterion by diff.** `git diff --name-only` must not contain `ActionChooserSheet.kt`, `TodayScreen.kt` or `CadenceBodyMap.kt`.
+- [x] **Step 6: Mutate.** The picker offering sealed vials; the default picking the emptiest; the chosen vial not reaching the write; the barrel drawn without a concentration.
+- [x] **Step 7:** gate, both suites, commit.
 
 ---
 
 ### Task 8: Divergences
 
-- [ ] Record: the label photo deferred with the storage work; «Изменить лот, дату или дозу», which the prototype itself wires to `onClose`; the prototype's two disconnected vial datasets replaced by one (a correction, and the subtask's prohibition, so the registry is where the next reader looks); anything the three screens drop. Strike the vial picker off «What the dose wizard still owes».
-- [ ] Gate, commit.
+- [x] Record: the label photo deferred with the storage work; «Изменить лот, дату или дозу», which the prototype itself wires to `onClose`; the prototype's two disconnected vial datasets replaced by one (a correction, and the subtask's prohibition, so the registry is where the next reader looks); anything the three screens drop. Strike the vial picker off «What the dose wizard still owes».
+- [x] Gate, commit.
 
 ---
 

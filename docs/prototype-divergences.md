@@ -580,3 +580,46 @@ rows that call `onClose`.
 is not ready. The photo goes with the storage work, like the dose wizard's; a
 transfer back to sealed stock needs a rule about what happens to the doses
 already drawn, which nobody has written yet.
+
+## One vial set, and what that replaces
+
+**What the prototype does:** ships two. `inventory/data.ts` has
+`VIAL_INVENTORY` — five vials with `remaining` typed on each and a `recent`
+array per vial — and `log-dose/data.ts` has a different `VIALS` with three, its
+own ids and its own numbers. Nothing reconciles them, and logging a dose in the
+wizard decrements neither. §03 calls this its third correction.
+
+**What we do:** `MockSeed.vials` is the one set, read by the cabinet, the dose
+wizard's picker, the Today hero's «доз осталось» and the reorder hint. Every
+remaining count is `total_doses − count(dose_events.vial_id)`, computed on read;
+`Vial` has no field to store one in and no `status` either.
+
+**Why it is here even though it is a correction:** it is the subtask's
+prohibition, and this file is where the next reader looks. It is also the reason
+the seed grew a history — «остаток выводится из залогированных доз» has nothing
+to derive from until something has been logged.
+
+Guarded by `MockSeedInventoryTest.noSeededVialCarriesARemainingCountThatWasTyped`
+and `MockRepositoryTest.aDoseIsDrawnFromTheFullestOpenVialOfItsCompound`.
+
+## What «Аптечка» does not draw yet
+
+**The cabinet.** No per-compound filter chips — the prototype appends one chip
+per compound after «Все / Активные / Истекают / Запас», and ours stops at the
+four states. No compact row: the prototype has both a `VialCard` and a slimmer
+`VialRow`, and the sealed accordion uses the slim one; ours draws cards in both
+places. No `WarningCard` band inside the summary — the reorder warning lives on
+the Today screen and is not repeated here.
+
+**The sheet.** «Изменить лот, дату или дозу» is dropped rather than disabled:
+the prototype's own row wires to `onClose`, so it is a button that does nothing
+in the design too, and porting a no-op as a disabled row would claim a feature
+that was never specified. «Прикрепить фото» and «Перенести в запас» are present
+and disabled — see the entry above.
+
+**The form.** No label photo: same storage exception as the dose wizard's, and
+the same deferral. The expiry is typed as a date («2026-12-01») rather than the
+prototype's «14 сен» label — a date the app can compare against today is what
+the refusal needs, and a formatter renders it back on the card.
+
+Step 11's side-by-side run is where these are decided rather than discovered.
