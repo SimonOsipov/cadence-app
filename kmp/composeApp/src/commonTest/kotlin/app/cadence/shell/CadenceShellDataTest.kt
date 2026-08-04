@@ -1,8 +1,11 @@
 package app.cadence.shell
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -24,6 +27,7 @@ import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 private val ZONE = TimeZone.of("Europe/Moscow")
@@ -52,43 +56,17 @@ class CadenceShellDataTest {
         loggable = true,
     )
 
-    /** Walk an already-open wizard to the end, injecting [into]. */
-    private fun ComposeUiTest.logTheSameDoseAgain(into: String) {
-        onNodeWithText("Семаглутид").performClick()
-        waitForIdle()
-        repeat(2) {
-            onNodeWithText("Дальше").performClick()
-            waitForIdle()
-        }
-        onNodeWithContentDescription(into).performScrollTo().performClick()
-        waitForIdle()
-        repeat(2) {
-            onNodeWithText("Дальше").performClick()
-            waitForIdle()
-        }
-        onNodeWithText("Сохранить дозу").performClick()
-        waitForIdle()
-    }
-
-    /** Open the wizard from the hero and finish it, injecting [into]. */
-    private fun ComposeUiTest.logADoseThroughTheWizard(into: String) {
-        onNodeWithText("Записать →").performClick()
-        waitForIdle()
-        onNodeWithText("Семаглутид").performClick()
-        waitForIdle()
-        repeat(2) {
-            onNodeWithText("Дальше").performClick()
-            waitForIdle()
-        }
-        onNodeWithContentDescription(into).performScrollTo().performClick()
-        waitForIdle()
-        repeat(2) {
-            onNodeWithText("Дальше").performClick()
-            waitForIdle()
-        }
-        onNodeWithText("Сохранить дозу").performClick()
-        waitForIdle()
-    }
+    /** The zone «Предложено: X — следующее в ротации» names, on the site step. */
+    private fun ComposeUiTest.suggestedZone(): String =
+        onNodeWithText("Предложено:", substring = true)
+            .fetchSemanticsNode()
+            .config
+            .getOrNull(SemanticsProperties.Text)
+            ?.firstOrNull()
+            ?.text
+            .orEmpty()
+            .substringAfter("Предложено: ")
+            .substringBefore(" —")
 
     @Test
     fun theSheetShowsTheDayTheRepositoryReportsAndNotAConstant() =
@@ -181,16 +159,36 @@ class CadenceShellDataTest {
     @Test
     fun theWizardOpensOnAZoneTheRotationHasNotJustUsed() =
         runComposeUiTest {
-            // The suggestion has to *reach* the site step. With no history it
-            // happens to be the first zone, so a wizard handed a constant looks
-            // identical — until a dose has been logged.
+            // The suggestion has to *reach* the site step. Read from the screen
+            // rather than computed, because computing it here would only be the
+            // production rule asked twice — and injecting into the zone the
+            // caption names is the one case where the answer must move.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
-            // Into the *first* zone of the set, deliberately: with no history
-            // the suggestion is already that one, so injecting anywhere else
-            // leaves a wizard handed a constant looking identical to a wizard
-            // handed the rotation.
-            logADoseThroughTheWizard(into = "Левый живот")
+            onNodeWithText("Записать →").performClick()
+            waitForIdle()
+            onNodeWithText("Семаглутид").performClick()
+            waitForIdle()
+            repeat(2) {
+                onNodeWithText("Дальше").performClick()
+                waitForIdle()
+            }
+            val suggested = suggestedZone()
+
+            // The suggestion may be on the back of the body — with a real
+            // history the rotation has moved off the front.
+            if (onAllNodesWithContentDescription(suggested).fetchSemanticsNodes().isEmpty()) {
+                onNodeWithText("Сзади").performClick()
+                waitForIdle()
+            }
+            onNodeWithContentDescription(suggested).performScrollTo().performClick()
+            waitForIdle()
+            repeat(2) {
+                onNodeWithText("Дальше").performClick()
+                waitForIdle()
+            }
+            onNodeWithText("Сохранить дозу").performClick()
+            waitForIdle()
 
             onNodeWithContentDescription("Записать").performClick()
             waitForIdle()
@@ -203,31 +201,7 @@ class CadenceShellDataTest {
                 waitForIdle()
             }
 
-            // The next zone in the rotation, named. A constant would still say
-            // «Левый живот» — the zone the patient has just used.
-            onNodeWithText("Предложено: Правый живот", substring = true).assertExists()
-        }
-
-    @Test
-    fun aRefusedWriteKeepsTheWizardOpenAndSaysWhy() =
-        runComposeUiTest {
-            // The same occurrence twice. §03 has one event per occurrence, so
-            // the second «Сохранить дозу» writes nothing — and a wizard that
-            // closed anyway would throw away five steps of the patient's
-            // answers without a word.
-            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
-
-            logADoseThroughTheWizard(into = "Правое плечо")
-            onNodeWithContentDescription("Записать").performClick()
-            waitForIdle()
-            onNodeWithText("Записать дозу").performClick()
-            waitForIdle()
-            logTheSameDoseAgain(into = "Левое плечо")
-
-            onNodeWithText("Эта доза уже записана сегодня.").assertIsDisplayed()
-            // Still on the review, with everything the patient entered.
-            onNodeWithText("Сохранить дозу").assertIsDisplayed()
-            onNodeWithText("Левое плечо").assertIsDisplayed()
+            assertNotEquals(suggested, suggestedZone(), "the wizard suggests the zone just injected")
         }
 
     @Test

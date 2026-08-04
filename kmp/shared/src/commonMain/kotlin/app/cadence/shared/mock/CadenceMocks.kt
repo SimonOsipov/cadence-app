@@ -64,7 +64,11 @@ class CadenceMocks(
     // server does.
     private val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) {
-    private val events = mutableListOf<DoseEvent>()
+    // Seeded, not empty. What the patient has already done is half of every
+    // number the cabinet shows — a remaining count is `totalDoses` minus these,
+    // and an empty history means five full vials and a rotation with nothing to
+    // rotate away from.
+    private val events = MockSeed.history.toMutableList()
     private var nextEventId = 0
 
     // §03 keys `journal_entries` `UNIQUE(patient, date)`, so a map by date is
@@ -84,7 +88,10 @@ class CadenceMocks(
         override suspend fun today(): TodaySummary {
             val date = currentDate()
             val todays = occurrencesFor(MockSeed.plan, events, date, date)
-            val vial = MockSeed.vials.first()
+            // The open vial of the item's compound, not the first in the
+            // list. With one vial the two agreed; with five they do not, and
+            // «doses left» would have counted a sealed spare's.
+            val vial = vialFor(MockSeed.semaItemId)
             val weightSeries =
                 MockSeed.measurements
                     .filter { it.metric == Metric.WEIGHT }
@@ -136,7 +143,7 @@ class CadenceMocks(
                         .maxByOrNull { it.measuredAt }
                         ?.value,
                 targetWeightKg = MockSeed.profile.targetWeightKg,
-                vialDosesLeft = remainingDoses(vial, events),
+                vialDosesLeft = vial?.let { remainingDoses(it, events) } ?: 0,
                 nextTitration = titrationStepAfter(MockSeed.plan, MockSeed.semaItemId, date),
                 reorder =
                     reorderHint(
@@ -273,13 +280,15 @@ class CadenceMocks(
         // draft twice is two chances to carry a different answer.
         journalByDate[date] = mergedJournalEntry(date, event)
 
-        return DoseLogResult.Written(eventId = id, journalDate = date, dose = event.dose)
+        return DoseLogResult.Written(eventId = id, journalDate = date, dose = event.dose, vialId = event.vialId)
     }
 
     /**
      * The patient's vial of this item's compound, if they have one.
      *
-     * `vialFor` and not `activeVialFor`: it does not read `disposedAt`.
+     * Open and not disposed: a vial that ran out and was replaced is still on
+     * the shelf as history, and drawing from it would put a dose into a vial
+     * the patient has thrown away.
      *
      * No filter on `disposedAt`, deliberately: the seed holds one vial per
      * compound, so a disposal branch here would be a line no test can reach.
@@ -292,7 +301,13 @@ class CadenceMocks(
             MockSeed.plan.items
                 .firstOrNull { it.id == itemId }
                 ?.compoundId ?: return null
-        return MockSeed.vials.firstOrNull { it.compoundId == compoundId }
+        return MockSeed.vials
+            .filter { it.compoundId == compoundId && it.disposedAt == null && it.openedAt != null }
+            // The fullest open vial. A patient may have two open at once — §03
+            // allows it and this seed contains it — and until the picker lets
+            // them say which, drawing from the one with the most left is at
+            // least deterministic and at most wrong by one vial.
+            .maxByOrNull { remainingDoses(it, events) }
     }
 
     /**

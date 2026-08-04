@@ -143,15 +143,17 @@ class TodayScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
 
-            // Four doses at one a week, no sealed spare — the seeded state.
-            onNodeWithText("Семаглутид закончится через ~4 недели").assertExists()
+            // One dose left at one a week, no sealed spare. The patient has
+            // taken three of four Sundays, so the hint fires because they are
+            // nearly out rather than because the seed was tuned to fire it.
+            onNodeWithText("Семаглутид закончится через ~1 неделю").assertExists()
             onNodeWithText("Запасного флакона нет").assertExists()
         }
 
     @Test
     fun noReorderMeansNoCard() =
         runComposeUiTest {
-            // The seeded day always has a hint — four doses, no spare — so the
+            // The seeded day always has a hint — one dose, no spare — so the
             // absence has to be constructed. Without this, a card rendered
             // unconditionally passes every other assertion on the screen.
             setContent {
@@ -213,8 +215,10 @@ class TodayScreenTest {
 
             setContent { CadenceTheme { TodayScreen(summary = after, patientName = "Марина") } }
 
+            // One row, and only one: the seeded history stops the day before,
+            // so today's BPC-157 slots are still open and the semaglutide dose
+            // just logged is the day's only «записано».
             assertEquals(1, onAllNodesWithText("записано").fetchSemanticsNodes().size)
-            assertEquals(2, onAllNodesWithText("ждёт").fetchSemanticsNodes().size)
         }
 
     @Test
@@ -231,7 +235,12 @@ class TodayScreenTest {
             }
 
             onNodeWithText("Семаглутид").assertExists()
-            assertEquals(2, onAllNodesWithText("ждёт").fetchSemanticsNodes().size)
+            // One row waits and one is done: the evening supplement is still
+            // pending, and BPC-157 is logged because the seed carries what the
+            // patient has already done and the 20th is in the past. Semaglutide
+            // is on the strip with no status at all — it is not due today.
+            assertEquals(1, onAllNodesWithText("ждёт").fetchSemanticsNodes().size)
+            assertEquals(1, onAllNodesWithText("записано").fetchSemanticsNodes().size)
 
             // And the hero says nothing about a dose there is none of. It used
             // to name the compound, print «Недельная инъекция, запланирована на

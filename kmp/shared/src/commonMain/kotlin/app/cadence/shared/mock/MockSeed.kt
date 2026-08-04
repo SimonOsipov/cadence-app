@@ -3,6 +3,8 @@ package app.cadence.shared.mock
 import app.cadence.shared.domain.Compound
 import app.cadence.shared.domain.CompoundId
 import app.cadence.shared.domain.Dose
+import app.cadence.shared.domain.DoseEvent
+import app.cadence.shared.domain.DoseEventId
 import app.cadence.shared.domain.DoseUnit
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Meal
@@ -26,9 +28,14 @@ import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.UserId
 import app.cadence.shared.domain.Vial
 import app.cadence.shared.domain.VialId
+import app.cadence.shared.domain.occurrencesFor
+import app.cadence.shared.domain.suggestNextSite
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlin.time.Instant
 
 /**
@@ -149,21 +156,114 @@ object MockSeed {
         )
 
     /**
-     * One open vial and nothing behind it — which is what makes the reorder
-     * hint fire, and the prototype's «0 sealed spares» state.
+     * The last day the seeded history covers.
+     *
+     * The whole seed is written against Sunday 31 May 2026 — week four of the
+     * cycle — and the history stops the day before, because the app has to open
+     * on a day the patient has not logged yet: the hero offers «Записать →» and
+     * `doseLoggedToday` is false.
+     */
+    val seededThrough = LocalDate(2026, 5, 30)
+
+    /**
+     * When each BPC vial took over.
+     *
+     * Two of them are open at once from the 25th, which is not untidiness: §03
+     * allows it, the prototype's own `VIALS` contains it, and it is the only
+     * shape in which «which vial did this come out of» is a question with more
+     * than one answer — so it is the shape the picker exists for.
+     */
+    private val BPC_SPARE_OPENED = LocalDate(2026, 5, 22)
+    private val BPC_LOW_OPENED = LocalDate(2026, 5, 25)
+
+    /**
+     * Five vials, and every remaining count is a subtraction.
+     *
+     * §03's third correction says `remaining = total_doses − count(dose_events
+     * .vial_id)`, and [Vial] has no field to store one in — so the only way a
+     * count can be wrong here is for the history behind it to be missing. That
+     * is what [history] is: not decoration, but the other half of every number
+     * this cabinet shows.
+     *
+     * Semaglutide is one vial with no spare, three of its four doses taken. The
+     * reorder hint fires because the patient is nearly out — the state this
+     * replaced was four doses left in week four of a weekly protocol with
+     * nothing ever logged, which is the incoherent one.
+     *
+     * The semaglutide vial sits last on purpose: a reader that answers
+     * «the patient's vial» with `vials.first()` is right only by the order of
+     * a list, and a list's order is not a fact about a cabinet.
+     *
+     * BPC-157 carries the other four statuses: one disposed when it ran out,
+     * one low, one sealed and expiring, one sealed. No compound is invented for
+     * the sake of a status the patient's protocol does not prescribe.
      */
     val vials =
         listOf(
             Vial(
-                id = VialId("vial-1"),
+                id = VialId("vial-bpc-1"),
+                patientId = patientId,
+                compoundId = bpc.id,
+                concentrationLabel = "5 мг/мл",
+                totalDoses = 30,
+                openedAt = cycleStart,
+                expiresOn = LocalDate(2026, 8, 1),
+                lot = "B-2204",
+                locationRu = "Холодильник, полка 1",
+                // Thrown out on the 22nd with six doses still in it — a vial is
+                // disposed of for reasons other than running dry, and one that
+                // still had doses is the only case in which drawing from a
+                // disposed vial is distinguishable from drawing correctly.
+                disposedAt = BPC_SPARE_OPENED,
+                labelPhotoPath = null,
+            ),
+            Vial(
+                id = VialId("vial-bpc-2"),
+                patientId = patientId,
+                compoundId = bpc.id,
+                concentrationLabel = "5 мг/мл",
+                totalDoses = 14,
+                openedAt = BPC_LOW_OPENED,
+                expiresOn = LocalDate(2026, 9, 1),
+                lot = "B-2510",
+                locationRu = "Холодильник, полка 1",
+                disposedAt = null,
+                labelPhotoPath = null,
+            ),
+            Vial(
+                id = VialId("vial-bpc-3"),
+                patientId = patientId,
+                compoundId = bpc.id,
+                concentrationLabel = "5 мг/мл",
+                totalDoses = 10,
+                openedAt = BPC_SPARE_OPENED,
+                // Within a fortnight of the seeded day.
+                expiresOn = LocalDate(2026, 6, 10),
+                lot = "B-2601",
+                locationRu = "Холодильник, полка 1",
+                disposedAt = null,
+                labelPhotoPath = null,
+            ),
+            Vial(
+                id = VialId("vial-bpc-4"),
+                patientId = patientId,
+                compoundId = bpc.id,
+                concentrationLabel = "5 мг/мл",
+                totalDoses = 30,
+                openedAt = null,
+                expiresOn = LocalDate(2026, 10, 15),
+                lot = "B-2610",
+                locationRu = "Холодильник, полка 1",
+                disposedAt = null,
+                labelPhotoPath = null,
+            ),
+            Vial(
+                id = VialId("vial-sema-1"),
                 patientId = patientId,
                 compoundId = semaglutide.id,
                 concentrationLabel = "1 мг/мл",
-                // Four weekly doses and nothing behind it: the prototype's
-                // «0 sealed spares, running low» state, which is what makes the
-                // reorder hint fire at all.
                 totalDoses = 4,
-                openedAt = LocalDate(2026, 5, 10),
+                openedAt = cycleStart,
                 expiresOn = LocalDate(2026, 9, 1),
                 lot = "A-2261",
                 locationRu = "Холодильник, полка 2",
@@ -171,6 +271,67 @@ object MockSeed {
                 labelPhotoPath = null,
             ),
         )
+
+    /**
+     * What the patient has already done — every slot from the cycle's start to
+     * [seededThrough].
+     *
+     * Generated rather than typed, for two reasons. Forty-five hand-written
+     * rows is forty-five chances to disagree with the schedule they are
+     * supposed to satisfy; and the zones come from [suggestNextSite], so the
+     * history is an example of the rotation rule the app follows rather than a
+     * second opinion about it. A seeded zone list would drift from the rule the
+     * first time the rule changed.
+     */
+    val history: List<DoseEvent> = buildHistory()
+
+    private fun buildHistory(): List<DoseEvent> {
+        val written = mutableListOf<DoseEvent>()
+        var date = cycleStart
+
+        while (date <= seededThrough) {
+            occurrencesFor(plan, emptyList(), date, seededThrough)
+                .filter { it.itemId == semaItemId || it.itemId == bpcItemId }
+                .sortedBy { it.time }
+                .forEach { occurrence ->
+                    written +=
+                        DoseEvent(
+                            id = DoseEventId("seed-${written.size}"),
+                            patientId = patientId,
+                            protocolItemId = occurrence.itemId,
+                            vialId = vialDrawnFrom(occurrence.itemId, date),
+                            scheduledForDate = date,
+                            scheduledForTime = occurrence.time,
+                            injectedAt = LocalDateTime(date, occurrence.time).toInstant(TimeZone.UTC),
+                            dose = occurrence.dose ?: error("a loggable occurrence with no dose on $date"),
+                            // The rotation, walked. Each event asks the same
+                            // function the wizard will ask, against everything
+                            // logged before it.
+                            site = suggestNextSite(written),
+                            mood = null,
+                            sideEffects = emptyList(),
+                            note = null,
+                            photoPath = null,
+                            createdAt = LocalDateTime(date, occurrence.time).toInstant(TimeZone.UTC),
+                        )
+                }
+            date = LocalDate.fromEpochDays(date.toEpochDays() + 1)
+        }
+
+        return written
+    }
+
+    /** Which vial a dose on [date] came out of. */
+    private fun vialDrawnFrom(
+        itemId: ProtocolItemId,
+        date: LocalDate,
+    ): VialId =
+        when {
+            itemId == semaItemId -> VialId("vial-sema-1")
+            date < BPC_SPARE_OPENED -> VialId("vial-bpc-1")
+            date < BPC_LOW_OPENED -> VialId("vial-bpc-3")
+            else -> VialId("vial-bpc-2")
+        }
 
     val profile =
         PatientProfile(

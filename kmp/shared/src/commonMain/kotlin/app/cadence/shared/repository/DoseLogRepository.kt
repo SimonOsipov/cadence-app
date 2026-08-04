@@ -3,6 +3,7 @@ package app.cadence.shared.repository
 import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseEventId
+import app.cadence.shared.domain.VialId
 import kotlinx.datetime.LocalDate
 
 /**
@@ -31,6 +32,16 @@ sealed interface DoseLogResult {
          * observe `DoseEvent.dose`: no screen reads the event stream yet.
          */
         val dose: Dose,
+        /**
+         * Which vial it came out of, or null when the patient has none of that
+         * compound.
+         *
+         * Observable on purpose: §03's third correction makes the vial the
+         * thing a remaining count is subtracted from, and a write that drew
+         * from a sealed spare or from a vial the patient threw away is
+         * indistinguishable from a correct one until somebody can read this.
+         */
+        val vialId: VialId?,
     ) : DoseLogResult
 
     /** The draft cannot make a dose event — see `DoseDraft.canSubmit`. */

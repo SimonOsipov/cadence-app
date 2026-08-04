@@ -12,6 +12,7 @@ import app.cadence.shared.domain.PartOfDay
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolItemKind
 import app.cadence.shared.domain.SideEffect
+import app.cadence.shared.domain.VialId
 import app.cadence.shared.domain.selectItem
 import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.MeasurementsRepository
@@ -179,10 +180,15 @@ class MockRepositoryTest {
             // is the same defect as recording the planned dose instead of the
             // taken one.
             // Two check-ins, in two mocks, because one does not separate the
-            // two ways this can be wrong. Injecting into the *suggested* zone
-            // proves the write carried a zone at all — drop it and the
-            // suggestion never moves. Injecting into a *different* one proves
-            // it carried the patient's rather than the app's.
+            // two ways this can be wrong — and neither assertion computes the
+            // rotation's answer, which would only be the production rule asked
+            // twice.
+            //
+            // Injecting into the *suggested* zone must move the suggestion: its
+            // recency is what made it the answer. Injecting into any *other*
+            // zone must leave the suggestion exactly where it was, because the
+            // suggested zone was not touched — which is false for a write that
+            // stamps its own suggestion instead of the patient's choice.
             val intoTheSuggestion = mocks()
             val suggested = intoTheSuggestion.today.today().suggestedSite
 
@@ -200,8 +206,26 @@ class MockRepositoryTest {
                 injectionDraft(assertNotNull(intoAnother.today.today().nextDose).itemId).copy(site = chosen),
             )
 
-            // One zone used, so the answer is the first zone that is not it.
-            assertEquals(InjectionSite.entries.first { it != chosen }, intoAnother.today.today().suggestedSite)
+            assertEquals(
+                suggested,
+                intoAnother.today.today().suggestedSite,
+                "injecting elsewhere moved a suggestion that nothing touched",
+            )
+        }
+
+    @Test
+    fun aDoseIsDrawnFromTheFullestOpenVialOfItsCompound() =
+        runTest {
+            // BPC-157 has four vials: one thrown out with six doses still in
+            // it, two open, one sealed. Every wrong answer is a different vial,
+            // which is the point of seeding it this way — with one vial per
+            // compound «the fullest open one» and «the first in the list» are
+            // the same vial and neither can be wrong.
+            val m = mocks()
+
+            val written = assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.bpcItemId)))
+
+            assertEquals(VialId("vial-bpc-3"), written.vialId)
         }
 
     @Test
@@ -457,7 +481,9 @@ class MockRepositoryTest {
             val hint = mocks().today.today().reorder
 
             assertEquals(MockSeed.semaglutide.id, hint?.compoundId)
-            assertEquals(4, hint?.weeksLeft, "four doses at one a week")
+            // One dose left of four, at one a week. The patient has taken
+            // three Sundays; the hint fires because they are nearly out.
+            assertEquals(1, hint?.weeksLeft, "one dose left at one a week")
         }
 
     @Test
