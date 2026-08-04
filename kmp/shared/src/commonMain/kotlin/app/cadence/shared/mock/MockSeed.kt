@@ -30,12 +30,16 @@ import app.cadence.shared.domain.Vial
 import app.cadence.shared.domain.VialId
 import app.cadence.shared.domain.occurrencesFor
 import app.cadence.shared.domain.suggestNextSite
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
+import kotlin.math.round
+import kotlin.math.sin
 import kotlin.time.Instant
 
 /**
@@ -156,12 +160,16 @@ object MockSeed {
         )
 
     /**
-     * The last day the seeded history covers.
+     * The last day the seeded *dose* history covers.
      *
      * The whole seed is written against Sunday 31 May 2026 — week four of the
      * cycle — and the history stops the day before, because the app has to open
      * on a day the patient has not logged yet: the hero offers «Записать →» and
      * `doseLoggedToday` is false.
+     *
+     * Measurements run a day further, to [MEASURED_THROUGH]. The two are meant
+     * to disagree: this morning's readings have happened, this evening's dose
+     * has not.
      */
     val seededThrough = LocalDate(2026, 5, 30)
 
@@ -347,14 +355,63 @@ object MockSeed {
     val targets = Macros(kcal = 1800, proteinG = 140, carbsG = 200, fatG = 60)
 
     /**
-     * Seven weekly weights and one HRV.
+     * The last day any metric was measured — the morning of «today», and a day
+     * later than [seededThrough] on purpose.
      *
-     * Seven because §11 asks for a «7-pt series per metric»; weekly because the
-     * protocol weighs in weekly. The HRV sits later than the last weight on
-     * purpose, so «latest weight» cannot be «latest reading» and pass.
+     * It has to be a Sunday: the weekly metrics are measured on Sundays, and a
+     * horizon landing mid-week would quietly end their series early while the
+     * daily ones ran on.
      */
-    val measurements =
-        listOf(
+    private val MEASURED_THROUGH = LocalDate(2026, 5, 31)
+
+    /**
+     * Six weeks of readings for every generated metric.
+     *
+     * Two metrics are outside that sentence. Chest is left unmeasured on
+     * purpose — «a metric with no readings says so» needs a metric that has
+     * none. Weight is not generated at all: its eight literals below run from
+     * 12 April, eight days *before* the intake, and they are left untouched
+     * because two mutation traps stand on them.
+     *
+     * Everything generated starts at [profile]`.joinedAt`: the clinic measured
+     * the patient at intake, before the protocol. Deeper would describe a
+     * patient the clinic had not met; shallower would leave three of the four
+     * trend windows holding the same points, and the switcher with nothing to
+     * switch.
+     *
+     * At six weeks all four differ — 7, 28, 42 and 22 days, the last because
+     * «цикл» is anchored on [cycleStart] rather than being a length. Two are
+     * partial, in two different ways: «3 месяца» asks for 84 days of history
+     * that do not exist yet, and «цикл» is 21 days lived out of twelve weeks
+     * prescribed. That partiality is described rather than hidden.
+     *
+     * A watch reports every morning; the manual metrics are taken at the intake
+     * and then on every Sunday after it — the same Sunday the protocol later
+     * weighs in on, though the intake itself is a Monday with no weight behind
+     * it, and the first two Sundays fall before the protocol starts.
+     */
+    val measurements: List<Measurement> = buildMeasurements()
+
+    private fun buildMeasurements(): List<Measurement> {
+        // Not a fallback: six weeks of history is the whole point of this seed,
+        // and a profile that cannot say when the patient joined has no first
+        // day to count them from. Substituting one would put a single reading,
+        // dated today, at the *end* value of a course nobody had taken.
+        val joined = profile.joinedAt ?: error("the seeded profile has no joinedAt to measure from")
+        val daily =
+            generateSequence(joined) { it.plus(DatePeriod(days = 1)) }
+                .takeWhile { it <= MEASURED_THROUGH }
+                .toList()
+        // The intake, then every weigh-in Sunday after it — filtered out of
+        // `daily` rather than prepended to it, so that a horizon earlier than
+        // the intake cannot leave a measurement dated in the future behind.
+        val weekly = daily.filter { it == joined || it.dayOfWeek == DayOfWeek.SUNDAY }
+        // The distinction the whole seed turns on: what a device reported
+        // and what the patient wrote down.
+        val watch = MeasurementSource.HEALTH_KIT
+        val hand = MeasurementSource.MANUAL
+
+        return listOf(
             // Eight readings for a seven-point series, so `take` and `takeLast`
             // cannot agree; and one of them out of list order, so the sort has
             // something to do. Both mutations survived a seed that was already
@@ -367,18 +424,96 @@ object MockSeed {
             weight("2026-05-17T06:00:00Z", 99.2),
             weight("2026-05-24T06:00:00Z", 98.8),
             weight("2026-05-31T06:00:00Z", 98.4),
+        ) +
+            // The HRV is minutes later than the last weight on purpose, so
+            // «latest weight» cannot be «latest reading» and pass. Every other
+            // reading of the day is earlier than it, and has to stay that way.
+            ramp(Metric.HRV, daily, "ms", watch, Ramp(50.0, 58.0, WHOLE, 2.0, LocalTime(6, 5))) +
+            ramp(Metric.RHR, daily, "bpm", watch, Ramp(66.0, 58.0, WHOLE, 1.0, LocalTime(6, 1))) +
+            // Cadence's «Сон /100» will be scored server-side out of the
+            // sessions the watch imported. It is seeded as HEALTH_KIT because
+            // `MeasurementSource` has no value for «derived», and that is the
+            // nearest true thing about where the number came from.
+            ramp(Metric.SLEEP, daily, "/100", watch, Ramp(72.0, 86.0, WHOLE, 3.0, LocalTime(6, 2))) +
+            ramp(Metric.BODY_FAT, weekly, "%", hand, Ramp(26.5, 24.6, TENTHS, 0.1, LocalTime(6, 3))) +
+            // Centimetres, and on a 188 cm body. The prototype's waist runs
+            // 37,5 → 35,0 under a «см» label beside a thigh of 64,5 см, and its
+            // own copy gives it away: the thigh's «на четыре с половиной
+            // сантиметра» matches a fall of 4,5, while the waist's «на шесть с
+            // половиной» matches a fall of 2,5 — which is 6,35 cm. That series
+            // is in inches, and porting it as written would draw this patient
+            // with a 37 cm waist.
+            //
+            // `HIP` is not that thigh rebadged: §03 has no thigh metric at all.
+            // The thigh is named here only as the sanity check that gave the
+            // waist away.
+            ramp(Metric.WAIST, weekly, "cm", hand, Ramp(104.0, 99.0, TENTHS, 0.3, LocalTime(6, 3))) +
+            ramp(Metric.HIP, weekly, "cm", hand, Ramp(108.0, 105.0, TENTHS, 0.2, LocalTime(6, 3)))
+    }
+
+    /** Values land on whole numbers. */
+    private const val WHOLE = 1.0
+
+    /** Values land on one decimal place. */
+    private const val TENTHS = 10.0
+
+    /**
+     * The shape of one metric's six weeks: where it started, where it is now,
+     * what it is rounded onto, how much it wobbles on the way, and the minute
+     * of the morning it is taken at.
+     *
+     * [ripple] is what stops a chart from being a straight line. It is fixed
+     * rather than random — a seed that changed between two reads would make
+     * every assertion about it a coin toss.
+     *
+     * [grid] is what the value is rounded onto. A count of decimal places would
+     * have to be turned into this anyway, and the conversion is where a «ten to
+     * the power of» helper that only ever handled two cases would sit.
+     */
+    private class Ramp(
+        val from: Double,
+        val to: Double,
+        val grid: Double,
+        val ripple: Double,
+        val atTime: LocalTime,
+    )
+
+    /**
+     * One metric's history: [shape]`.from` on the first day, [shape]`.to` on
+     * the last, and the ripple in between.
+     *
+     * The endpoints are left exact so that «this metric moved in its own
+     * direction» is a statement about the protocol rather than about where the
+     * wave happened to land. A single day has no two endpoints to run between,
+     * so it is refused rather than resolved to one of them.
+     */
+    private fun ramp(
+        metric: Metric,
+        days: List<LocalDate>,
+        unit: String,
+        source: MeasurementSource,
+        shape: Ramp,
+    ): List<Measurement> {
+        require(days.size >= 2) {
+            "${metric.code} was handed ${days.size} day(s): a ramp needs two endpoints to run between"
+        }
+
+        return days.mapIndexed { i, day ->
+            val t = i.toDouble() / (days.size - 1)
+            val wave = if (i == 0 || i == days.lastIndex) 0.0 else sin(i * 0.7) * shape.ripple
             Measurement(
-                id = MeasurementId("m-hrv"),
+                id = MeasurementId("m-${metric.code}-$day"),
                 patientId = patientId,
-                metric = Metric.HRV,
-                value = 58.0,
-                unit = "ms",
-                measuredAt = Instant.parse("2026-05-31T06:05:00Z"),
-                source = MeasurementSource.HEALTH_KIT,
+                metric = metric,
+                value = round((shape.from + (shape.to - shape.from) * t + wave) * shape.grid) / shape.grid,
+                unit = unit,
+                measuredAt = LocalDateTime(day, shape.atTime).toInstant(TimeZone.UTC),
+                source = source,
                 externalId = null,
                 note = null,
-            ),
-        )
+            )
+        }
+    }
 
     private fun weight(
         at: String,
