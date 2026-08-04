@@ -542,3 +542,34 @@ out where it was made; this is the index.
   icons.
 - **A one-tap path that invents a zone** is gone: the placeholder that did it is
   replaced by the wizard, which asks.
+
+## «Добавить флакон» asks for a concentration, not a dose
+
+**What the prototype does:** `AddVialScreen.tsx` asks «Дозировка» with the
+placeholder «0,25 мг» and stores the string on the vial, beside a `remaining`
+the form also sets.
+
+**What we do:** the form asks «Концентрация» («1 мг/мл») and «Сколько доз», and
+the vial arrives sealed with no remaining count at all.
+
+**Why:** the per-dose amount is the protocol phase's answer — one function,
+`phaseDose`, read by the calendar, the Today strip and the dose wizard. A vial
+carrying its own copy is a derived value stored, and the two go out of step the
+first time a doctor titrates. What §03's `vials` holds is `concentration_label`.
+And `remaining = total_doses − count(events)` on every read, so a vial nothing
+has been drawn from has all of them by arithmetic rather than by assignment.
+
+Guarded by `AddVialScreenTest.theFormAsksForNoDoseBecauseTheProtocolDecidesIt`
+and `MockInventoryTest.anAddedVialComesBackFullBecauseNothingHasBeenDrawnFromIt`.
+
+## The vial sheet's two unbuilt actions say so
+
+**What the prototype does:** «Прикрепить фото» and «Перенести в запас» are live
+rows that call `onClose`.
+
+**What we do:** both render and are disabled.
+
+**Why:** a row that looks live and does nothing is worse than one that says it
+is not ready. The photo goes with the storage work, like the dose wizard's; a
+transfer back to sealed stock needs a rule about what happens to the doses
+already drawn, which nobody has written yet.

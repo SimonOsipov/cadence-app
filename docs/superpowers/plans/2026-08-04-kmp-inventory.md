@@ -160,6 +160,24 @@ The seed has one vial. Everything the cabinet shows — sealed spares, an expiri
 - [ ] **Step 5: Mutate.** The save guard dropped; the expiry guard dropped; the dose stored as a string; a saved vial arriving with a remaining count of its own.
 - [ ] **Step 6:** gate, both suites, commit.
 
+> [!deviation] 2026-08-04
+> Spec said: the form takes a dose, entered as a number and a unit and stored as
+> `Dose`. Actually done: **there is no dose field**, and the form asks for a
+> concentration label instead.
+>
+> `Vial` has no dose. The per-dose amount is the protocol phase's answer —
+> `phaseDose` — and a vial carrying its own copy is a derived value stored,
+> which the project rule forbids and which goes out of step the first time a
+> doctor titrates. What §03's `vials` holds is `concentration_label`, a fact
+> about the glass rather than about the prescription. The prototype's
+> «Дозировка · 0,25 мг» field is therefore dropped, and the drop is asserted:
+> `theFormAsksForNoDoseBecauseTheProtocolDecidesIt`.
+>
+> The repository is `cabinet()` / `vial(id)` / `addVial(draft)` rather than the
+> planned `vials()`: the groups and the reorder hints are computed from the same
+> events the remaining counts are, so handing a screen a bare list would let it
+> assemble a second answer.
+
 ---
 
 ### Task 7: The shell, and the debt the dose wizard left

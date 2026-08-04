@@ -5,6 +5,7 @@ import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseEvent
 import app.cadence.shared.domain.DoseEventId
+import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.JournalEntry
 import app.cadence.shared.domain.JournalSource
 import app.cadence.shared.domain.Macros
@@ -14,8 +15,12 @@ import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.SystemCadenceClock
 import app.cadence.shared.domain.Vial
+import app.cadence.shared.domain.VialDetail
+import app.cadence.shared.domain.VialDraft
+import app.cadence.shared.domain.VialId
 import app.cadence.shared.domain.cycleWeek
 import app.cadence.shared.domain.dosesPerWeek
+import app.cadence.shared.domain.inventorySummary
 import app.cadence.shared.domain.occurrencesFor
 import app.cadence.shared.domain.partOfDay
 import app.cadence.shared.domain.remainingDoses
@@ -23,9 +28,12 @@ import app.cadence.shared.domain.reorderHint
 import app.cadence.shared.domain.suggestNextSite
 import app.cadence.shared.domain.titrationStepAfter
 import app.cadence.shared.domain.today
+import app.cadence.shared.domain.vialDetail
 import app.cadence.shared.domain.weekProtocolRows
+import app.cadence.shared.repository.AddVialResult
 import app.cadence.shared.repository.DoseLogRepository
 import app.cadence.shared.repository.DoseLogResult
+import app.cadence.shared.repository.InventoryRepository
 import app.cadence.shared.repository.JournalRepository
 import app.cadence.shared.repository.MeasurementsRepository
 import app.cadence.shared.repository.MetricSeries
@@ -80,6 +88,7 @@ class CadenceMocks(
     val schedule: ScheduleRepository = MockScheduleRepository()
     val dosing: DoseLogRepository = MockDoseLogRepository()
     val journal: JournalRepository = MockJournalRepository()
+    val inventory: InventoryRepository = MockInventoryRepository()
     val measurements: MeasurementsRepository = MockMeasurementsRepository()
 
     private fun currentDate(): LocalDate = clock.today(zone)
@@ -148,7 +157,7 @@ class CadenceMocks(
                 reorder =
                     reorderHint(
                         item = MockSeed.plan.items.first { it.id == MockSeed.semaItemId },
-                        vials = MockSeed.vials,
+                        vials = allVials(),
                         events = events,
                     ),
             )
@@ -192,6 +201,58 @@ class CadenceMocks(
         }
 
         override suspend fun day(date: LocalDate) = occurrencesFor(MockSeed.plan, events, date, currentDate())
+    }
+
+    /**
+     * The vials the patient has, seeded plus whatever they have added.
+     *
+     * One list, not two. §03's third correction is that the prototype ships a
+     * cabinet dataset and a dose-logging dataset that disagree; a vial added
+     * here is drawn from by the dose write on the next read, because both ask
+     * this.
+     */
+    private val addedVials = mutableListOf<Vial>()
+    private var nextVialId = 0
+
+    private fun allVials(): List<Vial> = MockSeed.vials + addedVials
+
+    private inner class MockInventoryRepository : InventoryRepository {
+        override suspend fun cabinet(): InventorySummary =
+            inventorySummary(MockSeed.plan, allVials(), events, currentDate(), MockSeed.compounds)
+
+        override suspend fun vial(id: VialId): VialDetail? =
+            allVials()
+                .firstOrNull { it.id == id }
+                ?.let { vialDetail(MockSeed.plan, it, events, currentDate(), MockSeed.compounds) }
+
+        override suspend fun addVial(draft: VialDraft): AddVialResult {
+            val today = currentDate()
+            val compoundId = draft.compoundId
+            // `canSave` and this read ask the same question; the read is what
+            // makes the answer a non-null id rather than a `!!` at the write.
+            if (!draft.canSave(today) || compoundId == null) return AddVialResult.Rejected
+
+            val id = VialId("vial-added-${nextVialId++}")
+            addedVials +=
+                Vial(
+                    id = id,
+                    patientId = MockSeed.patientId,
+                    compoundId = compoundId,
+                    concentrationLabel = draft.concentrationLabel.orEmpty(),
+                    totalDoses = draft.totalDoses,
+                    // Sealed. A vial is not open until somebody opens it, and
+                    // there is no remaining count to set: it is `totalDoses`
+                    // minus the events, of which there are none.
+                    openedAt = null,
+                    expiresOn = draft.expiresOn ?: today,
+                    lot = draft.lot,
+                    locationRu = draft.locationRu,
+                    disposedAt = null,
+                    labelPhotoPath = null,
+                )
+
+            return AddVialResult.Added(id)
+        }
     }
 
     private inner class MockJournalRepository : JournalRepository {
@@ -301,7 +362,7 @@ class CadenceMocks(
             MockSeed.plan.items
                 .firstOrNull { it.id == itemId }
                 ?.compoundId ?: return null
-        return MockSeed.vials
+        return allVials()
             .filter { it.compoundId == compoundId && it.disposedAt == null && it.openedAt != null }
             // The fullest open vial. A patient may have two open at once — §03
             // allows it and this seed contains it — and until the picker lets
