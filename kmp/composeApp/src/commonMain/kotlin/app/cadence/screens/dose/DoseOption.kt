@@ -3,6 +3,7 @@ package app.cadence.screens.dose
 import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolItemKind
+import app.cadence.shared.domain.VialRow
 
 /**
  * One row of «Что вы приняли?» — a loggable item, as the compound step draws it.
@@ -30,6 +31,13 @@ data class DoseOption(
      * pulls to a mark, so nothing is drawn until something knows.
      */
     val syringeUnits: Float? = null,
+    /**
+     * The open vials of this compound, fullest first.
+     *
+     * The dose step picks from these. Sealed stock is not offered: a vial
+     * nobody has opened is not one this dose came out of.
+     */
+    val vials: List<VialRow> = emptyList(),
     /** «п/к · еженедельно» — route and cadence, rendered. */
     val modeRu: String,
     /** The «сегодня» badge: this item has an occurrence today. */

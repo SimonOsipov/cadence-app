@@ -24,6 +24,10 @@ import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolItemKind
 import app.cadence.shared.domain.SideEffect
+import app.cadence.shared.domain.VialId
+import app.cadence.shared.domain.inventorySummary
+import app.cadence.shared.mock.MockSeed
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -32,34 +36,40 @@ private val SEMA = ProtocolItemId("item-sema")
 private val BPC = ProtocolItemId("item-bpc")
 private val GLYCINE = ProtocolItemId("item-glycine")
 
+/** The seed's two open BPC vials, fullest first, as the picker offers them. */
+private fun openBpcVials() =
+    inventorySummary(MockSeed.plan, MockSeed.vials, MockSeed.history, LocalDate(2026, 5, 31), MockSeed.compounds)
+        .active
+        .filter { it.compound?.id == MockSeed.bpc.id }
+        .sortedByDescending { it.remaining }
+
 private val OPTIONS =
     listOf(
         DoseOption(
-            SEMA,
-            "Семаглутид",
-            ProtocolItemKind.INJECTION,
-            Dose(0.25, DoseUnit.MG),
-            null,
-            "п/к · еженедельно",
-            true,
+            itemId = SEMA,
+            nameRu = "Семаглутид",
+            kind = ProtocolItemKind.INJECTION,
+            dose = Dose(0.25, DoseUnit.MG),
+            modeRu = "п/к · еженедельно",
+            dueToday = true,
         ),
         DoseOption(
-            BPC,
-            "BPC-157",
-            ProtocolItemKind.INJECTION,
-            Dose(250.0, DoseUnit.MCG),
-            null,
-            "п/к · 2× в день",
-            false,
+            itemId = BPC,
+            nameRu = "BPC-157",
+            kind = ProtocolItemKind.INJECTION,
+            dose = Dose(250.0, DoseUnit.MCG),
+            modeRu = "п/к · 2× в день",
+            dueToday = false,
+            // Two open vials of one compound — the case the picker is for.
+            vials = openBpcVials(),
         ),
         DoseOption(
-            GLYCINE,
-            "Глицин",
-            ProtocolItemKind.SUPPLEMENT,
-            Dose(1.0, DoseUnit.MG),
-            null,
-            "внутрь · ежедневно",
-            false,
+            itemId = GLYCINE,
+            nameRu = "Глицин",
+            kind = ProtocolItemKind.SUPPLEMENT,
+            dose = Dose(1.0, DoseUnit.MG),
+            modeRu = "внутрь · ежедневно",
+            dueToday = false,
         ),
     )
 
@@ -287,6 +297,63 @@ class DoseWizardTest {
             assertEquals(GLYCINE, submitted?.itemId)
             assertEquals(ProtocolItemKind.SUPPLEMENT, submitted?.kind)
             assertEquals(null, submitted?.site)
+        }
+
+    @Test
+    fun theDoseStepOffersTheOpenVialsAndDefaultsToTheFullest() =
+        runComposeUiTest {
+            // The debt the wizard was left owing. Two open vials of one
+            // compound is a state §03 allows and the seed now contains, and
+            // until this the write picked one for the patient without asking.
+            var submitted: DoseDraft? = null
+            wizard(onSubmit = { submitted = it })
+
+            // BPC-157, because it is the compound with two open vials — the
+            // semaglutide draft `complete()` builds has one, and a picker with
+            // one option is not a picker.
+            onNodeWithText("BPC-157").performClick()
+            waitForIdle()
+            walkTo(DoseStep.DOSE)
+
+            onNodeWithText("B-2601").assertExists()
+            onNodeWithText("B-2510").assertExists()
+            // Sealed stock is not offered: a vial nobody has opened is not one
+            // this dose came out of.
+            assertEquals(0, onAllNodesWithText("B-2610").fetchSemanticsNodes().size)
+
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("Правое плечо").performScrollTo().performClick()
+            waitForIdle()
+            walkTo(DoseStep.REVIEW)
+            onNodeWithText("Сохранить дозу").performClick()
+            waitForIdle()
+
+            // The fullest open one, chosen for them until they say otherwise.
+            assertEquals(VialId("vial-bpc-3"), submitted?.vialId)
+        }
+
+    @Test
+    fun theVialThePatientPicksIsTheOneRecorded() =
+        runComposeUiTest {
+            var submitted: DoseDraft? = null
+            wizard(onSubmit = { submitted = it })
+
+            onNodeWithText("BPC-157").performClick()
+            waitForIdle()
+            walkTo(DoseStep.DOSE)
+            onNodeWithText("B-2510").performScrollTo().performClick()
+            waitForIdle()
+
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("Правое плечо").performScrollTo().performClick()
+            waitForIdle()
+            walkTo(DoseStep.REVIEW)
+            onNodeWithText("Сохранить дозу").performClick()
+            waitForIdle()
+
+            assertEquals(VialId("vial-bpc-2"), submitted?.vialId)
         }
 
     @Test

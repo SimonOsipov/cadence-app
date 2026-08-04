@@ -229,6 +229,24 @@ class MockRepositoryTest {
         }
 
     @Test
+    fun theWriteDrawsFromTheVialTheDraftNamesRatherThanItsOwnChoice() =
+        runTest {
+            // The picker's whole purpose. Its default and the write's default
+            // are the same rule — «the fullest open vial» — so a write that
+            // ignored the draft would agree with the screen right up until the
+            // patient chose the other one.
+            val m = mocks()
+            val chosen = VialId("vial-bpc-2")
+
+            val written =
+                assertIs<DoseLogResult.Written>(
+                    m.dosing.submit(injectionDraft(MockSeed.bpcItemId).copy(vialId = chosen)),
+                )
+
+            assertEquals(chosen, written.vialId)
+        }
+
+    @Test
     fun theEventCarriesTheDoseTheDraftHeldAndNotThePlansOwnNumber() =
         runTest {
             // A patient who steps the dose down records what they took. A write

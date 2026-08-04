@@ -8,13 +8,17 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import app.cadence.design.CadenceTheme
+import app.cadence.screens.inventory.ADD_VIAL_SAVE_TAG
+import app.cadence.screens.inventory.addVialFieldTag
 import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.ProtocolCadence
 import app.cadence.shared.domain.ProtocolItemId
@@ -202,6 +206,101 @@ class CadenceShellDataTest {
             }
 
             assertNotEquals(suggested, suggestedZone(), "the wizard suggests the zone just injected")
+        }
+
+    @Test
+    fun theCabinetTabDrawsTheVialsRatherThanAPlaceholder() =
+        runComposeUiTest {
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithText("Аптечка").performClick()
+            waitForIdle()
+
+            onNodeWithText("Ваша аптечка").assertExists()
+            onNodeWithText("4 флакона в холодильнике").assertExists()
+        }
+
+    @Test
+    fun addingAVialFromTheCabinetPutsItInTheCabinet() =
+        runComposeUiTest {
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithText("Аптечка").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("Добавить флакон").performClick()
+            waitForIdle()
+
+            onNodeWithText("Семаглутид").performScrollTo().performClick()
+            waitForIdle()
+            onNodeWithTag(addVialFieldTag("total"), useUnmergedTree = true).performTextReplacement("20")
+            onNodeWithTag(addVialFieldTag("expires"), useUnmergedTree = true).performTextReplacement("2027-01-31")
+            waitForIdle()
+            onNodeWithTag(ADD_VIAL_SAVE_TAG, useUnmergedTree = true).performClick()
+            waitForIdle()
+
+            // Back in the cabinet, and the count moved — the write went through
+            // the repository and the next read reflected it.
+            onNodeWithText("5 флаконов в холодильнике").assertExists()
+        }
+
+    @Test
+    fun theWizardIsOfferedTheCabinetsOwnOpenVials() =
+        runComposeUiTest {
+            // Through the shell, not against a hand-built option list: the
+            // wiring from the cabinet to the picker is what six mutants lived
+            // in, and a wizard test that builds its own vials cannot see it.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithContentDescription("Записать").performClick()
+            waitForIdle()
+            onNodeWithText("Записать дозу").performClick()
+            waitForIdle()
+            onNodeWithText("BPC-157").performClick()
+            waitForIdle()
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+
+            // The two open BPC vials, fullest first, and no sealed spare.
+            onNodeWithText("B-2601").performScrollTo().assertExists()
+            onNodeWithText("B-2510").performScrollTo().assertExists()
+            assertEquals(0, onAllNodesWithText("B-2610").fetchSemanticsNodes().size, "sealed stock is offered")
+            // And no semaglutide vial: the picker is for the chosen compound.
+            assertEquals(
+                0,
+                onAllNodesWithText("A-2261").fetchSemanticsNodes().size,
+                "another compound's vial is offered",
+            )
+
+            // Fullest first: B-2601 has four doses left, B-2510 has two. Read
+            // off the rows' own lots, because each row merges its lot and its
+            // count into one node and the lot is what it leads with.
+            val order =
+                onAllNodesWithText("доз", substring = true)
+                    .fetchSemanticsNodes()
+                    .mapNotNull {
+                        it.config
+                            .getOrNull(SemanticsProperties.Text)
+                            ?.firstOrNull()
+                            ?.text
+                    }
+            assertEquals(listOf("B-2601", "B-2510"), order)
+        }
+
+    @Test
+    fun aSingleOpenVialIsNotAChoiceAndIsNotDrawn() =
+        runComposeUiTest {
+            // Semaglutide has one. A picker with one option is not a picker,
+            // and the write makes the same choice anyway.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithText("Записать →").performClick()
+            waitForIdle()
+            onNodeWithText("Семаглутид").performClick()
+            waitForIdle()
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+
+            assertEquals(0, onAllNodesWithText("Из вашей аптечки", ignoreCase = true).fetchSemanticsNodes().size)
         }
 
     @Test

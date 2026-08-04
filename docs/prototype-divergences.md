@@ -432,9 +432,16 @@ there is exactly one active vial per compound. It stops being correct the moment
 a patient has two open vials of the same compound — §03 allows it and the
 prototype's own `VIALS` seed contains it (`v1` and `v2`, both semaglutide).
 
-**Owed:** the picker, and with it a `vialId` on the draft. Until then a patient
-with two open vials cannot say which one they used. Named here rather than in a
-comment because step 11 measures this file.
+**Paid, 2026-08-04.** The picker is in the dose step and `DoseDraft` carries a
+`vialId`. It draws only when the compound has more than one open vial — one is
+not a choice, and the write makes the same one. Its default goes *into the
+draft* rather than only onto the screen, so what the patient is shown and what
+is recorded are one value rather than two implementations of one rule.
+
+**Still owed:** the syringe barrel. §03 stores `concentration_label` as a label
+(«1 мг/мл»), so even with the vial in hand there is no number to divide by, and
+parsing a label to draw an instruction about how far to pull a plunger is not a
+thing to do. It needs a schema change, not a parser.
 
 ## One tap on the placeholder invents a zone, and the rotation reads it back
 
@@ -532,9 +539,9 @@ out where it was made; this is the index.
 - **The photo upload.** The slot renders and reports a tap, `DoseDraft` carries
   `photoAttached`, and the write drops it — §03 routes photos straight to object
   storage under a path convention, and that lands with the storage work.
-- **The vial picker**, and with it the review's «Флакон · N доз» row, the
-  syringe barrel's reading, and any answer for a patient with two open vials of
-  one compound.
+- ~~The vial picker~~ — paid 2026-08-04. What remains of it is the review's
+  «Флакон · N доз» row and the syringe barrel, which needs a concentration §03
+  stores only as a label.
 - **The warm confirmation sheet** after «Сохранить дозу», which the prototype
   shows for 2,6 s before returning.
 - **The «Ничего» chip** and the review's «Без замечаний».

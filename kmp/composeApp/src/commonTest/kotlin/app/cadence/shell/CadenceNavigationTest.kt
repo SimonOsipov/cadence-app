@@ -103,6 +103,13 @@ private object CadenceRouteSamples {
         )
 }
 
+/**
+ * Routes that no longer draw «Экран «X»». They stay in the sample list, so the
+ * count check still crosses it against the graph; only the placeholder-title
+ * walk skips them.
+ */
+private val PORTED_ROUTES = setOf<CadenceRoute>(CadenceRoute.AddVial)
+
 @OptIn(ExperimentalTestApi::class)
 class CadenceNavigationTest {
     @Test
@@ -217,7 +224,7 @@ class CadenceNavigationTest {
             // The title assertion is what makes it a rendering test rather than
             // a registration test: `hasRoute` after a navigate that did not
             // throw is very nearly tautological.
-            CadenceRouteSamples.all.forEach { (route, title) ->
+            CadenceRouteSamples.all.filterNot { it.first in PORTED_ROUTES }.forEach { (route, title) ->
                 navigate { nav.pushRoute(route) }
                 assertTrue(
                     nav.currentBackStackEntry?.destination?.hasRoute(route::class) == true,

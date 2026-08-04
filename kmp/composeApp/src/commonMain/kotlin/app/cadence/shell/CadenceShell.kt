@@ -17,21 +17,31 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.cadence.design.CadenceDestination
+import app.cadence.design.CadenceSheet
 import app.cadence.screens.dose.DoseOption
 import app.cadence.screens.dose.DoseWizard
+import app.cadence.screens.inventory.AddVialScreen
+import app.cadence.screens.inventory.VialDetailSheet
+import app.cadence.screens.inventory.VialsScreen
 import app.cadence.screens.schedule.ScheduleScreen
 import app.cadence.screens.schedule.ScheduleState
 import app.cadence.screens.today.TodayScreen
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseStep
 import app.cadence.shared.domain.InjectionSite
+import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.ProtocolCadence
 import app.cadence.shared.domain.ProtocolRow
+import app.cadence.shared.domain.VialDetail
+import app.cadence.shared.domain.VialDraft
+import app.cadence.shared.domain.VialId
 import app.cadence.shared.mock.CadenceMocks
+import app.cadence.shared.mock.MockSeed
 import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
 
 /**
  * The one stand-in left, until the meal wizard lands in step 8 of the block.
@@ -92,11 +102,14 @@ fun CadenceApp(
     var reloads by remember { mutableStateOf(0) }
 
     var schedule by remember { mutableStateOf<ScheduleState?>(null) }
+    var cabinet by remember { mutableStateOf<InventorySummary?>(null) }
+    var openVial by remember { mutableStateOf<VialDetail?>(null) }
 
     LaunchedEffect(reloads) {
         val today = mocks.today.today()
         summary = today
         schedule = mocks.scheduleFor(today)
+        cabinet = mocks.inventory.cabinet()
     }
 
     var actionsOpen by remember { mutableStateOf(false) }
@@ -135,6 +148,14 @@ fun CadenceApp(
             },
             summary = summary,
             schedule = schedule,
+            cabinet = cabinet,
+            onOpenVial = { scope.launch { openVial = mocks.inventory.vial(it) } },
+            onAddVial = { draft ->
+                scope.launch {
+                    mocks.inventory.addVial(draft)
+                    reloads++
+                }
+            },
             onMealLogged = { name ->
                 // The day's running total, from the repository — §03 puts
                 // exactly that in the toast, not the meal's own figure.
@@ -143,21 +164,12 @@ fun CadenceApp(
             },
         )
 
-        ActionChooserSheet(
-            open = actionsOpen,
-            doseLogged = summary?.doseLoggedToday == true,
-            mealCount = summary?.mealCount ?: 0,
-            mealKcal = summary?.mealMacros?.kcal ?: 0,
-            onDismiss = { actionsOpen = false },
-            onPickDose = {
-                actionsOpen = false
-                navController.openRoute(CadenceRoute.LogDose)
-            },
-            onPickMeal = {
-                actionsOpen = false
-                navController.openRoute(CadenceRoute.LogMeal)
-            },
-        )
+        Actions(summary, actionsOpen, navController, onDismiss = { actionsOpen = false })
+
+        VialSheet(openVial, today = summary?.date, onDismiss = { openVial = null }, onLogDose = {
+            openVial = null
+            navController.openRoute(CadenceRoute.LogDose)
+        })
 
         ConfirmToast(state = toast, targetKcal = summary?.targets?.kcal ?: 0)
     }
@@ -182,7 +194,10 @@ fun CadenceShell(
     onOpenActions: () -> Unit = { },
     onMealLogged: (String) -> Unit = { },
     onDoseLogged: suspend (DoseDraft) -> DoseLogResult = { DoseLogResult.Incomplete },
-    // The two sections that are ported. The rest of the graph still draws
+    onAddVial: (VialDraft) -> Unit = { },
+    onOpenVial: (VialId) -> Unit = { },
+    cabinet: InventorySummary? = null,
+    // The sections that are ported. The rest of the graph still draws
     // placeholders, and a null summary means the first read has not landed —
     // the screen is not composed until it has, rather than being shown a day
     // made of zeroes.
@@ -204,9 +219,9 @@ fun CadenceShell(
         popEnterTransition = { if (initialState.destination.isModal()) modalUnderlayEnter() else popEnter() },
         popExitTransition = { if (initialState.destination.isModal()) modalExit() else popExit() },
     ) {
-        tabRoutes(navController, onOpenActions, summary)
+        tabRoutes(navController, onOpenActions, summary, cabinet, onOpenVial)
         pushedRoutes(navController, schedule)
-        modalRoutes(navController, onMealLogged, onDoseLogged, summary)
+        modalRoutes(navController, onMealLogged, onDoseLogged, onAddVial, summary, cabinet)
     }
 }
 
@@ -217,10 +232,13 @@ fun CadenceShell(
  * calls so that adding a fifth destination fails to compile here too, not only
  * in [CadenceDestination.route].
  */
+@Suppress("LongParameterList")
 private fun NavGraphBuilder.tabRoutes(
     nav: NavHostController,
     onOpenActions: () -> Unit,
     summary: TodaySummary?,
+    cabinet: InventorySummary?,
+    onOpenVial: (VialId) -> Unit,
 ) {
     CadenceDestination.entries.forEach { destination ->
         val body: @Composable () -> Unit = {
@@ -240,33 +258,25 @@ private fun NavGraphBuilder.tabRoutes(
         when (destination) {
             CadenceDestination.TODAY -> {
                 composable<CadenceRoute.Today> {
-                    if (summary == null) {
-                        body()
-                    } else {
-                        TodayScreen(
-                            summary = summary,
-                            patientName = PATIENT_NAME,
-                            onLogDose = { nav.openRoute(CadenceRoute.LogDose) },
-                            onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
-                            onOpenQuickFeel = { nav.openRoute(CadenceRoute.Journal) },
-                            onOpenVials = { nav.selectDestination(CadenceDestination.INVENTORY) },
-                            onOpenTrends = { nav.selectDestination(CadenceDestination.TRENDS) },
-                            onOpenChat = { nav.openRoute(CadenceRoute.ChatThread(PRIMARY_THREAD)) },
-                            onOpenSchedule = { nav.openRoute(CadenceRoute.Schedule) },
-                            onOpenLearn = { nav.openRoute(CadenceRoute.Learn) },
-                            onOpenProfile = { nav.openRoute(CadenceRoute.Profile) },
-                            onLogMeal = { nav.openRoute(CadenceRoute.LogMeal) },
-                            onOpenRecipes = { nav.openRoute(CadenceRoute.Recipes) },
-                            onOpenNutrition = { nav.selectDestination(CadenceDestination.NUTRITION) },
-                            onSelectTab = nav::selectDestination,
-                            onOpenActions = onOpenActions,
-                        )
-                    }
+                    TodayRoute(nav, summary, onOpenActions, body)
                 }
             }
 
             CadenceDestination.INVENTORY -> {
-                composable<CadenceRoute.Vials> { body() }
+                composable<CadenceRoute.Vials> {
+                    // Gated on the read like Today and the schedule: a cabinet
+                    // composed against no data draws «0 флаконов», which is a
+                    // sentence about the patient rather than about the fetch.
+                    if (cabinet == null) {
+                        body()
+                    } else {
+                        VialsScreen(
+                            cabinet = cabinet,
+                            onOpenVial = onOpenVial,
+                            onAddVial = { nav.openRoute(CadenceRoute.AddVial) },
+                        )
+                    }
+                }
             }
 
             CadenceDestination.TRENDS -> {
@@ -327,13 +337,17 @@ private fun NavGraphBuilder.pushedRoutes(
  * The prototype's `Stack.Group` with `presentation: 'fullScreenModal'`: these
  * slide up rather than in, and every one of them ends by dismissing itself.
  */
+@Suppress("LongParameterList")
 private fun NavGraphBuilder.modalRoutes(
     nav: NavHostController,
     onMealLogged: (String) -> Unit,
     onDoseLogged: suspend (DoseDraft) -> DoseLogResult,
+    onAddVial: (VialDraft) -> Unit,
     summary: TodaySummary?,
+    cabinet: InventorySummary?,
 ) {
     val back = back(nav)
+    val today = summary
 
     modal<CadenceRoute.LogDose> {
         // Gated on the read, like the other two ported routes. Composed against
@@ -357,7 +371,7 @@ private fun NavGraphBuilder.modalRoutes(
             DoseWizard(
                 draft = draft,
                 step = step,
-                options = today.doseOptions(),
+                options = today.doseOptions(cabinet),
                 suggestedSite = today.suggestedSite,
                 notice = refusal,
                 onDraft = {
@@ -396,7 +410,17 @@ private fun NavGraphBuilder.modalRoutes(
                 },
         )
     }
-    modal<CadenceRoute.AddVial> { PlaceholderScreen("Добавить флакон", onBack = back) }
+    modal<CadenceRoute.AddVial> {
+        AddVialScreen(
+            compounds = MockSeed.compounds,
+            today = today?.date ?: MockSeed.cycleStart,
+            onSave = {
+                onAddVial(it)
+                back()
+            },
+            onCancel = back,
+        )
+    }
     modal<CadenceRoute.RecipeBuilder> { PlaceholderScreen("Новый рецепт", onBack = back) }
 }
 
@@ -442,7 +466,7 @@ private fun DoseLogResult.reasonRu(): String? =
  * `syringeUnits` is null until a vial says what the concentration is — see
  * `docs/prototype-divergences.md`.
  */
-internal fun TodaySummary?.doseOptions(): List<DoseOption> =
+internal fun TodaySummary?.doseOptions(cabinet: InventorySummary? = null): List<DoseOption> =
     this
         ?.weekProtocol
         .orEmpty()
@@ -456,6 +480,15 @@ internal fun TodaySummary?.doseOptions(): List<DoseOption> =
                 syringeUnits = null,
                 modeRu = modeRu(row),
                 dueToday = row.todayStatus != null,
+                // The open vials of this compound, fullest first. The picker
+                // draws nothing when there is one; two is the case §03 allows
+                // and only the patient can settle.
+                vials =
+                    cabinet
+                        ?.active
+                        .orEmpty()
+                        .filter { it.compound?.id == row.compound?.id }
+                        .sortedByDescending { it.remaining },
             )
         }
 
@@ -469,3 +502,77 @@ internal fun modeRu(row: ProtocolRow): String =
             ProtocolCadence.N_PER_WEEK -> "${row.times.size}× в неделю"
         },
     ).joinToString(" · ")
+
+/**
+ * A closer look at the card behind it — a sheet rather than a route, like the
+ * prototype's, so the cabinet stays where the patient left it.
+ */
+@Composable
+private fun VialSheet(
+    detail: VialDetail?,
+    today: LocalDate?,
+    onDismiss: () -> Unit,
+    onLogDose: () -> Unit,
+) {
+    if (detail == null) return
+
+    CadenceSheet(open = true, onDismiss = onDismiss) {
+        VialDetailSheet(detail = detail, today = today ?: MockSeed.cycleStart, onLogDose = { onLogDose() })
+    }
+}
+
+@Composable
+private fun TodayRoute(
+    nav: NavHostController,
+    summary: TodaySummary?,
+    onOpenActions: () -> Unit,
+    body: @Composable () -> Unit,
+) {
+    if (summary == null) {
+        body()
+    } else {
+        TodayScreen(
+            summary = summary,
+            patientName = PATIENT_NAME,
+            onLogDose = { nav.openRoute(CadenceRoute.LogDose) },
+            onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
+            onOpenQuickFeel = { nav.openRoute(CadenceRoute.Journal) },
+            onOpenVials = { nav.selectDestination(CadenceDestination.INVENTORY) },
+            onOpenTrends = { nav.selectDestination(CadenceDestination.TRENDS) },
+            onOpenChat = { nav.openRoute(CadenceRoute.ChatThread(PRIMARY_THREAD)) },
+            onOpenSchedule = { nav.openRoute(CadenceRoute.Schedule) },
+            onOpenLearn = { nav.openRoute(CadenceRoute.Learn) },
+            onOpenProfile = { nav.openRoute(CadenceRoute.Profile) },
+            onLogMeal = { nav.openRoute(CadenceRoute.LogMeal) },
+            onOpenRecipes = { nav.openRoute(CadenceRoute.Recipes) },
+            onOpenNutrition = { nav.selectDestination(CadenceDestination.NUTRITION) },
+            onSelectTab = nav::selectDestination,
+            onOpenActions = onOpenActions,
+        )
+    }
+}
+
+/** The sheet the `+` opens — four values it takes as parameters, and two taps. */
+@Composable
+private fun Actions(
+    summary: TodaySummary?,
+    open: Boolean,
+    nav: NavHostController,
+    onDismiss: () -> Unit,
+) {
+    ActionChooserSheet(
+        open = open,
+        doseLogged = summary?.doseLoggedToday == true,
+        mealCount = summary?.mealCount ?: 0,
+        mealKcal = summary?.mealMacros?.kcal ?: 0,
+        onDismiss = onDismiss,
+        onPickDose = {
+            onDismiss()
+            nav.openRoute(CadenceRoute.LogDose)
+        },
+        onPickMeal = {
+            onDismiss()
+            nav.openRoute(CadenceRoute.LogMeal)
+        },
+    )
+}

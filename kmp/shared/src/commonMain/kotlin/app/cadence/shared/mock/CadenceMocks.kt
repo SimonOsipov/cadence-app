@@ -319,7 +319,9 @@ class CadenceMocks(
                 // has no vial of this compound — the honest answer, where
                 // decrementing whatever vial came first in the list is the same
                 // disconnected inventory wearing a new shape.
-                vialId = vialFor(itemId)?.id,
+                // The patient's choice when they made one; otherwise the
+                // fullest open vial, which is the app choosing for them.
+                vialId = draft.vialId ?: vialFor(itemId)?.id,
                 scheduledForDate = date,
                 scheduledForTime = time,
                 injectedAt = clock.now(),

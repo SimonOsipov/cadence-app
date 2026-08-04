@@ -43,6 +43,14 @@ data class DoseDraft(
     val kind: ProtocolItemKind? = null,
     val dose: Dose? = null,
     val site: InjectionSite? = null,
+    /**
+     * Which vial it came out of, or null to let the write choose.
+     *
+     * Null is not «no vial»: with one open vial per compound the app's own
+     * choice is the only one, and the picker exists for the case §03 allows and
+     * the seed contains — two open at once, where only the patient knows.
+     */
+    val vialId: VialId? = null,
     val mood: Int? = null,
     val sideEffects: List<SideEffect> = emptyList(),
     val note: String? = null,

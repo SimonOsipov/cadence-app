@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -176,12 +177,70 @@ fun DoseAmountStep(
             // Only when something knows the reading. A barrel drawn from a
             // guessed concentration is an instruction telling a patient how far
             // to pull a plunger, and three of the prototype's four compounds
-            // would be shown a wrong or a saturated one.
+            // would be shown a wrong or a saturated one. §03 stores
+            // `concentration_label` as a label — «1 мг/мл» — so even with the
+            // vial in hand there is no number to divide by yet.
             option?.syringeUnits?.let {
                 Column(verticalArrangement = Arrangement.spacedBy(CadenceSpacing.sm)) {
                     CadenceEyebrow("На шприце ${SYRINGE_MAX.toInt()} ед.")
                     CadenceSyringeBar(units = it, max = SYRINGE_MAX)
                 }
+            }
+        }
+
+        VialPicker(option, draft, onDraft)
+    }
+}
+
+/**
+ * «Из вашей аптечки» — which vial this dose comes out of.
+ *
+ * Nothing is drawn when the patient has one open vial of the compound: a choice
+ * with one option is not a choice, and the write makes the same one. Two open
+ * at once is the case §03 allows, the seed contains and the prototype's own
+ * `VIALS` has — and the only one where the app cannot know.
+ */
+@Composable
+private fun VialPicker(
+    option: DoseOption?,
+    draft: DoseDraft,
+    onDraft: (DoseDraft) -> Unit,
+) {
+    val vials = option?.vials.orEmpty()
+    if (vials.size < 2) return
+
+    // The default goes into the draft, not just onto the screen. Shown but
+    // unrecorded, the picker's «fullest open vial» and the write's own
+    // «fullest open vial» are two implementations of one rule that agree until
+    // one of them changes — and the patient would have been shown a vial the
+    // record did not name.
+    LaunchedEffect(vials.first().id) {
+        if (draft.vialId == null) onDraft(draft.copy(vialId = vials.first().id))
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(CadenceSpacing.sm)) {
+        CadenceEyebrow("Из вашей аптечки")
+
+        vials.forEach { vial ->
+            val chosen = vial.id == draft.vialId
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(CadenceRadius.md))
+                    .background(if (chosen) Cadence.palette.paper else Cadence.palette.bg)
+                    .border(
+                        width = HAIRLINE,
+                        color = if (chosen) CadenceColors.forest700 else Cadence.palette.border,
+                        shape = RoundedCornerShape(CadenceRadius.md),
+                    ).clickable { onDraft(draft.copy(vialId = vial.id)) }
+                    .padding(CadenceSpacing.md),
+                horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioDot(chosen)
+                CadenceBody(vial.lot ?: "—", modifier = Modifier.weight(1f))
+                CadenceMeta("${vial.remaining} доз")
             }
         }
     }
