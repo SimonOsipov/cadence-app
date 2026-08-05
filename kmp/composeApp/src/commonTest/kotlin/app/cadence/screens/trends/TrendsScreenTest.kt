@@ -42,6 +42,12 @@ private val ZONE = TimeZone.of("Europe/Moscow")
 /** What a card says instead of a number. Duplicated from the screen on purpose. */
 private const val NO_DATA = "нет данных"
 
+/** One metric's window, resolved the way the repository hands it over. */
+private fun seriesOf(
+    metric: Metric,
+    window: TrendWindow = TrendWindow.FOUR_WEEKS,
+) = trendSeries(MockSeed.measurements, metric, requireNotNull(window.rangeOn(MockSeed.plan, TODAY)), ZONE)
+
 /** The seeded list, resolved the way the repository hands it over. */
 private fun overview(
     window: TrendWindow = TrendWindow.FOUR_WEEKS,
@@ -96,16 +102,9 @@ class TrendsScreenTest {
     @Test
     fun theHeroOpensItsOwnMetric() =
         runComposeUiTest {
-            // The hero is the one card reliably above the fold in the test
-            // window, so it is the one whose click can be measured here.
-            //
-            // OPEN GAP: «тап открывает метрику и сообщает именно её» is NOT
-            // covered for the seven grid cards. A card below the window cannot
-            // be clicked at all, and one scrolled into view is clicked at the
-            // bounds it had before the scroll — every arrangement tried
-            // reported the neighbouring metric. Closing this needs either a
-            // sized test host or the screen split so the grid can be composed
-            // alone; it is not closed by pretending the sweep is stable.
+            // The hero has its own lambda, and it is the one card reliably
+            // above the fold in the whole screen. The grid's seven are checked
+            // by `TrendsMetricGridTest`, which composes them alone.
             val opened = mutableListOf<Metric>()
 
             setContent {
@@ -363,5 +362,53 @@ class TrendsScreenTest {
             onNodeWithTag(CADENCE_TRENDS_BODY_TAG).performScrollTo().performClick()
 
             assertEquals(1 to 1, journal to body)
+        }
+}
+
+@OptIn(ExperimentalTestApi::class)
+class TrendsMetricGridTest {
+    @Test
+    fun eachCardIsTaggedWithItsOwnMetricAndTheOddOneOutStillGetsARow() =
+        runComposeUiTest {
+            // Three cards fill one row and start a second, so both the paired
+            // branch and the odd-one-out branch are exercised. The list is
+            // deliberately not in enum order.
+            //
+            // OPEN: the *click* — «тап открывает метрику и сообщает именно её» —
+            // is still not measured for these cards. Composing the grid alone
+            // was meant to close it; it did not. On this target a click on a
+            // grid card invokes a lambda belonging to a metric that is not in
+            // the composition at all, in isolation as well as in a full run, so
+            // the assertion would be pinning the harness rather than the screen.
+            val order = listOf(Metric.CHEST, Metric.SLEEP, Metric.HRV)
+
+            setContent {
+                CadenceTheme {
+                    TrendsMetricGrid(order.map { MetricTrend(it.meta, seriesOf(it)) }, onOpen = {})
+                }
+            }
+
+            order.forEach { onNodeWithTag(cadenceTrendCardTag(it), useUnmergedTree = true).assertExists() }
+        }
+
+    @Test
+    fun aCardWithNoReadingsSaysSoAndOneWithThemShowsItsNumber() =
+        runComposeUiTest {
+            // Both branches of `MetricReading`, side by side: chest is
+            // unmeasured in the seed on purpose, weight is not.
+            val trends = listOf(Metric.CHEST, Metric.WEIGHT).map { MetricTrend(it.meta, seriesOf(it)) }
+            val weight = trends.last()
+
+            setContent {
+                CadenceTheme {
+                    TrendsMetricGrid(trends, onOpen = {})
+                }
+            }
+
+            assertCardSays(cadenceTrendCardTag(Metric.CHEST), NO_DATA)
+            assertCardSays(
+                cadenceTrendCardTag(Metric.WEIGHT),
+                formatDecimal(requireNotNull(weight.series.latest), weight.meta.decimals),
+            )
         }
 }

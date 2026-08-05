@@ -122,7 +122,7 @@ fun TrendsScreen(
             HeroCard(hero, onOpen = { onOpenMetric(hero.meta.metric) })
         }
 
-        MetricGrid(overview.rest, onOpenMetric)
+        TrendsMetricGrid(overview.rest, onOpenMetric)
 
         NotableShifts(overview.notableShifts())
 
@@ -208,8 +208,18 @@ private fun HeroCard(
     }
 }
 
+/**
+ * The two-up grid, on its own.
+ *
+ * `internal` and separate so a test can compose it alone. Inside the whole
+ * screen these cards sit below the test window, where a card cannot be clicked
+ * at all and one scrolled into view is clicked at the bounds it had before the
+ * scroll — every sweep across them reported the neighbouring metric. Composed
+ * by itself with three cards, «this card opens this metric» is one exact check
+ * each, against a list that is deliberately not in enum order.
+ */
 @Composable
-private fun MetricGrid(
+internal fun TrendsMetricGrid(
     metrics: List<MetricTrend>,
     onOpen: (Metric) -> Unit,
 ) {
