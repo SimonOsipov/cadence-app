@@ -22,13 +22,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.cadence.design.Cadence
 import app.cadence.design.CadenceBody
-import app.cadence.design.CadenceChip
 import app.cadence.design.CadenceColors
 import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceIcon
@@ -58,22 +55,8 @@ const val CADENCE_TRENDS_SHIFTS_TAG = "cadence-trends-shifts"
 /** One tag per metric, so «tapping this card opens this metric» is one check each. */
 fun cadenceTrendCardTag(metric: Metric): String = "cadence-trend-card-${metric.code}"
 
-fun cadenceTrendWindowTag(window: TrendWindow): String = "cadence-trend-window-${window.name.lowercase()}"
-
 const val CADENCE_TRENDS_JOURNAL_TAG = "cadence-trends-journal"
 const val CADENCE_TRENDS_BODY_TAG = "cadence-trends-body"
-
-/** «7 дней» / «4 недели» / «3 месяца» / «Весь цикл», as the prototype writes them. */
-private fun windowLabel(window: TrendWindow): String =
-    when (window) {
-        TrendWindow.WEEK -> "7 дней"
-        TrendWindow.FOUR_WEEKS -> "4 недели"
-        TrendWindow.THREE_MONTHS -> "3 месяца"
-        TrendWindow.CYCLE -> "Весь цикл"
-    }
-
-/** What a card says instead of a number when the window holds no readings. */
-private const val NO_READINGS = "нет данных"
 
 private const val PERCENT = 100.0
 
@@ -116,7 +99,7 @@ fun TrendsScreen(
             modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.md),
         )
 
-        WindowChips(overview.window, onWindowChange)
+        TrendWindowChips(overview.window, onWindowChange)
 
         overview.hero?.let { hero ->
             HeroCard(hero, onOpen = { onOpenMetric(hero.meta.metric) })
@@ -142,35 +125,6 @@ fun TrendsScreen(
             tag = CADENCE_TRENDS_BODY_TAG,
             onOpen = onOpenBody,
         )
-    }
-}
-
-@Composable
-private fun WindowChips(
-    selectedWindow: TrendWindow,
-    onChange: (TrendWindow) -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
-        horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
-    ) {
-        TrendWindow.entries.forEach { window ->
-            CadenceChip(
-                label = windowLabel(window),
-                onClick = { onChange(window) },
-                modifier =
-                    Modifier
-                        .testTag(cadenceTrendWindowTag(window))
-                        // `CadenceChip` says «chosen» in colour alone, and a
-                        // colour lands in no semantics: a screen reader hears
-                        // four identical chips, and a test cannot tell which is
-                        // active.
-                        .semantics { selected = window == selectedWindow },
-                active = window == selectedWindow,
-            )
-        }
     }
 }
 
