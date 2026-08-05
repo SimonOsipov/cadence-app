@@ -21,6 +21,21 @@ enum class Metric(
     WAIST("waist"),
     HIP("hip"),
     CHEST("chest"),
+    ;
+
+    companion object {
+        /**
+         * The metric a wire code names, or null if none does.
+         *
+         * `CadenceRoute.TrendDetail` carries a `String` — it is the prototype's
+         * `RootStackParamList` parameter, and the codes line up because the
+         * prototype keys `TREND_DATA` by the same names §03 stores — so this is
+         * the only way back. Null rather than a default: the prototype has a
+         * `thigh` that §03 does not, and a screen opened on it has to say so
+         * instead of quietly showing somebody's weight.
+         */
+        fun fromCode(code: String): Metric? = entries.firstOrNull { it.code == code }
+    }
 }
 
 /** §03: `source manual|healthkit|health_connect`. Latest reading wins, whatever the source. */
