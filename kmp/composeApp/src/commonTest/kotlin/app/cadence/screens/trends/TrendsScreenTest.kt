@@ -368,18 +368,34 @@ class TrendsScreenTest {
 @OptIn(ExperimentalTestApi::class)
 class TrendsMetricGridTest {
     @Test
-    fun eachCardIsTaggedWithItsOwnMetricAndTheOddOneOutStillGetsARow() =
+    fun eachCardOpensItsOwnMetricAndNotTheOneBesideIt() =
         runComposeUiTest {
-            // Three cards fill one row and start a second, so both the paired
-            // branch and the odd-one-out branch are exercised. The list is
-            // deliberately not in enum order.
-            //
-            // OPEN: the *click* — «тап открывает метрику и сообщает именно её» —
-            // is still not measured for these cards. Composing the grid alone
-            // was meant to close it; it did not. On this target a click on a
-            // grid card invokes a lambda belonging to a metric that is not in
-            // the composition at all, in isolation as well as in a full run, so
-            // the assertion would be pinning the harness rather than the screen.
+            // One exact check per card, and the list is deliberately not in
+            // enum order: a grid reporting the card's *position* names the
+            // wrong metric for both. That is not hypothetical — it is what this
+            // grid actually did until this test was written.
+            val opened = mutableListOf<Metric>()
+            val order = listOf(Metric.CHEST, Metric.SLEEP)
+
+            setContent {
+                CadenceTheme {
+                    TrendsMetricGrid(order.map { MetricTrend(it.meta, seriesOf(it)) }, onOpen = { opened += it })
+                }
+            }
+
+            order.forEach { onNodeWithTag(cadenceTrendCardTag(it)).performClick() }
+
+            assertEquals(order, opened)
+        }
+
+    @Test
+    fun anOddCardStillGetsARowOfItsOwn() =
+        runComposeUiTest {
+            // Three cards fill one row and start a second, so the odd-one-out
+            // branch is exercised. Tags only, not clicks: on this target the
+            // first card of a multi-row grid is clicked at the row below it —
+            // deterministically, and unaffected by `waitForIdle`. Asserting
+            // through that would pin the anomaly rather than the screen.
             val order = listOf(Metric.CHEST, Metric.SLEEP, Metric.HRV)
 
             setContent {

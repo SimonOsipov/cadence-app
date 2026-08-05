@@ -241,7 +241,7 @@ internal fun TrendsMetricGrid(
                         .weight(1f)
                         .clip(RoundedCornerShape(CadenceRadius.lg))
                         .background(palette.paper)
-                        .clickable { onOpen(Metric.entries[metrics.indexOf(trend)]) }
+                        .clickable { onOpen(trend.meta.metric) }
                         .testTag(cadenceTrendCardTag(trend.meta.metric))
                         .padding(CadenceSpacing.sm),
                 ) {
