@@ -146,31 +146,60 @@ fun formatDose(dose: Dose): Pair<String, String> {
 }
 
 /**
- * «↓ 0,4 кг» — how far the last reading moved, or null if there is nothing to
+ * «↓ 0,4 кг» — how far the *last* reading moved, or null if there is nothing to
  * compare it to.
+ *
+ * The name carries the question, because there are two of them. This one is
+ * «Сегодня»'s: what changed since the reading before. A window's delta —
+ * `TrendSeries.delta` in `shared` — is «how far has the patient come since the
+ * window opened», measured from the first reading rather than the previous one,
+ * and on 101,2 → 99,0 → 98,8 → 98,4 the two answer −0,4 and −2,8. One name over
+ * both was an invitation to reach for whichever was in scope.
  *
  * One reading is where every patient starts, and `points[size - 2]` on a
  * one-point series throws; the guard is the reason this is a function rather
  * than an expression repeated at two call sites, which is what it was.
- *
- * Zero is «→», not «↑». Two identical readings are a plateau, and rendering one
- * as a gain is a claim the data does not make.
  */
-fun formatDelta(
+fun formatDeltaSincePrevious(
     points: List<Double>,
     unit: String,
     digits: Int = 1,
 ): String? {
     if (points.size < 2) return null
-    val delta = points.last() - points[points.size - 2]
+    return formatSignedDelta(points.last() - points[points.size - 2], unit, digits)
+}
+
+/**
+ * A delta someone else already computed, as «↓ 2,8 кг».
+ *
+ * The arrow rule lives here and only here: the trends screens will hand over a
+ * number taken across a window — `TrendSeries.delta` — with no pair of points
+ * left to subtract, and a second copy of this `when` beside them is how «↓»
+ * comes to mean two things.
+ *
+ * Zero is «→», not «↑». Two identical readings are a plateau, and rendering one
+ * as a gain is a claim the data does not make.
+ *
+ * The arrow follows what is *printed*, not what was computed. A window delta is
+ * an arbitrary subtraction of two readings — imported weights are not rounded
+ * onto tenths — so −0,04 kg exists, and «↓ 0,0» standing beside a true
+ * plateau's «→ 0,0» would be two glyphs for one number. Read off the rendered
+ * string rather than re-derived, so the two cannot round differently.
+ */
+fun formatSignedDelta(
+    delta: Double,
+    unit: String,
+    digits: Int = 1,
+): String {
+    val magnitude = if (delta < 0) -delta else delta
+    val shown = formatDecimal(magnitude, digits)
     val arrow =
         when {
+            shown.none { it in '1'..'9' } -> "→"
             delta < 0 -> "↓"
-            delta > 0 -> "↑"
-            else -> "→"
+            else -> "↑"
         }
-    val magnitude = if (delta < 0) -delta else delta
-    return "$arrow ${formatDecimal(magnitude, digits)} $unit"
+    return "$arrow $shown $unit"
 }
 
 /** §03 stores the wire unit («kg», «ms»); the screen shows Russian. */

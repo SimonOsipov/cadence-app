@@ -115,6 +115,35 @@ todoist: "6hCc8MVQqcV9C54H"
 
 `TrendWindow` и `trendSeries(measurements, metric, window, plan, today)`. `CYCLE` берёт начало из `plan.protocol.startDate`: тот же набор измерений при двух разных `startDate` даёт разные окна цикла — это и есть тест. Окно длиннее прожитого обрезается по `today`. Метрика без измерений в окне возвращает пустой ряд, а не нули. `formatDelta` переезжает в `shared` под именем, называющим свой вопрос.
 
+> [!deviation] 2026-08-05
+> Spec said: `trendSeries(measurements, metric, window, plan, today)`. Actually
+> done: сигнатура разделена на `TrendWindow.rangeOn(plan, today): TrendRange?` и
+> `trendSeries(measurements, metric, range, zone)`. Why: `measuredAt` — это
+> `Instant`, а границы окна — даты, поэтому нужна зона; шесть параметров ловит
+> detekt (`LongParameterList` срабатывает на `>=6`, что уже стоило раунда на
+> `MockSeed.ramp`). Побочная выгода: шаг-4 `doseBands(plan, itemId, from, to)`
+> просит те же две границы, так что `TrendRange` — не обходной тип, а тот, что
+> всё равно был нужен. `rangeOn` возвращает `null`, когда окна нет вовсе
+> (курс назначен вперёд) — по образцу `cycleWeek`, а `TrendRange` запрещает
+> перевёрнутую пару через `require`: `from`/`through` читают ось и полосы доз,
+> и только `days`/`contains` заметили бы подмену. `CYCLE` вдобавок ограничен
+> справа последним прописанным днём, иначе «весь цикл» на завершённом курсе
+> рос бы бесконечно и расходился с `cycleWeek`.
+
+> [!deviation] 2026-08-05
+> Spec said: `formatDelta` переезжает в `shared`. Actually done: в `shared`
+> уехало **вычисление** — это `TrendSeries.delta`; форматтер остался в
+> `composeApp/format`, переименован в `formatDeltaSincePrevious`, а его правило
+> стрелки вынесено в `formatSignedDelta(delta, unit, digits)`. Why: правило
+> проекта — «Numbers are data, formatting is presentation. Formatters live in
+> one module per surface». Переезд утащил бы за собой `formatDecimal` и
+> `formatInteger`, то есть числовое ядро форматтера поверхности, в домен. Цель
+> спеки — чтобы читатель не принял «последняя минус предпоследняя» за «последняя
+> минус база окна» — достигнута именами и перекрёстными ссылками в KDoc.
+> `formatSignedDelta` вдобавок берёт стрелку из **отрисованной** величины: −0,04
+> кг печатается как «0,0», и «↓ 0,0» рядом с «→ 0,0» было бы двумя глифами для
+> одного числа.
+
 todoist: "6hCc8MXQJhH4jc9H"
 
 ### step-3: Метаданные метрики

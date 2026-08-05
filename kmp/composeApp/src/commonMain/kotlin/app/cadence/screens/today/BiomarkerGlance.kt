@@ -29,7 +29,7 @@ import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceSpark
 import app.cadence.design.pressable
 import app.cadence.format.formatDecimal
-import app.cadence.format.formatDelta
+import app.cadence.format.formatDeltaSincePrevious
 import app.cadence.format.pluralWeeks
 import app.cadence.format.unitRu
 
@@ -60,7 +60,7 @@ fun BiomarkerGlance(
     val palette = Cadence.palette
     val interactionSource = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(CARD_RADIUS)
-    val delta = formatDelta(series, unitRu("kg"))
+    val delta = formatDeltaSincePrevious(series, unitRu("kg"))
 
     Row(
         modifier =

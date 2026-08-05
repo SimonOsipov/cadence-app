@@ -379,11 +379,14 @@ object MockSeed {
      * trend windows holding the same points, and the switcher with nothing to
      * switch.
      *
-     * At six weeks all four differ — 7, 28, 42 and 22 days, the last because
-     * «цикл» is anchored on [cycleStart] rather than being a length. Two are
-     * partial, in two different ways: «3 месяца» asks for 84 days of history
-     * that do not exist yet, and «цикл» is 21 days lived out of twelve weeks
-     * prescribed. That partiality is described rather than hidden.
+     * At six weeks all four differ. Their spans are 7, 28, 84 and 22 days —
+     * the last because «цикл» is anchored on [cycleStart] rather than being a
+     * length — and a daily metric fills them with 7, 28, 42 and 22 readings.
+     * Two are partial, in two different ways: «3 месяца» asks for 84 days of
+     * history and gets the 42 lived since the intake, and «цикл» is 22 days
+     * lived out of the 84 prescribed — both counted inclusively, the way every
+     * window in this feature is. That partiality is described rather than
+     * hidden.
      *
      * A watch reports every morning; the manual metrics are taken at the intake
      * and then on every Sunday after it — the same Sunday the protocol later

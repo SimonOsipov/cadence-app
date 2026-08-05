@@ -23,7 +23,7 @@ import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceSpark
 import app.cadence.design.CadenceTitle
 import app.cadence.format.formatDecimal
-import app.cadence.format.formatDelta
+import app.cadence.format.formatDeltaSincePrevious
 import app.cadence.format.unitRu
 
 private val SHEET_SPARK_HEIGHT = 70.dp
@@ -80,7 +80,7 @@ private fun Reading(
     value: Double,
     unit: String,
 ) {
-    val delta = formatDelta(points, unitRu(unit))
+    val delta = formatDeltaSincePrevious(points, unitRu(unit))
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = CadenceSpacing.md),
