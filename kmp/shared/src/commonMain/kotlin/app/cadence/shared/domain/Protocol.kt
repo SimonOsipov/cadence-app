@@ -1,8 +1,10 @@
 package app.cadence.shared.domain
 
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
+import kotlinx.datetime.plus
 
 // protocol & scheduling — «the prescription: what, when, how much, titrating to
 // where» (§03).
@@ -74,3 +76,19 @@ data class ProtocolPhase(
 ) {
     fun covers(week: Int): Boolean = week in fromWeek..toWeek
 }
+
+private const val DAYS_IN_WEEK = 7
+
+/**
+ * The first day of week [week], counting the start date as week 1 day 1.
+ *
+ * The one place this arithmetic lives. It was written out three times before —
+ * in the titration dates, in the dose bands, and in the «весь цикл» window —
+ * and three copies of «(N − 1) × 7» are three chances for the axis, the strip
+ * under it and the schedule screen to disagree about the same Sunday.
+ */
+internal fun Protocol.weekStart(week: Int): LocalDate = startDate.plus(DatePeriod(days = (week - 1) * DAYS_IN_WEEK))
+
+/** The last day the protocol prescribes anything — day `weeks × 7 − 1`. */
+internal val Protocol.lastPrescribedDay: LocalDate
+    get() = startDate.plus(DatePeriod(days = weeks * DAYS_IN_WEEK - 1))

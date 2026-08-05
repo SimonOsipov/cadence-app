@@ -4,7 +4,6 @@ import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.minus
-import kotlinx.datetime.plus
 
 /**
  * The four spans the trends screens switch between.
@@ -30,8 +29,6 @@ enum class TrendWindow {
 /** Both edges included, because a window is a set of days and not a subtraction. */
 private const val TODAY_COUNTS_AS_ONE = 1
 
-private const val DAYS_PER_WEEK = 7
-
 private const val WEEK_DAYS = 7
 private const val FOUR_WEEKS_DAYS = 28
 
@@ -48,9 +45,9 @@ private const val THREE_MONTHS_DAYS = 84
  *
  * A type rather than a pair of parameters because the range outlives the
  * question that produced it: the chart will draw its axis from these two dates,
- * and the planned `doseBands(plan, itemId, from, through)` (spec step-4) is
- * defined against the same pair. Two call sites deriving the same edges
- * separately is how an axis and the bands under it drift apart.
+ * and `doseBands(plan, itemId, range)` takes this very type. Two call sites
+ * deriving the same edges separately is how an axis and the bands under it
+ * drift apart.
  *
  * A range always holds at least one day. A window with no days at all is not an
  * inverted range but `null` — see [rangeOn]. The distinction matters because
@@ -120,10 +117,9 @@ private fun cycleRange(
     protocol: Protocol,
     today: LocalDate,
 ): TrendRange? {
-    val lastPrescribedDay =
-        protocol.startDate.plus(
-            DatePeriod(days = protocol.weeks * DAYS_PER_WEEK - TODAY_COUNTS_AS_ONE),
-        )
-    val through = minOf(today, lastPrescribedDay)
+    // `lastPrescribedDay` rather than the same arithmetic written again: the
+    // dose bands are clipped by it too, and an axis that outlived the strip
+    // beneath it is what one copy drifting from the other looks like.
+    val through = minOf(today, protocol.lastPrescribedDay)
     return if (through < protocol.startDate) null else TrendRange(protocol.startDate, through)
 }
