@@ -1,5 +1,6 @@
 package app.cadence.shared.domain
 
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -20,7 +21,18 @@ data class TrendSeries(
     val metric: Metric,
     val range: TrendRange,
     val points: List<Measurement>,
+    val zone: TimeZone,
 ) {
+    /**
+     * Which day of the window a reading belongs to.
+     *
+     * The zone travels with the series for this: a chart places its readings on
+     * the axis [range] describes, and the days it clips by have to be the days
+     * it draws by. Read in a second zone the two disagree, and a reading
+     * admitted at the window's edge is drawn beyond it.
+     */
+    fun dayOf(point: Measurement): LocalDate = point.measuredAt.toLocalDateTime(zone).date
+
     /** Where the window opened, which is not where the patient's history did. */
     val base: Double? get() = points.firstOrNull()?.value
 
@@ -61,9 +73,10 @@ data class TrendSeries(
  * [zone] rather than UTC, for the same reason `CadenceClock.today` takes one: a
  * reading taken at half past one in the morning belongs to the day the patient
  * took it on, while in UTC it is still the previous evening — and a comparison
- * done there drops it out of a window that opens that morning. The caller keeps
- * the zone: placing these points back on an axis built from [TrendRange] has to
- * use the same one, or a reading admitted at the edge is drawn beyond it.
+ * done there drops it out of a window that opens that morning. It travels into
+ * the result rather than staying here, so that whoever draws these points on
+ * the axis [TrendRange] describes reads their days the same way this filter
+ * did.
  *
  * Filtering is by metric and date only. A list holding two patients' rows would
  * merge into one plausible-looking series, so the caller owns that narrowing —
@@ -82,4 +95,5 @@ fun trendSeries(
             measurements
                 .filter { it.metric == metric && it.measuredAt.toLocalDateTime(zone).date in range }
                 .sortedWith(compareBy({ it.measuredAt }, { it.id.raw })),
+        zone = zone,
     )

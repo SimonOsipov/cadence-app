@@ -132,6 +132,12 @@ class TrendSeriesTest {
         val series = trendSeries(listOf(earlyMorning, pastMidnight), Metric.WEIGHT, week(), ZONE)
 
         assertEquals(listOf(99.4), series.points.map { it.value })
+
+        // And the day the series reports for it is the patient's day, not the
+        // UTC one. This is the whole reason the zone travels in the result: a
+        // chart places its readings on the axis the window describes, and read
+        // in a second zone the reading admitted at the edge is drawn beyond it.
+        assertEquals(LocalDate(2026, 5, 25), series.dayOf(series.points.single()))
     }
 
     @Test

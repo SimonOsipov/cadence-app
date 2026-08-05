@@ -13,6 +13,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** Floats built by division do not land on the literal they are compared to. */
+private const val TOLERANCE = 1e-6f
+
 /**
  * What span of days each window covers.
  *
@@ -97,6 +100,49 @@ class TrendWindowTest {
 
         assertEquals(1, range.days)
         assertTrue(TODAY in range)
+    }
+
+    @Test
+    fun aDayIsASpanAcrossTheWindowAndNotAPoint() {
+        // Seven days, so each owns a seventh. The first opens the axis and the
+        // last closes it — a band covering the window fills it rather than
+        // stopping six-sevenths of the way along, which is what treating a day
+        // as a point would draw.
+        val week = assertNotNull(TrendWindow.WEEK.rangeOn(PLAN, TODAY))
+
+        assertEquals(0f, week.fractionOf(LocalDate(2026, 5, 25)).start)
+        assertEquals(1f / 7f, week.fractionOf(LocalDate(2026, 5, 25)).endInclusive, TOLERANCE)
+        assertEquals(6f / 7f, week.fractionOf(TODAY).start, TOLERANCE)
+        assertEquals(1f, week.fractionOf(TODAY).endInclusive)
+    }
+
+    @Test
+    fun aMarkStandsInTheMiddleOfItsOwnDay() {
+        // Not on the seam. A titration mark shares its day with the band it
+        // opens, and drawn on the boundary it would sit on the join between two
+        // doses — visually claiming the day before.
+        val week = assertNotNull(TrendWindow.WEEK.rangeOn(PLAN, TODAY))
+
+        assertEquals(0.5f / 7f, week.middleOf(LocalDate(2026, 5, 25)), TOLERANCE)
+        assertEquals(6.5f / 7f, week.middleOf(TODAY), TOLERANCE)
+    }
+
+    @Test
+    fun aSingleDayWindowIsFilledByItsOneDay() {
+        val oneDay = assertNotNull(TrendWindow.CYCLE.rangeOn(planStartingOn(TODAY), TODAY))
+
+        assertEquals(0f..1f, oneDay.fractionOf(TODAY))
+        assertEquals(0.5f, oneDay.middleOf(TODAY))
+    }
+
+    @Test
+    fun aDayOutsideTheWindowIsHeldAtTheEdgeRatherThanDrawnOffIt() {
+        // The caller draws with this. An unclamped fraction would put a mark
+        // off the canvas instead of against its border.
+        val week = assertNotNull(TrendWindow.WEEK.rangeOn(PLAN, TODAY))
+
+        assertEquals(0f..0f, week.fractionOf(LocalDate(2026, 5, 1)))
+        assertEquals(1f..1f, week.fractionOf(LocalDate(2026, 6, 30)))
     }
 
     @Test

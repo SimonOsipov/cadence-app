@@ -67,6 +67,33 @@ data class TrendRange(
     val days: Int get() = from.daysUntil(through) + TODAY_COUNTS_AS_ONE
 
     operator fun contains(date: LocalDate): Boolean = date >= from && date <= through
+
+    /**
+     * Where a day sits across this window, as a `0f..1f` span.
+     *
+     * A day is a span rather than a point because that is what a day is on an
+     * axis: day `i` of `n` occupies `[i/n, (i+1)/n]`. A dose band runs from the
+     * opening edge of its first day to the closing edge of its last, so a band
+     * covering the whole window fills it; a protocol mark stands at the middle
+     * of its own day, where it is inside the band it opens rather than on the
+     * seam before it.
+     *
+     * Clamped, because the caller draws with the result. A date outside the
+     * window has no place on the axis, and an unclamped fraction would put it
+     * outside the canvas instead of at its edge.
+     */
+    fun fractionOf(date: LocalDate): ClosedFloatingPointRange<Float> {
+        val index = from.daysUntil(date)
+        val start = (index.toFloat() / days).coerceIn(0f, 1f)
+        val end = ((index + TODAY_COUNTS_AS_ONE).toFloat() / days).coerceIn(0f, 1f)
+        return start..end
+    }
+}
+
+/** The middle of a day's span — where a single-day mark stands. */
+fun TrendRange.middleOf(date: LocalDate): Float {
+    val span = fractionOf(date)
+    return (span.start + span.endInclusive) / 2f
 }
 
 /**
