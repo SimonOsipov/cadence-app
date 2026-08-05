@@ -10,24 +10,33 @@ import app.cadence.shared.domain.JournalEntry
 import app.cadence.shared.domain.JournalSource
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Metric
+import app.cadence.shared.domain.MetricTrend
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.SystemCadenceClock
+import app.cadence.shared.domain.TrendRange
+import app.cadence.shared.domain.TrendWindow
+import app.cadence.shared.domain.TrendsOverview
 import app.cadence.shared.domain.Vial
 import app.cadence.shared.domain.VialDetail
 import app.cadence.shared.domain.VialDraft
 import app.cadence.shared.domain.VialId
 import app.cadence.shared.domain.cycleWeek
+import app.cadence.shared.domain.doseBands
 import app.cadence.shared.domain.dosesPerWeek
 import app.cadence.shared.domain.inventorySummary
+import app.cadence.shared.domain.meta
 import app.cadence.shared.domain.occurrencesFor
 import app.cadence.shared.domain.partOfDay
+import app.cadence.shared.domain.protocolMarks
+import app.cadence.shared.domain.rangeOn
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
 import app.cadence.shared.domain.suggestNextSite
 import app.cadence.shared.domain.titrationStepAfter
 import app.cadence.shared.domain.today
+import app.cadence.shared.domain.trendSeries
 import app.cadence.shared.domain.vialDetail
 import app.cadence.shared.domain.weekProtocolRows
 import app.cadence.shared.repository.AddVialResult
@@ -36,11 +45,13 @@ import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.InventoryRepository
 import app.cadence.shared.repository.JournalRepository
 import app.cadence.shared.repository.MeasurementsRepository
+import app.cadence.shared.repository.MetricDetail
 import app.cadence.shared.repository.MetricSeries
 import app.cadence.shared.repository.ScheduleDay
 import app.cadence.shared.repository.ScheduleRepository
 import app.cadence.shared.repository.TodayRepository
 import app.cadence.shared.repository.TodaySummary
+import app.cadence.shared.repository.TrendsRepository
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
@@ -90,6 +101,7 @@ class CadenceMocks(
     val journal: JournalRepository = MockJournalRepository()
     val inventory: InventoryRepository = MockInventoryRepository()
     val measurements: MeasurementsRepository = MockMeasurementsRepository()
+    val trends: TrendsRepository = MockTrendsRepository()
 
     private fun currentDate(): LocalDate = clock.today(zone)
 
@@ -179,6 +191,53 @@ class CadenceMocks(
                         .sortedBy { it.measuredAt }
                         .takeLast(points),
             )
+    }
+
+    private inner class MockTrendsRepository : TrendsRepository {
+        override suspend fun overview(window: TrendWindow): TrendsOverview {
+            val range = rangeFor(window)
+            return TrendsOverview(
+                window = window,
+                range = range,
+                // Every metric of §03, in the enum's order, including the ones
+                // with nothing to show: the list is where a patient finds out
+                // that a metric is unmeasured.
+                metrics = Metric.entries.map { MetricTrend(it.meta, seriesIn(it, range)) },
+            )
+        }
+
+        override suspend fun metric(
+            metric: Metric,
+            window: TrendWindow,
+        ): MetricDetail {
+            val range = rangeFor(window)
+            return MetricDetail(
+                trend = MetricTrend(metric.meta, seriesIn(metric, range)),
+                // The injection item's bands, not every item's: the strip under
+                // a chart answers «what was I prescribed», and the daily
+                // supplement's flat band would say nothing while hiding the one
+                // that titrates.
+                bands = doseBands(MockSeed.plan, MockSeed.semaItemId, range),
+                marks = protocolMarks(MockSeed.plan, MockSeed.semaItemId, range),
+            )
+        }
+
+        /**
+         * The window's days, or the whole course when it has not begun.
+         *
+         * `rangeOn` answers null for a course starting in the future, and a
+         * repository has to answer something: the empty series that falls out
+         * of a one-day range is the honest one — no readings, no bands — and
+         * every screen already renders it.
+         */
+        private fun rangeFor(window: TrendWindow): TrendRange =
+            window.rangeOn(MockSeed.plan, currentDate())
+                ?: TrendRange(currentDate(), currentDate())
+
+        private fun seriesIn(
+            metric: Metric,
+            range: TrendRange,
+        ) = trendSeries(MockSeed.measurements, metric, range, zone)
     }
 
     private inner class MockScheduleRepository : ScheduleRepository {
