@@ -14,16 +14,23 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.navigation.NavGraph
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import app.cadence.design.CadenceTheme
 import app.cadence.screens.inventory.ADD_VIAL_SAVE_TAG
 import app.cadence.screens.inventory.addVialFieldTag
+import app.cadence.screens.trends.CADENCE_TRENDS_HERO_TAG
+import app.cadence.screens.trends.CADENCE_TREND_DETAIL_STATS_TAG
+import app.cadence.screens.trends.cadenceTrendCardTag
+import app.cadence.screens.trends.cadenceTrendWindowTag
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.ProtocolCadence
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolItemKind
 import app.cadence.shared.domain.ProtocolRow
+import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
 import kotlinx.coroutines.test.runTest
@@ -436,5 +443,76 @@ class CadenceShellDataTest {
                 onAllNodesWithText("Семаглутид · 0,25 мг ждёт").fetchSemanticsNodes().isEmpty(),
                 "the sheet is still reading its old answer",
             )
+        }
+
+    @Test
+    fun theTrendsTabDrawsTheListItReadRatherThanAPlaceholder() =
+        runComposeUiTest {
+            // The step's headline acceptance, and the only place it is
+            // measured against the *shipped* wiring: `CadenceNavigationTest`
+            // hands `CadenceShell` an overview of its own, so it proves the
+            // test's replica rather than `CadenceApp`'s read.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithText("Тренды").performClick()
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_TRENDS_HERO_TAG, useUnmergedTree = true).assertExists()
+            assertTrue(onAllNodesWithText("Экран «Тренды»").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
+    fun aChipOnTheTrendsTabChangesWhatTheListReads() =
+        runComposeUiTest {
+            // The window is shell state and the read is keyed on it. An effect
+            // keyed on the reload counter alone leaves the chips changing
+            // nothing — the comment beside that effect says so, and until this
+            // test nothing measured it.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            onNodeWithText("Тренды").performClick()
+            waitForIdle()
+
+            // «3 месяца» is the default, and on it the weight has eight
+            // readings and therefore a delta. A week has one and none.
+            val quarter = onAllNodesWithText("↓", substring = true).fetchSemanticsNodes().size
+            assertTrue(quarter > 0, "the three-month list carries deltas")
+
+            onNodeWithTag(cadenceTrendWindowTag(TrendWindow.WEEK)).performClick()
+            waitForIdle()
+
+            assertTrue(
+                onAllNodesWithText("↓", substring = true).fetchSemanticsNodes().size < quarter,
+                "a week holds fewer readings, so fewer metrics have moved",
+            )
+            onNodeWithTag(CADENCE_TRENDS_HERO_TAG, useUnmergedTree = true).assertExists()
+        }
+
+    @Test
+    fun tappingAMetricOpensItWithTheDataTheAppRead() =
+        runComposeUiTest {
+            // The other half of the shipped wiring: `onLoadMetric` reaching the
+            // repository rather than answering null forever.
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceApp(navController = nav, mocks = mocks()) }
+            }
+
+            onNodeWithText("Тренды").performClick()
+            waitForIdle()
+            onNodeWithTag(cadenceTrendCardTag(Metric.WEIGHT)).performClick()
+            waitForIdle()
+
+            assertEquals(
+                listOf("Today", "Trends", "TrendDetail"),
+                nav.currentBackStack.value
+                    .filter { it.destination !is NavGraph }
+                    .mapNotNull { it.destination.route }
+                    .map { it.substringBefore('/').substringBefore('?').substringAfterLast('.') },
+            )
+            // The aggregates only exist once the read landed — a loader stuck
+            // on null leaves the placeholder here.
+            onNodeWithTag(CADENCE_TREND_DETAIL_STATS_TAG, useUnmergedTree = true).assertExists()
         }
 }

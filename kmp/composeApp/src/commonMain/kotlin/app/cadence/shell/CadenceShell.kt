@@ -26,18 +26,24 @@ import app.cadence.screens.inventory.VialsScreen
 import app.cadence.screens.schedule.ScheduleScreen
 import app.cadence.screens.schedule.ScheduleState
 import app.cadence.screens.today.TodayScreen
+import app.cadence.screens.trends.TrendDetailScreen
+import app.cadence.screens.trends.TrendsScreen
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseStep
 import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.InventorySummary
+import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.ProtocolCadence
 import app.cadence.shared.domain.ProtocolRow
+import app.cadence.shared.domain.TrendWindow
+import app.cadence.shared.domain.TrendsOverview
 import app.cadence.shared.domain.VialDetail
 import app.cadence.shared.domain.VialDraft
 import app.cadence.shared.domain.VialId
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
 import app.cadence.shared.repository.DoseLogResult
+import app.cadence.shared.repository.MetricDetail
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -101,6 +107,13 @@ fun CadenceApp(
     // the same way; nothing about this line knows it is talking to a mock.
     var reloads by remember { mutableStateOf(0) }
 
+    // «3 месяца», the prototype's own initial timeframe. Held here rather than
+    // on either screen because both read it: the list and the detail share the
+    // choice, and a window remembered inside one would reset every time the
+    // patient came back from the other.
+    var trendWindow by remember { mutableStateOf(TrendWindow.THREE_MONTHS) }
+    var trends by remember { mutableStateOf<TrendsOverview?>(null) }
+
     var schedule by remember { mutableStateOf<ScheduleState?>(null) }
     var cabinet by remember { mutableStateOf<InventorySummary?>(null) }
     var openVial by remember { mutableStateOf<VialDetail?>(null) }
@@ -110,6 +123,13 @@ fun CadenceApp(
         summary = today
         schedule = mocks.scheduleFor(today)
         cabinet = mocks.inventory.cabinet()
+    }
+
+    // Keyed on the window as well as on the reload counter: switching «7 дней»
+    // has to re-read, and a single effect keyed on `reloads` alone would leave
+    // the chips changing nothing.
+    LaunchedEffect(trendWindow, reloads) {
+        trends = mocks.trends.overview(trendWindow)
     }
 
     var actionsOpen by remember { mutableStateOf(false) }
@@ -130,12 +150,7 @@ fun CadenceApp(
     // again, and it costs one Int.
     var raisedAt by remember { mutableStateOf(0) }
 
-    LaunchedEffect(raisedAt) {
-        if (toast != null) {
-            delay(CADENCE_CONFIRM_TOAST_MS)
-            toast = null
-        }
-    }
+    ToastLifetime(raisedAt, toast) { toast = null }
 
     Box(modifier.fillMaxSize()) {
         CadenceShell(
@@ -156,6 +171,10 @@ fun CadenceApp(
                     reloads++
                 }
             },
+            trends = trends,
+            trendWindow = trendWindow,
+            onTrendWindow = { trendWindow = it },
+            onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
             onMealLogged = { name ->
                 // The day's running total, from the repository — §03 puts
                 // exactly that in the toast, not the meal's own figure.
@@ -172,6 +191,21 @@ fun CadenceApp(
         })
 
         ConfirmToast(state = toast, targetKcal = summary?.targets?.kcal ?: 0)
+    }
+}
+
+/** A raised toast clears itself. Its own composable so `CadenceApp` stays readable. */
+@Composable
+private fun ToastLifetime(
+    raisedAt: Int,
+    toast: ConfirmToastState?,
+    onClear: () -> Unit,
+) {
+    LaunchedEffect(raisedAt) {
+        if (toast != null) {
+            delay(CADENCE_CONFIRM_TOAST_MS)
+            onClear()
+        }
     }
 }
 
@@ -197,6 +231,10 @@ fun CadenceShell(
     onAddVial: (VialDraft) -> Unit = { },
     onOpenVial: (VialId) -> Unit = { },
     cabinet: InventorySummary? = null,
+    trends: TrendsOverview? = null,
+    trendWindow: TrendWindow = TrendWindow.THREE_MONTHS,
+    onTrendWindow: (TrendWindow) -> Unit = { },
+    onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail? = { _, _ -> null },
     // The sections that are ported. The rest of the graph still draws
     // placeholders, and a null summary means the first read has not landed —
     // the screen is not composed until it has, rather than being shown a day
@@ -219,8 +257,8 @@ fun CadenceShell(
         popEnterTransition = { if (initialState.destination.isModal()) modalUnderlayEnter() else popEnter() },
         popExitTransition = { if (initialState.destination.isModal()) modalExit() else popExit() },
     ) {
-        tabRoutes(navController, onOpenActions, summary, cabinet, onOpenVial)
-        pushedRoutes(navController, schedule)
+        tabRoutes(navController, onOpenActions, summary, cabinet, onOpenVial, trends, onTrendWindow)
+        pushedRoutes(navController, schedule, trendWindow, onTrendWindow, onLoadMetric)
         modalRoutes(navController, onMealLogged, onDoseLogged, onAddVial, summary, cabinet)
     }
 }
@@ -239,6 +277,8 @@ private fun NavGraphBuilder.tabRoutes(
     summary: TodaySummary?,
     cabinet: InventorySummary?,
     onOpenVial: (VialId) -> Unit,
+    trends: TrendsOverview?,
+    onTrendWindow: (TrendWindow) -> Unit,
 ) {
     CadenceDestination.entries.forEach { destination ->
         val body: @Composable () -> Unit = {
@@ -280,7 +320,23 @@ private fun NavGraphBuilder.tabRoutes(
             }
 
             CadenceDestination.TRENDS -> {
-                composable<CadenceRoute.Trends> { body() }
+                composable<CadenceRoute.Trends> {
+                    // Gated on the read like Today and the cabinet: a list
+                    // composed against no data draws «нет данных» on all eight
+                    // cards, which is a sentence about the patient rather than
+                    // about the fetch.
+                    if (trends == null) {
+                        body()
+                    } else {
+                        TrendsScreen(
+                            overview = trends,
+                            onOpenMetric = { nav.openRoute(CadenceRoute.TrendDetail(it.code)) },
+                            onWindowChange = onTrendWindow,
+                            onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
+                            onOpenBody = { nav.openRoute(CadenceRoute.Body) },
+                        )
+                    }
+                }
             }
 
             CadenceDestination.NUTRITION -> {
@@ -300,14 +356,56 @@ private fun NavGraphBuilder.tabRoutes(
 private fun back(nav: NavHostController): () -> Unit = { nav.popBackStack() }
 
 /** Everything reached by a push: slides in from the right, backed out of. */
+@Suppress("LongParameterList")
 private fun NavGraphBuilder.pushedRoutes(
     nav: NavHostController,
     schedule: ScheduleState?,
+    trendWindow: TrendWindow,
+    onTrendWindow: (TrendWindow) -> Unit,
+    onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail?,
 ) {
     val back = back(nav)
 
     composable<CadenceRoute.TrendDetail> { entry ->
-        PlaceholderScreen("Биомаркер · ${entry.toRoute<CadenceRoute.TrendDetail>().biomarkerId}", onBack = back)
+        // The route carries a `String`, so this is where it becomes a metric or
+        // fails to. `null` reaches the screen as «такой метрики нет» — the
+        // prototype has a `thigh` and a `bmi` the data model does not, and a
+        // deep link can carry anything at all.
+        val code = entry.toRoute<CadenceRoute.TrendDetail>().biomarkerId
+        val metric = Metric.fromCode(code)
+        // Keyed on the code alone, not on the window. A window change re-reads
+        // — the effect below is keyed on both — but the previous chart and the
+        // chip row stay on screen until the new answer lands, which is the same
+        // stale-while-revalidate the list does: `CadenceApp` never nulls
+        // `trends` when the window changes. Nulling here took the control the
+        // patient had just used away from them mid-tap.
+        var detail by remember(code) { mutableStateOf<MetricDetail?>(null) }
+        // Reset with the metric and the window, so a position scrubbed on one
+        // chart never lands on another's readings.
+        var scrubIndex by remember(code, trendWindow) { mutableStateOf<Int?>(null) }
+
+        LaunchedEffect(code, trendWindow) {
+            detail = metric?.let { onLoadMetric(it, trendWindow) }
+        }
+
+        // «Ещё не пришло» is not «такой метрики нет». They are one value on
+        // the screen — a null `detail` — and two different facts here, so the
+        // graph tells them apart the way the schedule route does. Without this,
+        // tapping a window chip on the detail wipes the chart *and* the chip
+        // row and answers «Такой метрики нет» until the read lands: the patient
+        // loses the data and the control they just used.
+        if (metric != null && detail == null) {
+            PlaceholderScreen("Метрика", onBack = back)
+        } else {
+            TrendDetailScreen(
+                detail = detail,
+                window = trendWindow,
+                onWindowChange = onTrendWindow,
+                onBack = back,
+                scrubIndex = scrubIndex,
+                onScrub = { index, _ -> scrubIndex = index },
+            )
+        }
     }
     composable<CadenceRoute.Schedule> {
         if (schedule == null) {

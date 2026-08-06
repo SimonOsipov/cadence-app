@@ -66,6 +66,10 @@ style:
       # `cycleWeeks = 12` is the protocol under test. Naming them would move
       # the specification one hop away from the case that states it.
       - '**/commonTest/**/app/cadence/screens/**'
+      # And the shell's, for the same reason once more: a navigation test fixes
+      # the day its overview is resolved against, and `LocalDate(2026, 5, 31)`
+      # is which day the assertion is about.
+      - '**/commonTest/**/app/cadence/shell/**'
       - '**/shared/src/commonTest/**'
       # And MockSeed, which is a fixture: one patient, one protocol, two meals,
       # written out. Naming `LocalDate(2026, 5, 10)` as three constants would
