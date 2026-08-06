@@ -1,8 +1,10 @@
 package app.cadence.shared.domain
 
+import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
+import kotlinx.datetime.minus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -156,8 +158,8 @@ class InventoryMathTest {
         val bpcSpare =
             vial(totalDoses = 30).copy(id = VialId("v-bpc"), compoundId = CompoundId("bpc"))
 
-        val alone = reorderHint(weeklyItem(), listOf(sema), emptyList())
-        val withOtherCompound = reorderHint(weeklyItem(), listOf(sema, bpcSpare), emptyList())
+        val alone = reorderHint(weeklyItem(), listOf(sema), emptyList(), TODAY)
+        val withOtherCompound = reorderHint(weeklyItem(), listOf(sema, bpcSpare), emptyList(), TODAY)
 
         assertEquals(alone, withOtherCompound, "a vial of another compound changed the answer")
         assertEquals(SEMA, alone?.compoundId)
@@ -176,18 +178,45 @@ class InventoryMathTest {
         val spare = vial(totalDoses = 1)
 
         assertNull(
-            reorderHint(weeklyItem(), listOf(open, spare), List(3) { doseFrom(open) }),
+            reorderHint(weeklyItem(), listOf(open, spare), List(3) { doseFrom(open) }, TODAY),
             "a sealed spare is exactly what makes reordering unnecessary",
         )
         assertNull(
-            reorderHint(weeklyItem(daysAWeek = 0), listOf(open), emptyList()),
+            reorderHint(weeklyItem(daysAWeek = 0), listOf(open), emptyList(), TODAY),
             "four doses at one every five weeks is twenty weeks of supply",
         )
 
-        val hint = reorderHint(weeklyItem(), listOf(open), List(1) { doseFrom(open) })
+        val hint = reorderHint(weeklyItem(), listOf(open), List(1) { doseFrom(open) }, TODAY)
 
         assertEquals(3, hint?.weeksLeft)
         assertEquals(SEMA, hint?.compoundId)
+    }
+
+    @Test
+    fun anExpiredVialIsNeitherASpareNorSupply() {
+        // Measured: a sealed vial that expired last month made `hasSealedSpare`
+        // true and `reorderHint` returned null outright — so a patient two
+        // doses from nothing, on a weekly protocol, saw no reorder card and no
+        // weeks-left figure. `vialStatus` flagged the dead vial as EXPIRING,
+        // but that is a chip in «Аптечка», not the call to action.
+        val open = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
+        val dead = vial(totalDoses = 4, expiresOn = TODAY.minus(DatePeriod(days = 1)))
+
+        val hint = reorderHint(weeklyItem(), listOf(open, dead), List(2) { doseFrom(open) }, TODAY)
+
+        assertEquals(2, hint?.weeksLeft, "the expired vial is not two more weeks of supply")
+
+        // And the boundary: a vial expiring *today* is still usable, so it is
+        // still the spare that suppresses the hint.
+        assertNull(
+            reorderHint(
+                weeklyItem(),
+                listOf(open, vial(totalDoses = 4, expiresOn = TODAY)),
+                List(2) { doseFrom(open) },
+                TODAY,
+            ),
+            "stock that expires today has not expired yet",
+        )
     }
 
     @Test
@@ -197,7 +226,7 @@ class InventoryMathTest {
 
         // The binned vial must not count as the sealed spare that suppresses
         // the hint, and its doses must not count as supply.
-        val hint = reorderHint(weeklyItem(), listOf(open, binned), List(1) { doseFrom(open) })
+        val hint = reorderHint(weeklyItem(), listOf(open, binned), List(1) { doseFrom(open) }, TODAY)
 
         assertEquals(3, hint?.weeksLeft)
     }

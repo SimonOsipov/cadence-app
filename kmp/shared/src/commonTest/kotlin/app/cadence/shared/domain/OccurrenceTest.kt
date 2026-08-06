@@ -282,4 +282,35 @@ class OccurrenceTest {
         assertEquals(14.0, daily.dosesPerWeek(), "seven days, two times")
         assertEquals(3.0, thrice.dosesPerWeek(), "three days, one time")
     }
+
+    @Test
+    fun aDoseLoggedForOneItemLeavesAnotherItemInTheSameSlotAlone() {
+        // The named mutation: delete `event.protocolItemId == item.id` from
+        // `statusOf` and the suite stayed green. It did — measured, twice — for
+        // one structural reason: no fixture here ever put two items in the same
+        // (date, slot), so the date and the time alone were enough to tell every
+        // pair apart, and the item check was never load-bearing.
+        //
+        // Two injections at 08:00 is an ordinary prescription, and without this
+        // the patient logs the first and both go grey — a missed injection
+        // reported as taken, on the screen they check to decide.
+        val sunday = LocalDate(2026, 5, 17)
+        val slot = LocalTime(8, 0)
+        val collide =
+            ITEMS.map { if (it.id == SEMA) it.copy(times = listOf(slot)) else it }
+        val plan = ProtocolPlan(PROTOCOL, collide, PHASES)
+        val logged = listOf(doseEventFor(SEMA, sunday, slot))
+
+        val eight =
+            occurrencesFor(plan, logged, sunday, sunday)
+                .filter { it.time == slot }
+        assertEquals(2, eight.size, "the fixture has to put both items in one slot")
+
+        assertEquals(OccurrenceStatus.DONE, eight.first { it.itemId == SEMA }.status)
+        assertEquals(
+            OccurrenceStatus.PENDING,
+            eight.first { it.itemId == BPC }.status,
+            "BPC-157 was not logged; only Семаглутид was",
+        )
+    }
 }

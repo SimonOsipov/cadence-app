@@ -57,19 +57,15 @@ fun CadenceIcon(
     }
 }
 
-/**
- * Resolves the prototype's kebab-case icon name. An unknown name draws nothing
- * rather than throwing: a missing icon is a visual bug, not a crash in a
- * clinical app.
- */
-@Composable
-fun CadenceIcon(
-    name: String,
-    modifier: Modifier = Modifier,
-    size: Dp = 20.dp,
-    tint: Color = Cadence.palette.ink2,
-    strokeWidth: Float = CadenceIcons.STROKE_WIDTH,
-) {
-    val paths = CadenceIcons.byName[name] ?: return
-    CadenceIcon(paths = paths, modifier = modifier, size = size, tint = tint, strokeWidth = strokeWidth)
-}
+// There was a `CadenceIcon(name: String)` overload here that resolved through
+// `CadenceIcons.byName` and drew nothing on a miss. Six of its seven call sites
+// passed a compile-time literal, and two of those literals were «chevrn-up» and
+// «chevrn-dwn» — so the collapsible «В запасе» section shipped with no chevron
+// in either state, silently, past both gates. No test in the tree ever passed an
+// icon name as a string, and `DesignSystemTest` checks the size of `byName`
+// rather than its keys, so nothing could have caught it.
+//
+// The typed vals on [CadenceIcons] are the whole API now, and a typo is a
+// compile error. The one genuinely runtime name — a compound's `icon` field
+// from the server — reads `byName` directly at `ProtocolStrip`, with an explicit
+// `?: CadenceIcons.beaker` fallback where the miss is expected and handled.

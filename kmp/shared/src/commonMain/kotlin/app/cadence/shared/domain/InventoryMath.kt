@@ -71,10 +71,14 @@ fun vialStatus(
  * `dosesPerWeek` comes from the protocol rather than from the vial, because how
  * fast stock runs out is a property of the prescription.
  *
- * Takes no date. An earlier signature did, and detekt caught it unused: §03
- * defines supply by doses, not by shelf life, so a vial expiring next week
- * still counts as supply here while [vialStatus] flags it separately. Whether
- * those two should be one answer is a product question, not a coding one.
+ * Takes [today] to exclude stock that has already expired. An earlier signature
+ * dropped the date — detekt caught it unused — on the reasoning that §03 defines
+ * supply by doses rather than by shelf life. That is right about a vial expiring
+ * *next week*, which is still usable and which [vialStatus] flags separately.
+ * It was wrong about a vial that has already expired: one open semaglutide vial
+ * with two doses left plus one sealed vial that expired last month made
+ * `hasSealedSpare` true, and the patient — two doses from nothing, on a weekly
+ * protocol — was shown no reorder card at all and no weeks-left figure.
  */
 data class ReorderHint(
     val compoundId: CompoundId,
@@ -85,6 +89,7 @@ fun reorderHint(
     item: ProtocolItem,
     vials: List<Vial>,
     events: List<DoseEvent>,
+    today: LocalDate,
 ): ReorderHint? {
     // Compound and rate come off the same item, so they cannot disagree. Passed
     // separately they could: BPC's fourteen doses a week against semaglutide's
@@ -97,7 +102,12 @@ fun reorderHint(
     // else counted as the sealed spare that suppresses the hint, its doses
     // counted as this compound's supply, and the hint named whichever vial
     // happened to come first — a patient about to run out was told nothing.
-    val live = vials.filter { it.disposedAt == null && it.compoundId == compoundId }
+    // Expired stock is not supply, and it is not a spare either — both the sum
+    // below and the sealed-spare check read this list.
+    val live =
+        vials.filter {
+            it.disposedAt == null && it.compoundId == compoundId && it.expiresOn >= today
+        }
     val hasSealedSpare = live.any { it.openedAt == null }
     if (dosesPerWeek <= 0.0 || live.isEmpty() || hasSealedSpare) return null
 

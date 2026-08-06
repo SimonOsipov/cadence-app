@@ -83,7 +83,7 @@ fun inventorySummary(
         // One hint per prescribed compound, and none for a vial of something
         // the patient is not on: «weeks left» is stock divided by a rate, and
         // an unprescribed compound has no rate to divide by.
-        reorder = plan.items.mapNotNull { reorderHint(it, vials, events) }.distinctBy { it.compoundId },
+        reorder = plan.items.mapNotNull { reorderHint(it, vials, events, today) }.distinctBy { it.compoundId },
     )
 }
 

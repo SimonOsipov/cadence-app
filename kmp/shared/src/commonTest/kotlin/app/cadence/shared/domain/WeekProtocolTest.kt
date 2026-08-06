@@ -183,6 +183,37 @@ class WeekProtocolTest {
     }
 
     @Test
+    fun aTwiceDailyItemIsNotDoneUntilBothSlotsAre() {
+        // `firstOrNull` was here, and it read the 08:00 slot for the whole day:
+        // log the morning BPC-157 injection and the row said «Сегодня ·
+        // записано» with the 20:00 one still due. `statusOf` gets this right one
+        // layer down — its KDoc is about exactly this failure — and the strip
+        // undid it, on the surface a patient checks to decide whether they have
+        // finished for the day.
+        val day = LocalDate(2026, 5, 20)
+
+        fun bpcStatus(events: List<DoseEvent>) = rowsOn(day, events).first { it.itemId == BPC }.todayStatus
+
+        assertEquals(
+            OccurrenceStatus.PENDING,
+            bpcStatus(listOf(logged(BPC, day, LocalTime(8, 0)))),
+            "the evening injection is still due",
+        )
+        assertEquals(
+            OccurrenceStatus.DONE,
+            bpcStatus(listOf(logged(BPC, day, LocalTime(8, 0)), logged(BPC, day, LocalTime(20, 0)))),
+            "both slots logged",
+        )
+        // And a single-slot item is unaffected — the aggregate must not turn
+        // «one occurrence, done» into anything else.
+        assertEquals(
+            OccurrenceStatus.PENDING,
+            bpcStatus(emptyList()),
+            "nothing logged at all",
+        )
+    }
+
+    @Test
     fun theStripCarriesWhichItemsCanBeLogged() {
         // The dose wizard offers only loggable rows, and this is the one line
         // that decides. Guarded here rather than only through a simulator UI

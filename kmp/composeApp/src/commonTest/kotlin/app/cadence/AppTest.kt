@@ -12,9 +12,10 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * The tab, not the word. `ProtocolStripRow` also renders «Сегодня» once per due
- * item, so `onNodeWithText` finds four nodes the moment the seeded protocol
- * covers the real date — and `App()` runs on the system clock.
+ * The tab, not the word. `ProtocolStripRow` renders «Сегодня» once per due item
+ * as well, so `onNodeWithText` finds several nodes whenever the seeded protocol
+ * covers the day the app is wound to — which, since the clock was pinned, is
+ * always.
  */
 private const val TODAY_TAB = "Сегодня"
 
@@ -30,13 +31,35 @@ class AppTest {
             // linked into the UI and not merely into the module graph — which
             // is what the deleted platform-name assertion used to do, and what
             // PlaceholderScreen's note asked to be re-homed.
-            // The patient's name, not the greeting: `App()` runs on the system
-            // clock, and asserting a weekday would make this test pass or fail
-            // by the day it is run on. What it needs to prove is that the
-            // ported screen is what the app opens on — the placeholder had no
-            // name on it.
+            // The patient's name: the placeholder had none on it, so reaching
+            // it is what separates the ported screen from the stub.
             onNodeWithText("Марина").assertIsDisplayed()
             onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
+        }
+
+    @Test
+    fun theAppOpensInsideTheSeededCourseRatherThanPastItsEnd() =
+        runComposeUiTest {
+            // The one assertion that fails when the fixture ages out. The seed's
+            // course ran twelve weeks from 10 May 2026 and ended on 1 August;
+            // `App()` read the system clock, so from 2 August every screen went
+            // blank at once — `cycleWeek` returns null past the last prescribed
+            // day, and that null is a hard gate in `occurrencesFor`,
+            // `weekProtocolRows` and `phaseDose`. Nothing failed, because every
+            // other test in the tree winds its own clock; only `App()` used the
+            // real one, and only this file constructs `App()`.
+            //
+            // Keyed on the strip rather than on a greeting: `ProtocolStrip`
+            // returns early on an empty row list, so its heading is present
+            // exactly when the protocol is in force. Upper-case because
+            // `CadenceEyebrow` renders it that way.
+            setContent { App() }
+
+            onNodeWithText("ПРОТОКОЛ ЭТОЙ НЕДЕЛИ").assertIsDisplayed()
+            assertTrue(
+                onAllNodesWithText("Семаглутид", substring = true).fetchSemanticsNodes().isNotEmpty(),
+                "the seeded protocol has to reach the strip, not merely exist",
+            )
         }
 
     @Test

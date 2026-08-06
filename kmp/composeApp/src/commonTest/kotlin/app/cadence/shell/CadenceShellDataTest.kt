@@ -5,6 +5,8 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -17,6 +19,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.navigation.NavGraph
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
 import app.cadence.design.CadenceTheme
 import app.cadence.screens.inventory.ADD_VIAL_SAVE_TAG
 import app.cadence.screens.inventory.addVialFieldTag
@@ -225,6 +228,108 @@ class CadenceShellDataTest {
 
             onNodeWithText("Ваша аптечка").assertExists()
             onNodeWithText("4 флакона в холодильнике").assertExists()
+        }
+
+    @Test
+    fun theWizardOpensOnTheVialTheSheetWasAbout() =
+        runComposeUiTest {
+            // `VialDetailSheet` has always reported which vial its «Записать
+            // дозу» belongs to; the shell dropped the id — `onLogDose = {
+            // onLogDose() }` — so the wizard opened with an empty draft and the
+            // picker defaulted to the *fullest* open vial of the compound. A
+            // patient who opened B-2510 and stepped through without noticing
+            // the picker wrote the dose against B-2601, leaving one count a
+            // dose short and the other a dose long with nothing to reconcile
+            // them against.
+            //
+            // B-2510 deliberately: it is the emptier of the two open BPC vials,
+            // so it is the one the default would *not* pick. Opening the
+            // fullest would pass either way.
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceApp(navController = nav, mocks = mocks()) }
+            }
+
+            // Driven by the route rather than by walking the cabinet: the route
+            // is what carries the id, and what the vial sheet hands it is a
+            // one-line wiring the sheet's own suite already covers.
+            runOnIdle { nav.navigate(CadenceRoute.LogDose("vial-bpc-2")) }
+            waitForIdle()
+
+            onNodeWithText("BPC-157").performClick()
+            waitForIdle()
+            onNodeWithText("Дальше").performClick()
+            waitForIdle()
+
+            // B-2510 is `vial-bpc-2`, the *emptier* of the two open BPC vials —
+            // so it is the one the picker's «fullest open vial» default would
+            // not choose. Opening on the fullest would pass either way.
+            onNodeWithText("B-2510", substring = true).performScrollTo().assertIsSelected()
+            onNodeWithText("B-2601", substring = true).performScrollTo().assertIsNotSelected()
+        }
+
+    @Test
+    fun theVialSheetHandsItsOwnIdToTheWizardRoute() =
+        runComposeUiTest {
+            // The other half of the seam. `theWizardOpensOnTheVialTheSheetWasAbout`
+            // drives the route directly, so it cannot see the shell dropping the
+            // id on the way *to* the route — which is precisely what it did:
+            // `onLogDose = { onLogDose() }`, the argument discarded.
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceApp(navController = nav, mocks = mocks()) }
+            }
+
+            onNodeWithText("Аптечка").performClick()
+            waitForIdle()
+            onNodeWithText("B-2510", substring = true).performScrollTo().performClick()
+            waitForIdle()
+            assertEquals(
+                1,
+                onAllNodesWithText("Записать дозу").fetchSemanticsNodes().size,
+                "the sheet has to be open, and be the only thing offering this",
+            )
+            onNodeWithText("Записать дозу").performScrollTo().performClick()
+            waitForIdle()
+
+            // The route's own argument, read off the entry rather than inferred
+            // from the screen: «which vial» is not drawn anywhere on step 1.
+            val entry = nav.currentBackStackEntry
+            assertEquals(
+                "LogDose",
+                entry
+                    ?.destination
+                    ?.route
+                    ?.substringBefore('/')
+                    ?.substringBefore('?')
+                    ?.substringAfterLast('.'),
+            )
+            assertEquals("vial-bpc-2", entry?.toRoute<CadenceRoute.LogDose>()?.vialId)
+        }
+
+    @Test
+    fun theActionSheetNamesTheDoseThatIsActuallyDue() =
+        runComposeUiTest {
+            // Week 5, where the course titrates to 0,5 мг. This row carried
+            // «Семаглутид · 0,25 мг ждёт» as a literal for three blocks after
+            // the repositories landed, with the live summary already in the
+            // caller's scope — and every test that touched it ran on the seeded
+            // Sunday of week 4, the one week where the literal and the truth
+            // agree. A patient past the first band was told the wrong dose on
+            // the sheet they open to record one.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks("2026-06-07T09:00:00Z")) } }
+
+            onNodeWithContentDescription("Записать").performClick()
+            waitForIdle()
+
+            onNodeWithText("Семаглутид · 0,5 мг ждёт").assertIsDisplayed()
+            assertEquals(
+                0,
+                onAllNodesWithText("Семаглутид · 0,25 мг ждёт").fetchSemanticsNodes().size,
+                "the literal this row used to carry",
+            )
         }
 
     @Test

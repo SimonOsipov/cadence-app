@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -18,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceSheet
+import app.cadence.format.formatDose
 import app.cadence.screens.dose.DoseOption
 import app.cadence.screens.dose.DoseWizard
 import app.cadence.screens.inventory.AddVialScreen
@@ -30,6 +32,7 @@ import app.cadence.screens.trends.TrendDetailScreen
 import app.cadence.screens.trends.TrendsScreen
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseStep
+import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.Metric
@@ -98,7 +101,10 @@ private suspend fun CadenceMocks.scheduleFor(today: TodaySummary): ScheduleState
 fun CadenceApp(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier,
-    mocks: CadenceMocks = remember { CadenceMocks() },
+    // Wound to the seed's own day, not to the system clock. `MockSeed.DEMO_NOW`
+    // carries why: the fixture is a course with an end date, and reading the
+    // real clock empties every screen the moment that date passes.
+    mocks: CadenceMocks = remember { CadenceMocks(FixedCadenceClock.at(MockSeed.DEMO_NOW)) },
 ) {
     val scope = rememberCoroutineScope()
     var summary by remember { mutableStateOf<TodaySummary?>(null) }
@@ -185,9 +191,16 @@ fun CadenceApp(
 
         Actions(summary, actionsOpen, navController, onDismiss = { actionsOpen = false })
 
-        VialSheet(openVial, today = summary?.date, onDismiss = { openVial = null }, onLogDose = {
+        VialSheet(openVial, today = summary?.date, onDismiss = { openVial = null }, onLogDose = { vialId ->
             openVial = null
-            navController.openRoute(CadenceRoute.LogDose)
+            // Named, not dropped. `VialDetailSheet` has always reported which
+            // vial the button belongs to; the shell threw it away, so the
+            // wizard opened with a null draft and the picker defaulted to the
+            // *fullest* open vial of that compound. A patient who opened the
+            // half-empty one and stepped through without noticing the picker
+            // wrote the dose against the other, leaving both counts wrong and
+            // nothing to reconcile them against.
+            navController.openRoute(CadenceRoute.LogDose(vialId.raw))
         })
 
         ConfirmToast(state = toast, targetKcal = summary?.targets?.kcal ?: 0)
@@ -447,52 +460,14 @@ private fun NavGraphBuilder.modalRoutes(
     val back = back(nav)
     val today = summary
 
-    modal<CadenceRoute.LogDose> {
-        // Gated on the read, like the other two ported routes. Composed against
-        // a null summary the wizard draws no compounds, so «Дальше» is dead on
-        // step 1 and the only way out is «Отмена» — a full-screen dead end,
-        // one frame wide against the mock and a network round trip against the
-        // client this file already anticipates.
-        val today = summary
-
-        if (today == null) {
-            PlaceholderScreen(title = "Записать дозу", onBack = back)
-        } else {
-            // The wizard holds its own draft and step for as long as it is on
-            // screen: neither is a fact about the patient until «Сохранить
-            // дозу», and a draft hoisted into the shell would outlive a cancel.
-            var draft by remember { mutableStateOf(DoseDraft()) }
-            var step by remember { mutableStateOf(DoseStep.COMPOUND) }
-            var refusal by remember { mutableStateOf<String?>(null) }
-            val scope = rememberCoroutineScope()
-
-            DoseWizard(
-                draft = draft,
-                step = step,
-                options = today.doseOptions(cabinet),
-                suggestedSite = today.suggestedSite,
-                notice = refusal,
-                onDraft = {
-                    draft = it
-                    refusal = null
-                },
-                onStep = { step = it },
-                onSubmit = {
-                    scope.launch {
-                        // Pop only on a write. A repository that refuses —
-                        // the day rolled over, the occurrence is already
-                        // logged — and a wizard that closed anyway would
-                        // throw away five steps of the patient's answers and
-                        // say nothing at all.
-                        when (val result = onDoseLogged(draft)) {
-                            is DoseLogResult.Written -> back()
-                            else -> refusal = result.reasonRu()
-                        }
-                    }
-                },
-                onCancel = back,
-            )
-        }
+    modal<CadenceRoute.LogDose> { entry ->
+        LogDoseModal(
+            summary = summary,
+            cabinet = cabinet,
+            openedVial = entry.toRoute<CadenceRoute.LogDose>().vialId?.let(::VialId),
+            onDoseLogged = onDoseLogged,
+            back = back,
+        )
     }
     modal<CadenceRoute.LogMeal> {
         PlaceholderScreen(
@@ -509,17 +484,106 @@ private fun NavGraphBuilder.modalRoutes(
         )
     }
     modal<CadenceRoute.AddVial> {
-        AddVialScreen(
-            compounds = MockSeed.compounds,
-            today = today?.date ?: MockSeed.cycleStart,
-            onSave = {
-                onAddVial(it)
-                back()
-            },
-            onCancel = back,
-        )
+        // Gated on the read like its three siblings, which this one was not.
+        // `today` is the only thing standing between the form and expired
+        // stock — `VialDraft.canSave` guards on `expiresOn >= today`, and the
+        // screen shows «Срок уже истёк» from the same value — so substituting
+        // `MockSeed.cycleStart` for a summary that had not landed let a vial
+        // expiring three months ago save with no warning. The repository
+        // re-checked against the real date and returned `Rejected`, which the
+        // caller discarded, so the screen popped as though it had saved.
+        val day = today?.date
+
+        if (day == null) {
+            PlaceholderScreen(title = "Добавить флакон", onBack = back)
+        } else {
+            AddVialScreen(
+                compounds = MockSeed.compounds,
+                today = day,
+                onSave = {
+                    onAddVial(it)
+                    back()
+                },
+                onCancel = back,
+            )
+        }
     }
     modal<CadenceRoute.RecipeBuilder> { PlaceholderScreen("Новый рецепт", onBack = back) }
+}
+
+/**
+ * The dose wizard, and the two things the shell owes it.
+ *
+ * Gated on the read, like the other ported routes. Composed against a null
+ * summary the wizard draws no compounds, so «Дальше» is dead on step 1 and the
+ * only way out is «Отмена» — a full-screen dead end, one frame wide against the
+ * mock and a network round trip against the client this file anticipates.
+ *
+ * [openedVial] is the vial the patient had open when they tapped, or null when
+ * they came from the tab bar or the Today hero. It seeds the draft; the picker
+ * on step 2 can still override it.
+ */
+@Composable
+private fun LogDoseModal(
+    summary: TodaySummary?,
+    cabinet: InventorySummary?,
+    openedVial: VialId?,
+    onDoseLogged: suspend (DoseDraft) -> DoseLogResult,
+    back: () -> Unit,
+) {
+    if (summary == null) {
+        PlaceholderScreen(title = "Записать дозу", onBack = back)
+        return
+    }
+
+    // The wizard holds its own draft and step for as long as it is on screen:
+    // neither is a fact about the patient until «Сохранить дозу», and a draft
+    // hoisted into the shell would outlive a cancel.
+    var draft by remember { mutableStateOf(DoseDraft(vialId = openedVial)) }
+    var step by remember { mutableStateOf(DoseStep.COMPOUND) }
+    var refusal by remember { mutableStateOf<String?>(null) }
+    // One write per wizard. `canSubmit()` is a pure function of the draft, so
+    // it does not change while the write is in flight: two taps in the same
+    // frame queued two coroutines, the first closed the 08:00 slot and popped,
+    // and the second — running before the pop tore the scope down — found the
+    // *20:00* occurrence still open and recorded that too. An evening injection
+    // marked done that the patient never took, and a vial short by one. The
+    // mock makes the window a frame wide; the Ktor client makes it seconds.
+    var submitting by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    DoseWizard(
+        draft = draft,
+        step = step,
+        options = summary.doseOptions(cabinet),
+        suggestedSite = summary.suggestedSite,
+        notice = refusal,
+        onDraft = {
+            draft = it
+            refusal = null
+        },
+        onStep = { step = it },
+        onSubmit = {
+            if (!submitting) {
+                submitting = true
+                scope.launch {
+                    try {
+                        // Pop only on a write. A repository that refuses — the
+                        // day rolled over, the occurrence is already logged —
+                        // and a wizard that closed anyway would throw away five
+                        // steps of the patient's answers and say nothing at all.
+                        when (val result = onDoseLogged(draft)) {
+                            is DoseLogResult.Written -> back()
+                            else -> refusal = result.reasonRu()
+                        }
+                    } finally {
+                        submitting = false
+                    }
+                }
+            }
+        },
+        onCancel = back,
+    )
 }
 
 /**
@@ -530,12 +594,17 @@ private fun NavGraphBuilder.modalRoutes(
  * overrides — where one omission would be a screen that slides the wrong way
  * and no test would say so.
  */
-private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(noinline content: @Composable () -> Unit) {
+private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(
+    noinline content: @Composable (NavBackStackEntry) -> Unit,
+) {
     // No transition overrides: they belong on the NavHost, which is the only
     // place that can see both sides of a transition at once. What this builder
     // still buys is the type constraint — registering an ordinary route as a
     // modal, or a modal as an ordinary push, does not compile.
-    composable<T> { content() }
+    //
+    // The entry is handed on because `LogDose` carries an argument: which vial
+    // the patient opened before tapping «Записать дозу».
+    composable<T> { entry -> content(entry) }
 }
 
 /**
@@ -590,6 +659,22 @@ internal fun TodaySummary?.doseOptions(cabinet: InventorySummary? = null): List<
             )
         }
 
+/**
+ * «Семаглутид · 0,25 мг ждёт» — the next dose, in the protocol's own words.
+ *
+ * Null when the day prescribes nothing: the sheet says so rather than naming a
+ * compound that is not due. Built from `nextDose` and `nextDoseCompound`, the
+ * same two fields the Today hero draws, so the sheet and the card behind it
+ * cannot disagree about what is waiting.
+ */
+private fun TodaySummary.doseDueLine(): String? {
+    val name = nextDoseCompound?.nameRu ?: return null
+    val dose = nextDose?.dose ?: return null
+    val (value, unit) = formatDose(dose)
+
+    return "$name · $value $unit ждёт"
+}
+
 /** «п/к · еженедельно» — the route the clinic wrote, and the cadence. */
 internal fun modeRu(row: ProtocolRow): String =
     listOfNotNull(
@@ -610,12 +695,12 @@ private fun VialSheet(
     detail: VialDetail?,
     today: LocalDate?,
     onDismiss: () -> Unit,
-    onLogDose: () -> Unit,
+    onLogDose: (VialId) -> Unit,
 ) {
     if (detail == null) return
 
     CadenceSheet(open = true, onDismiss = onDismiss) {
-        VialDetailSheet(detail = detail, today = today ?: MockSeed.cycleStart, onLogDose = { onLogDose() })
+        VialDetailSheet(detail = detail, today = today ?: MockSeed.cycleStart, onLogDose = onLogDose)
     }
 }
 
@@ -632,7 +717,7 @@ private fun TodayRoute(
         TodayScreen(
             summary = summary,
             patientName = PATIENT_NAME,
-            onLogDose = { nav.openRoute(CadenceRoute.LogDose) },
+            onLogDose = { nav.openRoute(CadenceRoute.LogDose()) },
             onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
             onOpenQuickFeel = { nav.openRoute(CadenceRoute.Journal) },
             onOpenVials = { nav.selectDestination(CadenceDestination.INVENTORY) },
@@ -661,12 +746,13 @@ private fun Actions(
     ActionChooserSheet(
         open = open,
         doseLogged = summary?.doseLoggedToday == true,
+        doseDue = summary?.doseDueLine(),
         mealCount = summary?.mealCount ?: 0,
         mealKcal = summary?.mealMacros?.kcal ?: 0,
         onDismiss = onDismiss,
         onPickDose = {
             onDismiss()
-            nav.openRoute(CadenceRoute.LogDose)
+            nav.openRoute(CadenceRoute.LogDose())
         },
         onPickMeal = {
             onDismiss()

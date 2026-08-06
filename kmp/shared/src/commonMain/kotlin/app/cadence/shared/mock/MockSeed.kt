@@ -97,6 +97,24 @@ object MockSeed {
     /** Sunday, 10 May 2026 — the prototype's cycle start, now an actual field. */
     val cycleStart = LocalDate(2026, 5, 10)
 
+    /**
+     * The moment the demo runs at.
+     *
+     * Everything below is a literal hung off [cycleStart]: a twelve-week course,
+     * six weeks of measurements, a history that stops where the history stops.
+     * Read the system clock instead and all of it ages out at once — `cycleWeek`
+     * returns null past `lastPrescribedDay`, and that null is a hard gate in
+     * `occurrencesFor`, `weekProtocolRows` and `phaseDose`, so the patient
+     * surface does not degrade, it goes blank. It did: the course ended on
+     * 1 August 2026 and no screen said anything.
+     *
+     * Week 4, which is the day every test fixture already winds to — so the demo
+     * shows what the suite asserts rather than a state nothing covers. A clock
+     * that moves arrives with the Ktor client, and with it a course that is
+     * actually current.
+     */
+    const val DEMO_NOW = "2026-05-31T09:00:00Z"
+
     private val protocolId = ProtocolId("protocol-1")
     val semaItemId = ProtocolItemId("item-sema")
     val bpcItemId = ProtocolItemId("item-bpc")

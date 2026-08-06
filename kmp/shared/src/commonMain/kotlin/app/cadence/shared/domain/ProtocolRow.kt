@@ -15,6 +15,10 @@ import kotlinx.datetime.LocalTime
  * `todayStatus` is null when the item is not due today at all — a Wednesday has
  * no weekly injection, and «сегодня · ждёт» on a day with no occurrence would
  * be a claim about nothing.
+ *
+ * When the item is due more than once — BPC-157 is `times = [08:00, 20:00]` —
+ * `todayStatus` is the *least complete* of the day's slots, not the first. See
+ * [leastComplete] for why the first is a wrong answer with a clinical cost.
  */
 data class ProtocolRow(
     val itemId: ProtocolItemId,
@@ -68,8 +72,31 @@ fun weekProtocolRows(
             cadence = item.cadence,
             // The day's own occurrences decide, so a logged dose greys the row
             // for the same reason it greys the calendar cell.
-            todayStatus = todays.firstOrNull { it.itemId == item.id }?.status,
+            todayStatus = leastComplete(todays.filter { it.itemId == item.id }),
             loggable = item.loggable,
         )
     }
 }
+
+/**
+ * The status of a whole day's slots for one item.
+ *
+ * `firstOrNull` was here, and it collapsed a multi-slot item to whichever slot
+ * came first: log BPC-157's 08:00 dose and the row read «Сегодня · записано»
+ * while the 20:00 injection was still due. That is the defect [statusOf] was
+ * written to prevent — its own KDoc describes it — reintroduced one layer up,
+ * and the strip is the surface a patient checks to decide whether they have
+ * finished for the day.
+ *
+ * So: DONE only when every slot is done, and otherwise whatever the first slot
+ * that is *not* done actually says. No arm invents a status the occurrences did
+ * not already carry — `weekProtocolRows` asks about today and only today, so
+ * DONE and PENDING are the only two reachable here, and a `MISSED` branch would
+ * be a guess about a call that cannot happen.
+ */
+private fun leastComplete(occurrences: List<Occurrence>): OccurrenceStatus? =
+    when {
+        occurrences.isEmpty() -> null
+        occurrences.all { it.status == OccurrenceStatus.DONE } -> OccurrenceStatus.DONE
+        else -> occurrences.first { it.status != OccurrenceStatus.DONE }.status
+    }

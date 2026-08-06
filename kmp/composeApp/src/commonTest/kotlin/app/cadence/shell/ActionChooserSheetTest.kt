@@ -12,22 +12,32 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+/** What a live summary would produce — «Семаглутид · 0,25 мг ждёт» was a literal in production until it was not. */
+private const val DUE_LINE = "Семаглутид · 0,25 мг ждёт"
+
+/** The four facts about the day the sheet describes. */
+private data class Day(
+    val doseLogged: Boolean = false,
+    val doseDue: String? = DUE_LINE,
+    val mealCount: Int = 0,
+    val mealKcal: Int = 0,
+)
+
 /** The sheet with the day it is describing, and whatever it reports back. */
 @OptIn(ExperimentalTestApi::class)
 private fun ComposeUiTest.openSheet(
+    day: Day = Day(),
     open: Boolean = true,
-    doseLogged: Boolean = false,
-    mealCount: Int = 0,
-    mealKcal: Int = 0,
     picked: (String) -> Unit = { },
 ) {
     setContent {
         CadenceTheme {
             ActionChooserSheet(
                 open = open,
-                doseLogged = doseLogged,
-                mealCount = mealCount,
-                mealKcal = mealKcal,
+                doseLogged = day.doseLogged,
+                doseDue = day.doseDue,
+                mealCount = day.mealCount,
+                mealKcal = day.mealKcal,
                 onDismiss = { picked("dismiss") },
                 onPickDose = { picked("dose") },
                 onPickMeal = { picked("meal") },
@@ -73,14 +83,41 @@ class ActionChooserSheetTest {
         runComposeUiTest {
             openSheet()
 
-            onNodeWithText("Семаглутид · 0,25 мг ждёт").assertIsDisplayed()
+            onNodeWithText(DUE_LINE).assertIsDisplayed()
             onNodeWithText("Пока ничего сегодня · начнём ритм").assertIsDisplayed()
+        }
+
+    @Test
+    fun theDueLineIsTheOneItWasGivenAndNotACompoundOfItsOwn() =
+        runComposeUiTest {
+            // This row read «Семаглутид · 0,25 мг ждёт» as a literal for three
+            // blocks after the repositories landed, with the live summary
+            // already in the caller's scope — so a patient on another compound,
+            // or past the first titration band, was told the wrong drug and the
+            // wrong dose on the sheet they open to record one. Asserting the
+            // seed's own line would not have caught it: it has to be a line the
+            // seed does not produce.
+            openSheet(Day(doseDue = "BPC-157 · 250 мкг ждёт"))
+
+            onNodeWithText("BPC-157 · 250 мкг ждёт").assertIsDisplayed()
+            assertTrue(
+                onAllNodesWithText(DUE_LINE).fetchSemanticsNodes().isEmpty(),
+                "a compound nobody passed in",
+            )
+        }
+
+    @Test
+    fun aDayThatPrescribesNothingSaysSoRatherThanNamingADose() =
+        runComposeUiTest {
+            openSheet(Day(doseDue = null))
+
+            onNodeWithText("На сегодня доза не назначена").assertIsDisplayed()
         }
 
     @Test
     fun theSubtitlesSayWhatTheDayAlreadyHolds() =
         runComposeUiTest {
-            openSheet(doseLogged = true, mealCount = 2, mealKcal = 1240)
+            openSheet(Day(doseLogged = true, mealCount = 2, mealKcal = 1240))
 
             onNodeWithText("Уже записано сегодня · открыть или поправить").assertIsDisplayed()
             // Both formatting rules in one string: the plural and the
@@ -97,7 +134,7 @@ class ActionChooserSheetTest {
             // A second count, in the other plural form. Without it the row
             // passes with «приёма» hardcoded — which it did, until this
             // test was added because a mutation survived.
-            openSheet(mealCount = 5, mealKcal = 2100)
+            openSheet(Day(mealCount = 5, mealKcal = 2100))
 
             onNodeWithText("5 приёмов сегодня · 2\u00A0100 ккал").assertIsDisplayed()
         }

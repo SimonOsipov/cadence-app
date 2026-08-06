@@ -26,6 +26,7 @@ import app.cadence.design.Cadence
 import app.cadence.design.CadenceBody
 import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceIcon
+import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceScrubChart
@@ -180,7 +181,7 @@ private fun DetailHeader(
         horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
     ) {
         CadenceIcon(
-            name = "chevron-left",
+            paths = CadenceIcons.chevronLeft,
             tint = palette.ink2,
             modifier =
                 Modifier

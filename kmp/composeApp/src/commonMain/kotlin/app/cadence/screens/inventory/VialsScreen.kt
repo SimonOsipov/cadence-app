@@ -39,6 +39,7 @@ import app.cadence.design.CadenceChip
 import app.cadence.design.CadenceColors
 import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceIcon
+import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
@@ -139,7 +140,7 @@ private fun CabinetHeader(
                 .clearAndSetSemantics { contentDescription = "Добавить флакон" },
             contentAlignment = Alignment.Center,
         ) {
-            CadenceIcon(name = "plus", tint = CadenceColors.cream)
+            CadenceIcon(paths = CadenceIcons.plus, tint = CadenceColors.cream)
         }
     }
 }
@@ -211,7 +212,10 @@ private fun SealedSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CadenceEyebrow("В запасе · ${sealed.size}")
-            CadenceIcon(name = if (open) "chevrn-up" else "chevrn-dwn", tint = Cadence.palette.muted)
+            CadenceIcon(
+                paths = if (open) CadenceIcons.chevronUp else CadenceIcons.chevronDown,
+                tint = Cadence.palette.muted,
+            )
         }
 
         if (open) sealed.forEach { VialCard(row = it, onClick = { onOpenVial(it.id) }) }
@@ -229,7 +233,7 @@ private fun EmptyCabinet(onAddVial: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
     ) {
-        CadenceIcon(name = "beaker", tint = CadenceColors.sand700)
+        CadenceIcon(paths = CadenceIcons.beaker, tint = CadenceColors.sand700)
         CadenceTitle("Аптечка пуста")
         CadenceBody("Добавьте флакон, чтобы видеть остаток и сроки.", color = Cadence.palette.muted)
         CadenceChip(label = "Добавить флакон", onClick = onAddVial, active = true)

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -34,6 +35,7 @@ import app.cadence.design.CadenceColors
 import app.cadence.design.CadenceDoseStepper
 import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceIcon
+import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceMoodSlider
 import app.cadence.design.CadencePill
@@ -233,7 +235,13 @@ private fun VialPicker(
                         width = HAIRLINE,
                         color = if (chosen) CadenceColors.forest700 else Cadence.palette.border,
                         shape = RoundedCornerShape(CadenceRadius.md),
-                    ).clickable { onDraft(draft.copy(vialId = vial.id)) }
+                        // `selectable` rather than `clickable`: which row is chosen
+                        // is drawn only in a border colour and a dot, so without
+                        // the semantics neither a screen reader nor a test can tell
+                        // the vials apart — and «the wizard opened on the vial the
+                        // patient had in their hand» is exactly the thing a test
+                        // has to be able to say.
+                    ).selectable(selected = chosen) { onDraft(draft.copy(vialId = vial.id)) }
                     .padding(CadenceSpacing.md),
                 horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
                 verticalAlignment = Alignment.CenterVertically,
@@ -325,7 +333,7 @@ private fun PhotoSlot(
         horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CadenceIcon(name = "camera", tint = Cadence.palette.muted)
+        CadenceIcon(paths = CadenceIcons.camera, tint = Cadence.palette.muted)
         CadenceBody(if (draft.photoAttached) "Фото прикреплено" else "Добавить фото")
     }
 }

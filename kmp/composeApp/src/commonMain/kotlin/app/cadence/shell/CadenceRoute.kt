@@ -84,8 +84,21 @@ sealed interface CadenceRoute {
      */
     sealed interface Modal : CadenceRoute
 
+    /**
+     * The dose wizard, optionally opened against one vial.
+     *
+     * [vialId] is null from the tab bar's «+» and from the Today hero — the
+     * patient said «записать дозу», not «записать дозу из этого флакона», and
+     * the write picks the fullest open vial of the compound. It is set only
+     * from a vial's own sheet, where the patient is holding a particular vial
+     * and the fullest one may not be it. Carried on the route rather than in
+     * shell state so it cannot outlive the screen that meant it: reopening the
+     * wizard from anywhere else is a different route instance with a null.
+     */
     @Serializable
-    data object LogDose : Modal
+    data class LogDose(
+        val vialId: String? = null,
+    ) : Modal
 
     @Serializable
     data object LogMeal : Modal

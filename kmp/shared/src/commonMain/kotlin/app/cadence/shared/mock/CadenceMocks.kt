@@ -171,6 +171,7 @@ class CadenceMocks(
                         item = MockSeed.plan.items.first { it.id == MockSeed.semaItemId },
                         vials = allVials(),
                         events = events,
+                        today = date,
                     ),
             )
         }

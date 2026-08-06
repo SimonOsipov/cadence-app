@@ -98,7 +98,7 @@ fun CadenceDoseStepper(
             modifier = Modifier.padding(horizontal = CadenceSpacing.xl),
         )
 
-        StepperButton("Увеличить дозу", icon = "plus") { onChange(dose.bumped(step)) }
+        StepperButton("Увеличить дозу", icon = CadenceIcons.plus) { onChange(dose.bumped(step)) }
     }
 }
 
@@ -112,7 +112,7 @@ private fun Dose.bumped(delta: Double): Dose {
 @Composable
 private fun StepperButton(
     label: String,
-    icon: String? = null,
+    icon: List<String>? = null,
     onClick: () -> Unit,
 ) {
     Box(
@@ -132,7 +132,7 @@ private fun StepperButton(
                     .background(Cadence.palette.ink2),
             )
         } else {
-            CadenceIcon(name = icon, size = CadenceSpacing.xxl, tint = Cadence.palette.ink2)
+            CadenceIcon(paths = icon, size = CadenceSpacing.xxl, tint = Cadence.palette.ink2)
         }
     }
 }

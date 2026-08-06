@@ -47,6 +47,8 @@ import app.cadence.format.pluralMeals
 fun ActionChooserSheet(
     open: Boolean,
     doseLogged: Boolean,
+    /** «Семаглутид · 0,25 мг ждёт», built from the day's own occurrence. */
+    doseDue: String?,
     mealCount: Int,
     mealKcal: Int,
     onDismiss: () -> Unit,
@@ -75,9 +77,15 @@ fun ActionChooserSheet(
                     if (doseLogged) {
                         "Уже записано сегодня · открыть или поправить"
                     } else {
-                        // Fixed copy in the prototype too — the real protocol
-                        // arrives with the repositories.
-                        "Семаглутид · 0,25 мг ждёт"
+                        // The protocol's own words. This read «Семаглутид ·
+                        // 0,25 мг ждёт» as a literal — the prototype's fixed
+                        // copy — for three blocks after the repositories
+                        // landed, with the live summary already in the
+                        // caller's scope. A patient on a different compound,
+                        // or past the first titration band, was told the wrong
+                        // drug and the wrong dose on the sheet they open to
+                        // record one.
+                        doseDue ?: "На сегодня доза не назначена"
                     },
                 onClick = onPickDose,
             )

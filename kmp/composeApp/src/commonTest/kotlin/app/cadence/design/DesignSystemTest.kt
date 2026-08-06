@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontListFontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.isUnspecified
+import app.cadence.shared.mock.MockSeed
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -121,19 +122,29 @@ class DesignSystemTest {
             onNodeWithContentDescription("Напоминания").assertIsDisplayed()
         }
 
-    @Test
-    fun anUnknownIconNameDrawsNothingInsteadOfThrowing() =
-        runComposeUiTest {
-            setContent {
-                CadenceTheme {
-                    CadenceIcon(name = "no-such-icon")
-                    CadenceBody("После иконки")
-                }
-            }
+    // The test that stood here composed `CadenceIcon(name = "no-such-icon")`
+    // and asserted the composition survived. That overload is gone: six of its
+    // seven call sites passed a compile-time literal and two of those were
+    // misspelled, so the miss it tolerated was never a runtime condition — it
+    // was a typo it hid.
 
-            // The composition survived the miss; that is the whole contract.
-            onNodeWithText("После иконки").assertIsDisplayed()
-        }
+    @Test
+    fun everyIconNameTheDataCarriesResolves() {
+        // The one name that is still a string at runtime: `Compound.icon` comes
+        // off the wire, and `ProtocolStrip` resolves it through `byName` with a
+        // `?: CadenceIcons.beaker` fallback. The fallback is deliberate — a
+        // compound the client has no icon for must still draw a row — but it
+        // also means a rename on either side degrades silently to a beaker.
+        // This is the assertion that notices, and it is a set check rather than
+        // a count: `byName.size` is unchanged by swapping two keys' names.
+        val used = MockSeed.compounds.map { it.icon }.toSet()
+
+        assertEquals(
+            emptySet(),
+            used - CadenceIcons.byName.keys,
+            "a seeded compound names an icon the set does not have",
+        )
+    }
 
     @Test
     fun leadingAndTrackingFollowTheSizeOnEveryStyleThatSetsThem() =

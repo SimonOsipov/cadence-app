@@ -211,7 +211,7 @@ private fun ZoneTarget(
         contentAlignment = Alignment.Center,
     ) {
         if (isSelected) {
-            CadenceIcon(name = "check", size = CadenceSpacing.md, tint = CadenceColors.cream)
+            CadenceIcon(paths = CadenceIcons.check, size = CadenceSpacing.md, tint = CadenceColors.cream)
         } else {
             Box(
                 Modifier

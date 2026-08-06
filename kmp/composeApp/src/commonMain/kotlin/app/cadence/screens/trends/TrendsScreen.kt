@@ -29,6 +29,7 @@ import app.cadence.design.CadenceBody
 import app.cadence.design.CadenceColors
 import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceIcon
+import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
@@ -113,7 +114,7 @@ fun TrendsScreen(
             eyebrow = "Самочувствие",
             title = "Дневник самочувствия",
             subtitle = "Настроение, побочные, заметки по курсу",
-            icon = "heart",
+            icon = CadenceIcons.heart,
             tag = CADENCE_TRENDS_JOURNAL_TAG,
             onOpen = onOpenJournal,
         )
@@ -121,7 +122,7 @@ fun TrendsScreen(
             eyebrow = "Состав тела",
             title = "Тело · замеры и фото",
             subtitle = "Состав, талия, бёдра, снимки",
-            icon = "scale",
+            icon = CadenceIcons.scale,
             tag = CADENCE_TRENDS_BODY_TAG,
             onOpen = onOpenBody,
         )
@@ -300,7 +301,14 @@ private fun NotableShifts(shifts: List<MetricTrend>) {
                     // The icon set has only one trending arrow, and an upward
                     // one beside «↓ 2,2 кг» would contradict the text under it.
                     CadenceIcon(
-                        name = if ((shift.series.delta ?: 0.0) < 0) "chevron-down" else "chevron-up",
+                        paths =
+                            if ((shift.series.delta ?: 0.0) <
+                                0
+                            ) {
+                                CadenceIcons.chevronDown
+                            } else {
+                                CadenceIcons.chevronUp
+                            },
                         tint = palette.ink2,
                     )
                 }
@@ -330,7 +338,7 @@ private fun LinkRow(
     eyebrow: String,
     title: String,
     subtitle: String,
-    icon: String,
+    icon: List<String>,
     tag: String,
     onOpen: () -> Unit,
 ) {
@@ -353,7 +361,7 @@ private fun LinkRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
         ) {
-            CadenceIcon(name = icon, tint = palette.ink2)
+            CadenceIcon(paths = icon, tint = palette.ink2)
             Column(Modifier.weight(1f)) {
                 CadenceBody(text = title)
                 CadenceMeta(text = subtitle, color = palette.muted)

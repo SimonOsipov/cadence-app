@@ -181,7 +181,7 @@ private object CadenceRouteSamples {
             CadenceRoute.Profile to "Профиль",
             CadenceRoute.ChatList to "Чаты",
             CadenceRoute.ChatThread("ksenia") to "Переписка · ksenia",
-            CadenceRoute.LogDose to "Записать дозу",
+            CadenceRoute.LogDose() to "Записать дозу",
             CadenceRoute.LogMeal to "Записать приём пищи",
             CadenceRoute.AddVial to "Добавить флакон",
             CadenceRoute.RecipeBuilder to "Новый рецепт",
