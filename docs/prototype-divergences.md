@@ -326,7 +326,10 @@ hero are assembled from a `TodaySummary` that comes through `:shared`. Reaching
 the screen at all is the proof, and the platform-name test is deleted rather
 than moved.
 
-**Note for the remaining seventeen routes:** they still draw placeholders, so
+**Note for the routes still on placeholders** — Learn, Article, Journal, Body,
+Recipes, RecipeDetail, Profile, ChatList, ChatThread, LogMeal, RecipeBuilder;
+`CadenceShell.kt` is the list that counts, and this one was «seventeen» long
+after seven of them had been ported — they still draw placeholders, so
 the footer is still there. This resolves the obligation for Today only; the same
 question returns for whichever route is last.
 
@@ -416,15 +419,22 @@ whose kind is `INJECTION`. `DoseEvent.site` is nullable because a supplement has
 no zone, and the prototype never has to answer this because every compound in
 its `COMPOUNDS` list is subcutaneous.
 
-## The vial picker is not ported yet
+## ~~The vial picker is not ported yet~~ — paid, 2026-08-04
 
 **What the prototype does:** step 2 renders a `VialPicker` under the stepper and
 `LogState` carries `vialId`; step 5 names the vial in the review.
 
-**What we do:** `DoseDraft` carries no vial. The write resolves the first vial
-of that compound itself, which is what the narrow `logDose` already did — and
-it does not read `disposedAt`, because the seed holds one vial per compound
-and a disposal branch would be a line no test can reach.
+**What we did, while this was open:** `DoseDraft` carried no vial, and the write
+resolved a vial of that compound itself.
+
+**Corrected, 2026-08-06:** the paragraph here read «the first vial of that
+compound», and «One vial set, not two» further down says «the fullest open vial»
+and cites the test that asserts it. The code agrees with the second —
+`CadenceMocks.vialFor` is `maxByOrNull { remainingDoses(...) }` over vials
+filtered on `disposedAt == null && openedAt != null`. The claim that it does not
+read `disposedAt` was wrong when written and is wrong now; the seed carries four
+BPC vials, one of them disposed with six doses still in it, precisely so that
+branch is reachable.
 
 **Why:** the plan's field list for the draft is the patient's choices, and which
 vial a dose came out of is a choice the app can make correctly on its own while
@@ -443,13 +453,17 @@ is recorded are one value rather than two implementations of one rule.
 parsing a label to draw an instruction about how far to pull a plunger is not a
 thing to do. It needs a schema change, not a parser.
 
-## One tap on the placeholder invents a zone, and the rotation reads it back
+## ~~One tap on the placeholder invents a zone, and the rotation reads it back~~ — gone, with the placeholder
 
 **What the prototype does:** its wizard asks. There is no one-tap path.
 
-**What we do, until task 6 of the dose-wizard plan:** the «Записать дозу»
-placeholder has one button, and `submit` refuses an injection with no zone, so
-`TodaySummary.oneTapDraft()` sends the rotation's own suggestion.
+**What we did, until task 6 of the dose-wizard plan:** the «Записать дозу»
+placeholder had one button, and `submit` refuses an injection with no zone, so
+`TodaySummary.oneTapDraft()` sent the rotation's own suggestion.
+
+**Struck 2026-08-06.** `oneTapDraft` has no definition and no caller anywhere in
+`kmp/` — the ported wizard replaced it, and the index entry four sections below
+already said so while this one still described it in the present tense.
 
 **Why this is a cost and not a detail:** the record is indistinguishable from a
 zone the patient chose, and `suggestNextSite` reads events back — so one tap
@@ -826,3 +840,30 @@ Guarded by `TrendsScreenTest.theHeroTakesItsNumberFromTheWindowAndNotFromTheWhol
 запускается на заглушках.
 
 Шаг 11 — сверка side-by-side — там, где это решается, а не обнаруживается.
+
+## The demo runs on a fixed day, not on the clock
+
+**What the prototype does:** its fixtures are literals against a frozen «31 May»,
+and nothing in it reads a clock at all.
+
+**What we do:** `CadenceApp` builds its mocks on `FixedCadenceClock.at(
+MockSeed.DEMO_NOW)` — 31 May 2026, week 4 — instead of `SystemCadenceClock`.
+
+**Why:** the seed is a twelve-week course starting 10 May 2026, and every vial,
+measurement and dose event below it is a literal hung off that date. Read the
+real clock and the whole fixture ages out at once: `cycleWeek` returns null past
+`lastPrescribedDay`, and that null is a hard gate in `occurrencesFor`,
+`weekProtocolRows` and `phaseDose` — so the app does not degrade, it goes blank.
+It did. The course ended on 1 August 2026 and from the 2nd every screen was
+empty, with 537 tests green: every test winds its own clock, and only `App()`
+used the real one.
+
+Making the seed follow the clock instead would mean regenerating six weeks of
+measurements and a dose history on every launch, and the fixtures the suite
+asserts against are the point of the seed. The pin is temporary in the honest
+sense: it goes when the Ktor client arrives with a course that is actually
+current. `AppTest.theAppOpensInsideTheSeededCourseRatherThanPastItsEnd` is the
+one assertion that fails if it is removed.
+
+**Watch for:** any test that reasons about «today» through `App()` rather than
+through its own `FixedCadenceClock` is reading 31 May, not the wall clock.

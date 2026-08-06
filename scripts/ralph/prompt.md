@@ -4,12 +4,13 @@ You are an autonomous coding agent on **Cadence**: a health product for a clinic
 running patients on peptide / hormone protocols. Two surfaces, one backend —
 a patient mobile app (Kotlin Multiplatform + Compose Multiplatform, `kmp/`) and a
 doctor web dashboard (Vite + React + TS, `web/`), both talking to one Go API
-(`api/`) over Supabase Postgres. Onboarding is invite-only; there is no public
-signup.
+(`api/`) over self-hosted Postgres on Timeweb Cloud — ADR-008, not Supabase and
+not Railway. Onboarding is invite-only; there is no public signup.
 
-Read `CLAUDE.md` in the repository root before your first change: it carries the
-architecture, the conventions and the list of ADRs that fork this project from the
-partner's original documents.
+Read `README.md` before your first change, and `CLAUDE.md` as well if this
+checkout has one: it is gitignored, so a fresh clone and a CI runner do not.
+Between them they carry the architecture, the conventions and the list of ADRs
+that fork this project from the partner's original documents.
 
 ## Your task each iteration
 
@@ -107,8 +108,8 @@ detail of implementation.
 - Nothing derived is stored — no `status`, no `adherence`, no remaining volume, no
   materialised schedule. The calendar is computed from protocol positions and
   titration phases on read.
-- The migration chain in the repository owns the schema and the policies. The
-  Supabase dashboard is never a schema editor.
+- The migration chain in the repository owns the schema and the policies. No
+  dashboard, console or psql session is ever a schema editor.
 - Every migration that adds a table extends the RLS policy test suite.
 - The WebSocket is delivery only, never a write path.
 - Numbers are data, formatting is presentation: a dose is `{value, unit}`.

@@ -13,6 +13,15 @@ proposal: "[[20-Projects/cadence/architecture/proposals/api-openapi-code-first|a
 
 # API Skeleton
 
+> [!deviation] 2026-08-06
+> Spec said: the mandatory variables are `SUPABASE_JWT_ISSUER` and
+> `SUPABASE_JWT_AUDIENCE`. Actually done: `AUTH_JWT_ISSUER` and
+> `AUTH_JWT_AUDIENCE` — `config.go:128` and `.env.example:43` have read those
+> names since ADR-008 took the identity provider off Supabase. The names above
+> are corrected in place rather than left standing, because a contributor
+> copying them from a `done` spec gets «AUTH_JWT_ISSUER is required» at startup
+> with nothing to explain it. Found by a whole-repository audit.
+
 ## Summary
 
 Take `api/` from a skeleton that can only answer `/healthz` to an application that owns its schema, has a working low-privilege request path, a versioned contract, and verified authentication. After this block, the first clinical endpoint is lines in places already prepared, not one more layer of foundation.
@@ -51,7 +60,7 @@ The spec passed two independent judges (2026-07-28), and their main finding chan
 - [x] The `testsupport` package is forbidden from being imported outside `_test.go` via `depguard`, and is closed behind a build tag
 
 **Authentication**
-- [x] `SUPABASE_JWT_ISSUER` and `SUPABASE_JWT_AUDIENCE` are mandatory in the config; the JWKS address is **derived** from the issuer and is not a separate knob
+- [x] `AUTH_JWT_ISSUER` and `AUTH_JWT_AUDIENCE` are mandatory in the config; the JWKS address is **derived** from the issuer and is not a separate knob
 - [x] Verified: the signature, a closed algorithm list `{RS256, ES256}`, a mandatory `exp`, a mandatory `kid`, `iss`, `aud`, `nbf`, and a clock-skew allowance
 - [x] The JWKS refresh triggered by an unknown `kid` is rate-limited — otherwise a stream of random `kid`s takes authentication down through Supabase's rate limit
 - [x] An unavailable JWKS with an empty cache means refusal (401/503), not a pass-through
@@ -111,7 +120,7 @@ From BST-06 (`8ed170f`) in `api/`. Verified by the judge against the code on 202
 
 **Test isolation** — a database per test. A shared transaction is cheaper but does not allow connecting as a different role and checking connection-level GUCs, which is exactly what the policy test suite in M2 will require. The container is shared across the run via `TestMain`, so parallel packages do not each stand up a Postgres.
 
-**Protection against bypassing authentication.** A mechanism, not an intention: `testsupport` is closed behind a build tag and forbidden from being imported via `depguard` everywhere except `_test.go`; the JWKS URL is derived from the issuer and is not a separate knob — otherwise production differs from the test by one variable in Railway; `SUPABASE_JWT_ISSUER` and `SUPABASE_JWT_AUDIENCE` are mandatory, and an empty value fails startup rather than silently disabling verification.
+**Protection against bypassing authentication.** A mechanism, not an intention: `testsupport` is closed behind a build tag and forbidden from being imported via `depguard` everywhere except `_test.go`; the JWKS URL is derived from the issuer and is not a separate knob — otherwise production differs from the test by one variable in the hosting panel; `AUTH_JWT_ISSUER` and `AUTH_JWT_AUDIENCE` are mandatory, and an empty value fails startup rather than silently disabling verification.
 
 **Leaks in problem+json.** The format carries `detail`, `instance`, and `errors[].value`. The danger is concrete: a wrapped pgx error carries a fragment of SQL with table names into `detail`, and `errors[].value` echoes the submitted value back — for the dose-logging form that is medical data, and it would reach Sentry too. The current code holds this property and has non-leakage tests; on a change of format it must be preserved.
 
@@ -209,7 +218,7 @@ todoist: "6h8vJP7cfmxpcXrq"
 
 ### step-3: Token verification against JWKS and `GET /v1/me`
 
-The key fixture: a pair, a local JWKS, and issuance of tokens with arbitrary claims. Middleware by the `/v1` prefix with exemptions. The full list of checks from the technical detail. `SUPABASE_JWT_ISSUER` and `SUPABASE_JWT_AUDIENCE` mandatory in the config, with JWKS derived from the issuer; `config.go`, `config_test.go`, and `.env.example` are amended.
+The key fixture: a pair, a local JWKS, and issuance of tokens with arbitrary claims. Middleware by the `/v1` prefix with exemptions. The full list of checks from the technical detail. `AUTH_JWT_ISSUER` and `AUTH_JWT_AUDIENCE` mandatory in the config, with JWKS derived from the issuer; `config.go`, `config_test.go`, and `.env.example` are amended.
 
 `GET /v1/me` returns a narrow principal. Tests: a valid token — 200; expired, without `exp`, with a foreign issuer, with a foreign `kid`, with a broken signature, with a forbidden algorithm, and with no header — 401 with an indistinguishable body. The "deny by default" test via `chi.Walk`. `testsupport` closed behind the tag and `depguard`.
 

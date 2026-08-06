@@ -13,6 +13,14 @@ proposal: ""
 
 # Dashboard Skeleton
 
+> [!deviation] 2026-08-06
+> Spec said: the dashboard's static assets deploy to Railway. Actually: per
+> ADR-008 deployment goes to Timeweb App Platform, and every mention of Railway
+> below should be read as that. The correction was applied to
+> `dashboard-first-live-read` and not to this note, its sibling; recorded here
+> rather than rewritten because this spec is still `approved` and unbuilt, so
+> the deployment target is settled when the work starts.
+
 ## Summary
 
 Stand `web/` up as a real Vite application: port the design tokens from the prototype so they stop diverging, build the Overview page on fixtures, deploy it to Railway dev, and cover it with a smoke test that verifies the deployed build is the one being checked.
