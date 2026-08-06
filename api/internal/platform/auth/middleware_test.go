@@ -140,6 +140,27 @@ func TestMiddlewareRefuses(t *testing.T) {
 			},
 		},
 		{
+			// The case that makes the scheme comparison load-bearing. "another
+			// scheme" above carries base64 that is not a JWT, so it is refused
+			// by the verifier and would be refused with no scheme check at all
+			// — measured: deleting the EqualFold left every package green.
+			// Case-insensitivity is covered separately, and it survives the
+			// same deletion for the same reason: all four spellings pass.
+			//
+			// A credential minted for this API but presented under Basic is not
+			// a bearer credential, and treating it as one would accept whatever
+			// else a client chose to call it.
+			name: "a valid token under another scheme",
+			request: func(t *testing.T, key *testsupport.SigningKey, set *testsupport.JWKS) *http.Request {
+				t.Helper()
+
+				req := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+				req.Header.Set("Authorization", "Basic "+key.Sign(t, validClaims(set.Issuer)))
+
+				return req
+			},
+		},
+		{
 			name: "scheme with no token",
 			request: func(*testing.T, *testsupport.SigningKey, *testsupport.JWKS) *http.Request {
 				req := httptest.NewRequest(http.MethodGet, "/v1/me", nil)

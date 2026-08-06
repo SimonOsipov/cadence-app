@@ -19,7 +19,7 @@ test:
 # as a required job of its own. Green here is not optional — it is where the
 # migration chain and the role separation are actually proven.
 test-integration:
-	go test -tags=integration ./... -count=1
+	go test -tags=integration ./... -race -count=1
 
 # gofmt -> build -> vet -> golangci-lint -> test -race. The same script CI and
 # the Ralph loop run, so there is one definition of green and not three.

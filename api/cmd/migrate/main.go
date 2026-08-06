@@ -35,14 +35,42 @@ Environment:
   MIGRATIONS_PATH         directory holding the chain (default: migrations)
 `
 
+// migrator is what run needs of the chain: three operations, named by what the
+// subcommands do rather than by which package implements them.
+//
+// It exists because the alternative was untestable. run called the database
+// package directly, so no test could reach it without a live Postgres, and
+// none did — the whole of run had zero coverage. Turning `up` into
+// MigrateDown(cfg.URL, cfg.Path, 0) left `go test ./cmd/migrate` green, which
+// is to say `make migrate-up` in a deploy could have unwound the entire schema
+// and printed «chain applied».
+//
+// A struct of functions rather than an interface: there is one production
+// implementation and one test double, and naming a type for that would add a
+// file without removing a coupling. A database is the case the test-double
+// exception is written for — external, slow, and destructive when wrong.
+type migrator struct {
+	up    func(url, path string) error
+	down  func(url, path string, steps int) error
+	force func(url, path string, version int) error
+}
+
+func chainMigrator() migrator {
+	return migrator{
+		up:    database.RunMigrations,
+		down:  database.MigrateDown,
+		force: database.MigrateForce,
+	}
+}
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], chainMigrator()); err != nil {
 		fmt.Fprintf(os.Stderr, "migrate: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+func run(args []string, chain migrator) error {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, usage)
 
@@ -66,7 +94,7 @@ func run(args []string) error {
 
 	switch args[0] {
 	case "up":
-		if err := database.RunMigrations(cfg.URL, cfg.Path); err != nil {
+		if err := chain.up(cfg.URL, cfg.Path); err != nil {
 			return err
 		}
 		fmt.Println("migrate: chain applied")
@@ -76,7 +104,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := database.MigrateDown(cfg.URL, cfg.Path, steps); err != nil {
+		if err := chain.down(cfg.URL, cfg.Path, steps); err != nil {
 			return err
 		}
 		fmt.Println("migrate: chain rolled back")
@@ -86,7 +114,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := database.MigrateForce(cfg.URL, cfg.Path, version); err != nil {
+		if err := chain.force(cfg.URL, cfg.Path, version); err != nil {
 			return err
 		}
 		fmt.Printf("migrate: version forced to %d\n", version)

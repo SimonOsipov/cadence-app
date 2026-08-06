@@ -24,6 +24,19 @@ ran+=("go")
 "$here/kmp.sh"
 ran+=("kmp")
 
+# The integration suite is where forced RLS, the low-privilege request role and
+# the migration chain are actually proven — go.sh runs `go test ./...` with no
+# build tag, so it reports "[no test files]" for the package those live in. This
+# script called itself the pre-PR command while never running them, and did not
+# even list them as skipped.
+if docker info >/dev/null 2>&1; then
+    (cd "$here/../../api" && make test-integration)
+    ran+=("api-integration")
+else
+    echo "skipping the API integration suite: no Docker daemon"
+    skipped+=("api-integration: no Docker daemon")
+fi
+
 if xcodebuild -version >/dev/null 2>&1; then
     "$here/ios.sh"
     ran+=("ios")
@@ -33,8 +46,9 @@ else
 fi
 
 echo
-# Never an unqualified "all green": on a host without Xcode a third of the gate,
-# including every Compose UI test, did not run.
+# Never an unqualified "all green": on a host without Xcode the majority of the
+# KMP tests — 293 of 537, every Compose UI test there is — did not run, and
+# without Docker neither did the RLS invariants.
 if [ ${#skipped[@]} -eq 0 ]; then
     echo "gates green: ${ran[*]}"
 else
