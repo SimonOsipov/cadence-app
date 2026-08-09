@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import app.cadence.design.Cadence
 import app.cadence.design.CadenceBody
 import app.cadence.design.CadenceColors
+import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceIcon
 import app.cadence.design.CadenceIcons
@@ -34,6 +35,7 @@ import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceSpark
+import app.cadence.design.CadenceTabBar
 import app.cadence.design.CadenceTitle
 import app.cadence.format.formatDecimal
 import app.cadence.format.formatSignedDelta
@@ -84,6 +86,8 @@ fun TrendsScreen(
     onOpenJournal: () -> Unit,
     onOpenBody: () -> Unit,
     modifier: Modifier = Modifier,
+    onSelectTab: (CadenceDestination) -> Unit = { },
+    onLog: () -> Unit = { },
 ) {
     val palette = Cadence.palette
 
@@ -91,40 +95,56 @@ fun TrendsScreen(
         modifier
             .fillMaxSize()
             .background(palette.bg)
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .verticalScroll(rememberScrollState())
-            .testTag(CADENCE_TRENDS_TAG),
+            .windowInsetsPadding(WindowInsets.statusBars),
     ) {
-        CadenceTitle(
-            text = "Тренды",
-            modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.md),
-        )
+        Column(
+            // The scroll region is now a child rather than the root, so the bar
+            // below it is measured at all. weight, not a height: an unbounded
+            // scroll region takes everything and leaves the bar off-screen.
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .testTag(CADENCE_TRENDS_TAG),
+        ) {
+            CadenceTitle(
+                text = "Тренды",
+                modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.md),
+            )
 
-        TrendWindowChips(overview.window, onWindowChange)
+            TrendWindowChips(overview.window, onWindowChange)
 
-        overview.hero?.let { hero ->
-            HeroCard(hero, onOpen = { onOpenMetric(hero.meta.metric) })
+            overview.hero?.let { hero ->
+                HeroCard(hero, onOpen = { onOpenMetric(hero.meta.metric) })
+            }
+
+            TrendsMetricGrid(overview.rest, onOpenMetric)
+
+            NotableShifts(overview.notableShifts())
+
+            LinkRow(
+                eyebrow = "Самочувствие",
+                title = "Дневник самочувствия",
+                subtitle = "Настроение, побочные, заметки по курсу",
+                icon = CadenceIcons.heart,
+                tag = CADENCE_TRENDS_JOURNAL_TAG,
+                onOpen = onOpenJournal,
+            )
+            LinkRow(
+                eyebrow = "Состав тела",
+                title = "Тело · замеры и фото",
+                subtitle = "Состав, талия, бёдра, снимки",
+                icon = CadenceIcons.scale,
+                tag = CADENCE_TRENDS_BODY_TAG,
+                onOpen = onOpenBody,
+            )
         }
 
-        TrendsMetricGrid(overview.rest, onOpenMetric)
-
-        NotableShifts(overview.notableShifts())
-
-        LinkRow(
-            eyebrow = "Самочувствие",
-            title = "Дневник самочувствия",
-            subtitle = "Настроение, побочные, заметки по курсу",
-            icon = CadenceIcons.heart,
-            tag = CADENCE_TRENDS_JOURNAL_TAG,
-            onOpen = onOpenJournal,
-        )
-        LinkRow(
-            eyebrow = "Состав тела",
-            title = "Тело · замеры и фото",
-            subtitle = "Состав, талия, бёдра, снимки",
-            icon = CadenceIcons.scale,
-            tag = CADENCE_TRENDS_BODY_TAG,
-            onOpen = onOpenBody,
+        // As in the prototype (`TrendsScreen.tsx:543`) and as TodayScreen does.
+        // Without it the tab is a dead end — see VialsScreen for the same note.
+        CadenceTabBar(
+            active = CadenceDestination.TRENDS,
+            onSelect = onSelectTab,
+            onLog = onLog,
         )
     }
 }

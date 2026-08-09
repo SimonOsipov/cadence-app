@@ -37,12 +37,14 @@ import app.cadence.design.Cadence
 import app.cadence.design.CadenceBody
 import app.cadence.design.CadenceChip
 import app.cadence.design.CadenceColors
+import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceIcon
 import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
+import app.cadence.design.CadenceTabBar
 import app.cadence.design.CadenceTitle
 import app.cadence.format.pluralVials
 import app.cadence.shared.domain.InventorySummary
@@ -67,6 +69,8 @@ fun VialsScreen(
     modifier: Modifier = Modifier,
     onOpenVial: (VialId) -> Unit = { },
     onAddVial: () -> Unit = { },
+    onSelectTab: (CadenceDestination) -> Unit = { },
+    onLog: () -> Unit = { },
 ) {
     var filter by remember { mutableStateOf(VialFilter.ALL) }
     // Collapsed, like the prototype's: a spare the patient is not using is the
@@ -83,6 +87,10 @@ fun VialsScreen(
 
         Column(
             Modifier
+                // weight, not bare height: the bar below is measured first only
+                // if something bounds the scroll region, and an unbounded one
+                // eats the remaining space and pushes the bar off the screen.
+                .weight(1f)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = CadenceSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
@@ -102,6 +110,16 @@ fun VialsScreen(
                 }
             }
         }
+
+        // The bar lives inside the screen, as it does in the prototype
+        // (`VialsScreen.tsx:295`) and as TodayScreen does. Without it the tab is
+        // a dead end: a tab is not pushed onto anything, so there is no back
+        // gesture either, and the only way out is to kill the app.
+        CadenceTabBar(
+            active = CadenceDestination.INVENTORY,
+            onSelect = onSelectTab,
+            onLog = onLog,
+        )
     }
 }
 

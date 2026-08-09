@@ -29,11 +29,13 @@ import app.cadence.screens.trends.CADENCE_TRENDS_HERO_TAG
 import app.cadence.screens.trends.CADENCE_TREND_DETAIL_UNKNOWN_TAG
 import app.cadence.screens.trends.cadenceTrendCardTag
 import app.cadence.screens.trends.cadenceTrendWindowTag
+import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.MetricTrend
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.domain.TrendsOverview
 import app.cadence.shared.domain.doseBands
+import app.cadence.shared.domain.inventorySummary
 import app.cadence.shared.domain.meta
 import app.cadence.shared.domain.protocolMarks
 import app.cadence.shared.domain.rangeOn
@@ -74,12 +76,20 @@ private fun NavHostController.stack(): List<String> =
 @OptIn(ExperimentalTestApi::class)
 private fun ComposeUiTest.startShell(
     trends: TrendsOverview? = null,
+    cabinet: InventorySummary? = null,
     onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail? = { _, _ -> null },
 ): NavHostController {
     lateinit var nav: NavHostController
     setContent {
         nav = rememberNavController()
-        CadenceTheme { CadenceShell(navController = nav, trends = trends, onLoadMetric = onLoadMetric) }
+        CadenceTheme {
+            CadenceShell(
+                navController = nav,
+                cabinet = cabinet,
+                trends = trends,
+                onLoadMetric = onLoadMetric,
+            )
+        }
     }
     return nav
 }
@@ -114,6 +124,10 @@ private val NAV_ZONE = TimeZone.of("Europe/Moscow")
 
 /** The seeded window, resolved the way `MockTrendsRepository` resolves it. */
 private fun navRange(window: TrendWindow) = requireNotNull(window.rangeOn(MockSeed.plan, NAV_TODAY))
+
+/** The seeded cabinet, resolved the way the repository hands it over. */
+private fun navCabinet() =
+    inventorySummary(MockSeed.plan, MockSeed.vials, MockSeed.history, NAV_TODAY, MockSeed.compounds)
 
 private fun navOverview(window: TrendWindow = TrendWindow.THREE_MONTHS): TrendsOverview {
     val range = navRange(window)
@@ -342,6 +356,36 @@ class CadenceNavigationTest {
             navigate { nav.openRoute(CadenceRoute.Schedule) }
 
             assertTrue(onAllNodesWithText("Аптечка").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
+    fun thePortedTabsKeepTheBarAndLetYouLeave() =
+        runComposeUiTest {
+            val nav = startShell(trends = navOverview(), cabinet = navCabinet())
+
+            // The cabinet and the trends list are the two tabs whose ported
+            // screen replaced the placeholder — and the placeholder was what
+            // carried the bar. Both arrived without one, which on a *tab* is a
+            // dead end and not merely a missing decoration: nothing is pushed
+            // onto anything, so there is no back gesture either. The only way
+            // out was to kill the app.
+            //
+            // Reached with data on purpose: with none, the placeholder still
+            // stands in and still draws a bar, so the same walk over an empty
+            // shell passes while the patient is stuck.
+            navigate { nav.selectDestination(CadenceDestination.INVENTORY) }
+
+            onNodeWithText("Ваша аптечка").assertIsDisplayed()
+            onNodeWithText("Тренды").performClick()
+            waitForIdle()
+
+            assertEquals(listOf("Today", "Trends"), nav.stack())
+
+            onNodeWithTag(CADENCE_TRENDS_HERO_TAG).assertIsDisplayed()
+            onNodeWithText("Аптечка").performClick()
+            waitForIdle()
+
+            assertEquals(listOf("Today", "Vials"), nav.stack())
         }
 
     @Test

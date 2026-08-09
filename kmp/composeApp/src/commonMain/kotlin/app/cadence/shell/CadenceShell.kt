@@ -327,6 +327,8 @@ private fun NavGraphBuilder.tabRoutes(
                             cabinet = cabinet,
                             onOpenVial = onOpenVial,
                             onAddVial = { nav.openRoute(CadenceRoute.AddVial) },
+                            onSelectTab = nav::selectDestination,
+                            onLog = onOpenActions,
                         )
                     }
                 }
@@ -347,6 +349,8 @@ private fun NavGraphBuilder.tabRoutes(
                             onWindowChange = onTrendWindow,
                             onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
                             onOpenBody = { nav.openRoute(CadenceRoute.Body) },
+                            onSelectTab = nav::selectDestination,
+                            onLog = onOpenActions,
                         )
                     }
                 }
