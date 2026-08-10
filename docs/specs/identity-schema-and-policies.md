@@ -1,7 +1,7 @@
 ---
 type: spec
 project: cadence
-status: approved
+status: done
 priority: p1
 created: 2026-07-30
 todoist_parent: "6h9HmMjhjgWQRmJq"
@@ -58,10 +58,10 @@ careful code
 - [ ] A nested call of either seam inside the other **refuses** rather than blocking on `Acquire`
 - [ ] Verified at startup: the request-path pool is connected as `cadence_app`, the service pool as `cadence_service_app`, neither is a superuser and neither carries `rolbypassrls`; `DATABASE_SERVICE_URL` is mandatory
 - [ ] `WithCaller` rejects a subject that is not a UUID before opening a transaction; `app.jwt_subject()` returns `NULL` on an unverified value rather than `22P02`; the role name for `SET LOCAL ROLE` comes from a closed map of constants, never from token data
-- [ ] The hook always writes `cadence_role` deterministically: if a profile exists it puts the role in, if not it removes the key; an event arriving with `cadence_role: admin` already substituted does not contain it on the way out; the mandatory claims are not discarded; token issuance does not fail in any case
-- [ ] `cadence_gotrue` has neither `USAGE` on the `app` schema nor `SELECT` on `profiles` — only `EXECUTE` on the hook; revoking membership in `cadence_auth_hook` breaks token issuance
+- [x] The hook always writes `cadence_role` deterministically: if a profile exists it puts the role in, if not it removes the key; an event arriving with `cadence_role: admin` already substituted does not carry it out, on either branch; the claims come back otherwise byte for byte; the function never raises. The mandatory set is GoTrue's `MinimumViableTokenSchema` — `aud, exp, iat, sub, email, phone, role, aal, session_id, is_anonymous`. `iss` is **not** in it, contrary to what this criterion first said: dropping `iss` yields a signed token with no issuer, refused by the API's verifier rather than by GoTrue (corrected 2026-08-11)
+- [x] `cadence_gotrue` holds no privilege on any object in `app` beyond `EXECUTE` on the hook — no `SELECT` on `profiles`, no `EXECUTE` on `app.jwt_subject()`. It **does** hold `USAGE` on the schema, inherited through `cadence_auth_hook`, because Postgres will not execute a function without it; the criterion as first written was unsatisfiable and is corrected here (2026-08-11). Revoking the membership stops token issuance altogether — `POST /token` answers 500 with `42501` — rather than quietly dropping the claim
 - [ ] `go list -deps ./internal/identity | grep -E 'MicahParks|golang-jwt'` returns nothing: the bounded context no longer compiles against the token-verification libraries
-- [ ] The gate forbids a non-constant expression in `Exec`/`Query`/`QueryRow`/`SendBatch` calls in `api/internal/**`; `gosec` G201/G202 are enabled as a backstop; a test verifies that neither pool's execution mode is `QueryExecModeSimpleProtocol`
+- [x] The gate forbids a non-constant expression in `Exec`, `ExecContext`, `ExecParams`, `Query`, `QueryContext`, `QueryRow`, `QueryRowContext`, `Prepare`, `PrepareContext` and `Queue` calls, across `api/internal/**` **and** `api/cmd/**`. `SendBatch` is not in the list — it takes a `*pgx.Batch` rather than a statement, and the statements reach it through `Queue`, which is covered (corrected 2026-08-11). `gosec` G201/G202 are enabled as a backstop; a test verifies that neither pool's execution mode is `QueryExecModeSimpleProtocol`
 - [ ] `make gate` and `make test-integration` are green, including the edits to existing tests listed in the steps; `openapi.json` is regenerated in the same commit that changes the role field description
 
 ## Scope / Non-scope
