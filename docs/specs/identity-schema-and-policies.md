@@ -630,6 +630,47 @@ absence of the literals `'doctor'`, `'patient'`, and `'admin'` in `qual`/`with_c
 A test for `42P17`: a deliberately created back-reference produces exactly that code
 — otherwise "there is no recursion" is green even in a world where the policy was
 forgotten.
+> [!deviation] 2026-08-10
+> Spec said: the policies registry reconciles, per table, the set of policies,
+> their verbs and their `TO`. Actually done: that, plus the deparsed
+> `qual`/`with_check` of every policy. Why: a policy widened to `USING (true)`
+> keeps its name, its verb and its `TO`, so it survived every test in this step —
+> and the behavioural proof is the regression suite two steps away, which leaves
+> thirty-three predicates resting on their names alone across the whole of
+> step-6. Six shapes repeat across the thirty-three entries, so the declaration
+> is a table rather than a wall of text.
+
+> [!deviation] 2026-08-10
+> Spec said: nothing is granted on sequences. Actually done: asserted, with a
+> control that the schema holds a sequence at all — `has_sequence_privilege` for
+> every chain role bar the owner. Why: the criterion had no witness anywhere, and
+> it is exactly the shape the registries exist for — a privilege nobody meant to
+> grant, sitting where nobody looks.
+
+> [!deviation] 2026-08-10
+> The down migration does **not** revoke from `cadence_owner`, and that is a
+> correction review measured rather than a preference. The owner's privileges on
+> its own tables are implicit; `REVOKE ALL` materialises them into an ACL and
+> then erases it, and the up migration does not put them back — it grants the
+> owner only `SELECT` on `profiles`. A cluster rolled back one step and rolled
+> forward again would leave the owner unable to write to tables it owns, so a
+> later migration doing a backfill would fail there and succeed on a fresh
+> cluster.
+>
+> The `audit_log` insert policy compares the actor against `lower(...)` of the
+> published setting: a uuid renders canonically in lower case while the seam
+> accepts a subject case-insensitively, and two components disagreeing about what
+> counts as the same subject would fail the whole patient-creation transaction as
+> a policy refusal that names nothing.
+
+> [!deviation] 2026-08-10
+> Two tests from step-4 measured the state between step-4 and step-5 and could
+> not survive it. `TestForcedTablesWithNoPolicyRefuseEverybody` became
+> `TestForceAppliesToTheOwnerToo` — the owner reads `profiles` through the hook's
+> policy and still cannot write it, so the refusal can only be `FORCE`;
+> `TestNoRoleHoldsAnythingOnTheNewTables` was removed as strictly superseded by
+> the grants registry.
+
 todoist: "6h9HmVhxcMxwGfqH"
 
 ### step-6: The patient creation path through the service seam, with audit

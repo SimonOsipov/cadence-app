@@ -67,15 +67,16 @@ func TestTheSchemaHoldsExactlyTheSixTables(t *testing.T) {
 	}
 }
 
-// Between this migration and the one that writes the policies, the tables are
-// forced and have no policy at all — which forbids everyone, the owner included.
+// FORCE is what extends row level security to a table's owner, and the owner is
+// the role every migration runs as. Without it the whole arrangement is advisory
+// for exactly the role that can also turn it off.
 //
-// That is a safe intermediate state rather than an unfinished one, and this is
-// what makes it measured. A SELECT proves nothing here: the tables are empty, so
-// zero rows is the same answer with policies and without. An INSERT does: forced
-// row level security with no policy refuses it, and the refusal is the whole
-// property.
-func TestForcedTablesWithNoPolicyRefuseEverybody(t *testing.T) {
+// profiles is the sharpest place to measure it. The owner holds every privilege
+// on its own tables by virtue of owning them — the grants registry declares
+// exactly that — so a refused INSERT cannot be a missing grant. What it can be,
+// and is, is FORCE: there is a policy permitting the owner to read, which the
+// token issuance hook needs, and none permitting it to write.
+func TestForceAppliesToTheOwnerToo(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	ctx := t.Context()
 
@@ -84,73 +85,24 @@ func TestForcedTablesWithNoPolicyRefuseEverybody(t *testing.T) {
 		t.Fatalf("becoming the owner: %v", err)
 	}
 
+	// The control: the owner really can reach this table, so the refusal below
+	// is not the schema or a missing grant.
+	var rows int
+	if err := owner.QueryRow(ctx, `SELECT count(*) FROM app.profiles`).Scan(&rows); err != nil {
+		t.Fatalf("the owner cannot read profiles at all: %v", err)
+	}
+
 	_, err := owner.Exec(ctx, `
 		INSERT INTO app.profiles (user_id, role, full_name)
 		VALUES ('8a1f3b7c-0000-4000-8000-000000000001', 'patient', 'Ирина Соколова')
 	`)
 	if err == nil {
-		t.Fatal("the owner wrote a row into a forced table with no policy")
+		t.Fatal("the owner wrote a row into a table it is forced by")
 	}
 
-	// 42501 specifically: a constraint violation or a typo in a column name
-	// would satisfy "it failed" and say nothing about row level security.
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
 		t.Fatalf("the insert failed with %v, want SQLSTATE 42501", err)
-	}
-
-	// No policies yet, stated rather than implied: the refusal above would look
-	// identical if somebody had written a policy that happens to match nothing.
-	var policies int
-	if err := owner.QueryRow(
-		ctx, `SELECT count(*) FROM pg_policies WHERE schemaname = $1`, testsupport.AppSchema,
-	).Scan(&policies); err != nil {
-		t.Fatalf("counting policies: %v", err)
-	}
-	if policies != 0 {
-		t.Errorf("%d policy(ies) exist already; this step writes none", policies)
-	}
-}
-
-// No role holds anything on these tables yet either. The grants arrive with the
-// policies, per role and where needed per column, and until then a table nobody
-// was granted is a table nobody reaches — including through a policy somebody
-// might add without its grant.
-func TestNoRoleHoldsAnythingOnTheNewTables(t *testing.T) {
-	db := cluster.NewDatabase(t)
-	conn := testsupport.Connect(t, db.SuperuserURL)
-
-	// Every role the chain creates, not only the impersonation targets: the two
-	// LOGIN roles are the ones a deployment actually connects with, and the
-	// previous migration states as a property that they hold nothing on this
-	// schema. TRUNCATE is on the list because row level security does not stop
-	// it — which is exactly why an acceptance criterion singles it out for
-	// audit_log.
-	// Every chain role except the owner, whose privileges on its own tables are
-	// inherent rather than granted — what governs the owner is FORCE, and that
-	// has its own test.
-	roles := slices.DeleteFunc(testsupport.ChainRoles(), func(role string) bool {
-		return role == testsupport.OwnerRole
-	})
-
-	for _, table := range identityTables() {
-		for _, role := range roles {
-			for _, verb := range []string{
-				"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER",
-			} {
-				var granted bool
-				if err := conn.QueryRow(
-					t.Context(),
-					`SELECT has_table_privilege($1, $2, $3)`, role, "app."+table, verb,
-				).Scan(&granted); err != nil {
-					t.Fatalf("reading %s's %s on %s: %v", role, verb, table, err)
-				}
-
-				if granted {
-					t.Errorf("%s already holds %s on app.%s", role, verb, table)
-				}
-			}
-		}
 	}
 }
 

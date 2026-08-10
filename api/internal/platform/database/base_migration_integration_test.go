@@ -711,28 +711,39 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 		return roles
 	}
 
-	countTables := func() int {
+	// Everything the chain can put in the schema, counted together. Naming
+	// tables would tie this to whichever migration happens to be last — and the
+	// one after it adds policies, the one after that a function.
+	countObjects := func() int {
 		t.Helper()
 
-		var tables int
+		var objects int
 		if err := admin.QueryRow(ctx, `
-			SELECT count(*)
-			FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = $1 AND c.relkind IN ('r', 'p')
-		`, testsupport.AppSchema).Scan(&tables); err != nil {
-			t.Fatalf("counting tables: %v", err)
+			SELECT (
+				SELECT count(*) FROM pg_class c
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+			) + (
+				SELECT count(*) FROM pg_proc p
+				JOIN pg_namespace n ON n.oid = p.pronamespace
+				WHERE n.nspname = $1
+			) + (
+				SELECT count(*) FROM pg_policies WHERE schemaname = $1
+			)
+		`, testsupport.AppSchema).Scan(&objects); err != nil {
+			t.Fatalf("counting the objects of the schema: %v", err)
 		}
 
-		return tables
+		return objects
 	}
 
 	before := appliedVersion()
 	if before == nil || *before < 2 {
 		t.Fatal("the chain is one migration long, so stepping through it says nothing")
 	}
-	if countTables() == 0 {
-		t.Fatal("the schema holds no tables, so a rollback has nothing to be seen undoing")
+	objectsBefore := countObjects()
+	if objectsBefore == 0 {
+		t.Fatal("the schema holds nothing, so a rollback has nothing to be seen undoing")
 	}
 
 	if err := database.MigrateDown(db.MigrationURL, path, 1); err != nil {
@@ -754,8 +765,9 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 	// without an object-level witness an empty down migration passes — and the
 	// whole-chain assertions below cannot supply one, because the base migration
 	// drops the schema CASCADE and sweeps up whatever was left behind.
-	if tables := countTables(); tables != 0 {
-		t.Errorf("%d table(s) survived the rollback of the migration that created them", tables)
+	if objectsAfter := countObjects(); objectsAfter >= objectsBefore {
+		t.Errorf("the schema held %d objects before the rollback and %d after; the migration's "+
+			"down file removed nothing", objectsBefore, objectsAfter)
 	}
 
 	// It took the roles nothing, though: the operator undoing the last deploy is
@@ -803,14 +815,30 @@ func TestDownMigrationIsIdempotent(t *testing.T) {
 	conn := testsupport.Connect(t, db.MigrationURL)
 
 	// Every down migration, newest first, each applied twice — because the
-	// property belongs to the file rather than to the chain, and a second
-	// migration whose rollback is not twice-safe is exactly as dangerous as the
-	// first one.
-	for _, name := range []string{
-		"000003_identity_tables.down.sql",
-		"000002_jwt_subject.down.sql",
-		"000001_base.down.sql",
-	} {
+	// property belongs to the file rather than to the chain, and a migration
+	// whose rollback is not twice-safe is exactly as dangerous as the first one.
+	//
+	// Read from the directory rather than listed here: a migration added without
+	// a twice-safe rollback must fail this test rather than be absent from it.
+	entries, err := os.ReadDir(testsupport.MigrationsPath(t))
+	if err != nil {
+		t.Fatalf("reading the migrations directory: %v", err)
+	}
+
+	var downs []string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".down.sql") {
+			downs = append(downs, entry.Name())
+		}
+	}
+	slices.Sort(downs)
+	slices.Reverse(downs)
+
+	if len(downs) < 2 {
+		t.Fatal("fewer than two down migrations found; the directory was not read")
+	}
+
+	for _, name := range downs {
 		statements, err := os.ReadFile(filepath.Join(testsupport.MigrationsPath(t), name))
 		if err != nil {
 			t.Fatalf("reading %s: %v", name, err)
