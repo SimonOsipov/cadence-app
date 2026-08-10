@@ -1,0 +1,22 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+max_line_length = 120
+# @Composable functions are PascalCase by the framework's own convention.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+[*.gradle.kts]
+# Version-catalog access reads as one thought — `libs.versions.x.get().toInt()`
+# is clearer on one line than exploded over four.
+ktlint_standard_chain-method-continuation = disabled
+
+[*.{yml,yaml,json}]
+indent_size = 2

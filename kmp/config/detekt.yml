@@ -1,0 +1,86 @@
+# Detekt overrides on top of the default ruleset (buildUponDefaultConfig).
+# Only deviations are listed; everything unmentioned keeps detekt's default.
+#
+# detekt 1.23.8 is the newest stable release and it embeds a Kotlin 1.9 front
+# end, while this codebase compiles with Kotlin 2.4.10. If detekt one day fails
+# to parse a file that compiles fine, that mismatch is why — the fix is a newer
+# detekt, not a change to the code.
+
+build:
+  maxIssues: 0
+
+# The `formatting` ruleset is deliberately absent: it ships in
+# detekt-formatting, which is a repackaged ktlint. ktlint runs on its own here,
+# so adding it would only duplicate every finding.
+
+complexity:
+  LongParameterList:
+    # Compose screens legitimately take many small parameters — that is how
+    # state is hoisted, not a smell.
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    ignoreAnnotatedFunctions: ['Composable']
+
+naming:
+  FunctionNaming:
+    # @Composable functions are PascalCase by convention.
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][_A-Za-z0-9]*'
+
+style:
+  MagicNumber:
+    # Composables carry layout literals. Property declarations do NOT get a
+    # blanket pass: in a product whose domain is doses and titration thresholds,
+    # an unnamed number in a property is exactly the case worth catching.
+    ignoreAnnotated: ['Composable']
+    # An enum entry's argument is a definition, and the entry name is the name
+    # the rule asks for: `FIFTEEN(15)` cannot be made clearer by extracting 15.
+    ignoreEnums: true
+    # The design package is the one place where a literal *is* the definition —
+    # `val paper = Color(0xFFFBF8F3)` names it. Everywhere else reads these
+    # tokens instead of writing its own numbers, which is what the rule is for.
+    #
+    # CadenceFormatTest is the second: it is a table mapping numbers to the
+    # Russian text they render as, and `formatInteger(1240) == "1 240"` is the
+    # specification written out. A named constant for 1240 would hide the one
+    # thing the row exists to state. The rule still applies to the formatter
+    # itself — its group size and teen range are named there.
+    #
+    # `shared`'s tests are the third, for the same reason: they fix calendar
+    # dates and doses as literals — `LocalDate(2026, 5, 31)`, `Dose(0.25, MG)` —
+    # and the literal is the case being pinned. Naming 2026 would hide which
+    # week of which protocol the assertion is about. The rule keeps applying to
+    # `shared/src/commonMain`, which is where the thresholds this rule exists
+    # for actually live: the 25% low-stock line, the 14-day expiry window.
+    excludes:
+      - '**/app/cadence/design/**'
+      # The formatter package's tests, all of them: each is a table mapping an
+      # input to the text it renders as, and `greeting(LocalDate(2026, 5, 31),
+      # …) == "Воскресенье, утро"` is the specification written out. The
+      # formatters themselves are not excluded — their group size, teen range
+      # and rounding half are named where they live.
+      - '**/commonTest/**/app/cadence/format/**'
+      # And the screen tests, for the third time with the same reason: a
+      # `LocalDate(2026, 5, 1)` is which day the assertion is about, and a
+      # `cycleWeeks = 12` is the protocol under test. Naming them would move
+      # the specification one hop away from the case that states it.
+      - '**/commonTest/**/app/cadence/screens/**'
+      # And the shell's, for the same reason once more: a navigation test fixes
+      # the day its overview is resolved against, and `LocalDate(2026, 5, 31)`
+      # is which day the assertion is about.
+      - '**/commonTest/**/app/cadence/shell/**'
+      - '**/shared/src/commonTest/**'
+      # And MockSeed, which is a fixture: one patient, one protocol, two meals,
+      # written out. Naming `LocalDate(2026, 5, 10)` as three constants would
+      # bury the one thing the line says. Its neighbours in `mock/` are not
+      # excluded — they hold logic, and the rule should keep watching them.
+      - '**/MockSeed.kt'
+  MaxLineLength:
+    maxLineLength: 120
+    # CadenceIcons.kt is generated path data carried over from the prototype.
+    # An SVG path is one token hundreds of characters long with no meaningful
+    # place to break it, and reflowing it would only obscure a diff.
+    excludes: ['**/CadenceIcons.kt']
+  ReturnCount:
+    max: 3

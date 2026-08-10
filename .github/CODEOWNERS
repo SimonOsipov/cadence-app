@@ -1,0 +1,33 @@
+# Who gets asked when something changes.
+#
+# Review is not *required* — the ruleset sets `require_code_owner_review: false`
+# and zero required approvals, because there is one developer and a rule nobody
+# can satisfy is a rule that gets bypassed. What this file does is put a review
+# request in front of a human automatically.
+#
+# There is deliberately no `*` rule. A default that names the same two people as
+# every specific rule makes the specific rules decorative and requests review on
+# every pull request regardless of content — and undifferentiated requests get
+# muted, which costs exactly the paths below the attention they are listed for.
+# Only changes that touch something expensive ask for a second pair of eyes.
+
+# The access model. A mistake here is not a bug in a feature — it is who can
+# read whose medical records. The chain owns the schema, the three roles and,
+# from M2, every RLS policy.
+/api/migrations/                            @SimonOsipov @porollo-dev
+
+# The impersonation seam and the token check. Everything above rests on these
+# two: the seam is what makes a request run as the caller, the verifier is what
+# decides who the caller is.
+/api/internal/platform/database/caller.go   @SimonOsipov @porollo-dev
+/api/internal/platform/auth/                @SimonOsipov @porollo-dev
+
+# The contract two client surfaces are generated from. A renamed field here
+# renames it in the mobile app and in the dashboard.
+/api/openapi.json                           @SimonOsipov @porollo-dev
+
+# The definition of "green", and the rules that decide what may reach main.
+# Weakening a gate is the one change that makes every other change less safe,
+# and it is the change least likely to look alarming in a diff.
+/scripts/gate/                              @SimonOsipov @porollo-dev
+/.github/                                   @SimonOsipov @porollo-dev

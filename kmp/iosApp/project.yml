@@ -1,0 +1,55 @@
+# XcodeGen spec — the source of truth for iosApp.xcodeproj.
+#
+# The generated .xcodeproj is committed too, so a clone builds without extra
+# tooling; regenerate it with `xcodegen generate` in this directory whenever
+# this file changes, and commit both.
+
+name: iosApp
+
+options:
+  bundleIdPrefix: app.cadence
+  # RU is the product language: it decides the Base localization and the
+  # fallback for missing strings once .lproj bundles arrive.
+  developmentLanguage: ru
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # The Gradle build phase below writes outside the sandbox.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: iosApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.cadence
+        INFOPLIST_FILE: iosApp/Info.plist
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../composeApp/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - "-framework"
+          - "ComposeApp"
+    # An explicit scheme block makes XcodeGen write a *shared* scheme. Without
+    # it the project carries none, and only Xcode's autocreation saves a local
+    # build — a fresh clone or a CI runner has nothing to pass to -scheme.
+    scheme:
+      testTargets: []
+    preBuildScripts:
+      - name: Compile Kotlin Framework
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "YES" = "$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED" ]; then
+            echo "Skipping Gradle task: the IDE builds the framework itself"
+            exit 0
+          fi
+          cd "$SRCROOT/.."
+          ./gradlew :composeApp:embedAndSignAppleFrameworkForXcode

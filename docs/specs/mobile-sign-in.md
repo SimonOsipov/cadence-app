@@ -1,0 +1,234 @@
+---
+type: spec
+project: cadence
+status: approved
+priority: p1
+created: 2026-07-30
+todoist_parent: "6h9MFpWmv25CjwmH"
+components: [kmp-app, identity]
+proposal: "[[20-Projects/cadence/architecture/proposals/first-live-read-and-sign-in|architecture/proposals/first-live-read-and-sign-in]]"
+---
+
+<!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/mobile-sign-in.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
+
+# Patient sign-in: session, navigation, three screens
+
+## Summary
+
+The patient opens the email, lands in the app, **sets a password**, and ends up
+inside with a role in the token. This block lays protected navigation on top of
+the session from "KMP Wiring", plus three screens the frozen prototype does not
+have — it begins with a user who is already signed in. They are designed out of
+the existing tokens.
+
+The spec was rewritten after the first review. What was reversed is the central
+thing: accepting an invite without a password was not a property of GoTrue but a
+choice of ours, and a bad one — a patient who lost their session to an ordinary
+event stayed dependent on email, while the sign-in screen asked for a password
+that did not exist.
+
+## User Story
+
+**As a** clinic patient
+**I want** to accept the invite, set a password, and not retype it on every launch
+**So that** the app opens where I left it, and losing the session does not mean
+waiting for an email
+
+## Acceptance Criteria
+
+- [ ] The `cadence://` scheme is registered on both platforms — an intent-filter in the Android manifest and `CFBundleURLTypes` on iOS — and added to the GoTrue redirect allow-list; without the allow-list entry the link opens the web dashboard, not the app
+- [ ] The acceptance flow is **PKCE**: "KMP Wiring" is already building the storage for it, and leaving that storage without a consumer would mean keeping storage for a mechanism nobody uses
+- [ ] A cold start from the link lands on the acceptance screen, not on the home screen and not on sign-in
+- [ ] The acceptance screen **requires** setting a password: `PUT /user` from the link's session allows it, which makes this our choice. Without a password, losing the session would leave the patient dependent on email and on the rate limit
+- [ ] The link is single-use: following it again yields `otp_expired`, and the screen explains that in Russian — GoTrue's own strings are English, so the copy is ours to write
+- [ ] Navigation splits into a pre-sign-in and a post-sign-in area; without a valid session the second is unreachable by direct navigation, by the system back button, or by deep link
+- [ ] Launching with a valid session opens the app **straight** inside: an intermediate sign-in screen reads as having been signed out
+- [ ] A session expiring in the background routes to sign-in **once**, not once per concurrent request — token refresh has a single owner, and navigation does not break that property
+- [ ] Unreadable storage means "no session", not a crash
+- [ ] The sign-in screen accepts an address and a password; the refusal does not distinguish "no such address" from "wrong password" — a refusal that distinguishes turns the form into an existence oracle
+- [ ] Signing out works and leads to the sign-in screen; with a mandatory password it has stopped being a voluntary lockout
+- [ ] Recovery calls `POST /recover`, does not confirm that an address exists, and explains the rate limit when it fires; returning via the link leads to setting a new password
+- [ ] `POST /v1/me/session` is called on sign-in and on every launch, carrying the device timezone; a timezone changed between launches gets through
+- [ ] The three screens are drawn with `CadenceTheme` tokens and introduce no new colours or fonts — enforced by a rule, not by a promise
+- [ ] Screen and refusal copy is Russian, enforced by the same rule
+- [ ] `AppTest.kt` (`appShowsTheBrand`, `appShowsThePlatformItRunsOn`) asserts the contents of the `App.kt` placeholder that step 1 replaces with a navigation host — both tests get rewritten, and that is named here rather than discovered by the build
+- [ ] Coverage limits are named honestly: Compose UI tests today run only on the iOS target (`kmp-wiring` has no Android host-test builder), and `otp_expired` behaviour is verified against the live GoTrue that stands in the **api** harness, not in `kmp/` — so what is verified here is a copy, not the behaviour
+- [ ] The KMP gate is green
+
+## Scope / Non-scope
+
+**In scope.** Scheme registration and the PKCE flow. Protected navigation. The
+sign-in, invite-acceptance-with-mandatory-password, and recovery screens. Signing
+out. Calling `POST /v1/me/session` on sign-in and on launch. Compose UI tests.
+
+**Out of scope.** The twenty-four product screens — ported from M3. Biometric
+lock — M10. Universal Links and App Links — "Deploy"; `cadence://` is what works
+here. The iOS E2E tool — an open question on `kmp-app`, and it stays open.
+Session storage and client generation — "KMP Wiring". The `POST /v1/me/session`
+endpoint — the neighbouring block; only the call belongs here.
+
+**Blocked and flagged.** The criterion "the debug screen is absent from the
+release artifact" has nothing to check against: no release build exists on either
+platform, it is produced by step 3 of "KMP Wiring", which is blocked on SKL-01
+and SKL-06. Here the property is inherited and not re-verified.
+
+## What already exists (DONE)
+
+**None of the following — they are `approved` prerequisites, not things in the
+repository.** "KMP Wiring" (session in secure storage, client from
+`openapi.json`, a single owner of token refresh, the PKCE cache, a debug module
+kept out of release), "Onboarding" (invites, Russian templates), "First Live
+Read" (`POST /v1/me/session`).
+
+What does exist and work: `kmp/composeApp` with the design system —
+`CadenceTheme`, `CadenceColors`, `CadenceTypography`, `CadenceText`,
+`CadenceIcon`, `CadenceSurfaces`, `CadenceControls`, `CadenceDimens` — and the
+`App.kt` placeholder covered by `AppTest.kt`. There is not a single product
+screen.
+
+**Measured against live GoTrue on 2026-07-30:** following the link returns a
+session and a refresh token, and does not set a password; `PUT /user` from that
+same session **does** set one, after which password sign-in works; the link is
+single-use, and a repeat yields `otp_expired`; `POST /recover` is public and
+rate-limited per user.
+
+## Technical detail
+
+### Scheme and flow
+
+`cadence://` is registered by an intent-filter in the Android manifest and by
+`CFBundleURLTypes` on iOS, and **goes into the GoTrue redirect allow-list**:
+without that entry `redirect_to` is not honoured and the link goes to `SITE_URL`,
+that is, to the web dashboard.
+
+The flow is PKCE. "KMP Wiring" builds the `codeVerifier` cache precisely for it,
+and leaving that storage without a consumer would mean keeping a mechanism nobody
+uses.
+
+### The acceptance screen
+
+Opens on a cold start with a link. Following the link already yields a session —
+so the screen does not ask for a password as a condition of entry, it **requires
+setting** one as the condition for completing acceptance. This is our choice, and
+it closes three things: the sign-in screen stops asking for something that does
+not exist, losing the session stops meaning waiting for an email, and signing out
+stops being a lockout.
+
+Following the same link a second time — an ordinary case, the email opened on two
+devices — is explained in Russian.
+
+### Navigation
+
+Two areas, with the transition driven by session validity rather than by screen
+order. Three leak paths are verified: direct navigation, the system back button,
+and a deep link.
+
+Launching with a session opens straight inside: a flash of the sign-in screen
+reads as having been signed out, and in a medical app that reads as data loss.
+
+Expiry in the background routes to sign-in once. Token refresh has a single owner
+— the property comes from "KMP Wiring", and navigation is obliged not to break it.
+
+### Sign-in, sign-out, recovery
+
+Sign-in takes an address and a password, and refuses without distinguishing the
+cause. Signing out leads to the sign-in screen. Recovery calls the public
+`POST /recover`, does not confirm that an address exists, and explains the rate
+limit when it fires: `MAILER_MAX_FREQUENCY` applies per user, and without an
+explanation the patient sees silence.
+
+### Rendering and verifiability
+
+Three screens built from existing tokens: the prototype does not have them
+because it starts with a signed-in user. The absence of new colours, new fonts,
+and non-Russian strings is enforced by a rule — otherwise the criterion has no
+way to go red.
+
+Honestly about coverage: Compose UI tests run only on the iOS target, because
+"KMP Wiring" has no Android host-test builder; and `otp_expired` cannot be
+verified against live GoTrue here — the container stands in the `api` harness. In
+both places what can be verified is, and what cannot is written down.
+
+## Architecture decision
+
+The block adds no contracts: it consumes the session from "KMP Wiring", invites
+from "Onboarding", and the endpoint from "First Live Read".
+
+The single substantive decision is the mandatory password on acceptance, and the
+first draft got it wrong twice: it made the password optional and justified that
+with "measured GoTrue behaviour". The measurement says the opposite — `PUT /user`
+from the link's session does set a password. There was no constraint; there was a
+poor choice. The analysis is in the
+[[20-Projects/cadence/architecture/proposals/first-live-read-and-sign-in|proposal]].
+
+## Component deltas
+
+### kmp-app.md
+- ADDED: to "Shape" — navigation splits into a pre-sign-in and a post-sign-in area; the transition is determined by session validity and verified against direct navigation, the system back button, and a deep link
+- ADDED: to "Shape" — the `cadence://` scheme is registered on both platforms and entered into the GoTrue redirect allow-list; the acceptance flow is PKCE
+- ADDED: invariant — launching with a valid session opens the app straight inside: an intermediate sign-in screen reads as having been signed out
+- ADDED: invariant — accepting an invite **requires** setting a password: the link sign-in is single-use, and without a password losing the session means depending on email
+- MODIFIED: invariant 5 — the timezone is sent by calling `POST /v1/me/session` on sign-in and on every launch
+- ADDED: to "Screens" — sign-in, invite acceptance, and password recovery are designed from tokens: the frozen prototype does not contain them
+- ADDED: known limitation — Compose UI tests run only on the iOS target; GoTrue behaviour is verified in the `api` harness, and what runs here is only a copy
+
+### identity.md
+- ADDED: to contracts — accepting an invite requires setting a password: the link is single-use and is itself the credential, and without a password the patient depends on email every time the session is lost
+
+## Decomposition
+
+### step-1: Protected navigation on top of the session
+
+Two areas, transition by session validity, launching with a session opens straight
+inside, expiry in the background routes to sign-in once, unreadable storage means
+"no session". `App.kt` is replaced by a navigation host, `AppTest.kt` is rewritten.
+
+Tests: the three leak paths are closed; ten concurrent 401s produce one transition.
+todoist: "6h9MFwg28gg442WH"
+
+### step-2: The `cadence://` scheme and the PKCE flow
+
+Registering the intent-filter and `CFBundleURLTypes`, the redirect allow-list
+entry, choosing PKCE, and wiring in the `codeVerifier` cache from "KMP Wiring".
+Test: a cold start from the link lands on the acceptance screen.
+todoist: "6h9MFwpfXW69VQQH"
+
+### step-3: The acceptance screen with a mandatory password
+
+Acceptance via the link, mandatory password entry, a Russian explanation on
+`otp_expired`. Tests: acceptance from a fresh link only completes with a password;
+a repeat of the same link is explained rather than failing with a generic refusal.
+todoist: "6h9MFx2QHfxwMPmH"
+
+### step-4: The sign-in screen and signing out
+
+Address and password, a refusal that does not distinguish the cause, signing out
+to the sign-in screen. Tests: a successful sign-in; the refusal is identical for
+an unknown address and a wrong password; after signing out the protected area is
+unreachable.
+todoist: "6h9MFx9f7hGGQHxq"
+
+### step-5: Password recovery
+
+`POST /recover` without confirming that an address exists, an explanation of the
+rate limit, returning via the link to set a new password. Test: a known and an
+unknown address produce the same response.
+todoist: "6h9MFxGpCR5xmVJq"
+
+### step-6: Timezone and the Compose UI test suite
+
+Calling `POST /v1/me/session` on sign-in and on launch with the device timezone.
+Consolidating the block's paths into a suite that grows with every ported screen
+from here on. The rule on tokens and Russian strings. The KMP gate green.
+todoist: "6h9MFxMVRgXxWHXH"
+
+## Open questions
+
+> [!question] Requiring a password lengthens invite acceptance by one screen. For
+> a pilot with dozens of patients that is acceptable, but it is worth checking
+> against the first real ones: if people drop off at this step, we will have to
+> return to an optional password and solve session loss some other way.
+
+> [!question] The iOS E2E tool remains an open question on the `kmp-app` note
+> ("decided in M2"). This block provides the first scenario to choose it against,
+> but the choice itself is out of scope and stays outstanding.

@@ -1,0 +1,145 @@
+{
+  "components": {
+    "schemas": {
+      "Me": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "description": "When the presented token stops being accepted.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "role": {
+            "description": "The product role the token asserts, from the cadence_role claim: patient, doctor or admin. Empty when the account has no profile yet, in which case no data endpoint will answer for it.",
+            "type": "string"
+          },
+          "sub": {
+            "description": "The caller's user id. Every access policy is keyed on it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sub",
+          "role",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "description": "An explanation specific to this occurrence.",
+            "type": "string"
+          },
+          "errors": {
+            "description": "Per-field detail, present on validation failures.",
+            "items": {
+              "$ref": "#/components/schemas/ProblemDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "instance": {
+            "description": "The request path this problem occurred on.",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Correlates this response with the server log.",
+            "type": "string"
+          },
+          "status": {
+            "description": "The HTTP status code.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short summary of the problem type, stable across occurrences.",
+            "type": "string"
+          },
+          "type": {
+            "description": "A URI reference identifying the problem type.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ProblemDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "description": "Where the problem is, e.g. body.dose.value.",
+            "type": "string"
+          },
+          "message": {
+            "description": "What is wrong with the value at this location.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "description": "An access token from the project's identity provider. Verified against its JWK Set on every request.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Cadence API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/me": {
+      "get": {
+        "description": "Returns the identity carried by the presented token. It reads no database: a role changed there takes effect when the token expires.",
+        "operationId": "get-me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "The authenticated caller",
+        "tags": [
+          "identity"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ]
+}
