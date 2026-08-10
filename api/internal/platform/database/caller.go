@@ -116,7 +116,10 @@ func enterSeam(ctx context.Context, entering seam) (context.Context, error) {
 // separators are hyphens, so it accepts values uuid_in refuses — and a value
 // this function passes and the database rejects is a 22P02 raised inside a
 // policy, which is the exact failure ErrInvalidSubject exists to prevent.
-func validSubject(subject string) bool {
+// Exported so the contexts that write identifiers into these tables refuse a
+// malformed one before the database is touched, against the same definition the
+// seam uses. Two definitions of "UUID-shaped" in one process is one too many.
+func IsUUIDShaped(subject string) bool {
 	var parsed pgtype.UUID
 	if err := parsed.Scan(subject); err != nil {
 		return false
@@ -193,7 +196,7 @@ func WithCaller(
 		return fmt.Errorf("impersonating: %w", ErrNoSubject)
 	}
 
-	if !validSubject(caller.Subject) {
+	if !IsUUIDShaped(caller.Subject) {
 		return fmt.Errorf("impersonating %q: %w", caller.Subject, ErrInvalidSubject)
 	}
 

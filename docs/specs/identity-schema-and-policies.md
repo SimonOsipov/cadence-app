@@ -688,6 +688,37 @@ policy tests. Tests: a rollback leaves neither rows nor audit; a repeated pair i
 rejected by `UNIQUE`; an actor not matching the published one is rejected by policy;
 an empty `actor_job` is rejected by a constraint; `UPDATE`, `DELETE`, and `TRUNCATE`
 on `audit_log` are rejected under every impersonation role.
+> [!deviation] 2026-08-10
+> Spec said: `timezone` validated against `pg_timezone_names` and the assigned
+> specialist's role checked for consistency. Actually done: that, plus four
+> refusals that can be made before the transaction opens — a malformed
+> identifier, an empty care team, two specialists marked as leading, and the
+> shape of every provider id. Why: three of them the database also refuses, but
+> it refuses two of them with the same `23505` a duplicate patient produces, so a
+> caller who ticked two "primary" boxes would be told the patient already exists.
+> The fourth, a non-UUID identifier, raises `22P02` from inside a query — a 500
+> where a refusal belongs, which is the reason the seam validates its subject.
+>
+> `locale` is left to the column default rather than defaulted in Go: the schema
+> already says `'ru'`, and two copies of a default drift the first time one is
+> edited. It costs two INSERT statements, because `DEFAULT` is not an expression
+> in Postgres.
+>
+> The audit insert names the actor settings through `database.ActorIDSetting` and
+> `database.ActorJobSetting`, which this step exports for it. A copy of the two
+> strings would be a contract with no compile-time link.
+
+> [!deviation] 2026-08-10
+> Review found the step's own acceptance item unmeasured, and it is worth
+> recording how. "A rollback leaves neither rows nor audit" had a test named for
+> it whose refusal arrived *before* any row was written — every check that can
+> run before the transaction does, so the assertion `rows == 0` held in a state
+> where zero was the only possible answer. It now fails inside the write, on the
+> unique pair, with all five tables asserted empty afterwards. The happy path had
+> the same shape in reverse: it counted five rows and read no column, so a
+> profile written with `role = 'doctor'` — the value the step-8 hook reads to
+> choose a Postgres role — passed it.
+
 todoist: "6h9HmVvfMh3hmWRH"
 
 ### step-7: The regression suite of policy tests

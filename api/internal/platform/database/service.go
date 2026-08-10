@@ -27,9 +27,14 @@ const (
 // The settings the audit actor travels under. Exactly one of them is published
 // per transaction, which is what the audit_log constraint requires: a row with
 // neither is unattributed, and a row with both names two actors for one action.
+//
+// Exported because the audit row is written by the bounded context that owns the
+// action, not by this package, and it has to name them. A copy of these strings
+// over there is a contract with no compile-time link: renaming one here would
+// leave that package compiling and failing at runtime.
 const (
-	actorIDSetting  = "app.actor_id"
-	actorJobSetting = "app.actor_job"
+	ActorIDSetting  = "app.actor_id"
+	ActorJobSetting = "app.actor_job"
 )
 
 // ErrNoActor is returned for a service transaction with nobody to attribute it
@@ -60,7 +65,7 @@ func ActingAsUser(subject string) (Actor, error) {
 		return Actor{}, fmt.Errorf("acting as a user: %w", ErrNoActor)
 	}
 
-	if !validSubject(subject) {
+	if !IsUUIDShaped(subject) {
 		return Actor{}, fmt.Errorf("acting as %q: %w", subject, ErrInvalidSubject)
 	}
 
@@ -88,10 +93,10 @@ func ActingAsJob(name string) (Actor, error) {
 // Actor returns an empty value, which is what the guard in WithService reads.
 func (a Actor) setting() (published, value, cleared string) {
 	if a.subject != "" {
-		return actorIDSetting, a.subject, actorJobSetting
+		return ActorIDSetting, a.subject, ActorJobSetting
 	}
 
-	return actorJobSetting, a.job, actorIDSetting
+	return ActorJobSetting, a.job, ActorIDSetting
 }
 
 // WithService runs fn in a transaction on the service pool, as cadence_service.
