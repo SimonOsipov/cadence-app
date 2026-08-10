@@ -561,6 +561,21 @@ with no exception; inside `WithService` it is empty; an empty GUC does not fail 
 query; `cadence_app` cannot call it. Plus a cheap test of high value: one prepared
 statement on one connection under two subjects returns different rows — proof that
 the plan is not reused across a change of claims.
+> [!deviation] 2026-08-10
+> Spec said: `nullif(current_setting('request.jwt.claims', true), '')` before the
+> cast — without `nullif` an empty GUC value gives `22P02` inside a policy.
+> Actually done: that, plus `IS JSON OBJECT` around the json cast. Why: `nullif`
+> covers exactly one value, and every other unparseable one raises the same
+> `22P02` the guard exists to prevent — measured on PostgreSQL 17 with this
+> function body, `garbage` and a truncated object both raise. The setting has
+> `USERSET` context, so a caller can put either there inside their own
+> transaction and nothing can forbid it; the spec says as much in the invariant
+> on SQL authorship, and a seam test already proves the overwrite is reachable.
+> Once step-5 puts this call in every policy, that would be a 500 on every table
+> for such a session, where the design's answer is "no rows".
+>
+> The cost is a floor: `IS JSON` is PostgreSQL 16. The chain's role grants still
+> carry a pre-16 branch and nothing else here does; the deployment is 17.
 todoist: "6h9HmVRx96j8xVgH"
 
 ### step-4: The schema migration: six tables, columns, constraints, indexes
