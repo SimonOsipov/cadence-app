@@ -571,6 +571,8 @@ func TestTheFunctionsAreTheOnesDeclared(t *testing.T) {
 	// cadence_migrator appears because it is a member of cadence_owner, which is
 	// how the chain creates objects at all.
 	want := []string{
+		`access_token_hook owner=cadence_owner secdef=true config="search_path=pg_catalog, pg_temp" ` +
+			`execute=cadence_auth_hook,cadence_migrator,cadence_owner`,
 		`jwt_subject owner=cadence_owner secdef=false config="search_path=pg_catalog, pg_temp" ` +
 			`execute=cadence_admin,cadence_doctor,cadence_migrator,cadence_owner,cadence_patient,cadence_service`,
 	}

@@ -697,6 +697,20 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 		return version
 	}
 
+	countBaseRoles := func() int {
+		t.Helper()
+
+		var roles int
+		if err := admin.QueryRow(
+			ctx,
+			`SELECT count(*) FROM pg_roles WHERE rolname = ANY($1)`, testsupport.BaseRoles(),
+		).Scan(&roles); err != nil {
+			t.Fatalf("counting the base roles: %v", err)
+		}
+
+		return roles
+	}
+
 	countRoles := func() int {
 		t.Helper()
 
@@ -770,10 +784,12 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 			"down file removed nothing", objectsBefore, objectsAfter)
 	}
 
-	// It took the roles nothing, though: the operator undoing the last deploy is
-	// not undoing the arrangement every environment stands on.
-	roles := countRoles()
-	if want := len(testsupport.ChainRoles()); roles != want {
+	// It took the base arrangement nothing, though: the operator undoing the last
+	// deploy is not undoing what every environment stands on. A later migration
+	// may create a role of its own and take it back, which is why this counts the
+	// seven of the base rather than every role the chain has ever made.
+	roles := countBaseRoles()
+	if want := len(testsupport.BaseRoles()); roles != want {
 		t.Errorf("%d of the chain's %d roles survived a single-step rollback, want all of them",
 			roles, want)
 	}

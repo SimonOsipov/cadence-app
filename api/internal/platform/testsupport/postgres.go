@@ -58,6 +58,11 @@ const (
 	// granted to AppRole, and that is asserted rather than assumed.
 	ServiceRole = "cadence_service"
 
+	// AuthHookRole is the intermediary the identity provider's own database role
+	// is made a member of. It holds EXECUTE on the token issuance hook and USAGE
+	// on the schema, and nothing else anywhere.
+	AuthHookRole = "cadence_auth_hook"
+
 	// AppSchema is the schema the migration chain owns.
 	AppSchema = "app"
 )
@@ -74,10 +79,23 @@ func ImpersonationRoles() []string {
 	return []string{PatientRole, DoctorRole, AdminRole, ServiceRole}
 }
 
+// BaseRoles are the seven the first migration creates — the arrangement every
+// environment stands on. A later migration may create a role of its own, and
+// rolling that migration back must not take these with it.
+func BaseRoles() []string {
+	return []string{
+		OwnerRole, AppRole, ServiceAppRole,
+		PatientRole, DoctorRole, AdminRole, ServiceRole,
+	}
+}
+
 // ChainRoles is every role the migration chain creates, in no particular order.
 // A rollback has to leave none of them behind.
 func ChainRoles() []string {
-	return []string{OwnerRole, AppRole, ServiceAppRole, PatientRole, DoctorRole, AdminRole, ServiceRole}
+	return []string{
+		OwnerRole, AppRole, ServiceAppRole,
+		PatientRole, DoctorRole, AdminRole, ServiceRole, AuthHookRole,
+	}
 }
 
 // Cluster is a Postgres server shared by every test in one test binary.
