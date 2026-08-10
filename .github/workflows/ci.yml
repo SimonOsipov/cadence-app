@@ -109,7 +109,9 @@ jobs:
           added=$(git diff -U0 "origin/$BASE_REF...HEAD" \
             -- '*_test.go' '*Test.kt' '*Tests.kt' '*.spec.ts' '*.test.ts' '*.test.tsx' \
             | grep -E '^\+' | grep -vE '^\+\+\+' || true)
-          offenders=$(echo "$added" | grep -E 't\.Skip\(|@Ignore|@Disabled|\.skip\(|xit\(|xdescribe\(' || true)
+          # The JS markers need a left boundary: without one, `xit(` matches inside
+          # `os.Exit(` and a plain TestMain reads as a skipped test.
+          offenders=$(echo "$added" | grep -E 't\.Skip\(|@Ignore|@Disabled|(it|test|describe|context)\.skip\(|[^A-Za-z0-9_.](xit|xdescribe)\(' || true)
           if [ -n "$offenders" ]; then
             echo "this branch adds skipped tests:"
             echo "$offenders" | sed 's/^/  /'
