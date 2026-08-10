@@ -221,3 +221,29 @@ __marimo__/
 CLAUDE.md
 AGENTS.md
 .claude/
+
+# Go (api/)
+api/bin/
+api/coverage.out
+*.test
+
+# Local environment
+.env.local
+
+# Gradle / Kotlin Multiplatform (kmp/)
+.gradle/
+.kotlin/
+local.properties
+*.hprof
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# Ralph loop runtime state (prd.json.example stays tracked; prd.json is
+# generated per run by /ralph-prd)
+scripts/ralph/prd.json
+scripts/ralph/progress.txt
+scripts/ralph/.last-branch
+scripts/ralph/archive/

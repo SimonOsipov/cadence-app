@@ -1,0 +1,139 @@
+# The local development stack. Everything a feature needs to be built and tried
+# on this machine, and nothing that belongs to a deployment.
+#
+# The integration suite does not use any of this — it brings its own Postgres
+# through testcontainers, so a test run cannot be contaminated by whatever state
+# a development session left behind.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: cadence
+      POSTGRES_PASSWORD: cadence
+      POSTGRES_DB: cadence
+    ports:
+      - "5433:5432"
+    volumes:
+      - cadence-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cadence -d cadence"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # The identity provider, locally. Every path behind /v1 needs a token, so
+  # without this there is nothing to build a login screen against and nothing to
+  # test an authenticated endpoint with. It is the same GoTrue that will run in
+  # the deployment (ADR-008) — the difference is only who hosts it.
+  # What GoTrue's own migrations assume exists before they run, and do not
+  # create themselves. Two surprises, both of which will repeat on the
+  # deployment and are therefore worth meeting here first:
+  #
+  #   - the `auth` schema. GoTrue migrates it but does not create it, and dies
+  #     with "schema auth does not exist" if it is missing.
+  #   - a set of roles from Supabase's own environment. Its migrations hand out
+  #     grants to `postgres`, `anon`, `authenticated` and friends, and a plain
+  #     Postgres has none of them. They are created NOLOGIN and hold nothing;
+  #     they exist so the grants have a target.
+  #
+  # `cadence_authenticated` is a different role and is not touched here — ours
+  # is created by api/migrations and owns the request path's privileges.
+  #
+  # A one-shot step rather than an entrypoint init script, because init scripts
+  # only run when the data volume is first created: this way a developer with
+  # an existing volume gets the same result as a fresh clone.
+  auth-schema:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      # No dollar-quoted block on purpose: compose reads `$$` as an escaped
+      # dollar and psql would receive a single one. `\gexec` runs each row of
+      # the result as its own statement, which needs no quoting at all.
+      - |
+        PGPASSWORD=cadence psql -v ON_ERROR_STOP=1 -h postgres -U cadence -d cadence <<'SQL'
+        CREATE SCHEMA IF NOT EXISTS auth;
+        SELECT format('CREATE ROLE %I NOLOGIN', r)
+          FROM unnest(ARRAY[
+                 'postgres', 'anon', 'authenticated', 'service_role',
+                 'supabase_auth_admin', 'supabase_admin', 'authenticator', 'dashboard_user'
+               ]) AS r
+         WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r);
+        \gexec
+        SQL
+    restart: "no"
+
+  auth:
+    image: supabase/gotrue:v2.194.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-schema:
+        condition: service_completed_successfully
+    ports:
+      - "9999:9999"
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: "9999"
+
+      # Its own schema, created and migrated by GoTrue itself. The chain in
+      # api/migrations owns `app` and never touches this one.
+      GOTRUE_DB_DRIVER: postgres
+      # Both, and they do different jobs: DB_NAMESPACE tells the migrator where
+      # to create tables, `search_path` tells the running server where to find
+      # them. GoTrue's runtime queries are unqualified — `select ... from
+      # identities` — so with only the first it migrates cleanly and then fails
+      # every request with `relation "identities" does not exist`.
+      # `public` stays on the path for extension functions.
+      GOTRUE_DB_NAMESPACE: auth
+      DATABASE_URL: postgres://cadence:cadence@postgres:5432/cadence?sslmode=disable&search_path=auth,public
+
+      # Standalone GoTrue serves its API at the root — the /auth/v1 prefix seen
+      # on Supabase comes from their gateway, not from this process. So the
+      # issuer is the bare origin, and the JWK Set lands at
+      # {issuer}/.well-known/jwks.json, which is exactly what config.loadAuth
+      # derives from AUTH_JWT_ISSUER.
+      API_EXTERNAL_URL: http://localhost:9999
+      GOTRUE_JWT_ISSUER: http://localhost:9999
+      GOTRUE_SITE_URL: http://localhost:8080
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_EXP: "3600"
+
+      # Required by config validation even when asymmetric keys are configured,
+      # and this is worth knowing rather than being surprised by: GoTrue refuses
+      # to start without it. It does not sign anything here — with JWT_KEYS set,
+      # new tokens are ES256 — it stays for verifying tokens issued before a key
+      # pair existed. Local only, and the API would refuse an HS256 token
+      # signed with it anyway.
+      GOTRUE_JWT_SECRET: local-development-only-not-a-secret
+
+      # Asymmetric signing, as a JSON *array* of JWKs — the decoder unmarshals
+      # into a list and keys the result by each entry's kid. `key_ops: ["sign"]`
+      # is not decoration: GoTrue picks the signing key by looking for exactly
+      # that, and refuses to start with "no signing key detected" without it.
+      #
+      # A development key pair, generated for this file and committed on
+      # purpose: it signs nothing that exists outside a laptop. The deployed
+      # instance gets its own, and that one never comes from a repository.
+      #
+      # It matters that this is ES256 and not the legacy shared secret: the API
+      # accepts ES256 and RS256 and nothing else, so a GoTrue left on HS256 has
+      # every one of its tokens refused. Better to meet that here than against
+      # a deployment.
+      GOTRUE_JWT_KEYS: '[{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"a1323fc3-c42d-37ae-8be6-1ebfb524403f","x":"2e9iv7Gxg80pCO61rNEtPEs-mIr1mErwg8vW7QcugY8","y":"9K6Q4xt--k5fF48WfBjVeFnxsn3NAJY-so03DMZnEH0","d":"oTI_w8QtN66L5h6_tSRAP5I4FbDa13nXQrT2KWM3fuQ","key_ops":["sign"]}]'
+
+      # Invite-only. Invariant 3 of the identity note, not a local convenience:
+      # an account exists because a clinic invited it.
+      GOTRUE_DISABLE_SIGNUP: "true"
+
+      # No mail server locally. Invitation and recovery links are written to the
+      # log instead of sent, so `docker compose logs auth` is where you pick the
+      # link up and the whole flow walks end to end without an SMTP account.
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_LOG_LEVEL: debug
+
+volumes:
+  cadence-pgdata:
