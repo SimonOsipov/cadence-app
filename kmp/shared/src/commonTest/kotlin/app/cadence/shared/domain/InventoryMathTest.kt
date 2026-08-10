@@ -1,0 +1,233 @@
+package app.cadence.shared.domain
+
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.minus
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.time.Instant
+
+private val TODAY = LocalDate(2026, 5, 31)
+private val PATIENT = UserId("p-1")
+private val SEMA = CompoundId("sema")
+private var nextId = 0
+
+private fun vial(
+    totalDoses: Int = 4,
+    openedAt: LocalDate? = null,
+    expiresOn: LocalDate = LocalDate(2026, 12, 31),
+) = Vial(
+    id = VialId("v-${nextId++}"),
+    patientId = PATIENT,
+    compoundId = SEMA,
+    concentrationLabel = "1 мг/мл",
+    totalDoses = totalDoses,
+    openedAt = openedAt,
+    expiresOn = expiresOn,
+    lot = null,
+    locationRu = null,
+    disposedAt = null,
+    labelPhotoPath = null,
+)
+
+/** An item whose cadence gives the weekly rate each case needs. */
+private fun weeklyItem(
+    compound: CompoundId = SEMA,
+    daysAWeek: Int = 1,
+) = ProtocolItem(
+    id = ProtocolItemId("item-${compound.raw}"),
+    protocolId = ProtocolId("pr"),
+    kind = ProtocolItemKind.INJECTION,
+    compoundId = compound,
+    cadence = ProtocolCadence.WEEKLY,
+    daysOfWeek = DayOfWeek.entries.take(daysAWeek),
+    times = listOf(LocalTime(7, 0)),
+    loggable = true,
+)
+
+private fun doseFrom(v: Vial) =
+    DoseEvent(
+        id = DoseEventId("e-${nextId++}"),
+        patientId = PATIENT,
+        protocolItemId = ProtocolItemId("sema"),
+        vialId = v.id,
+        scheduledForDate = TODAY,
+        scheduledForTime = null,
+        injectedAt = Instant.parse("2026-05-31T07:00:00Z"),
+        dose = Dose(0.25, DoseUnit.MG),
+        site = null,
+        mood = null,
+        sideEffects = emptyList(),
+        note = null,
+        photoPath = null,
+        createdAt = null,
+    )
+
+class InventoryMathTest {
+    @Test
+    fun loggingADoseDecrementsTheVialItCameFrom() {
+        // The prototype's central inventory bug: logging never touched stock.
+        // There is no stored counter to go wrong here — the count *is* the
+        // subtraction, every time it is asked for.
+        val v = vial(totalDoses = 4)
+
+        assertEquals(4, remainingDoses(v, events = emptyList()))
+        assertEquals(2, remainingDoses(v, events = List(2) { doseFrom(v) }))
+        assertEquals(0, remainingDoses(v, events = List(4) { doseFrom(v) }))
+    }
+
+    @Test
+    fun eventsFromOtherVialsDoNotCount() {
+        // Two vials of one compound is the ordinary case, and a subtraction
+        // that ignored `vialId` would drain both at once.
+        val mine = vial(totalDoses = 4)
+        val other = vial(totalDoses = 4)
+
+        assertEquals(4, remainingDoses(mine, events = List(3) { doseFrom(other) }))
+    }
+
+    @Test
+    fun remainingNeverGoesNegative() {
+        // More events than doses is data corruption, not a number to render.
+        val v = vial(totalDoses = 2)
+
+        assertEquals(0, remainingDoses(v, events = List(5) { doseFrom(v) }))
+    }
+
+    @Test
+    fun anUnopenedVialIsSealedAndAnOpenedOneIsActive() {
+        assertEquals(VialStatus.SEALED, vialStatus(vial(openedAt = null), emptyList(), TODAY))
+        assertEquals(
+            VialStatus.ACTIVE,
+            vialStatus(vial(openedAt = LocalDate(2026, 5, 1)), emptyList(), TODAY),
+        )
+    }
+
+    @Test
+    fun aDisposedVialSaysSoWhateverElseIsTrueOfIt() {
+        val v = vial(openedAt = LocalDate(2026, 5, 1)).copy(disposedAt = LocalDate(2026, 5, 20))
+
+        assertEquals(VialStatus.DISPOSED, vialStatus(v, emptyList(), TODAY))
+    }
+
+    @Test
+    fun aVialBelowAQuarterIsLow() {
+        // §03's «low <25%», read strictly: a quarter left is not low, less
+        // than a quarter is. Eight doses rather than four because four cannot
+        // express the boundary — its remainders land on 25% and 0% with
+        // nothing in between, which is what the first draft of this test got
+        // wrong.
+        val v = vial(totalDoses = 8, openedAt = LocalDate(2026, 5, 1))
+
+        assertEquals(VialStatus.ACTIVE, vialStatus(v, List(5) { doseFrom(v) }, TODAY), "three of eight")
+        assertEquals(VialStatus.ACTIVE, vialStatus(v, List(6) { doseFrom(v) }, TODAY), "exactly a quarter")
+        assertEquals(VialStatus.LOW, vialStatus(v, List(7) { doseFrom(v) }, TODAY), "one of eight")
+    }
+
+    @Test
+    fun expiryOutranksLowStock() {
+        // «expiring ≤14 d». A vial that is both low and expiring reads as
+        // expiring, because that is the one with a deadline attached.
+        val soon = vial(totalDoses = 8, openedAt = LocalDate(2026, 5, 1), expiresOn = LocalDate(2026, 6, 10))
+        val later = vial(totalDoses = 8, openedAt = LocalDate(2026, 5, 1), expiresOn = LocalDate(2026, 7, 20))
+
+        assertEquals(VialStatus.EXPIRING, vialStatus(soon, List(7) { doseFrom(soon) }, TODAY))
+        assertEquals(VialStatus.LOW, vialStatus(later, List(7) { doseFrom(later) }, TODAY))
+    }
+
+    @Test
+    fun aSealedVialAboutToExpireSaysSo() {
+        // Measured: it read SEALED. Unopened stock with days left on it is
+        // exactly the vial worth warning about — it is about to be wasted —
+        // and the precedence comment already claimed expiry outranked
+        // everything but disposal.
+        val v = vial(openedAt = null, expiresOn = LocalDate(2026, 6, 3))
+
+        assertEquals(VialStatus.EXPIRING, vialStatus(v, emptyList(), TODAY))
+    }
+
+    @Test
+    fun aHintIsAboutOneCompoundAndCountsOnlyItsVials() {
+        // Measured: an unopened BPC vial suppressed the semaglutide hint, and
+        // BPC doses counted as semaglutide supply divided by semaglutide's
+        // weekly rate. A patient about to run out was told nothing.
+        val sema = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
+        val bpcSpare =
+            vial(totalDoses = 30).copy(id = VialId("v-bpc"), compoundId = CompoundId("bpc"))
+
+        val alone = reorderHint(weeklyItem(), listOf(sema), emptyList(), TODAY)
+        val withOtherCompound = reorderHint(weeklyItem(), listOf(sema, bpcSpare), emptyList(), TODAY)
+
+        assertEquals(alone, withOtherCompound, "a vial of another compound changed the answer")
+        assertEquals(SEMA, alone?.compoundId)
+    }
+
+    @Test
+    fun theReorderHintNeedsBothNoSparesAndLittleSupply() {
+        // §03: «0 sealed spares & ≤4 weeks supply». Either alone is not a
+        // reason to tell a patient to order more.
+        val open = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
+        // A *small* spare, deliberately. With a full one the total supply is
+        // over four weeks anyway and the assertion passes without the spare
+        // check ever running — which is how the first version of this test let
+        // a mutation through: it asserted the right answer for the wrong
+        // reason.
+        val spare = vial(totalDoses = 1)
+
+        assertNull(
+            reorderHint(weeklyItem(), listOf(open, spare), List(3) { doseFrom(open) }, TODAY),
+            "a sealed spare is exactly what makes reordering unnecessary",
+        )
+        assertNull(
+            reorderHint(weeklyItem(daysAWeek = 0), listOf(open), emptyList(), TODAY),
+            "four doses at one every five weeks is twenty weeks of supply",
+        )
+
+        val hint = reorderHint(weeklyItem(), listOf(open), List(1) { doseFrom(open) }, TODAY)
+
+        assertEquals(3, hint?.weeksLeft)
+        assertEquals(SEMA, hint?.compoundId)
+    }
+
+    @Test
+    fun anExpiredVialIsNeitherASpareNorSupply() {
+        // Measured: a sealed vial that expired last month made `hasSealedSpare`
+        // true and `reorderHint` returned null outright — so a patient two
+        // doses from nothing, on a weekly protocol, saw no reorder card and no
+        // weeks-left figure. `vialStatus` flagged the dead vial as EXPIRING,
+        // but that is a chip in «Аптечка», not the call to action.
+        val open = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
+        val dead = vial(totalDoses = 4, expiresOn = TODAY.minus(DatePeriod(days = 1)))
+
+        val hint = reorderHint(weeklyItem(), listOf(open, dead), List(2) { doseFrom(open) }, TODAY)
+
+        assertEquals(2, hint?.weeksLeft, "the expired vial is not two more weeks of supply")
+
+        // And the boundary: a vial expiring *today* is still usable, so it is
+        // still the spare that suppresses the hint.
+        assertNull(
+            reorderHint(
+                weeklyItem(),
+                listOf(open, vial(totalDoses = 4, expiresOn = TODAY)),
+                List(2) { doseFrom(open) },
+                TODAY,
+            ),
+            "stock that expires today has not expired yet",
+        )
+    }
+
+    @Test
+    fun aDisposedVialIsNeitherASpareNorSupply() {
+        val open = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
+        val binned = vial(totalDoses = 4).copy(disposedAt = LocalDate(2026, 5, 2))
+
+        // The binned vial must not count as the sealed spare that suppresses
+        // the hint, and its doses must not count as supply.
+        val hint = reorderHint(weeklyItem(), listOf(open, binned), List(1) { doseFrom(open) }, TODAY)
+
+        assertEquals(3, hint?.weeksLeft)
+    }
+}
