@@ -20,7 +20,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
-// Role names and credentials of the harness. The three cadence_* roles are the
+// Role names and credentials of the harness. The seven cadence_* roles are the
 // ones the chain creates; bootstrapRole is what applies it.
 const (
 	superuserRole = "postgres"
@@ -38,15 +38,47 @@ const (
 	AppRole = "cadence_app"
 	appPass = "cadence_app"
 
+	// ServiceAppRole is the service path: the role in DATABASE_SERVICE_URL. It
+	// connects on its own pool, and the boundary between the two paths runs
+	// along session_user rather than along a single statement.
+	ServiceAppRole = "cadence_service_app"
+	serviceAppPass = "cadence_service_app"
+
 	// OwnerRole owns the application schema and every object in it.
 	OwnerRole = "cadence_owner"
 
-	// AuthenticatedRole is the target of impersonation inside a request.
-	AuthenticatedRole = "cadence_authenticated"
+	// The product roles are Postgres roles rather than a claim, because grants
+	// are bound to a role: while the admin was a claim, a grant the admin needed
+	// reached the patient too.
+	PatientRole = "cadence_patient"
+	DoctorRole  = "cadence_doctor"
+	AdminRole   = "cadence_admin"
+
+	// ServiceRole is the impersonation target of the service path. It is never
+	// granted to AppRole, and that is asserted rather than assumed.
+	ServiceRole = "cadence_service"
 
 	// AppSchema is the schema the migration chain owns.
 	AppSchema = "app"
 )
+
+// ProductRoles are the three roles a request can be impersonated into.
+func ProductRoles() []string {
+	return []string{PatientRole, DoctorRole, AdminRole}
+}
+
+// ImpersonationRoles are every target of SET LOCAL ROLE: the product roles plus
+// the service path. They are the roles that hold table privileges, so they are
+// the ones USAGE on the application schema is granted to.
+func ImpersonationRoles() []string {
+	return []string{PatientRole, DoctorRole, AdminRole, ServiceRole}
+}
+
+// ChainRoles is every role the migration chain creates, in no particular order.
+// A rollback has to leave none of them behind.
+func ChainRoles() []string {
+	return []string{OwnerRole, AppRole, ServiceAppRole, PatientRole, DoctorRole, AdminRole, ServiceRole}
+}
 
 // Cluster is a Postgres server shared by every test in one test binary.
 //
@@ -117,6 +149,19 @@ func (c *Cluster) Terminate(ctx context.Context) error {
 	return nil
 }
 
+// MigrationRole is the role that applies the chain: CREATEROLE, CREATEDB, not a
+// superuser. Named for the handful of tests that have to grant it something.
+func MigrationRole() string {
+	return bootstrapRole
+}
+
+// AdminDSN is the superuser against the maintenance database. It exists for the
+// handful of tests that have to arrange cluster state — a role, say — before
+// there is a database to arrange it from. Nothing under test runs through it.
+func (c *Cluster) AdminDSN() string {
+	return c.DSN(superuserRole, superuserPass, "postgres")
+}
+
 // DSN composes a connection string for one role against one database.
 func (c *Cluster) DSN(role, password, dbname string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
@@ -134,6 +179,12 @@ type Database struct {
 	// in a deployed environment, and what assertions about the request path's
 	// privileges must be made against.
 	AppURL string
+
+	// ServiceAppURL is the service path: cadence_service_app. This is what
+	// DATABASE_SERVICE_URL holds, and it is a second connection rather than a
+	// second statement — which is what makes SET ROLE between the paths a
+	// refusal instead of an option.
+	ServiceAppURL string
 
 	// SuperuserURL exists so a test can observe what the request path is not
 	// allowed to observe. Nothing under test ever runs through it.
@@ -207,25 +258,28 @@ func (c *Cluster) NewDatabase(t *testing.T) *Database {
 	})
 
 	db := &Database{
-		Name:         name,
-		MigrationURL: c.DSN(bootstrapRole, bootstrapPass, name),
-		AppURL:       c.DSN(AppRole, appPass, name),
-		SuperuserURL: c.DSN(superuserRole, superuserPass, name),
-		cluster:      c,
+		Name:          name,
+		MigrationURL:  c.DSN(bootstrapRole, bootstrapPass, name),
+		AppURL:        c.DSN(AppRole, appPass, name),
+		ServiceAppURL: c.DSN(ServiceAppRole, serviceAppPass, name),
+		SuperuserURL:  c.DSN(superuserRole, superuserPass, name),
+		cluster:       c,
 	}
 
 	if err := database.RunMigrations(db.MigrationURL, MigrationsPath(t)); err != nil {
 		t.Fatalf("applying migration chain: %v", err)
 	}
 
-	// The chain creates cadence_app without a password on purpose — the
+	// The chain creates both LOGIN roles without a password on purpose — the
 	// credential is provisioned outside the repository. The harness plays that
-	// part so the test can connect as the request path.
-	if err := c.exec(
-		ctx, bootstrapDSN,
-		fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pgIdent(AppRole), appPass),
-	); err != nil {
-		t.Fatalf("setting the app role password: %v", err)
+	// part so a test can connect as either path.
+	for role, password := range map[string]string{AppRole: appPass, ServiceAppRole: serviceAppPass} {
+		if err := c.exec(
+			ctx, bootstrapDSN,
+			fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pgIdent(role), password),
+		); err != nil {
+			t.Fatalf("setting the %s password: %v", role, err)
+		}
 	}
 
 	return db

@@ -8,7 +8,6 @@ todoist_parent: "6h9HmMjhjgWQRmJq"
 components: [identity, data-layer, api, audit]
 proposal: "[[20-Projects/cadence/architecture/proposals/identity-schema-and-policies|architecture/proposals/identity-schema-and-policies]]"
 ---
-
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/identity-schema-and-policies.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
 # Identity: the schema with forced RLS, the access policies, and the policy test suite
@@ -420,6 +419,61 @@ surviving; `TestChainRefusesAMembershipItCannotRevoke` gains counterparts;
 `TestRequestPathRoleIsLowPrivilege` move from `cadence_authenticated` to the product
 roles; `testsupport/postgres.go` gains constants for all the new roles and loses
 `AuthenticatedRole`.
+> [!deviation] 2026-08-10
+> Spec said: the closed map of product roles lands in step-2. Actually done: it
+> is in step-1, in `WithCaller`, together with `ErrUnknownRole` and the refusal
+> before `Begin`. Why: step-1 abolishes `cadence_authenticated`, which was the
+> seam's only impersonation target, so between step-1 and step-2 the seam would
+> have addressed a role that no longer exists and the gate could not be green at
+> the end of a step. Everything else step-2 lists — the `auth`/`auth/token`
+> split, the `cadence_role` claim, the second pool, `WithService`,
+> `DATABASE_SERVICE_URL`, the execution mode — is untouched and stays there.
+
+> [!deviation] 2026-08-10
+> Spec said: `WithCaller` issues `SET LOCAL ROLE <name>`. Actually done:
+> `SELECT set_config('role', $1, true)` — the same assignment, with the role as a
+> bound parameter. Why: the statement form takes an identifier and admits no
+> placeholder, so a per-caller role would have to be concatenated into the SQL —
+> which is exactly the shape the authorship gate introduced by this same step
+> forbids. Measured equivalent on PostgreSQL 17: membership is still checked
+> (`permission denied to set role`), the role is still transaction-scoped, and
+> `session_user` is unchanged.
+
+> [!deviation] 2026-08-10
+> Spec said: the gate covers `Exec`/`Query`/`QueryRow`/`SendBatch`. Actually
+> done: `Exec`, `Query`, `QueryRow`, `Queue` and `Prepare`. Why: `SendBatch`
+> carries a `*pgx.Batch` and no statement text at all — checking its argument
+> reports every batch there is — while the text enters a batch through `Queue`.
+> `Prepare` was added because `pgx.Tx`, which the seam hands to its closure, has
+> one, and a statement composed there is executed later by name.
+
+> [!deviation] 2026-08-10
+> Spec said: the attribute guard and the membership checks extend from three
+> names to seven. Actually done: three things beyond that, each found by review
+> and each measured on a live cluster before it was written.
+> `REPLICATION` joined `SUPERUSER` and `BYPASSRLS` in the guard — a LOGIN role
+> holding it streams WAL and reads every row of every table with no policy
+> running. The membership audit filters on the **member** side only rather than
+> on both: closed on both sides it missed
+> `GRANT pg_execute_server_program TO cadence_app`, which is programs on the
+> database host reached from the request path without the seam. And
+> `CREATE SCHEMA IF NOT EXISTS app` now converges the schema's owner **and its
+> privileges**, and refuses a schema already holding objects it does not own: a
+> schema created by hand under another owner was accepted silently, leaving the
+> request path able to disable row level security on its own tables — and moving
+> the owner alone leaves every grant the previous owner issued exactly where it
+> was, so `cadence_app` came out of the chain still holding `CREATE` on the
+> application schema.
+>
+> The membership audit covers both directions. Outward — `GRANT cadence_patient
+> TO analyst` — is a stranger assuming a product role and holding every grant it
+> holds; two carve-outs keep the chain's own footprint out of it (the
+> `admin_option` bookkeeping a `CREATEROLE` role receives, and the membership in
+> `cadence_owner` this file grants to `CURRENT_USER`).
+>
+> The gate scans `./cmd` as well as `./internal`. The spec's rule names
+> `api/internal/**`; `cmd/api` and `cmd/migrate` are application code by the same
+> argument, and the scan is free.
 todoist: "6h9HmVPMJQmR8JVq"
 
 ### step-2: The product role as a Postgres role, two seams, two pools

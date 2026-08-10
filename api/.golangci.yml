@@ -13,8 +13,23 @@ linters:
     - bodyclose
     - depguard
     - errorlint
+    - gosec
     - noctx
   settings:
+    gosec:
+      # The backstop, not the rule. G201 and G202 match on SQL keywords, so they
+      # see a formatted SELECT and miss a concatenated SET ROLE entirely — and
+      # SET ROLE is the statement this codebase would compose if anything did.
+      # The authorship check in scripts/gate/go.sh is what covers that; these two
+      # are kept on because a second opinion on the shapes they do recognise
+      # costs nothing.
+      #
+      # Restricted to the two rules on purpose: the rest of gosec's catalogue is
+      # a separate decision, and enabling it as a side effect of this one would
+      # be a change nobody reviewed.
+      includes:
+        - G201
+        - G202
     errcheck:
       check-type-assertions: true
     depguard:

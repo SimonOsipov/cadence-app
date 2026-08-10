@@ -35,13 +35,13 @@ func requestPool(t *testing.T) (*pgxpool.Pool, *testsupport.Database) {
 func testCaller() database.Caller {
 	return database.Caller{
 		Subject: "8a1f3b7c-0000-4000-8000-000000000001",
-		Role:    "authenticated",
+		Role:    "patient",
 	}
 }
 
 // TestWithCallerImpersonates is the seam's reason to exist. Inside the closure
-// the transaction must be running as cadence_authenticated — the role the RLS
-// policies of M2 are written for — and not as the role that connected.
+// the transaction must be running as the caller's product role — the role the
+// grants and the policies are written for — and not as the role that connected.
 func TestWithCallerImpersonates(t *testing.T) {
 	pool, _ := requestPool(t)
 
@@ -53,13 +53,162 @@ func TestWithCallerImpersonates(t *testing.T) {
 		t.Fatalf("WithCaller: %v", err)
 	}
 
-	if current != testsupport.AuthenticatedRole {
-		t.Errorf("current_user inside the seam = %q, want %q", current, testsupport.AuthenticatedRole)
+	if current != testsupport.PatientRole {
+		t.Errorf("current_user inside the seam = %q, want %q", current, testsupport.PatientRole)
 	}
 	// session_user does not change with SET ROLE, and saying so here keeps the
 	// assertion above honest: it is impersonation, not a different connection.
 	if session != testsupport.AppRole {
 		t.Errorf("session_user inside the seam = %q, want %q", session, testsupport.AppRole)
+	}
+}
+
+// Each product role lands on its own Postgres role. A seam that mapped every
+// caller onto one role would pass the test above and reintroduce exactly the
+// indistinguishability the block exists to remove: a grant the admin needs
+// would reach the patient.
+func TestWithCallerImpersonatesEachProductRole(t *testing.T) {
+	pool, _ := requestPool(t)
+
+	for claim, want := range map[string]string{
+		"patient": testsupport.PatientRole,
+		"doctor":  testsupport.DoctorRole,
+		"admin":   testsupport.AdminRole,
+	} {
+		t.Run(claim, func(t *testing.T) {
+			caller := database.Caller{Subject: "8a1f3b7c-0000-4000-8000-000000000001", Role: claim}
+
+			var current string
+			if err := database.WithCaller(
+				t.Context(), pool, caller,
+				func(ctx context.Context, tx pgx.Tx) error {
+					return tx.QueryRow(ctx, "SELECT current_user").Scan(&current)
+				},
+			); err != nil {
+				t.Fatalf("WithCaller: %v", err)
+			}
+
+			if current != want {
+				t.Errorf("claim %q impersonated %q, want %q", claim, current, want)
+			}
+		})
+	}
+}
+
+// A role the map does not know is a refusal before the transaction opens. There
+// is no default role to fall back to: falling back would mean a token with a
+// role nobody recognizes gets served as somebody, and which somebody would be
+// decided by whichever entry happened to be first.
+func TestWithCallerRefusesAnUnknownRole(t *testing.T) {
+	pool, _ := requestPool(t)
+
+	// Four inputs, and none of them is arbitrary. "service" is a token claiming
+	// the service path, which must not be reachable from the request pool at
+	// all. "cadence_patient" is the Postgres name rather than the product name,
+	// so the map is pinned to one vocabulary. The empty string is what a token
+	// with no role at all produces, and "root" is the ordinary stranger.
+	for _, role := range []string{"service", "cadence_patient", "", "root"} {
+		t.Run("role="+role, func(t *testing.T) {
+			caller := database.Caller{Subject: "8a1f3b7c-0000-4000-8000-000000000001", Role: role}
+
+			before := pool.Stat().AcquireCount()
+
+			err := database.WithCaller(t.Context(), pool, caller, func(context.Context, pgx.Tx) error {
+				t.Error("the closure ran for a caller whose role has no Postgres role")
+
+				return nil
+			})
+			if !errors.Is(err, database.ErrUnknownRole) {
+				t.Fatalf("WithCaller = %v, want it to wrap ErrUnknownRole", err)
+			}
+
+			// Refused before Begin, not merely before the closure. Without this
+			// the assertion above stays green with the lookup moved after
+			// pool.Begin — which would take a connection and open a transaction
+			// for a caller there was never a role to serve.
+			if after := pool.Stat().AcquireCount(); after != before {
+				t.Errorf("the pool was acquired %d time(s) for a caller with no role; "+
+					"the refusal happens after Begin", after-before)
+			}
+		})
+	}
+}
+
+// The residual property, asserted rather than argued: request.jwt.claims has
+// USERSET context, so a query inside the seam can overwrite it — and what that
+// buys is a different subject within one's own role, never a different role.
+// This is the claim the base migration's preamble makes, and it names this test.
+func TestWithCallerKeepsTheRoleWhenTheClaimsAreOverwritten(t *testing.T) {
+	pool, _ := requestPool(t)
+
+	var current, subject string
+	err := database.WithCaller(t.Context(), pool, testCaller(), func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			SELECT set_config('request.jwt.claims',
+			                  '{"sub":"11111111-0000-4000-8000-000000000002","role":"admin"}', true)
+		`); err != nil {
+			return err
+		}
+
+		return tx.QueryRow(ctx, `
+			SELECT current_user, current_setting('request.jwt.claims', true)::json ->> 'sub'
+		`).Scan(&current, &subject)
+	})
+	if err != nil {
+		t.Fatalf("WithCaller: %v", err)
+	}
+
+	if current != testsupport.PatientRole {
+		t.Errorf("current_user after overwriting the claims = %q, want %q — the product role is "+
+			"read from the claims after all", current, testsupport.PatientRole)
+	}
+
+	// The other half, and it is the honest half: the substitution did happen. A
+	// test asserting only that the role held would be green in a world where the
+	// GUC could not be written at all, and would then be measuring nothing.
+	if subject == testCaller().Subject {
+		t.Error("the claims could not be overwritten, so this test proves nothing about what " +
+			"overwriting them does")
+	}
+}
+
+// The service path holds nothing without its own seam either. Its grants are
+// wider than the request path's by design, which is exactly why a query that
+// skips SET ROLE on that pool must fail rather than run as the connection role.
+func TestServicePathCannotReachTablesWithoutTheSeam(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	createAppTable(t, db, "service_probe")
+
+	owner := testsupport.Connect(t, db.MigrationURL)
+	if _, err := owner.Exec(ctx, `SET ROLE cadence_owner`); err != nil {
+		t.Fatalf("becoming the owner: %v", err)
+	}
+	if _, err := owner.Exec(
+		ctx, `GRANT SELECT ON app.service_probe TO `+testsupport.ServiceRole,
+	); err != nil {
+		t.Fatalf("granting on the probe table: %v", err)
+	}
+
+	service := testsupport.Connect(t, db.ServiceAppURL)
+
+	var rows int
+	err := service.QueryRow(ctx, `SELECT count(*) FROM app.service_probe`).Scan(&rows)
+	if err == nil {
+		t.Fatal("the service path read an application table without impersonating")
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+		t.Fatalf("reading without the seam failed with %v, want SQLSTATE 42501", err)
+	}
+
+	if _, err := service.Exec(ctx, `SET ROLE `+testsupport.ServiceRole); err != nil {
+		t.Fatalf("impersonating the service role: %v", err)
+	}
+	if err := service.QueryRow(ctx, `SELECT count(*) FROM app.service_probe`).Scan(&rows); err != nil {
+		t.Fatalf("reading while impersonating the service role: %v", err)
 	}
 }
 
@@ -188,9 +337,9 @@ func assertConnectionIsClean(t *testing.T, pool *pgxpool.Pool, inside uint32) {
 func TestWithCallerRollsBackOnFailure(t *testing.T) {
 	pool, db := requestPool(t)
 
-	// Owned by the owner, in the application schema, so the impersonated role
-	// reaches it exactly the way an M2 table will — through the default
-	// privileges the base migration set, not through a grant written here.
+	// Owned by the owner, in the application schema, and granted per role — the
+	// way a table of M2 will arrive, now that there are no default privileges
+	// for one to arrive by.
 	createAppTable(t, db, "rollback_probe")
 
 	sentinel := errors.New("the closure refused")
@@ -264,7 +413,7 @@ func TestWithCallerIsNotAnInjectionVector(t *testing.T) {
 	}
 
 	for _, subject := range hostile {
-		caller := database.Caller{Subject: subject, Role: "authenticated"}
+		caller := database.Caller{Subject: subject, Role: "patient"}
 
 		var readBack, current string
 		err := database.WithCaller(t.Context(), pool, caller, func(ctx context.Context, tx pgx.Tx) error {
@@ -284,17 +433,24 @@ func TestWithCallerIsNotAnInjectionVector(t *testing.T) {
 		if readBack != subject {
 			t.Errorf("subject %q came back as %q", subject, readBack)
 		}
-		if current != testsupport.AuthenticatedRole {
+		if current != testsupport.PatientRole {
 			t.Errorf("subject %q changed the effective role to %q", subject, current)
 		}
 	}
 
-	// The table the first payload tried to drop.
+	// The table the first payload tried to drop. Read out of the catalogue
+	// rather than with to_regclass, which resolves a name through the schema and
+	// therefore needs USAGE on it — a privilege the connection role deliberately
+	// does not hold, so the check would report a dropped table for the wrong
+	// reason.
 	var exists bool
-	if err := pool.QueryRow(
-		t.Context(),
-		"SELECT to_regclass('app.injection_probe') IS NOT NULL",
-	).Scan(&exists); err != nil {
+	if err := pool.QueryRow(t.Context(), `
+		SELECT EXISTS (
+			SELECT FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'app' AND c.relname = 'injection_probe'
+		)
+	`).Scan(&exists); err != nil {
 		t.Fatalf("checking the probe table: %v", err)
 	}
 	if !exists {
@@ -308,7 +464,7 @@ func TestWithCallerIsNotAnInjectionVector(t *testing.T) {
 func TestWithCallerRefusesAnEmptySubject(t *testing.T) {
 	pool, _ := requestPool(t)
 
-	err := database.WithCaller(t.Context(), pool, database.Caller{Role: "authenticated"},
+	err := database.WithCaller(t.Context(), pool, database.Caller{Role: "patient"},
 		func(context.Context, pgx.Tx) error {
 			t.Error("the closure ran for a caller with no subject")
 
@@ -348,9 +504,11 @@ func TestRequestPathCannotReachTablesWithoutTheSeam(t *testing.T) {
 }
 
 // createAppTable adds a table the way a migration does: through the bootstrap
-// role, under SET ROLE cadence_owner, in the application schema. The privileges
-// the tests then exercise are therefore the ones the base migration granted by
-// default — not ones this file arranged for its own convenience.
+// role, under SET ROLE cadence_owner, in the application schema — and it issues
+// the grants itself, per role, exactly as the table migrations of step-4 and
+// step-5 will. There are no default privileges any more, so a table created
+// without a grant is reachable by nobody and the tests below would all pass for
+// the wrong reason.
 func createAppTable(t *testing.T, db *testsupport.Database, name string) {
 	t.Helper()
 
@@ -360,10 +518,31 @@ func createAppTable(t *testing.T, db *testsupport.Database, name string) {
 		t.Fatalf("becoming the owner: %v", err)
 	}
 
+	table := "app." + pgx.Identifier{name}.Sanitize()
+	sequence := "app." + pgx.Identifier{name + "_id_seq"}.Sanitize()
+
 	if _, err := conn.Exec(
 		t.Context(),
-		"CREATE TABLE app."+pgx.Identifier{name}.Sanitize()+" (id bigserial PRIMARY KEY, note text)",
+		"CREATE TABLE "+table+" (id bigserial PRIMARY KEY, note text)",
 	); err != nil {
-		t.Fatalf("creating app.%s: %v", name, err)
+		t.Fatalf("creating %s: %v", table, err)
+	}
+
+	for _, role := range testsupport.ProductRoles() {
+		if _, err := conn.Exec(
+			t.Context(),
+			"GRANT SELECT, INSERT, UPDATE, DELETE ON "+table+" TO "+role,
+		); err != nil {
+			t.Fatalf("granting on %s to %s: %v", table, role, err)
+		}
+
+		// bigserial owns a sequence, and INSERT without USAGE on it fails with
+		// 42501 — which would read as "the seam refused" in every test below.
+		if _, err := conn.Exec(
+			t.Context(),
+			"GRANT USAGE ON SEQUENCE "+sequence+" TO "+role,
+		); err != nil {
+			t.Fatalf("granting the sequence of %s to %s: %v", table, role, err)
+		}
 	}
 }

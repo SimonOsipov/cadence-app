@@ -11,10 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// impersonatedRole is the role a request runs as. Table privileges are granted
-// to it and the row level security policies of M2 are written for it; the role
-// the API connects with holds neither and cannot inherit them.
-const impersonatedRole = "cadence_authenticated"
+// The Postgres roles a request can run as. Table privileges are granted to them
+// and the row level security policies will be written for them; the role the API
+// connects with holds neither and cannot inherit them.
+//
+// They are Postgres roles rather than a value compared inside a policy, and
+// that is the decision the whole access model rests on: privileges in Postgres
+// are bound to a role, so while the product role was only a claim, a grant the
+// admin needed reached the patient too and the escalation could be closed
+// neither by a policy nor by a column.
+const (
+	patientRole = "cadence_patient"
+	doctorRole  = "cadence_doctor"
+	adminRole   = "cadence_admin"
+)
+
+// postgresRoles is closed on purpose, and not because of injection — the role
+// travels to the database as a bound parameter, so a value carried by a token
+// could not execute even if one reached here. It is closed because it is an
+// allowlist: a token must not choose a Postgres role even as data, and a role
+// this package does not know has to be a refusal rather than a default.
+var postgresRoles = map[string]string{
+	"patient": patientRole,
+	"doctor":  doctorRole,
+	"admin":   adminRole,
+}
+
+// ErrUnknownRole is returned for a caller whose role has no Postgres role. It is
+// named so a handler can tell it from a database failure: the first is a 403,
+// the second is a 500.
+//
+// There is deliberately no default. A fallback would serve a token nobody
+// recognizes as somebody, and which somebody would be decided by whichever map
+// entry happened to be reached first.
+var ErrUnknownRole = errors.New("the caller's role has no Postgres role")
 
 // claimsSetting is the connection setting the claims are published under.
 //
@@ -43,14 +73,15 @@ const rollbackTimeout = 5 * time.Second
 // one struct literal at the call site and keeps the dependency pointing the
 // right way.
 //
-// Two limits are worth stating before M2 writes its first policy against this.
-// Subject is checked for emptiness and for nothing else: the Supabase idiom
-// casts sub to uuid, so a policy written that way will raise 22P02 — a 500,
-// not a refusal — on a subject that is not one. And Role carries whatever the
-// token asserted, which in a stock Supabase project is the literal
-// "authenticated" for every user; the product roles arrive through a custom
-// access token hook, and where that hook puts them is a decision M2 has to make
-// rather than inherit.
+// One limit is worth stating. Subject is checked for emptiness and for nothing
+// else: the GoTrue idiom casts sub to uuid, so a policy written that way will
+// raise 22P02 — a 500, not a refusal — on a subject that is not one. Validating
+// it as a UUID belongs to the same step that renames the claim, and until then
+// this is a named boundary rather than a forgotten one.
+//
+// Role is the product role the token asserted, and it is resolved against a
+// closed map before anything else happens: a role this package does not know is
+// ErrUnknownRole, not a default.
 type Caller struct {
 	// Subject is the user id every policy is keyed on.
 	Subject string
@@ -61,12 +92,12 @@ type Caller struct {
 
 // WithCaller runs fn in a transaction that has taken on the caller's identity.
 //
-// Two things are true inside fn and false outside it: the effective role is
-// cadence_authenticated, and the caller's claims are readable through
-// current_setting. Both are transaction-scoped, so they end when the
-// transaction does — which matters because connections are pooled, and a role
-// that outlived its transaction would be handed to the next request as somebody
-// else's identity.
+// Two things are true inside fn and false outside it: the effective role is the
+// Postgres role of the caller's product role, and the caller's claims are
+// readable through current_setting. Both are transaction-scoped, so they end
+// when the transaction does — which matters because connections are pooled, and
+// a role that outlived its transaction would be handed to the next request as
+// somebody else's identity.
 //
 // The claims are passed as a bind parameter, never composed into the statement.
 // The subject arrives from a token: it has passed a signature check, which says
@@ -86,6 +117,13 @@ func WithCaller(
 		// A policy comparing against an empty subject matches nothing in the
 		// best case and everything in the worst. Neither is a caller.
 		return fmt.Errorf("impersonating: %w", ErrNoSubject)
+	}
+
+	// Resolved before the transaction opens: there is no role to assume, so
+	// there is nothing to open a transaction for.
+	impersonatedRole, known := postgresRoles[caller.Role]
+	if !known {
+		return fmt.Errorf("impersonating %q: %w", caller.Role, ErrUnknownRole)
 	}
 
 	claims, err := json.Marshal(map[string]string{"sub": caller.Subject, "role": caller.Role})
@@ -121,10 +159,18 @@ func WithCaller(
 		return fmt.Errorf("publishing the caller's claims: %w", err)
 	}
 
-	// The role name is a constant of this package, not input, so there is
-	// nothing here to parameterise — SET ROLE takes an identifier and no
-	// placeholder is possible in one.
-	if _, err := tx.Exec(ctx, "SET LOCAL ROLE "+impersonatedRole); err != nil {
+	// SET LOCAL ROLE, spelled as an assignment to the role parameter, which is
+	// what the statement is defined as. Written this way because the statement
+	// form takes an identifier and admits no placeholder, so the role name would
+	// have to be concatenated in — and a SQL string assembled from a variable is
+	// exactly the shape the authorship gate forbids, whatever the variable is
+	// known to hold today. Here the statement is a constant and the role is a
+	// bound parameter, so there is no shape left to get wrong.
+	//
+	// is_local is true: the role ends with the transaction. Connections are
+	// pooled, and a role that outlived its transaction would be handed to the
+	// next request as somebody else's identity.
+	if _, err := tx.Exec(ctx, "SELECT set_config('role', $1, true)", impersonatedRole); err != nil {
 		return fmt.Errorf("impersonating %s: %w", impersonatedRole, err)
 	}
 

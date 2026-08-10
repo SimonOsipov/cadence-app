@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,52 +39,328 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// The role under test is the one a deployment actually connects with, read back
-// from the connection rather than looked up by name. The first draft of this
-// spec asserted the attributes of cadence_authenticated, which is NOLOGIN and
-// therefore nobody's connection: the assertion passed while the request path
-// ran as the database owner.
-func TestRequestPathRoleIsLowPrivilege(t *testing.T) {
+// The roles under test are the ones a deployment actually connects with, read
+// back from the connection rather than looked up by name. The first draft of
+// this spec asserted the attributes of cadence_authenticated, which is NOLOGIN
+// and therefore nobody's connection: the assertion passed while the request
+// path ran as the database owner.
+//
+// Both paths are covered, because the service path is the one that would be
+// tempting to hand a shortcut to: it writes rows no policy lets the request
+// path write, and the way to make that easy is exactly the attribute that would
+// make every policy advisory.
+func TestConnectionRolesAreLowPrivilege(t *testing.T) {
 	db := cluster.NewDatabase(t)
-	conn := testsupport.Connect(t, db.AppURL)
 
-	var (
-		name        string
-		super       bool
-		bypassRLS   bool
-		createRole  bool
-		createDB    bool
-		inheritance bool
-	)
-	err := conn.QueryRow(t.Context(), `
-		SELECT rolname, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolinherit
-		FROM pg_roles
-		WHERE rolname = CURRENT_USER
-	`).Scan(&name, &super, &bypassRLS, &createRole, &createDB, &inheritance)
+	for role, dsn := range map[string]string{
+		testsupport.AppRole:        db.AppURL,
+		testsupport.ServiceAppRole: db.ServiceAppURL,
+	} {
+		t.Run(role, func(t *testing.T) {
+			conn := testsupport.Connect(t, dsn)
+
+			var (
+				name        string
+				super       bool
+				bypassRLS   bool
+				replication bool
+				createRole  bool
+				createDB    bool
+				inheritance bool
+			)
+			err := conn.QueryRow(t.Context(), `
+				SELECT rolname, rolsuper, rolbypassrls, rolreplication,
+				       rolcreaterole, rolcreatedb, rolinherit
+				FROM pg_roles
+				WHERE rolname = CURRENT_USER
+			`).Scan(&name, &super, &bypassRLS, &replication, &createRole, &createDB, &inheritance)
+			if err != nil {
+				t.Fatalf("reading the current role: %v", err)
+			}
+
+			if name != role {
+				t.Errorf("CURRENT_USER = %q, want %q", name, role)
+			}
+			if super {
+				t.Errorf("%s is a superuser", role)
+			}
+			if bypassRLS {
+				t.Errorf("%s can bypass RLS, which makes every policy advisory", role)
+			}
+			if replication {
+				t.Errorf("%s can stream WAL, which reads every row of every table "+
+					"without a policy ever running", role)
+			}
+			if createRole {
+				t.Errorf("%s can create roles", role)
+			}
+			if createDB {
+				t.Errorf("%s can create databases", role)
+			}
+			// NOINHERIT is what makes the impersonation seam load-bearing:
+			// membership in the impersonation targets is usable only through an
+			// explicit SET ROLE, so a query that skips it has no table
+			// privileges at all.
+			if inheritance {
+				t.Errorf("%s inherits its granted roles, so skipping SET ROLE goes unnoticed", role)
+			}
+		})
+	}
+}
+
+// The whole block stands on one assumption: the chain cannot hand anybody
+// BYPASSRLS, so every write — the service path's included — has to be permitted
+// by a policy. An assumption a spec quotes is worth less than one a test probes,
+// and this one decides whether the §04 service pool exists at all.
+func TestChainCannotCreateABypassRLSRole(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	conn := testsupport.Connect(t, db.MigrationURL)
+
+	// Opened before the cleanup that uses it: t.Context is already cancelled by
+	// the time cleanups run, so a connection dialled in there never gets made.
+	admin := testsupport.Connect(t, db.SuperuserURL)
+
+	// The control. Without it a CREATEROLE attribute quietly lost in the harness
+	// would make the assertion below pass for the wrong reason.
+	if _, err := conn.Exec(ctx, `CREATE ROLE cadence_bypass_probe NOLOGIN NOBYPASSRLS`); err != nil {
+		t.Fatalf("the migration role cannot create an ordinary role at all: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		for _, role := range []string{"cadence_bypass_probe", "cadence_bypass_probe_2"} {
+			if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS `+role); err != nil {
+				t.Errorf("dropping %s: %v", role, err)
+			}
+		}
+	})
+
+	// Both spellings, because they are two different code paths in Postgres and
+	// the block's assumption covers both: no role the chain can reach ever
+	// escapes a policy.
+	for name, statement := range map[string]string{
+		"altering an existing role": `ALTER ROLE cadence_bypass_probe BYPASSRLS`,
+		"creating a new one":        `CREATE ROLE cadence_bypass_probe_2 NOLOGIN BYPASSRLS`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := conn.Exec(ctx, statement)
+			if err == nil {
+				t.Fatal("the migration role granted BYPASSRLS; the access model is advisory, " +
+					"not enforced")
+			}
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+				t.Fatalf("granting BYPASSRLS failed with %v, want SQLSTATE 42501 "+
+					"(insufficient_privilege)", err)
+			}
+		})
+	}
+}
+
+// The two paths are separated by session_user, not by a statement. If the
+// request path could become cadence_service it would hold the service path's
+// grants — and the service path is the one that writes rows the policies of the
+// request path forbid.
+func TestServicePathIsUnreachableFromTheRequestPath(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	app := testsupport.Connect(t, db.AppURL)
+
+	_, err := app.Exec(ctx, `SET ROLE `+testsupport.ServiceRole)
+	if err == nil {
+		t.Fatal("the request path became the service role; the two pools are one privilege domain")
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+		t.Fatalf("SET ROLE %s from the request path failed with %v, want SQLSTATE 42501",
+			testsupport.ServiceRole, err)
+	}
+
+	// The other half: the barrier has to be a barrier and not a role nobody can
+	// assume. Without this the test would pass against a chain that granted the
+	// membership to nobody at all.
+	service := testsupport.Connect(t, db.ServiceAppURL)
+	if _, err := service.Exec(ctx, `SET ROLE `+testsupport.ServiceRole); err != nil {
+		t.Fatalf("the service path cannot assume %s: %v", testsupport.ServiceRole, err)
+	}
+}
+
+// The membership graph is small enough to state exhaustively, and stating it
+// exhaustively is the point: a surplus edge is how a role quietly acquires
+// somebody else's grants, and an edge that inherits is how the seam stops being
+// mandatory.
+func TestMembershipsAreExactlyTheFourExpected(t *testing.T) {
+	db := cluster.NewDatabase(t)
+
+	conn := testsupport.Connect(t, db.SuperuserURL)
+
+	// Filtered on the member side alone. Closing both sides would look
+	// exhaustive and see nothing of `pg_execute_server_program -> cadence_app`,
+	// which is programs running on the database host, reached from the request
+	// path without the seam ever being called.
+	rows, err := conn.Query(t.Context(), `
+		SELECT granted.rolname, member.rolname, m.inherit_option
+		FROM pg_auth_members m
+		JOIN pg_roles granted ON granted.oid = m.roleid
+		JOIN pg_roles member ON member.oid = m.member
+		WHERE member.rolname = ANY($1)
+		ORDER BY 1, 2
+	`, testsupport.ChainRoles())
 	if err != nil {
-		t.Fatalf("reading the current role: %v", err)
+		t.Fatalf("reading the membership graph: %v", err)
+	}
+	defer rows.Close()
+
+	var found []string
+	for rows.Next() {
+		var granted, member string
+		var inherits bool
+		if err := rows.Scan(&granted, &member, &inherits); err != nil {
+			t.Fatalf("scanning: %v", err)
+		}
+		if inherits {
+			t.Errorf("%s is granted to %s with inheritance, so the impersonation seam is optional",
+				granted, member)
+		}
+		found = append(found, granted+" -> "+member)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating: %v", err)
 	}
 
-	if name != testsupport.AppRole {
-		t.Errorf("CURRENT_USER = %q, want %q", name, testsupport.AppRole)
+	want := []string{
+		testsupport.AdminRole + " -> " + testsupport.AppRole,
+		testsupport.DoctorRole + " -> " + testsupport.AppRole,
+		testsupport.PatientRole + " -> " + testsupport.AppRole,
+		testsupport.ServiceRole + " -> " + testsupport.ServiceAppRole,
 	}
-	if super {
-		t.Error("the request path role is a superuser")
+	if !slices.Equal(found, want) {
+		t.Errorf("membership graph is %v, want exactly %v", found, want)
 	}
-	if bypassRLS {
-		t.Error("the request path role can bypass RLS, which makes every policy advisory")
+}
+
+// The role the product roles replaced does not get to survive. On a cluster
+// where an earlier version of this chain ran, cadence_authenticated still holds
+// USAGE on the schema, still carries default privileges pointing at it, and
+// cadence_app is still a member — so SET ROLE cadence_authenticated would keep
+// working and keep bypassing the per-role grants the whole block is built on.
+//
+// This plants exactly that state and re-applies the chain onto it. It is not a
+// hypothetical: it is what every machine that ran the previous version starts
+// from.
+func TestChainAbolishesTheRoleTheProductRolesReplaced(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	admin := testsupport.Connect(t, db.SuperuserURL)
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS cadence_authenticated`); err != nil {
+			t.Errorf("dropping the abolished role: %v", err)
+		}
+	})
+
+	bootstrap := testsupport.Connect(t, db.MigrationURL)
+	for _, statement := range []string{
+		`CREATE ROLE cadence_authenticated NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`,
+		`GRANT cadence_authenticated TO cadence_app WITH INHERIT FALSE`,
+		`GRANT USAGE ON SCHEMA app TO cadence_authenticated`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE cadence_owner IN SCHEMA app ` +
+			`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cadence_authenticated`,
+	} {
+		if _, err := bootstrap.Exec(ctx, statement); err != nil {
+			t.Fatalf("planting the previous arrangement (%s): %v", statement, err)
+		}
 	}
-	if createRole {
-		t.Error("the request path role can create roles")
+
+	statements, err := os.ReadFile(filepath.Join(testsupport.MigrationsPath(t), "000001_base.up.sql"))
+	if err != nil {
+		t.Fatalf("reading the base migration: %v", err)
 	}
-	if createDB {
-		t.Error("the request path role can create databases")
+	if _, err := bootstrap.Exec(ctx, string(statements)); err != nil {
+		t.Fatalf("re-applying the chain onto the previous arrangement: %v", err)
 	}
-	// NOINHERIT is what makes the impersonation seam load-bearing: membership in
-	// cadence_authenticated is usable only through an explicit SET ROLE, so a
-	// query that skips it has no table privileges at all.
-	if inheritance {
-		t.Error("the request path role inherits its granted roles, so skipping SET ROLE goes unnoticed")
+
+	var survived int
+	if err := admin.QueryRow(
+		ctx,
+		`SELECT count(*) FROM pg_roles WHERE rolname = 'cadence_authenticated'`,
+	).Scan(&survived); err != nil {
+		t.Fatalf("counting the abolished role: %v", err)
+	}
+	if survived != 0 {
+		t.Fatal("cadence_authenticated survived the chain; a query can still assume it and " +
+			"skip the per-role grants entirely")
+	}
+
+	// The other direction, and it needs its own arrangement: the rollback names
+	// the abolished role too, and after the chain has removed it there is
+	// nothing left for that branch to do. Planted again, then rolled back.
+	if _, err := bootstrap.Exec(
+		ctx, `CREATE ROLE cadence_authenticated NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`,
+	); err != nil {
+		t.Fatalf("planting the abolished role for the rollback: %v", err)
+	}
+	if _, err := bootstrap.Exec(ctx, `GRANT USAGE ON SCHEMA app TO cadence_authenticated`); err != nil {
+		t.Fatalf("planting the abolished role's schema privilege: %v", err)
+	}
+
+	if err := database.MigrateDown(db.MigrationURL, testsupport.MigrationsPath(t), 0); err != nil {
+		t.Fatalf("rolling the chain back: %v", err)
+	}
+
+	if err := admin.QueryRow(
+		ctx,
+		`SELECT count(*) FROM pg_roles WHERE rolname = 'cadence_authenticated'`,
+	).Scan(&survived); err != nil {
+		t.Fatalf("counting the abolished role after the rollback: %v", err)
+	}
+	if survived != 0 {
+		t.Error("cadence_authenticated survived the rollback; a cluster that ran the previous " +
+			"chain is not left clean")
+	}
+}
+
+// The local stack creates Supabase's role names so GoTrue's own migrations have
+// something to grant to. They are empty by construction, and this is what keeps
+// them empty: with ALTER DEFAULT PRIVILEGES gone from the chain there is no
+// mechanism left that could hand a privilege to a role nobody named.
+func TestAlienRolesHoldNothingInTheApplicationSchema(t *testing.T) {
+	ctx := t.Context()
+
+	admin := testsupport.Connect(t, cluster.AdminDSN())
+	if _, err := admin.Exec(ctx, `CREATE ROLE service_role NOLOGIN`); err != nil {
+		t.Fatalf("creating the alien role: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS service_role`); err != nil {
+			t.Errorf("dropping the alien role: %v", err)
+		}
+	})
+
+	// Created after the role, so the chain runs in a cluster where the alien
+	// role already exists — which is the order a real deployment has.
+	db := cluster.NewDatabase(t)
+	conn := testsupport.Connect(t, db.SuperuserURL)
+
+	var usage bool
+	if err := conn.QueryRow(
+		ctx,
+		`SELECT has_schema_privilege('service_role', $1, 'USAGE')`, testsupport.AppSchema,
+	).Scan(&usage); err != nil {
+		t.Fatalf("reading the alien role's schema privilege: %v", err)
+	}
+	if usage {
+		t.Errorf("service_role holds USAGE on schema %s; the chain grants to roles it did not name",
+			testsupport.AppSchema)
 	}
 }
 
@@ -165,12 +442,12 @@ func TestChainAppliesWithoutSuperuser(t *testing.T) {
 	}
 }
 
-// The arrangement of the three roles is only worth anything if it actually
-// governs access to a table. There are no tables yet, so this test makes one:
-// without SET ROLE the request path holds no privileges at all, and with it the
-// privileges arrive from the default privileges declared FOR ROLE cadence_owner.
-//
-// This is the test that fails if FOR ROLE is dropped from the migration.
+// The arrangement of the roles is only worth anything if it actually governs
+// access to a table. There are no tables yet, so this test makes one — and it
+// has to issue the grant itself, because with ALTER DEFAULT PRIVILEGES gone
+// from the chain a privilege arrives only where a migration writes it. What
+// remains under test is the seam: without SET ROLE the request path holds
+// nothing at all, whatever the grants say.
 func TestRequestPathReachesTablesOnlyThroughImpersonation(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	ctx := t.Context()
@@ -181,6 +458,9 @@ func TestRequestPathReachesTablesOnlyThroughImpersonation(t *testing.T) {
 	}
 	if _, err := owner.Exec(ctx, `CREATE TABLE app.probe (id integer PRIMARY KEY)`); err != nil {
 		t.Fatalf("creating the probe table: %v", err)
+	}
+	if _, err := owner.Exec(ctx, `GRANT SELECT ON app.probe TO `+testsupport.PatientRole); err != nil {
+		t.Fatalf("granting on the probe table: %v", err)
 	}
 
 	app := testsupport.Connect(t, db.AppURL)
@@ -199,7 +479,7 @@ func TestRequestPathReachesTablesOnlyThroughImpersonation(t *testing.T) {
 		t.Fatalf("reading without impersonating failed with %v, want SQLSTATE 42501 (insufficient_privilege)", err)
 	}
 
-	if _, err := app.Exec(ctx, `SET ROLE cadence_authenticated`); err != nil {
+	if _, err := app.Exec(ctx, `SET ROLE `+testsupport.PatientRole); err != nil {
 		t.Fatalf("impersonating: %v", err)
 	}
 
@@ -377,7 +657,7 @@ func TestBaseMigrationRollsBackCleanly(t *testing.T) {
 		t.Errorf("schema %s survived the rollback", testsupport.AppSchema)
 	}
 
-	for _, role := range []string{testsupport.AppRole, testsupport.OwnerRole, testsupport.AuthenticatedRole} {
+	for _, role := range testsupport.ChainRoles() {
 		var found int
 		if err := admin.QueryRow(
 			ctx,
@@ -406,13 +686,12 @@ func TestSingleStepRollbackRemovesTheBaseMigration(t *testing.T) {
 	var roles int
 	if err := admin.QueryRow(
 		t.Context(),
-		`SELECT count(*) FROM pg_roles WHERE rolname IN ($1, $2, $3)`,
-		testsupport.AppRole, testsupport.OwnerRole, testsupport.AuthenticatedRole,
+		`SELECT count(*) FROM pg_roles WHERE rolname = ANY($1)`, testsupport.ChainRoles(),
 	).Scan(&roles); err != nil {
 		t.Fatalf("counting roles: %v", err)
 	}
 	if roles != 0 {
-		t.Errorf("%d of the three roles survived a single-step rollback", roles)
+		t.Errorf("%d of the chain's roles survived a single-step rollback", roles)
 	}
 }
 
@@ -444,13 +723,12 @@ func TestDownMigrationIsIdempotent(t *testing.T) {
 	var roles int
 	if err := admin.QueryRow(
 		ctx,
-		`SELECT count(*) FROM pg_roles WHERE rolname IN ($1, $2, $3)`,
-		testsupport.AppRole, testsupport.OwnerRole, testsupport.AuthenticatedRole,
+		`SELECT count(*) FROM pg_roles WHERE rolname = ANY($1)`, testsupport.ChainRoles(),
 	).Scan(&roles); err != nil {
 		t.Fatalf("counting roles: %v", err)
 	}
 	if roles != 0 {
-		t.Errorf("%d of the three roles survived two passes of the down migration", roles)
+		t.Errorf("%d of the chain's roles survived two passes of the down migration", roles)
 	}
 }
 
@@ -473,12 +751,14 @@ func TestChainConvergesPreexistingRoles(t *testing.T) {
 	// inherit option regardless, so the test would pass with the ALTER removed
 	// from the chain — and the ALTER is the only defence on the pre-16 branch.
 	bootstrap := testsupport.Connect(t, db.MigrationURL)
-	if _, err := bootstrap.Exec(ctx, `GRANT cadence_authenticated TO cadence_app WITH INHERIT TRUE`); err != nil {
+	if _, err := bootstrap.Exec(
+		ctx, `GRANT `+testsupport.PatientRole+` TO cadence_app WITH INHERIT TRUE`,
+	); err != nil {
 		t.Fatalf("loosening the membership: %v", err)
 	}
 
 	// A second database in the same cluster finds the roles already there —
-	// exactly the state a redeploy against Supabase starts from.
+	// exactly the state a redeploy against a managed cluster starts from.
 	second := cluster.NewDatabase(t)
 
 	owner := testsupport.Connect(t, second.MigrationURL)
@@ -487,6 +767,12 @@ func TestChainConvergesPreexistingRoles(t *testing.T) {
 	}
 	if _, err := owner.Exec(ctx, `CREATE TABLE app.probe (id integer PRIMARY KEY)`); err != nil {
 		t.Fatalf("creating the probe table: %v", err)
+	}
+	// The grant is what makes the assertion below discriminate. Without it the
+	// read fails with 42501 whether or not the membership inherits, and the test
+	// would stay green against the very loosening it exists to catch.
+	if _, err := owner.Exec(ctx, `GRANT SELECT ON app.probe TO `+testsupport.PatientRole); err != nil {
+		t.Fatalf("granting on the probe table: %v", err)
 	}
 
 	// Behaviour rather than the attribute: the question is whether skipping the
@@ -598,11 +884,33 @@ func TestForceClearsTheDirtyFlag(t *testing.T) {
 // achieve. This is the failure the whole spec was rewritten around, and the only
 // honest answer at this point is to stop.
 func TestChainRefusesAMembershipItCannotRevoke(t *testing.T) {
+	// Every membership, not one of the four. The check in the chain was widened
+	// to cover all of them, and a suite that plants only cadence_patient leaves
+	// the other three unwatched while looking like it covers them — an inheriting
+	// cadence_service on the service path is the seam of that path becoming
+	// optional, which is the failure the whole spec was rewritten around.
+	for granted, member := range map[string]string{
+		testsupport.PatientRole: testsupport.AppRole,
+		testsupport.DoctorRole:  testsupport.AppRole,
+		testsupport.AdminRole:   testsupport.AppRole,
+		testsupport.ServiceRole: testsupport.ServiceAppRole,
+	} {
+		t.Run(granted+"-to-"+member, func(t *testing.T) {
+			assertChainRefusesTheMembership(t, granted, member)
+		})
+	}
+}
+
+func assertChainRefusesTheMembership(t *testing.T, granted, member string) {
+	t.Helper()
+
 	db := cluster.NewDatabase(t)
 	ctx := t.Context()
 
 	admin := testsupport.Connect(t, db.SuperuserURL)
-	if _, err := admin.Exec(ctx, `GRANT cadence_authenticated TO cadence_app WITH INHERIT TRUE`); err != nil {
+	if _, err := admin.Exec(
+		ctx, `GRANT `+granted+` TO `+member+` WITH INHERIT TRUE`,
+	); err != nil {
 		t.Fatalf("granting as a superuser: %v", err)
 	}
 
@@ -612,7 +920,7 @@ func TestChainRefusesAMembershipItCannotRevoke(t *testing.T) {
 	// applies the chain into the refusal it just planted.
 	t.Cleanup(func() {
 		cleanupCtx := context.WithoutCancel(ctx)
-		if _, err := admin.Exec(cleanupCtx, `REVOKE cadence_authenticated FROM cadence_app`); err != nil {
+		if _, err := admin.Exec(cleanupCtx, `REVOKE `+granted+` FROM `+member); err != nil {
 			t.Errorf("revoking the superuser grant: %v", err)
 		}
 	})
@@ -650,5 +958,417 @@ func TestChainReappliesAfterRollback(t *testing.T) {
 
 	if offenders := tablesMissingForcedRLS(t, db.SuperuserURL); len(offenders) > 0 {
 		t.Errorf("tables without forced row level security after re-apply: %v", offenders)
+	}
+}
+
+// The chain refuses a membership it cannot revoke whatever the granted role is,
+// and the roles worth worrying about are mostly not this chain's own. A
+// predefined role granted to the request path hands it privileges no policy
+// governs, and none of the names involved matches cadence_%.
+func TestChainRefusesAForeignMembershipIntoAConnectionRole(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	admin := testsupport.Connect(t, db.SuperuserURL)
+	if _, err := admin.Exec(ctx, `GRANT pg_read_all_data TO cadence_app`); err != nil {
+		t.Fatalf("granting a predefined role as a superuser: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		if _, err := admin.Exec(cleanupCtx, `REVOKE pg_read_all_data FROM cadence_app`); err != nil {
+			t.Errorf("revoking the predefined role: %v", err)
+		}
+	})
+
+	statements, err := os.ReadFile(filepath.Join(testsupport.MigrationsPath(t), "000001_base.up.sql"))
+	if err != nil {
+		t.Fatalf("reading the base migration: %v", err)
+	}
+
+	conn := testsupport.Connect(t, db.MigrationURL)
+	if _, err := conn.Exec(ctx, string(statements)); err == nil {
+		t.Fatal("the chain applied onto a role granted pg_read_all_data and said nothing; " +
+			"the request path can read every table with no policy in sight")
+	} else {
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || !strings.Contains(pgErr.Message, "did not grant") {
+			t.Fatalf("the chain failed with %v, want the explicit refusal", err)
+		}
+	}
+}
+
+// IF NOT EXISTS skips, and a skip is not convergence. A schema created by hand
+// under another owner would leave the owner of every future table able to turn
+// row level security off on it — the one thing the whole arrangement exists to
+// prevent — and the only signal Postgres gives is a NOTICE that golang-migrate
+// discards.
+func TestChainTakesOwnershipOfASchemaSomebodyElseCreated(t *testing.T) {
+	// A database whose roles already exist, so the schema can be handed to one
+	// of them — and rolled back afterwards so the next test starts from nothing.
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	bootstrap := testsupport.Connect(t, db.MigrationURL)
+	if err := database.MigrateDown(db.MigrationURL, testsupport.MigrationsPath(t), 0); err != nil {
+		t.Fatalf("clearing the chain: %v", err)
+	}
+
+	// Somebody else, literally: created by the applying role but owned by the
+	// request path, with the grants a person reaching for `it does not work`
+	// would write. This is the state the chain has to converge, and the branch
+	// that grants the current owner to CURRENT_USER only runs here.
+	if err := database.RunMigrations(db.MigrationURL, testsupport.MigrationsPath(t)); err != nil {
+		t.Fatalf("applying the chain to create the roles: %v", err)
+	}
+	if err := database.MigrateDown(db.MigrationURL, testsupport.MigrationsPath(t), 0); err != nil {
+		t.Fatalf("clearing the chain again: %v", err)
+	}
+
+	admin := testsupport.Connect(t, db.SuperuserURL)
+	for _, statement := range []string{
+		`CREATE ROLE app_owner_probe NOLOGIN`,
+		`CREATE SCHEMA app AUTHORIZATION app_owner_probe`,
+		`GRANT ALL ON SCHEMA app TO PUBLIC`,
+	} {
+		if _, err := admin.Exec(ctx, statement); err != nil {
+			t.Fatalf("planting the foreign schema (%s): %v", statement, err)
+		}
+	}
+	if _, err := admin.Exec(ctx, `GRANT app_owner_probe TO `+testsupport.MigrationRole()); err != nil {
+		t.Fatalf("letting the applying role take ownership: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		for _, statement := range []string{
+			`DROP OWNED BY app_owner_probe CASCADE`,
+			`DROP ROLE IF EXISTS app_owner_probe`,
+		} {
+			if _, err := admin.Exec(cleanupCtx, statement); err != nil {
+				t.Errorf("cleaning up the probe owner (%s): %v", statement, err)
+			}
+		}
+	})
+
+	if err := database.RunMigrations(db.MigrationURL, testsupport.MigrationsPath(t)); err != nil {
+		t.Fatalf("applying the chain onto a pre-existing schema: %v", err)
+	}
+
+	var owner string
+	if err := bootstrap.QueryRow(ctx, `
+		SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = $1
+	`, testsupport.AppSchema).Scan(&owner); err != nil {
+		t.Fatalf("reading the schema owner: %v", err)
+	}
+
+	if owner != testsupport.OwnerRole {
+		t.Errorf("schema %s is owned by %q after the chain, want %q — a table created in it "+
+			"would belong to a role that can disable row level security on it",
+			testsupport.AppSchema, owner, testsupport.OwnerRole)
+	}
+
+	// Ownership was only half of it. ALTER SCHEMA ... OWNER TO leaves every
+	// grant the previous owner issued exactly where it was, so without the
+	// sweep the request path comes out of the chain still holding CREATE on the
+	// application schema — free to create a table, own it, and turn row level
+	// security off on it.
+	for role, verbs := range map[string][]string{
+		testsupport.AppRole:        {"CREATE", "USAGE"},
+		testsupport.ServiceAppRole: {"CREATE", "USAGE"},
+		"public":                   {"CREATE", "USAGE"},
+	} {
+		for _, verb := range verbs {
+			var holds bool
+			if err := bootstrap.QueryRow(
+				ctx,
+				`SELECT has_schema_privilege($1, $2, $3)`, role, testsupport.AppSchema, verb,
+			).Scan(&holds); err != nil {
+				t.Fatalf("reading %s's %s on the schema: %v", role, verb, err)
+			}
+
+			if holds {
+				t.Errorf("%s still holds %s on schema %s after the chain converged its owner",
+					role, verb, testsupport.AppSchema)
+			}
+		}
+	}
+}
+
+// A schema that already holds somebody else's table is refused rather than
+// adopted. Converging the owner of the schema says nothing about the objects
+// inside it, and their owner can disable row level security on them — while the
+// pg_class sweep that would notice lives in this suite and never runs against a
+// deployed cluster.
+func TestChainRefusesASchemaHoldingObjectsItDoesNotOwn(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	bootstrap := testsupport.Connect(t, db.MigrationURL)
+	if _, err := bootstrap.Exec(ctx, `CREATE TABLE app.legacy (id integer PRIMARY KEY)`); err != nil {
+		t.Fatalf("planting a table owned by the applying role: %v", err)
+	}
+
+	statements, err := os.ReadFile(filepath.Join(testsupport.MigrationsPath(t), "000001_base.up.sql"))
+	if err != nil {
+		t.Fatalf("reading the base migration: %v", err)
+	}
+
+	_, err = bootstrap.Exec(ctx, string(statements))
+	if err == nil {
+		t.Fatal("the chain applied onto a schema holding a table it does not own, and said nothing")
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || !strings.Contains(pgErr.Message, "does not own") {
+		t.Fatalf("the chain failed with %v, want the explicit refusal", err)
+	}
+}
+
+// The ALTER ROLE declarations converge the impersonation targets too, and the
+// attribute guard does not check rolcanlogin — so a hand-created cadence_patient
+// with LOGIN is fixed by that loop alone. Without a witness the loop can be
+// dropped and every other test stays green.
+func TestChainConvergesAnImpersonationTargetLeftWithLogin(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	admin := testsupport.Connect(t, db.SuperuserURL)
+	if _, err := admin.Exec(ctx, `ALTER ROLE `+testsupport.PatientRole+` LOGIN`); err != nil {
+		t.Fatalf("loosening the impersonation target: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		if _, err := admin.Exec(cleanupCtx, `ALTER ROLE `+testsupport.PatientRole+` NOLOGIN`); err != nil {
+			t.Errorf("restoring the impersonation target: %v", err)
+		}
+	})
+
+	// A second database in the same cluster finds the roles already there.
+	second := cluster.NewDatabase(t)
+	_ = second
+
+	var canLogin bool
+	if err := admin.QueryRow(
+		ctx,
+		`SELECT rolcanlogin FROM pg_roles WHERE rolname = $1`, testsupport.PatientRole,
+	).Scan(&canLogin); err != nil {
+		t.Fatalf("reading the impersonation target: %v", err)
+	}
+
+	if canLogin {
+		t.Errorf("%s can still log in after the chain re-applied; an impersonation target with "+
+			"a password is a way into the database that skips the seam entirely",
+			testsupport.PatientRole)
+	}
+}
+
+// The impersonation targets are NOLOGIN, so no connection can read their
+// attributes back from CURRENT_USER — and they are the roles the policies will
+// actually run as. BYPASSRLS on cadence_patient makes every policy of M2
+// decorative while every test about connections stays green.
+func TestImpersonationTargetsCarryNoEscapeAttributes(t *testing.T) {
+	db := cluster.NewDatabase(t)
+
+	conn := testsupport.Connect(t, db.SuperuserURL)
+	rows, err := conn.Query(t.Context(), `
+		SELECT rolname
+		FROM pg_roles
+		WHERE rolname = ANY($1)
+		  AND (rolsuper OR rolbypassrls OR rolreplication OR rolcreaterole OR rolcreatedb
+		       OR rolcanlogin)
+		ORDER BY rolname
+	`, testsupport.ImpersonationRoles())
+	if err != nil {
+		t.Fatalf("reading the impersonation targets: %v", err)
+	}
+	defer rows.Close()
+
+	var offenders []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scanning: %v", err)
+		}
+		offenders = append(offenders, name)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating: %v", err)
+	}
+
+	if len(offenders) > 0 {
+		t.Errorf("impersonation targets carrying an escape attribute or LOGIN: %v", offenders)
+	}
+}
+
+// USAGE goes to the impersonation targets and to nobody else. The connection
+// roles holding nothing on the schema is what makes a query that skips the seam
+// fail with 42501 rather than merely find no rows.
+func TestSchemaUsageIsGrantedToTheImpersonationTargetsOnly(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	conn := testsupport.Connect(t, db.SuperuserURL)
+
+	expected := map[string]bool{}
+	for _, role := range testsupport.ImpersonationRoles() {
+		expected[role] = true
+	}
+	for _, role := range []string{testsupport.AppRole, testsupport.ServiceAppRole} {
+		expected[role] = false
+	}
+
+	for role, want := range expected {
+		var granted bool
+		if err := conn.QueryRow(
+			t.Context(),
+			`SELECT has_schema_privilege($1, $2, 'USAGE')`, role, testsupport.AppSchema,
+		).Scan(&granted); err != nil {
+			t.Fatalf("reading %s's privilege on the schema: %v", role, err)
+		}
+
+		if granted != want {
+			t.Errorf("has_schema_privilege(%s, %s, USAGE) = %v, want %v",
+				role, testsupport.AppSchema, granted, want)
+		}
+	}
+}
+
+// Removing ALTER DEFAULT PRIVILEGES is the point of this step, and a removal
+// nothing measures is a removal that comes back. A table created after the chain
+// has to reach nobody until its own migration writes a grant, per role and where
+// needed per column — which is the matrix default privileges cannot express.
+func TestATableCreatedAfterTheChainReachesNobody(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	owner := testsupport.Connect(t, db.MigrationURL)
+	if _, err := owner.Exec(ctx, `SET ROLE cadence_owner`); err != nil {
+		t.Fatalf("becoming the owner: %v", err)
+	}
+	if _, err := owner.Exec(ctx, `CREATE TABLE app.ungranted (id integer PRIMARY KEY)`); err != nil {
+		t.Fatalf("creating the table: %v", err)
+	}
+
+	admin := testsupport.Connect(t, db.SuperuserURL)
+
+	for _, role := range testsupport.ImpersonationRoles() {
+		for _, verb := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
+			var granted bool
+			if err := admin.QueryRow(
+				ctx,
+				`SELECT has_table_privilege($1, 'app.ungranted', $2)`, role, verb,
+			).Scan(&granted); err != nil {
+				t.Fatalf("reading %s's %s privilege: %v", role, verb, err)
+			}
+
+			if granted {
+				t.Errorf("%s holds %s on a table no migration granted it — "+
+					"default privileges are back in the chain", role, verb)
+			}
+		}
+	}
+
+	// The mechanism itself, not only its effect: a declaration left behind
+	// reaches every table of every later migration, and the check above would
+	// only notice once such a table existed.
+	var declarations int
+	if err := admin.QueryRow(ctx, `
+		SELECT count(*)
+		FROM pg_default_acl d
+		JOIN pg_namespace n ON n.oid = d.defaclnamespace
+		WHERE n.nspname = $1
+	`, testsupport.AppSchema).Scan(&declarations); err != nil {
+		t.Fatalf("counting default privilege declarations: %v", err)
+	}
+	if declarations != 0 {
+		t.Errorf("%d default privilege declaration(s) on schema %s, want none",
+			declarations, testsupport.AppSchema)
+	}
+}
+
+// The attribute guard raises rather than reporting a separation it did not
+// achieve. It cannot clear SUPERUSER, BYPASSRLS or REPLICATION — only a role
+// holding them can — so stopping is the only honest answer, and REPLICATION is
+// on the list because a role that streams WAL reads every row of every table
+// without a policy ever running.
+func TestChainRefusesARoleCarryingAnEscapeAttribute(t *testing.T) {
+	for name, attribute := range map[string]string{
+		"replication": "REPLICATION",
+		"bypassrls":   "BYPASSRLS",
+	} {
+		t.Run(name, func(t *testing.T) {
+			db := cluster.NewDatabase(t)
+			ctx := t.Context()
+
+			admin := testsupport.Connect(t, db.SuperuserURL)
+			if _, err := admin.Exec(ctx, `ALTER ROLE cadence_app `+attribute); err != nil {
+				t.Fatalf("loosening the request path role: %v", err)
+			}
+
+			t.Cleanup(func() {
+				cleanupCtx := context.WithoutCancel(ctx)
+				if _, err := admin.Exec(cleanupCtx, `ALTER ROLE cadence_app NO`+attribute); err != nil {
+					t.Errorf("clearing %s: %v", attribute, err)
+				}
+			})
+
+			statements, err := os.ReadFile(
+				filepath.Join(testsupport.MigrationsPath(t), "000001_base.up.sql"),
+			)
+			if err != nil {
+				t.Fatalf("reading the base migration: %v", err)
+			}
+
+			conn := testsupport.Connect(t, db.MigrationURL)
+			_, err = conn.Exec(ctx, string(statements))
+			if err == nil {
+				t.Fatalf("the chain applied onto a role carrying %s and said nothing", attribute)
+			}
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) ||
+				!strings.Contains(pgErr.Message, "privileges the request path must never hold") {
+				t.Fatalf("the chain failed with %v, want the explicit refusal", err)
+			}
+		})
+	}
+}
+
+// The other direction of the same audit: our privileges arriving at somebody
+// else. A stranger granted a product role does SET ROLE into it and holds every
+// grant the product role holds — no cadence_* connection required.
+func TestChainRefusesAMembershipOutOfAProductRole(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	ctx := t.Context()
+
+	admin := testsupport.Connect(t, db.SuperuserURL)
+	if _, err := admin.Exec(ctx, `CREATE ROLE analyst_probe NOLOGIN`); err != nil {
+		t.Fatalf("creating the outsider: %v", err)
+	}
+	if _, err := admin.Exec(ctx, `GRANT `+testsupport.PatientRole+` TO analyst_probe`); err != nil {
+		t.Fatalf("granting the product role to the outsider: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS analyst_probe`); err != nil {
+			t.Errorf("dropping the outsider: %v", err)
+		}
+	})
+
+	statements, err := os.ReadFile(filepath.Join(testsupport.MigrationsPath(t), "000001_base.up.sql"))
+	if err != nil {
+		t.Fatalf("reading the base migration: %v", err)
+	}
+
+	conn := testsupport.Connect(t, db.MigrationURL)
+	_, err = conn.Exec(ctx, string(statements))
+	if err == nil {
+		t.Fatal("the chain applied while an outsider held a product role, and said nothing")
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || !strings.Contains(pgErr.Message, "did not grant") {
+		t.Fatalf("the chain failed with %v, want the explicit refusal", err)
 	}
 }
