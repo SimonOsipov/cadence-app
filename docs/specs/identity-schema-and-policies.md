@@ -740,6 +740,33 @@ role elevation, with a reference to the invariant.
 
 This suite is the one every subsequent migration is obliged to extend (`data-layer`
 invariant 5), which makes its shape more important than its current size.
+> [!deviation] 2026-08-10
+> The suite was written, measured against six policy mutations, and committed —
+> and independent review then measured sixteen and found twelve alive. The
+> correction is recorded here rather than quietly fixed, because the shape of the
+> mistake is the one this project keeps meeting.
+>
+> The root of it: `err == nil` is not a witness for a write. An `UPDATE` whose
+> rows a policy filters away returns success and touches nothing, so every
+> positive write in the file passed against a schema with the own-row `UPDATE`
+> policies deleted — including the control that existed to rule out exactly that
+> schema. Writes now count rows and read the value back.
+>
+> The rest were absences: `provider_profiles` carried five policies and had no row
+> anywhere in the suite, so "does not see an unassigned specialist's card" was
+> true of an empty table; `user_preferences` was read only from the doctor's side,
+> where the refusal comes from a missing grant rather than a policy; the doctor's
+> view of a clinical card had no negative half; `care_team_assignments` was never
+> read through the request seam at all; and the admin's write side was unasserted,
+> so five `FOR ALL` policies could be narrowed to `FOR SELECT` unnoticed.
+>
+> One claim in the step's first commit message is wrong and is corrected here:
+> widening the admin's audit policy from `FOR SELECT` to `FOR ALL` is **not**
+> killed by this suite. All three refusals there are `42501` from the missing
+> grants, so the policy never runs — the kill belongs to the step-5 policies
+> registry. A test that names a refusal has to name which of the three available
+> causes produced it.
+
 todoist: "6h9HmVwrwgc8qcmq"
 
 ### step-8: The token issuance hook and the non-superuser GoTrue role
