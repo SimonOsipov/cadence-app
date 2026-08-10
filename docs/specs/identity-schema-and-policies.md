@@ -592,6 +592,31 @@ intermediate state.
 Here the `pg_class` walks stop being vacuous. The stale comment in
 `coexistence_integration_test.go` saying `profiles` will reference the `auth` schema
 is amended: decision D3 cancels that.
+> [!deviation] 2026-08-10
+> Spec said: the six tables with the columns of §03. Actually done: that, plus
+> three decisions the column list does not settle, each commented where it is
+> made. `care_team_assignments.id` defaults to `gen_random_uuid()`, so a caller
+> cannot forget it. `is_primary` is `NOT NULL DEFAULT false`, because the partial
+> unique index is `WHERE is_primary` and a `NULL` is not true — a row carrying one
+> would slip past "there is one primary specialist" without anybody deciding it
+> should. And the tables that describe a person cascade from `profiles` on delete
+> while `audit_log` does not: an audit row outlives the rows it describes and the
+> people it names, and a cascade would delete exactly the evidence of the
+> deletion.
+
+> [!deviation] 2026-08-10
+> Spec said: this step edits one existing test — the stale comment in
+> `coexistence_integration_test.go`. Actually done: two more, because the chain
+> stopped being one migration long.
+> `TestSingleStepRollbackRemovesTheBaseMigration` became
+> `TestUnwindingTheChainOneStepAtATimeReachesTheBase`, written against the chain's
+> length rather than a named migration so that every later step does not have to
+> edit it; and the idempotency test now runs every down migration twice rather
+> than only the base's. Review caught that the rewrite had dropped the old test's
+> object-level witness — measured: an emptied down migration left the whole suite
+> green — and it was given a general one, that the schema holds no tables after
+> the step that created them is rolled back.
+
 todoist: "6h9HmVfP8c2r6VHH"
 
 ### step-5: Six policy shapes, explicit grants, and three registries
@@ -681,10 +706,13 @@ todoist: "6h9HmW56R74QfccH"
 > format have been verified, but not against the sources. Clarified at step 8 on the
 > live environment; nothing depends on it before the policies are written.
 
-> [!question] `GENERATED ALWAYS AS IDENTITY` does still permit `OVERRIDING SYSTEM
-> VALUE`, that is, the service path is capable of choosing `audit_log.id` and
-> reordering history. Either closed by a policy or deliberately accepted — decided at
-> step 4; a narrow question.
+> [!decision] 2026-08-10 — `GENERATED ALWAYS AS IDENTITY` does still permit
+> `OVERRIDING SYSTEM VALUE`, that is, the service path is capable of choosing
+> `audit_log.id` and reordering history. **Accepted deliberately.** The order of
+> history is `at`, not `id`; the service path is this codebase's own Go rather
+> than an outside actor; and closing it would cost a `SECURITY DEFINER` trigger on
+> every audit write, which is a larger surface than the one it removes. Recorded
+> in the migration's comment, and in `audit.md` at finalization.
 
 > [!question] A `UNIQUE` and partial-unique-index violation reports the existence of
 > rows the caller cannot see. Harmless today: the product roles have no `INSERT` on

@@ -672,67 +672,120 @@ func TestBaseMigrationRollsBackCleanly(t *testing.T) {
 }
 
 // The Makefile's migrate-down target passes no argument, which resolves to one
-// step — a different code path from the whole-chain rollback above, and the one
-// an operator actually runs.
-func TestSingleStepRollbackRemovesOnlyTheLatestMigration(t *testing.T) {
+// step — a different code path from the whole-chain rollback, and the one an
+// operator actually runs after a bad deploy.
+//
+// Written against the chain's length rather than against a particular migration,
+// because the chain grows: a test naming the latest file has to be edited by
+// every step that adds one, and a test edited that often stops being read.
+func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	ctx := t.Context()
+	path := testsupport.MigrationsPath(t)
 
-	if err := database.MigrateDown(db.MigrationURL, testsupport.MigrationsPath(t), 1); err != nil {
+	conn := testsupport.Connect(t, db.MigrationURL)
+	admin := testsupport.Connect(t, db.SuperuserURL)
+
+	appliedVersion := func() *int {
+		t.Helper()
+
+		var version *int
+		if err := conn.QueryRow(ctx, `SELECT version FROM cadence_schema_migrations`).Scan(&version); err != nil {
+			t.Fatalf("reading the applied version: %v", err)
+		}
+
+		return version
+	}
+
+	countRoles := func() int {
+		t.Helper()
+
+		var roles int
+		if err := admin.QueryRow(
+			ctx,
+			`SELECT count(*) FROM pg_roles WHERE rolname = ANY($1)`, testsupport.ChainRoles(),
+		).Scan(&roles); err != nil {
+			t.Fatalf("counting roles: %v", err)
+		}
+
+		return roles
+	}
+
+	countTables := func() int {
+		t.Helper()
+
+		var tables int
+		if err := admin.QueryRow(ctx, `
+			SELECT count(*)
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1 AND c.relkind IN ('r', 'p')
+		`, testsupport.AppSchema).Scan(&tables); err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+
+		return tables
+	}
+
+	before := appliedVersion()
+	if before == nil || *before < 2 {
+		t.Fatal("the chain is one migration long, so stepping through it says nothing")
+	}
+	if countTables() == 0 {
+		t.Fatal("the schema holds no tables, so a rollback has nothing to be seen undoing")
+	}
+
+	if err := database.MigrateDown(db.MigrationURL, path, 1); err != nil {
 		t.Fatalf("rolling back one step: %v", err)
 	}
 
-	admin := testsupport.Connect(t, db.SuperuserURL)
-
-	// One step is one migration, and the operator running `make migrate-down`
-	// after a bad deploy is undoing the last thing that changed — not the roles
-	// every environment stands on. A chain whose steps did not compose would
-	// take the whole arrangement with it, which is the failure this test now
-	// watches for; the whole-chain rollback has TestBaseMigrationRollsBackCleanly.
-	var roles int
-	if err := admin.QueryRow(
-		ctx,
-		`SELECT count(*) FROM pg_roles WHERE rolname = ANY($1)`, testsupport.ChainRoles(),
-	).Scan(&roles); err != nil {
-		t.Fatalf("counting roles: %v", err)
+	// One step is one migration. A chain whose steps did not compose would take
+	// more than it was asked for.
+	after := appliedVersion()
+	if after == nil {
+		t.Fatal("one step removed the version row entirely")
 	}
+	if *after != *before-1 {
+		t.Fatalf("one step moved the version from %d to %d, want %d", *before, *after, *before-1)
+	}
+
+	// And the file it ran actually did something. golang-migrate decrements the
+	// version whether or not the SQL inside the down file changed anything, so
+	// without an object-level witness an empty down migration passes — and the
+	// whole-chain assertions below cannot supply one, because the base migration
+	// drops the schema CASCADE and sweeps up whatever was left behind.
+	if tables := countTables(); tables != 0 {
+		t.Errorf("%d table(s) survived the rollback of the migration that created them", tables)
+	}
+
+	// It took the roles nothing, though: the operator undoing the last deploy is
+	// not undoing the arrangement every environment stands on.
+	roles := countRoles()
 	if want := len(testsupport.ChainRoles()); roles != want {
 		t.Errorf("%d of the chain's %d roles survived a single-step rollback, want all of them",
 			roles, want)
 	}
 
-	// And it really did undo something, or the assertion above would hold in a
-	// world where the rollback did nothing at all.
-	var functions int
-	if err := admin.QueryRow(ctx, `
-		SELECT count(*)
-		FROM pg_proc p
-		JOIN pg_namespace n ON n.oid = p.pronamespace
-		WHERE n.nspname = $1 AND p.proname = 'jwt_subject'
-	`, testsupport.AppSchema).Scan(&functions); err != nil {
-		t.Fatalf("counting the function: %v", err)
-	}
-	if functions != 0 {
-		t.Error("the latest migration survived a single-step rollback")
+	for step := *after; step > 0; step-- {
+		if err := database.MigrateDown(db.MigrationURL, path, 1); err != nil {
+			t.Fatalf("rolling back step %d: %v", step, err)
+		}
 	}
 
-	// And the step after it takes the base with it. Unwinding the chain one
-	// migration at a time is a different code path from rolling the whole thing
-	// back in one call, and it is the one `make migrate-down` runs — so with a
-	// second migration in the chain the base's own rollback would otherwise stop
-	// being exercised through it.
-	if err := database.MigrateDown(db.MigrationURL, testsupport.MigrationsPath(t), 1); err != nil {
-		t.Fatalf("rolling back the second step: %v", err)
+	// The end of the road: the base migration goes through this path too, and
+	// its rollback is the one that removes the roles.
+	if remaining := countRoles(); remaining != 0 {
+		t.Errorf("%d of the chain's roles survived unwinding the chain step by step", remaining)
 	}
 
+	var schemas int
 	if err := admin.QueryRow(
-		ctx,
-		`SELECT count(*) FROM pg_roles WHERE rolname = ANY($1)`, testsupport.ChainRoles(),
-	).Scan(&roles); err != nil {
-		t.Fatalf("counting roles after the second step: %v", err)
+		ctx, `SELECT count(*) FROM pg_namespace WHERE nspname = $1`, testsupport.AppSchema,
+	).Scan(&schemas); err != nil {
+		t.Fatalf("counting the application schema: %v", err)
 	}
-	if roles != 0 {
-		t.Errorf("%d of the chain's roles survived unwinding the chain step by step", roles)
+	if schemas != 0 {
+		t.Errorf("schema %s survived unwinding the chain step by step", testsupport.AppSchema)
 	}
 }
 
@@ -753,7 +806,11 @@ func TestDownMigrationIsIdempotent(t *testing.T) {
 	// property belongs to the file rather than to the chain, and a second
 	// migration whose rollback is not twice-safe is exactly as dangerous as the
 	// first one.
-	for _, name := range []string{"000002_jwt_subject.down.sql", "000001_base.down.sql"} {
+	for _, name := range []string{
+		"000003_identity_tables.down.sql",
+		"000002_jwt_subject.down.sql",
+		"000001_base.down.sql",
+	} {
 		statements, err := os.ReadFile(filepath.Join(testsupport.MigrationsPath(t), name))
 		if err != nil {
 			t.Fatalf("reading %s: %v", name, err)

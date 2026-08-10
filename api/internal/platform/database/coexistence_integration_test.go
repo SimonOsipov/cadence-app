@@ -9,9 +9,13 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// GoTrue shares this database — its `auth` schema is what `profiles` will
-// reference in M2, so the two cannot be split apart — and it brings its own
-// migrator. That migrator writes its bookkeeping to `public.schema_migrations`
+// GoTrue shares this database and brings its own migrator.
+//
+// It is not that the two cannot be split apart. profiles carries no reference to
+// the auth schema, deliberately: the identity provider owns that table, its
+// migrations change it, and the policy-test database has no auth schema at all.
+// They share a database because a deployment has one — which is enough to make
+// the collision below happen. That migrator writes its bookkeeping to `public.schema_migrations`
 // with a single `version` column, which is the name golang-migrate also claims
 // and a shape it cannot read.
 //
