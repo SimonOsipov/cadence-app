@@ -40,9 +40,34 @@ services:
   # cadence_patient, cadence_doctor, cadence_admin — are created by
   # api/migrations, and nothing here grants anything to the names above.
   #
+  # This step also creates the role GoTrue connects as. It is created here and
+  # not by api/migrations because it is not part of the application schema: the
+  # chain owns `app` and the roles that reach it, and the identity provider's
+  # database user belongs to whoever deploys the identity provider. What the
+  # chain does own is the other end of the connection — `cadence_auth_hook`,
+  # the role the hook's EXECUTE is granted to — and `make dev-up` grants the
+  # membership between the two once the chain has run.
+  #
+  # The password is set here rather than by `dev-up`, unlike the two LOGIN roles
+  # the chain creates. GoTrue starts as soon as compose brings it up and
+  # connects immediately, which is before `dev-up` reaches its psql step; a role
+  # without a password at that moment is a container that exits and stays exited:
+  # `auth` declares no restart policy, so nothing retries it. The deployment has
+  # no such ordering problem — the credential is in its variable store before
+  # anything starts.
+  #
   # A one-shot step rather than an entrypoint init script, because init scripts
-  # only run when the data volume is first created: this way a developer with
-  # an existing volume gets the same result as a fresh clone.
+  # only run when the data volume is first created: this way a developer with an
+  # existing volume gets the same result as a fresh clone. Everything below is
+  # therefore written to converge rather than to create — including the password,
+  # which a `WHERE NOT EXISTS` guard would leave at whatever an older volume had.
+  #
+  # The ownership sweep is there for the same reason, and it covers more than
+  # tables: on a volume where GoTrue once migrated as the superuser, `auth` also
+  # holds functions (auth.uid, auth.role, …) and enum types (factor_type,
+  # aal_level, …) owned by `cadence`, and a version bump that runs
+  # CREATE OR REPLACE FUNCTION or ALTER TYPE … ADD VALUE is refused on those
+  # exactly as it would be on a table.
   auth-schema:
     image: postgres:17-alpine
     depends_on:
@@ -56,13 +81,50 @@ services:
       # the result as its own statement, which needs no quoting at all.
       - |
         PGPASSWORD=cadence psql -v ON_ERROR_STOP=1 -h postgres -U cadence -d cadence <<'SQL'
-        CREATE SCHEMA IF NOT EXISTS auth;
+        SELECT format('CREATE ROLE %I', 'cadence_gotrue')
+         WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cadence_gotrue')
+        \gexec
+        ALTER ROLE cadence_gotrue LOGIN PASSWORD 'cadence_gotrue'
+                                  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+        CREATE SCHEMA IF NOT EXISTS auth AUTHORIZATION cadence_gotrue;
+        ALTER SCHEMA auth OWNER TO cadence_gotrue;
+        -- Tables, sequences and views, then functions, then the types GoTrue
+        -- declares (enums and domains — a table's own row type follows its
+        -- table and must not be named here).
+        --
+        -- A sequence a column owns follows its table and cannot be reassigned on
+        -- its own: Postgres answers "Sequence is linked to table", which with
+        -- ON_ERROR_STOP=1 would take the whole step down. Hence the pg_depend
+        -- filter — measured, not anticipated.
+        SELECT format('ALTER %s auth.%I OWNER TO cadence_gotrue',
+                      CASE c.relkind WHEN 'S' THEN 'SEQUENCE'
+                                     WHEN 'v' THEN 'VIEW'
+                                     WHEN 'm' THEN 'MATERIALIZED VIEW'
+                                     ELSE 'TABLE' END, c.relname)
+          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'auth' AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+           AND c.relowner <> 'cadence_gotrue'::regrole
+           AND NOT EXISTS (
+                 SELECT FROM pg_depend d
+                  WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
+                    AND d.deptype IN ('a', 'i'))
+        \gexec
+        SELECT format('ALTER FUNCTION auth.%I(%s) OWNER TO cadence_gotrue',
+                      p.proname, pg_get_function_identity_arguments(p.oid))
+          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'auth' AND p.proowner <> 'cadence_gotrue'::regrole
+        \gexec
+        SELECT format('ALTER TYPE auth.%I OWNER TO cadence_gotrue', t.typname)
+          FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+         WHERE n.nspname = 'auth' AND t.typtype IN ('e', 'd')
+           AND t.typowner <> 'cadence_gotrue'::regrole
+        \gexec
         SELECT format('CREATE ROLE %I NOLOGIN', r)
           FROM unnest(ARRAY[
                  'postgres', 'anon', 'authenticated', 'service_role',
                  'supabase_auth_admin', 'supabase_admin', 'authenticator', 'dashboard_user'
                ]) AS r
-         WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r);
+         WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r)
         \gexec
         SQL
     restart: "no"
@@ -90,7 +152,13 @@ services:
       # every request with `relation "identities" does not exist`.
       # `public` stays on the path for extension functions.
       GOTRUE_DB_NAMESPACE: auth
-      DATABASE_URL: postgres://cadence:cadence@postgres:5432/cadence?sslmode=disable&search_path=auth,public
+      # cadence_gotrue, not the container's superuser. The identity provider is
+      # the one process here that is reachable from outside without a token, and
+      # a superuser connection would make a bug in it a bug in every table:
+      # BYPASSRLS ignores every policy the chain writes. What this role can do to
+      # the application schema is exactly one function call — see the membership
+      # granted by `make dev-up`.
+      DATABASE_URL: postgres://cadence_gotrue:cadence_gotrue@postgres:5432/cadence?sslmode=disable&search_path=auth,public
 
       # Standalone GoTrue serves its API at the root — the /auth/v1 prefix seen
       # on Supabase comes from their gateway, not from this process. So the
@@ -125,6 +193,25 @@ services:
       # every one of its tokens refused. Better to meet that here than against
       # a deployment.
       GOTRUE_JWT_KEYS: '[{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"a1323fc3-c42d-37ae-8be6-1ebfb524403f","x":"2e9iv7Gxg80pCO61rNEtPEs-mIr1mErwg8vW7QcugY8","y":"9K6Q4xt--k5fF48WfBjVeFnxsn3NAJY-so03DMZnEH0","d":"oTI_w8QtN66L5h6_tSRAP5I4FbDa13nXQrT2KWM3fuQ","key_ops":["sign"]}]'
+
+      # The token issuance hook. This is the one place the product role gets into
+      # a token: GoTrue calls app.access_token_hook while minting an access
+      # token, and the seam on the other side reads cadence_role out of the
+      # claims and picks a Postgres role from a closed map.
+      #
+      # `pg-functions://postgres/<schema>/<function>`. The scheme is what selects
+      # the dispatcher; the host segment — `postgres` here — is parsed and then
+      # ignored by v2.194.0, and is neither a role, a database nor a driver.
+      # Only the two path segments are read. GoTrue calls the function over its
+      # own connection, which is why the EXECUTE granted to cadence_auth_hook has
+      # to reach cadence_gotrue through a membership.
+      #
+      # Without ENABLED the URI is read and ignored, and every token comes out
+      # correctly signed and without a product role — which the API answers with
+      # a refusal that names the seam rather than the configuration. Worth
+      # knowing before the same variable is set on a deployment.
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: "true"
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://postgres/app/access_token_hook
 
       # Invite-only. Invariant 3 of the identity note, not a local convenience:
       # an account exists because a clinic invited it.

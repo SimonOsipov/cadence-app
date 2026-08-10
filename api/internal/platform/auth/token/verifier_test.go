@@ -529,3 +529,47 @@ func TestVerifyLeavesTheRoleEmptyWhenTheTokenCarriesOnlyTheStockClaim(t *testing
 		t.Errorf("Subject = %q, want %q", principal.Subject, claims["sub"])
 	}
 }
+
+// `aud` arrives as a list in the first token GoTrue issues after every start,
+// and as a string in all the rest. RFC 7519 permits both, and this API is handed
+// both — so the shape cannot be assumed from a sample of one sign-in.
+//
+// The cause is a global in golang-jwt that supabase/gotrue:v2.194.0 sets inside
+// its own signing routine: `jwt.MarshalSingleStringAsArray` starts true and is
+// set to false the first time a token is signed. The issuance hook's event is
+// marshalled before that has happened, so the very first token carries the list
+// form all the way through. Measured against supabase/gotrue:v2.194.0 on
+// 2026-08-10: restart, sign in five times, and the first `aud` is
+// `["authenticated"]` while the next four are `"authenticated"` — twice over,
+// across two restarts.
+//
+// One token per deployment sounds like nothing until it is the first sign-in
+// after every release, which is the one somebody is watching.
+//
+// Both halves are here on purpose. The accepting one guards that shape; the
+// refusing one is what makes it an audience check rather than a test that passes
+// because the claim is no longer read.
+func TestVerifyAcceptsTheAudienceInEitherShape(t *testing.T) {
+	key := testsupport.NewES256Key(t, "kid-1")
+	set := testsupport.StartJWKS(t, key)
+	verifier := newVerifier(t, set)
+
+	// The one-element list first, because that is the shape production emits;
+	// the longer one because RFC 7519 permits it and a naive check that compared
+	// the whole list against one string would pass the first and fail the second.
+	for _, audience := range [][]string{{testAudience}, {"someone-else", testAudience}} {
+		accepted := validClaims(set.Issuer)
+		accepted["aud"] = audience
+
+		if _, err := verifier.Verify(t.Context(), key.Sign(t, accepted)); err != nil {
+			t.Errorf("Verify with aud = %v: %v", audience, err)
+		}
+	}
+
+	refused := validClaims(set.Issuer)
+	refused["aud"] = []string{"someone-else", "and-another"}
+
+	if _, err := verifier.Verify(t.Context(), key.Sign(t, refused)); !errors.Is(err, token.ErrTokenRejected) {
+		t.Errorf("Verify with a list naming other audiences = %v, want ErrTokenRejected", err)
+	}
+}

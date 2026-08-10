@@ -1324,11 +1324,14 @@ func TestChainConvergesAnImpersonationTargetLeftWithLogin(t *testing.T) {
 	}
 }
 
-// The impersonation targets are NOLOGIN, so no connection can read their
-// attributes back from CURRENT_USER — and they are the roles the policies will
-// actually run as. BYPASSRLS on cadence_patient makes every policy of M2
-// decorative while every test about connections stays green.
-func TestImpersonationTargetsCarryNoEscapeAttributes(t *testing.T) {
+// The assumable roles are NOLOGIN, so no connection can read their attributes
+// back from CURRENT_USER — and they are the roles that actually run: the
+// impersonation targets are what the policies are evaluated as, and
+// cadence_auth_hook is what the identity provider's own database user becomes.
+// BYPASSRLS on cadence_patient makes every policy of M2 decorative while every
+// test about connections stays green, and CREATEROLE on cadence_auth_hook hands
+// that to whatever is reachable from the internet, with the same silence.
+func TestAssumableRolesCarryNoEscapeAttributes(t *testing.T) {
 	db := cluster.NewDatabase(t)
 
 	conn := testsupport.Connect(t, db.SuperuserURL)
@@ -1339,7 +1342,7 @@ func TestImpersonationTargetsCarryNoEscapeAttributes(t *testing.T) {
 		  AND (rolsuper OR rolbypassrls OR rolreplication OR rolcreaterole OR rolcreatedb
 		       OR rolcanlogin)
 		ORDER BY rolname
-	`, testsupport.ImpersonationRoles())
+	`, append(testsupport.ImpersonationRoles(), testsupport.AuthHookRole))
 	if err != nil {
 		t.Fatalf("reading the impersonation targets: %v", err)
 	}
@@ -1358,37 +1361,82 @@ func TestImpersonationTargetsCarryNoEscapeAttributes(t *testing.T) {
 	}
 
 	if len(offenders) > 0 {
-		t.Errorf("impersonation targets carrying an escape attribute or LOGIN: %v", offenders)
+		t.Errorf("assumable roles carrying an escape attribute or LOGIN: %v", offenders)
 	}
 }
 
-// USAGE goes to the impersonation targets and to nobody else. The connection
-// roles holding nothing on the schema is what makes a query that skips the seam
-// fail with 42501 rather than merely find no rows.
-func TestSchemaUsageIsGrantedToTheImpersonationTargetsOnly(t *testing.T) {
+// Privileges on the application schema are granted to a closed set of roles and
+// to no others. The connection roles holding nothing on the schema is what makes
+// a query that skips the seam fail with 42501 rather than merely find no rows.
+//
+// The set is read out of the schema's ACL rather than asked about role by role.
+// The earlier form named six roles and asked `has_schema_privilege` of each,
+// which answers "did this role get it" and can never answer "who else did" — the
+// migration that added cadence_auth_hook granted USAGE to a seventh role and the
+// test stayed green. A list is not a set until something enumerates it.
+//
+// Two things this cannot see, both covered elsewhere. It reads *direct* grants,
+// so a role that reaches the schema through a membership — cadence_migrator
+// through cadence_owner, the identity provider's user through cadence_auth_hook
+// — does not appear; that is the point of the membership and is enumerated by
+// TestMembershipsAreExactlyTheFourExpected. And it says nothing about what the
+// connection roles inherit, which the earlier form did assert as a side effect:
+// that lives in the NOINHERIT check above and in
+// TestRequestPathReachesTablesOnlyThroughImpersonation, which measures it as a
+// live refusal.
+func TestSchemaPrivilegesAreGrantedToAClosedSet(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.SuperuserURL)
 
-	expected := map[string]bool{}
+	// The impersonation targets reach the tables; the owner owns the schema and
+	// is the only role that may create in it; the hook role reaches one function
+	// and nothing else. The two connection roles are deliberately absent — they
+	// arrive at a table only by becoming one of the targets.
+	//
+	// CREATE is here rather than filtered out because it is the privilege that
+	// matters most on a schema: a request path that could create a table in `app`
+	// could create one with no row level security on it.
+	want := map[string]bool{
+		testsupport.OwnerRole + " USAGE":    true,
+		testsupport.OwnerRole + " CREATE":   true,
+		testsupport.AuthHookRole + " USAGE": true,
+	}
 	for _, role := range testsupport.ImpersonationRoles() {
-		expected[role] = true
-	}
-	for _, role := range []string{testsupport.AppRole, testsupport.ServiceAppRole} {
-		expected[role] = false
+		want[role+" USAGE"] = true
 	}
 
-	for role, want := range expected {
-		var granted bool
-		if err := conn.QueryRow(
-			t.Context(),
-			`SELECT has_schema_privilege($1, $2, 'USAGE')`, role, testsupport.AppSchema,
-		).Scan(&granted); err != nil {
-			t.Fatalf("reading %s's privilege on the schema: %v", role, err)
+	rows, err := conn.Query(t.Context(), `
+		SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END
+		       || ' ' || a.privilege_type
+		FROM pg_namespace n, aclexplode(n.nspacl) a
+		WHERE n.nspname = $1
+	`, testsupport.AppSchema)
+	if err != nil {
+		t.Fatalf("reading the schema's ACL: %v", err)
+	}
+	defer rows.Close()
+
+	got := map[string]bool{}
+	for rows.Next() {
+		var grant string
+		if err := rows.Scan(&grant); err != nil {
+			t.Fatalf("scanning a grant: %v", err)
 		}
+		got[grant] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating: %v", err)
+	}
 
-		if granted != want {
-			t.Errorf("has_schema_privilege(%s, %s, USAGE) = %v, want %v",
-				role, testsupport.AppSchema, granted, want)
+	for grant := range got {
+		if !want[grant] {
+			t.Errorf("%q on schema %s, and nothing in the chain grants it",
+				grant, testsupport.AppSchema)
+		}
+	}
+	for grant := range want {
+		if !got[grant] {
+			t.Errorf("%q is missing on schema %s", grant, testsupport.AppSchema)
 		}
 	}
 }

@@ -789,6 +789,143 @@ discarded.
 Verification with a real token end to end is done **by hand** against `make dev-up`
 and recorded here as a manual step: there is no GoTrue container in the test
 harness, it arrives with the invitation integration tests (build plan, IDN-17).
+
+> [!deviation] 2026-08-10
+> `cadence_gotrue` **does** hold `USAGE` on `app`, contrary to the test list above.
+> Postgres will not execute a function without `USAGE` on the schema holding it, so
+> the grant to `cadence_auth_hook` — which `cadence_gotrue` inherits through the
+> membership — is not optional. What is asserted instead is the posture the list
+> was reaching for: no privilege on any object in `app` other than `EXECUTE` on the
+> hook, measured from the catalogue rather than described. `app`'s ACL carries
+> `cadence_auth_hook=U` and no PUBLIC grant; the function's `proacl` is
+> `{cadence_owner=X,cadence_auth_hook=X}`.
+>
+> The automated tests exercise `cadence_auth_hook` and not `cadence_gotrue`, because
+> the latter is created by `docker-compose` and does not exist in the test harness.
+
+> [!deviation] 2026-08-10
+> Three things were added to the hook that the step did not ask for, each because
+> the review measured a way for it to fail silently.
+>
+> **A mismatch guard.** The profile is looked up by `event.user_id`; the subject the
+> token will carry is `claims.sub`. Nothing checked that they agree, and this is a
+> `SECURITY DEFINER` function — "the role of one user with the subject of another"
+> is the one output it must never produce. On a disagreement it now names no role.
+>
+> **Two `RAISE WARNING`s**, on the branches where the event is not understood. A
+> GoTrue upgrade that renamed a key would otherwise mean every token silently
+> losing its product role, indistinguishable in the log from the ordinary case of a
+> user with no profile. The ordinary case stays silent.
+>
+> **A corrected claim.** The migration asserted that dropping any of
+> `sub, aud, exp, iss, role` makes GoTrue answer 500. Read off v2.194.0: it
+> validates the hook's output against `MinimumViableTokenSchema`, whose required
+> members are `aud, exp, iat, sub, email, phone, role, aal, session_id,
+> is_anonymous`. `iss` is **not** among them — dropping it yields a signed token
+> with no issuer, which the API's verifier refuses instead. Different failure,
+> different place to look. The test fixture now carries a realistic event rather
+> than five keys.
+
+> [!deviation] 2026-08-10
+> The local stack was hardened past what the step describes, after the review
+> measured each failure:
+>
+> - `dev-up`'s `psql` ran without `ON_ERROR_STOP`. Measured: several `-c` run on
+>   after one fails and the command still exits 0, so a failed `GRANT` reached
+>   "local stack ready" and was discovered at the first sign-in. It now stops, and
+>   its last statement asserts the privilege the target exists to provision.
+> - The wait for GoTrue was unbounded and silent; it now gives up after 60s and
+>   says where to look.
+> - The compose one-shot set the password only when creating the role, so an older
+>   volume kept a stale one. It converges now, like everything else in that step.
+> - The ownership hand-over covered tables only. Measured on a volume made to look
+>   old: `auth` also holds 4 functions and 9 enum types, and a version bump running
+>   `CREATE OR REPLACE FUNCTION` or `ALTER TYPE … ADD VALUE` is refused on those
+>   exactly as on a table. The sweep now covers relations, functions and types —
+>   skipping sequences a column owns, which cannot be reassigned on their own and
+>   would have taken the whole step down with `ON_ERROR_STOP` set.
+
+> [!deviation] 2026-08-10
+> `TestSchemaUsageIsGrantedToTheImpersonationTargetsOnly` was rewritten and renamed.
+> It named six roles and asked `has_schema_privilege` of each — a question that can
+> never answer "who else". This step granted `USAGE` to a seventh role and the test
+> stayed green. It now reads the schema's ACL and compares the set. The same shape
+> of mistake as step 5's: a list is not a set until something enumerates it.
+
+> [!deviation] 2026-08-10
+> A test outside this step's files: `TestVerifyAcceptsTheAudienceInEitherShape` in
+> `internal/platform/auth/token`. Enabling the hook changed the **type** of `aud`
+> in issued tokens, and the verifier had never been measured against the list form.
+> See the manual verification below for what it actually does.
+
+#### Manual verification, 2026-08-10 — `supabase/gotrue:v2.194.0`
+
+Run by hand against `make dev-up` on a volume created from scratch, because the
+test harness has no GoTrue (it arrives with IDN-17). This is the feature's only
+manual acceptance.
+
+1. On a fresh volume GoTrue migrated the `auth` schema as `cadence_gotrue` — a
+   role that is `NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB`. No superuser is
+   involved anywhere in the identity provider's path.
+2. It owns `auth` and everything in it; `app` is still owned by `cadence_owner`.
+3. As itself, `cadence_gotrue` is refused `SELECT` on `app.profiles` and `EXECUTE`
+   on `app.jwt_subject()`, and reaches `app.access_token_hook`.
+4. Sign-in of a provisioned user: the access token carries `"cadence_role":
+   "doctor"`. Sign-in of an invited user with no profile: a token is issued and
+   the key is absent.
+5. With the membership revoked, `POST /token` answers **500** and GoTrue logs
+   `permission denied for schema app (SQLSTATE 42501)`. Sign-in stops for
+   everybody rather than tokens quietly losing their role — the loud failure.
+6. The call is `select "app"."access_token_hook"($1)`, inside a transaction. The
+   event carries `metadata`, `user_id`, `claims` and `authentication_method`.
+7. `aud` comes back as a **list** in the first token after every GoTrue start and
+   as a string in all the rest — measured across two restarts, five sign-ins each.
+   The cause is a global in golang-jwt that GoTrue flips inside its own signing
+   routine; the hook's event is marshalled before that has happened. One token per
+   release is the first sign-in after every release.
+8. End to end: live token → API → `GET /v1/me` → `{"role":"doctor"}` (200); no
+   token → 401; the unprovisioned user's token → 200 with an empty role, which is
+   the state `/v1/me` exists to let somebody see.
+
+> [!deviation] 2026-08-11
+> A second review round, of the first round's fixes. Four of its findings were
+> defects the fixes had introduced or left, and they are recorded because the
+> pattern keeps repeating: a fix is not a smaller change than the thing it fixes.
+>
+> - **`ELSIF … AND CASE … THEN … END`** does not compile in plpgsql: the condition
+>   is read up to the first unparenthesised `THEN`, so the `CASE`'s own `THEN`
+>   ended it — "syntax error at end of input", at migration time. The `CASE` was
+>   there because Postgres does not promise the evaluation order of an `OR`, and
+>   the arm being guarded is a cast that raises on a malformed `sub`. Parenthesised
+>   now, with the reason written beside it.
+> - **The role's attributes were asserted nowhere.** `cadence_auth_hook` could have
+>   been created `CREATEROLE` and the whole suite stayed green, including all six
+>   mutations of the first round — the role the internet-facing identity provider
+>   assumes was the one role whose attributes nothing measured. The existing
+>   attribute test now covers every assumable role rather than the impersonation
+>   targets alone.
+> - **Two claims written in the first round's fixes were false.** "`restart` is
+>   unset on every service here" — `auth-schema` sets it. And the pre-grant window
+>   was said to be distinguishable from a revoked grant by its SQLSTATE; measured,
+>   its larger half is byte-identical, 42501 either way. Both corrected.
+> - **A list of ten claim names is not an assertion about the claims.** The suite
+>   checked ten members by name, so a hook rebuilding the claims from what it knows
+>   would drop `iss` unseen. It now compares the whole set, in both directions.
+>
+> Also from that round: the suite sent only a doctor through the hook, so
+> `patient` and `admin` never travelled; and nothing tied the value the hook writes
+> to the closed map the seam resolves it through — a migration widening the
+> profiles CHECK would mint tokens the seam answers with 403, greenly. Both closed.
+> The schema-privilege test now covers `CREATE` as well as `USAGE`, since a request
+> path able to create in `app` could create a table with no row level security.
+>
+> Eleven mutations were run against the final state, each killed by the test named
+> for it: the role written beside the claims; the claims emptied on the no-profile
+> path; a handed-in role kept; the guard altering the event; `EXECUTE` to PUBLIC;
+> `USAGE` and `CREATE` to the request pool; `CREATEROLE` on the hook role; `iss`
+> dropped; subjects compared as text rather than as UUIDs; the shape arm of the
+> mismatch guard removed.
+
 todoist: "6h9HmW56R74QfccH"
 
 ## Open questions
@@ -799,11 +936,14 @@ todoist: "6h9HmW56R74QfccH"
 > the block deliberately adds nothing new to that requirement. Verifying it is a
 > deployment task.
 
-> [!question] The exact shape of the pg-function call made by GoTrue v2.194.0 — the
-> event and return value shapes, behaviour inside a transaction and on timeout —
-> lines up per the documentation, and the variable names and the `pg-functions://`
-> format have been verified, but not against the sources. Clarified at step 8 on the
-> live environment; nothing depends on it before the policies are written.
+> [!decision] 2026-08-10 — the pg-function call was clarified at step 8, on the live
+> environment, and the question above is closed. The call is
+> `select "app"."access_token_hook"($1)` inside a transaction; the event carries
+> `metadata`, `user_id`, `claims` and `authentication_method`; the output is
+> validated against `MinimumViableTokenSchema` and an output the schema rejects is
+> answered with 500. In the URI `pg-functions://postgres/app/access_token_hook` the
+> scheme selects the dispatcher and the host segment is parsed and ignored — it is
+> neither a role, a database nor a driver. Recorded in full under step 8.
 
 > [!decision] 2026-08-10 — `GENERATED ALWAYS AS IDENTITY` does still permit
 > `OVERRIDING SYSTEM VALUE`, that is, the service path is capable of choosing
