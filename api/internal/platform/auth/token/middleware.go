@@ -1,10 +1,11 @@
-package auth
+package token
 
 import (
 	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
@@ -51,7 +52,7 @@ func Middleware(verifier *Verifier, exempt []string) func(http.Handler) http.Han
 				return
 			}
 
-			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
 		})
 	}
 }

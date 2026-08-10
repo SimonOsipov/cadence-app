@@ -1,4 +1,4 @@
-package auth
+package token
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 )
 
 // The two reasons a token does not produce a principal. They are separated
@@ -128,13 +130,18 @@ type Verifier struct {
 	parser *jwt.Parser
 }
 
-// claims is the subset of a Supabase token this package reads. Everything not
-// named here is discarded at the parse boundary rather than carried around and
-// filtered later.
+// claims is the subset of a token this package reads. Everything not named here
+// is discarded at the parse boundary rather than carried around and filtered
+// later.
+//
+// cadence_role is ours, put there by the token issuance hook. The stock role
+// claim is deliberately absent: GoTrue sets it to the literal "authenticated"
+// for every user, so reading it would give every caller the same product role —
+// which is the arrangement the seven-role split exists to end.
 type claims struct {
 	jwt.RegisteredClaims
 
-	Role string `json:"role"`
+	CadenceRole string `json:"cadence_role"`
 }
 
 // NewVerifier starts a verifier and the background refresh of its key set. The
@@ -190,26 +197,33 @@ func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 // Every failure wraps ErrTokenRejected or ErrKeysUnavailable, and carries the
 // specific reason in its message — for the log. The caller of the API is told
 // none of it.
-func (v *Verifier) Verify(ctx context.Context, token string) (Principal, error) {
+func (v *Verifier) Verify(ctx context.Context, token string) (auth.Principal, error) {
 	var parsed claims
 
 	if _, err := v.parser.ParseWithClaims(token, &parsed, v.keyfunc(ctx)); err != nil {
 		if errors.Is(err, ErrKeysUnavailable) {
-			return Principal{}, fmt.Errorf("verifying the token: %w", err)
+			return auth.Principal{}, fmt.Errorf("verifying the token: %w", err)
 		}
 
-		return Principal{}, fmt.Errorf("%w: %w", ErrTokenRejected, err)
+		return auth.Principal{}, fmt.Errorf("%w: %w", ErrTokenRejected, err)
 	}
 
 	if parsed.Subject == "" {
-		return Principal{}, fmt.Errorf("%w: the token names no subject", ErrTokenRejected)
+		return auth.Principal{}, fmt.Errorf("%w: the token names no subject", ErrTokenRejected)
 	}
 
+	// A missing cadence_role is an empty role, not a refusal. The hook removes
+	// the claim for a user with no profile, and that is a real state — an invited
+	// account that has not been provisioned yet. Such a caller is refused by the
+	// seam, before a transaction opens and with a reason of its own; refusing it
+	// here would make every unprovisioned account look like a bad token, and
+	// GET /v1/me would stop answering for the one caller who needs to see why.
+	//
 	// Guaranteed non-nil: WithExpirationRequired has already refused a token
-	// without one.
-	return Principal{
+	// without an expiry.
+	return auth.Principal{
 		Subject:   parsed.Subject,
-		Role:      parsed.Role,
+		Role:      parsed.CadenceRole,
 		ExpiresAt: parsed.ExpiresAt.Time,
 	}, nil
 }

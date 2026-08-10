@@ -17,7 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth/token"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 	"github.com/SimonOsipov/cadence-app/api/internal/router"
@@ -45,7 +45,7 @@ func assembled(t *testing.T, probe func(context.Context) error) (*chi.Mux, *fixt
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
 
-	verifier, err := auth.NewVerifier(t.Context(), auth.VerifierConfig{
+	verifier, err := token.NewVerifier(t.Context(), token.VerifierConfig{
 		Issuer:   set.Issuer,
 		Audience: "authenticated",
 		JWKSURL:  set.Issuer + testsupport.JWKSPath,

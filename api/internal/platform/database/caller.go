@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,16 +50,87 @@ var ErrUnknownRole = errors.New("the caller's role has no Postgres role")
 
 // claimsSetting is the connection setting the claims are published under.
 //
-// The name is Supabase's, and deliberately so: a policy written as
+// The name is GoTrue's, and deliberately so: a policy written as
 // current_setting('request.jwt.claims')::json ->> 'sub' means the same thing
-// here as it does in every Supabase example, so the policies of M2 are not a
-// dialect of their own.
+// here as it does in every example written for that ecosystem, so the policies
+// are not a dialect of their own.
 const claimsSetting = "request.jwt.claims"
+
+// roleClaim is the key the product role travels under.
+//
+// Not the stock `role`: GoTrue puts the literal "authenticated" there for every
+// user, and a key that already means something else is a key somebody will read
+// by accident. It is an input for choosing a Postgres role in the seam and
+// nothing a policy consults — the policies key on TO.
+const roleClaim = "cadence_role"
 
 // ErrNoSubject is returned for a caller with no identity. It is named so that a
 // handler can tell it from a database failure: the first is a 401, the second
 // is a 500.
 var ErrNoSubject = errors.New("the caller has no subject")
+
+// ErrInvalidSubject is returned for a subject that is not a UUID.
+//
+// Checked here rather than left to a policy. The idiom a policy is written with
+// casts the claim to uuid, and a cast that fails raises 22P02 — a 500 for what
+// is really a refusal, and one that happens inside a policy where no handler can
+// tell what went wrong.
+var ErrInvalidSubject = errors.New("the caller's subject is not a UUID")
+
+// ErrNestedSeam is returned when either seam is opened inside the other.
+//
+// A nested call takes a second connection from a second pool and opens an
+// independent transaction: it cannot see the outer one's uncommitted writes, and
+// the outer rollback leaves its rows committed. The cost is named rather than
+// hidden — checking a caller's rights under RLS and writing through the service
+// path in one transaction is unavailable, and that is deferred, not solved.
+var ErrNestedSeam = errors.New("a seam is already open on this context")
+
+// seamKey marks a context that is already inside a seam. The type is unexported
+// so nothing outside this package can clear the mark by writing the key itself.
+type seamKey struct{}
+
+// seam names which one, so the refusal can say what it collided with.
+type seam string
+
+const (
+	callerSeam  seam = "WithCaller"
+	serviceSeam seam = "WithService"
+)
+
+// enterSeam refuses a nested call in either order and returns the context the
+// closure will run under.
+func enterSeam(ctx context.Context, entering seam) (context.Context, error) {
+	if open, ok := ctx.Value(seamKey{}).(seam); ok {
+		return nil, fmt.Errorf("%s inside %s: %w", entering, open, ErrNestedSeam)
+	}
+
+	return context.WithValue(ctx, seamKey{}, entering), nil
+}
+
+// validSubject reports whether the subject is UUID-shaped in the canonical form
+// Postgres writes.
+//
+// Round-tripped rather than merely parsed. pgx's parser switches on length and
+// splices the hex out of positions 8, 13, 18 and 23 without checking that the
+// separators are hyphens, so it accepts values uuid_in refuses — and a value
+// this function passes and the database rejects is a 22P02 raised inside a
+// policy, which is the exact failure ErrInvalidSubject exists to prevent.
+func validSubject(subject string) bool {
+	var parsed pgtype.UUID
+	if err := parsed.Scan(subject); err != nil {
+		return false
+	}
+
+	canonical, err := parsed.Value()
+	if err != nil {
+		return false
+	}
+
+	text, ok := canonical.(string)
+
+	return ok && strings.EqualFold(text, subject)
+}
 
 // rollbackTimeout bounds the rollback of a transaction whose context is already
 // finished. Without it, a Postgres that has stopped answering holds the pool
@@ -73,15 +146,16 @@ const rollbackTimeout = 5 * time.Second
 // one struct literal at the call site and keeps the dependency pointing the
 // right way.
 //
-// One limit is worth stating. Subject is checked for emptiness and for nothing
-// else: the GoTrue idiom casts sub to uuid, so a policy written that way will
-// raise 22P02 — a 500, not a refusal — on a subject that is not one. Validating
-// it as a UUID belongs to the same step that renames the claim, and until then
-// this is a named boundary rather than a forgotten one.
+// Neither field is trusted as given. Subject is required to be UUID-shaped,
+// because the idiom a policy is written with casts the claim to uuid and a cast
+// that fails raises 22P02 — a 500, from inside a policy, for what is really a
+// refusal. Role is resolved against a closed map. Both are checked before a
+// transaction opens, so a caller the seam cannot serve never takes a connection.
 //
-// Role is the product role the token asserted, and it is resolved against a
-// closed map before anything else happens: a role this package does not know is
-// ErrUnknownRole, not a default.
+// A Caller is still constructible with neither, and that is the one asymmetry
+// worth naming: the validity of this value is enforced by WithCaller rather than
+// by the type, so a handler learns its caller is unusable only once it has
+// reached the pool.
 type Caller struct {
 	// Subject is the user id every policy is keyed on.
 	Subject string
@@ -119,6 +193,10 @@ func WithCaller(
 		return fmt.Errorf("impersonating: %w", ErrNoSubject)
 	}
 
+	if !validSubject(caller.Subject) {
+		return fmt.Errorf("impersonating %q: %w", caller.Subject, ErrInvalidSubject)
+	}
+
 	// Resolved before the transaction opens: there is no role to assume, so
 	// there is nothing to open a transaction for.
 	impersonatedRole, known := postgresRoles[caller.Role]
@@ -126,7 +204,19 @@ func WithCaller(
 		return fmt.Errorf("impersonating %q: %w", caller.Role, ErrUnknownRole)
 	}
 
-	claims, err := json.Marshal(map[string]string{"sub": caller.Subject, "role": caller.Role})
+	ctx, err := enterSeam(ctx, callerSeam)
+	if err != nil {
+		return err
+	}
+
+	// Both values have already been through a guard of their own, so neither can
+	// be empty here — which is what "empty values are not published" amounts to
+	// on this path. It is a property of the checks above rather than of a filter
+	// below, and a third claim added later would need its own.
+	claims, err := json.Marshal(map[string]string{
+		"sub":     caller.Subject,
+		roleClaim: caller.Role,
+	})
 	if err != nil {
 		return fmt.Errorf("encoding the caller's claims: %w", err)
 	}

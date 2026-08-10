@@ -26,7 +26,7 @@ type MeOutput struct {
 // as that claim and decode as something else.
 type Me struct {
 	Subject   string    `json:"sub" doc:"The caller's user id. Every access policy is keyed on it."`
-	Role      string    `json:"role" doc:"The role asserted by the token."`
+	Role      string    `json:"role" doc:"The product role the token asserts, from the cadence_role claim: patient, doctor or admin. Empty when the account has no profile yet, in which case no data endpoint will answer for it."`
 	ExpiresAt time.Time `json:"expires_at" doc:"When the presented token stops being accepted."`
 }
 

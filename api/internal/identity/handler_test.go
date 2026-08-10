@@ -41,7 +41,7 @@ func TestMeReturnsTheVerifiedCaller(t *testing.T) {
 	expiry := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	principal := auth.Principal{
 		Subject:   "8a1f3b7c-0000-4000-8000-000000000001",
-		Role:      "authenticated",
+		Role:      "patient",
 		ExpiresAt: expiry,
 	}
 
@@ -74,7 +74,7 @@ func TestMeReturnsTheVerifiedCaller(t *testing.T) {
 func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 	principal := auth.Principal{
 		Subject:   "8a1f3b7c-0000-4000-8000-000000000001",
-		Role:      "authenticated",
+		Role:      "patient",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 

@@ -1,10 +1,16 @@
-// Package auth verifies the bearer token a caller presents and reduces it to
-// the narrow identity the rest of the API is allowed to see.
+// Package auth carries the verified identity of a caller and nothing else.
 //
-// It knows about tokens and keys, and nothing about the product: no database,
-// no profiles, no roles beyond the one the token asserts. The consequence,
-// recorded rather than discovered later, is that a role changed in the database
-// takes effect only when the caller's token expires.
+// It has no third-party dependencies, and that is the point rather than an
+// accident: every bounded context needs auth.PrincipalFrom, so anything this
+// package imports is imported by all eleven of them. Token verification lives
+// in auth/token, which only the transport and the composition root import —
+// which is what makes replacing the identity provider one implementation
+// instead of a sweeping edit.
+//
+// It knows nothing about the product: no database, no profiles, no roles beyond
+// the one the token asserts. The consequence, recorded rather than discovered
+// later, is that a role changed in the database takes effect only when the
+// caller's token expires.
 package auth
 
 import (
@@ -14,16 +20,20 @@ import (
 
 // Principal is the verified identity of one caller.
 //
-// It is deliberately three fields. A Supabase access token also carries email,
+// It is deliberately three fields. A GoTrue access token also carries email,
 // phone, and app_metadata; handing those through would widen the contract by
 // accident and put contact details on every code path that touches a request.
 // What the rest of the API needs is who is calling, in what role, and until
 // when — so that is what exists.
 type Principal struct {
-	// Subject is the Supabase user id: the value every RLS policy is keyed on.
+	// Subject is the user id in the identity provider: the value every RLS
+	// policy is keyed on.
 	Subject string
 
-	// Role is the role asserted by the token, not looked up in the database.
+	// Role is the product role the token asserts, from the cadence_role claim,
+	// not looked up in the database. It is empty when the token carries no such
+	// claim — an account with no profile yet — and the impersonation seam
+	// refuses that rather than choosing a role for it.
 	Role string
 
 	// ExpiresAt is when the token stops being valid. It is exposed so a client

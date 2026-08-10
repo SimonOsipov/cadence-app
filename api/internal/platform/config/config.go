@@ -34,9 +34,14 @@ type ServerConfig struct {
 //
 // URL is the request path: a low-privilege role that cannot bypass RLS, under
 // which every request runs in a transaction carrying the caller's verified
-// claims. ServiceURL is the service role and is reserved for system jobs —
-// the reminder sweep, invitations, push fan-out — each of which writes to the
-// audit log. It stays empty until the first such job exists.
+// claims. ServiceURL is the service path — a second role on a second pool, for
+// the writes no policy lets a request make.
+//
+// Both are required. An empty ServiceURL was tempting while no system job
+// existed, and it is the wrong shape: pgx falls through to libpq's defaults on
+// an empty string, which resolves to the local user — in a test container, the
+// superuser. That gives green tests and a different privilege domain in
+// production, which is the failure mode this whole block is built to prevent.
 type DatabaseConfig struct {
 	URL        string
 	ServiceURL string
@@ -90,6 +95,18 @@ func Load() (*Config, error) {
 		return nil, errors.New("DATABASE_URL is required")
 	}
 
+	serviceURL := getEnv("DATABASE_SERVICE_URL", "")
+	if serviceURL == "" {
+		return nil, errors.New("DATABASE_SERVICE_URL is required")
+	}
+
+	if serviceURL == databaseURL {
+		return nil, errors.New(
+			"DATABASE_SERVICE_URL and DATABASE_URL are the same connection string, " +
+				"so the request path and the service path are one privilege domain",
+		)
+	}
+
 	allowedOrigins, err := originsEnv("CORS_ALLOWED_ORIGINS", []string{"http://localhost:5173"})
 	if err != nil {
 		return nil, err
@@ -109,7 +126,7 @@ func Load() (*Config, error) {
 		},
 		Database: DatabaseConfig{
 			URL:        databaseURL,
-			ServiceURL: getEnv("DATABASE_SERVICE_URL", ""),
+			ServiceURL: serviceURL,
 		},
 		CORS: CORSConfig{
 			AllowedOrigins: allowedOrigins,

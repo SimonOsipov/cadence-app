@@ -220,9 +220,12 @@ func TestWithCallerPublishesTheClaims(t *testing.T) {
 
 	var subject, role string
 	err := database.WithCaller(t.Context(), pool, caller, func(ctx context.Context, tx pgx.Tx) error {
+		// cadence_role, not role. GoTrue writes the literal "authenticated" into
+		// the stock claim for every user, so a policy or a seam reading that key
+		// would be reading a value that means nothing about the product.
 		return tx.QueryRow(ctx, `
 			SELECT current_setting('request.jwt.claims', true)::json ->> 'sub',
-			       current_setting('request.jwt.claims', true)::json ->> 'role'
+			       current_setting('request.jwt.claims', true)::json ->> 'cadence_role'
 		`).Scan(&subject, &role)
 	})
 	if err != nil {
@@ -393,15 +396,16 @@ func TestWithCallerCommitsOnSuccess(t *testing.T) {
 	}
 }
 
-// TestWithCallerIsNotAnInjectionVector. The subject arrives from a token — it
-// is attacker-controlled input that has already passed a signature check, which
-// says nothing about its contents. Composing the SET into a string is the
-// obvious implementation and the wrong one.
-func TestWithCallerIsNotAnInjectionVector(t *testing.T) {
-	pool, db := requestPool(t)
-	createAppTable(t, db, "injection_probe")
-
-	hostile := []string{
+// hostileValues are the payloads a token could carry into a statement. They have
+// passed a signature check, which says nothing about their contents.
+//
+// Neither field of a Caller can carry one any more — the subject must be a UUID
+// and the role one of three names — so what they assert here is refusal. The
+// pass-through property they used to assert, that a value published as data
+// neither executes nor is rewritten, moved to the one field that still carries
+// free text: the audit actor of the service seam.
+func hostileValues() []string {
+	return []string{
 		`'; DROP TABLE app.injection_probe; --`,
 		`" ; RESET ROLE; SELECT '`,
 		`'); SET ROLE cadence_owner; SELECT set_config('a','b',true`,
@@ -411,50 +415,84 @@ func TestWithCallerIsNotAnInjectionVector(t *testing.T) {
 		`"quoted"`,
 		`наблюдение`,
 	}
+}
 
-	for _, subject := range hostile {
-		caller := database.Caller{Subject: subject, Role: "patient"}
+// Neither field of a caller can carry a payload anywhere any more, and the two
+// halves are refused for different reasons — which is the point: the subject is
+// refused for its shape, the role for not being one of three names. Both refuse
+// before a transaction opens.
+func TestWithCallerRefusesHostileValuesInEitherField(t *testing.T) {
+	pool, _ := requestPool(t)
 
-		var readBack, current string
-		err := database.WithCaller(t.Context(), pool, caller, func(ctx context.Context, tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `
-				SELECT current_setting('request.jwt.claims', true)::json ->> 'sub', current_user
-			`).Scan(&readBack, &current)
-		})
-		if err != nil {
-			t.Errorf("WithCaller with subject %q: %v", subject, err)
+	for _, value := range hostileValues() {
+		before := pool.Stat().AcquireCount()
 
-			continue
-		}
+		subjectErr := database.WithCaller(
+			t.Context(), pool, database.Caller{Subject: value, Role: "patient"},
+			func(context.Context, pgx.Tx) error {
+				t.Errorf("the closure ran for subject %q", value)
 
-		// Read back verbatim: the value is data, so it neither executes nor is
-		// mangled on the way in. A seam that escaped by rewriting would corrupt
-		// the identity a policy compares against.
-		if readBack != subject {
-			t.Errorf("subject %q came back as %q", subject, readBack)
-		}
-		if current != testsupport.PatientRole {
-			t.Errorf("subject %q changed the effective role to %q", subject, current)
-		}
-	}
-
-	// The table the first payload tried to drop. Read out of the catalogue
-	// rather than with to_regclass, which resolves a name through the schema and
-	// therefore needs USAGE on it — a privilege the connection role deliberately
-	// does not hold, so the check would report a dropped table for the wrong
-	// reason.
-	var exists bool
-	if err := pool.QueryRow(t.Context(), `
-		SELECT EXISTS (
-			SELECT FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = 'app' AND c.relname = 'injection_probe'
+				return nil
+			},
 		)
-	`).Scan(&exists); err != nil {
-		t.Fatalf("checking the probe table: %v", err)
+		if !errors.Is(subjectErr, database.ErrInvalidSubject) {
+			t.Errorf("subject %q: WithCaller = %v, want ErrInvalidSubject", value, subjectErr)
+		}
+
+		roleErr := database.WithCaller(
+			t.Context(), pool,
+			database.Caller{Subject: "8a1f3b7c-0000-4000-8000-000000000001", Role: value},
+			func(context.Context, pgx.Tx) error {
+				t.Errorf("the closure ran for role %q", value)
+
+				return nil
+			},
+		)
+		if !errors.Is(roleErr, database.ErrUnknownRole) {
+			t.Errorf("role %q: WithCaller = %v, want ErrUnknownRole", value, roleErr)
+		}
+
+		if after := pool.Stat().AcquireCount(); after != before {
+			t.Errorf("value %q took %d connection(s); both refusals belong before Begin",
+				value, after-before)
+		}
 	}
-	if !exists {
-		t.Error("a hostile claim value dropped the probe table")
+}
+
+// A subject the database would refuse to cast is refused here instead. The
+// policies are written with the idiom that casts the claim to uuid, and a cast
+// that fails raises 22P02 from inside a policy — a 500 where the honest answer
+// is a refusal, and one no handler can attribute.
+func TestWithCallerRefusesASubjectThatIsNotAUUID(t *testing.T) {
+	pool, _ := requestPool(t)
+
+	for _, subject := range []string{
+		"not-a-uuid",
+		"8a1f3b7c-0000-4000-8000",
+		"8a1f3b7c-0000-4000-8000-0000000000011",
+		" 8a1f3b7c-0000-4000-8000-000000000001",
+		// The axis every other fixture misses: right length, wrong separators.
+		// pgx's parser splices the hex out of positions 8, 13, 18 and 23 without
+		// looking at what sits between them, so this parses here and is refused
+		// by uuid_in with 22P02 — from inside a policy, which is a 500 for what
+		// is really a refusal.
+		"8a1f3b7c$0000$4000$8000$000000000001",
+		"8a1f3b7c00000-4000-8000-000000000001",
+	} {
+		err := database.WithCaller(
+			t.Context(), pool, database.Caller{Subject: subject, Role: "patient"},
+			func(context.Context, pgx.Tx) error { return nil },
+		)
+		if !errors.Is(err, database.ErrInvalidSubject) {
+			t.Errorf("subject %q: WithCaller = %v, want ErrInvalidSubject", subject, err)
+		}
+	}
+
+	// The control. Without it a validator that refused everything would pass.
+	if err := database.WithCaller(
+		t.Context(), pool, testCaller(), func(context.Context, pgx.Tx) error { return nil },
+	); err != nil {
+		t.Fatalf("a well-formed subject was refused: %v", err)
 	}
 }
 
@@ -528,7 +566,7 @@ func createAppTable(t *testing.T, db *testsupport.Database, name string) {
 		t.Fatalf("creating %s: %v", table, err)
 	}
 
-	for _, role := range testsupport.ProductRoles() {
+	for _, role := range testsupport.ImpersonationRoles() {
 		if _, err := conn.Exec(
 			t.Context(),
 			"GRANT SELECT, INSERT, UPDATE, DELETE ON "+table+" TO "+role,

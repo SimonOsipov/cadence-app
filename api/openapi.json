@@ -10,7 +10,7 @@
             "type": "string"
           },
           "role": {
-            "description": "The role asserted by the token.",
+            "description": "The product role the token asserts, from the cadence_role claim: patient, doctor or admin. Empty when the account has no profile yet, in which case no data endpoint will answer for it.",
             "type": "string"
           },
           "sub": {

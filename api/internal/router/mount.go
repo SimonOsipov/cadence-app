@@ -6,14 +6,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth/token"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
 // Options is what the composition root supplies to build the HTTP surface.
 type Options struct {
 	// Verifier checks the bearer token on every guarded request.
-	Verifier *auth.Verifier
+	Verifier *token.Verifier
 
 	// Probe reports whether the API's dependencies are reachable, for
 	// /healthz. A nil probe answers for the process alone.
@@ -36,13 +36,13 @@ type Options struct {
 // route mounted before the guard would be served without it.
 func Mount(mux *chi.Mux, opts Options) {
 	if opts.Logger == nil {
-		// Matching auth.NewVerifier. Without it, the first failing health probe
+		// Matching token.NewVerifier. Without it, the first failing health probe
 		// panics inside the handler — turning the one moment the log matters
 		// most into a 500 with a stack trace where the cause should be.
 		opts.Logger = slog.Default()
 	}
 
-	mux.Use(auth.Middleware(opts.Verifier, httpserver.UnauthenticatedPaths()))
+	mux.Use(token.Middleware(opts.Verifier, httpserver.UnauthenticatedPaths()))
 
 	// Unauthenticated by design: the external uptime monitor polls it.
 	mux.Get(httpserver.HealthPath, httpserver.Health(opts.Probe, opts.Logger))

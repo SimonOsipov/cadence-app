@@ -507,6 +507,45 @@ UUID shape, and cases refusing before `Begin` are added for the subjects;
 the stock `role`. The role field description in `identity/handler.go` is rewritten,
 and `make openapi` regenerates `openapi.json` in the same commit — otherwise the
 gate is red.
+> [!deviation] 2026-08-10
+> Spec said: in `TestWithCallerIsNotAnInjectionVector` the eight hostile subjects
+> move into the role field and still pass through into the claims. Actually done:
+> the test is gone and the values assert refusal in both fields — the subject for
+> its shape, the role for not being one of three names. Why: step-1 closed both
+> fields, so there is no field of a `Caller` a payload can travel in any more, and
+> a test asserting it travels would have to be written against a hole. The
+> property those payloads existed to prove — that a value published as data
+> neither executes nor is rewritten — moved to the one field that still carries
+> free text: `TestWithServiceIsNotAnInjectionVector`, over the audit actor's job
+> name.
+
+> [!deviation] 2026-08-10
+> Spec said: `DATABASE_SERVICE_URL` becomes mandatory. Actually done: mandatory,
+> and refused when it equals `DATABASE_URL`. Why: two variables holding one
+> connection string is the separation written down and not achieved — both pools
+> would connect as the same role, and the boundary between the request path and
+> the service path would exist only in prose. `VerifyPools` catches it a second
+> time at startup, by pinning each pool's connection role against the name the
+> chain creates.
+
+> [!deviation] 2026-08-10
+> Spec said: the execution mode is pinned explicitly. Actually done: pinned to
+> `QueryExecModeCacheStatement`. Why: pgx has no `QueryExecModeExtended` — the
+> extended-protocol modes are CacheStatement, CacheDescribe, DescribeExec and
+> Exec, and the one to avoid is `QueryExecModeSimpleProtocol`, which interpolates
+> arguments on the client. CacheStatement is what pgx picks by itself; writing it
+> down makes the pinning a decision rather than a coincidence.
+
+> [!deviation] 2026-08-10
+> Spec said: the startup check reads each pool's connection role, the absence of
+> superuser and `rolbypassrls`, and the refusal of `SET ROLE` between the paths.
+> Actually done: that, plus three things review measured as necessary. The role
+> names are pinned rather than merely required to differ. The barrier is probed
+> in both directions, because a service path able to assume a product role reads
+> every patient's rows through policies written for somebody else. And the probe
+> accepts only SQLSTATE 42501 as a refusal: any error at all would include "the
+> role does not exist", which is the state of a cluster where the chain has never
+> been applied, and would let a process start having measured nothing.
 todoist: "6h9HmVMRQXMfpw7q"
 
 ### step-3: The subject-reading function in the `app` schema

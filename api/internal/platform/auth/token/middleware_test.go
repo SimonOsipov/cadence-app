@@ -1,4 +1,4 @@
-package auth_test
+package token_test
 
 import (
 	"net/http"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth/token"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
@@ -24,7 +25,7 @@ func guarded(t *testing.T, exempt []string) (http.Handler, *testsupport.SigningK
 	verifier := newVerifier(t, set)
 
 	seen := &reached{}
-	handler := auth.Middleware(verifier, exempt)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := token.Middleware(verifier, exempt)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen.called = true
 		seen.principal, seen.hasPrincipal = auth.PrincipalFrom(r.Context())
 		w.WriteHeader(http.StatusOK)
@@ -362,7 +363,7 @@ func TestMiddlewareRefusesWhenKeysAreUnavailable(t *testing.T) {
 	verifier := newVerifier(t, set)
 
 	called := false
-	handler := auth.Middleware(verifier, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := token.Middleware(verifier, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))

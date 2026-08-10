@@ -28,6 +28,7 @@ func setRequired(t *testing.T) {
 	t.Helper()
 
 	t.Setenv("DATABASE_URL", "postgres://cadence@localhost:5432/cadence")
+	t.Setenv("DATABASE_SERVICE_URL", "postgres://cadence_service_app@localhost:5432/cadence")
 	t.Setenv("AUTH_JWT_ISSUER", "https://auth.cadence.example/auth/v1")
 	t.Setenv("AUTH_JWT_AUDIENCE", "authenticated")
 }
@@ -53,8 +54,8 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if cfg.Server.IdleTimeout != 60*time.Second {
 		t.Errorf("Server.IdleTimeout = %v, want 60s", cfg.Server.IdleTimeout)
 	}
-	if cfg.Database.ServiceURL != "" {
-		t.Errorf("Database.ServiceURL = %q, want empty by default", cfg.Database.ServiceURL)
+	if want := "postgres://cadence_service_app@localhost:5432/cadence"; cfg.Database.ServiceURL != want {
+		t.Errorf("Database.ServiceURL = %q, want %q", cfg.Database.ServiceURL, want)
 	}
 	if got, want := cfg.CORS.AllowedOrigins, []string{"http://localhost:5173"}; !slices.Equal(got, want) {
 		t.Errorf("CORS.AllowedOrigins = %v, want %v", got, want)
@@ -282,5 +283,33 @@ func TestLoadRejectsBadInput(t *testing.T) {
 				t.Fatal("Load: want error, got nil")
 			}
 		})
+	}
+}
+
+// An empty DATABASE_SERVICE_URL used to be allowed, on the grounds that no
+// system job existed yet. pgx does not treat an empty connection string as
+// absent: it falls through to libpq's defaults, which resolve to the local user
+// — in a test container, the superuser. The result is a green suite and a
+// different privilege domain in production, so the variable is required.
+func TestLoadRequiresTheServicePathURL(t *testing.T) {
+	clearEnv(t)
+	setRequired(t)
+	t.Setenv("DATABASE_SERVICE_URL", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load: want an error when DATABASE_SERVICE_URL is unset, got nil")
+	}
+}
+
+// Two variables holding one connection string is the separation written down
+// and not achieved: both pools would connect as the same role, and the barrier
+// between the request path and the service path would exist only in prose.
+func TestLoadRefusesOneConnectionStringForBothPaths(t *testing.T) {
+	clearEnv(t)
+	setRequired(t)
+	t.Setenv("DATABASE_SERVICE_URL", "postgres://cadence@localhost:5432/cadence")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load: want an error when both paths share a connection string, got nil")
 	}
 }

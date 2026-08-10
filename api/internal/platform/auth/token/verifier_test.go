@@ -1,4 +1,4 @@
-package auth_test
+package token_test
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth/token"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
@@ -19,10 +19,10 @@ const testAudience = "authenticated"
 // newVerifier wires a verifier to a local key set, the way the composition root
 // wires one to Supabase: the JWKS address is derived from the issuer, never
 // passed alongside it.
-func newVerifier(t *testing.T, set *testsupport.JWKS) *auth.Verifier {
+func newVerifier(t *testing.T, set *testsupport.JWKS) *token.Verifier {
 	t.Helper()
 
-	verifier, err := auth.NewVerifier(t.Context(), auth.VerifierConfig{
+	verifier, err := token.NewVerifier(t.Context(), token.VerifierConfig{
 		Issuer:   set.Issuer,
 		Audience: testAudience,
 		JWKSURL:  set.Issuer + testsupport.JWKSPath,
@@ -41,13 +41,14 @@ func validClaims(issuer string) jwt.MapClaims {
 	now := time.Now()
 
 	return jwt.MapClaims{
-		"sub":  "8a1f3b7c-0000-4000-8000-000000000001",
-		"role": "authenticated",
-		"aud":  testAudience,
-		"iss":  issuer,
-		"iat":  now.Unix(),
-		"nbf":  now.Add(-time.Minute).Unix(),
-		"exp":  now.Add(time.Hour).Unix(),
+		"sub":          "8a1f3b7c-0000-4000-8000-000000000001",
+		"role":         "authenticated",
+		"cadence_role": "patient",
+		"aud":          testAudience,
+		"iss":          issuer,
+		"iat":          now.Unix(),
+		"nbf":          now.Add(-time.Minute).Unix(),
+		"exp":          now.Add(time.Hour).Unix(),
 	}
 }
 
@@ -78,8 +79,11 @@ func TestVerifyAcceptsBothPermittedAlgorithms(t *testing.T) {
 			if principal.Subject != claims["sub"] {
 				t.Errorf("Subject = %q, want %q", principal.Subject, claims["sub"])
 			}
-			if principal.Role != "authenticated" {
-				t.Errorf("Role = %q, want authenticated", principal.Role)
+			// The product role, not the stock one. GoTrue puts "authenticated"
+			// in role for every user, so a verifier reading that would hand the
+			// same role to the patient, the doctor and the admin alike.
+			if principal.Role != "patient" {
+				t.Errorf("Role = %q, want patient", principal.Role)
 			}
 			exp, ok := claims["exp"].(int64)
 			if !ok {
@@ -357,10 +361,10 @@ func TestRateLimitedUnknownKeyIDIsStillTheCallersProblem(t *testing.T) {
 		junk := key.SignWithKID(t, fmt.Sprintf("unknown-%d", i), validClaims(set.Issuer))
 
 		_, err := verifier.Verify(t.Context(), junk)
-		if !errors.Is(err, auth.ErrTokenRejected) {
+		if !errors.Is(err, token.ErrTokenRejected) {
 			t.Errorf("unknown kid %d: err = %v, want it to wrap ErrTokenRejected", i, err)
 		}
-		if errors.Is(err, auth.ErrKeysUnavailable) {
+		if errors.Is(err, token.ErrKeysUnavailable) {
 			t.Errorf("unknown kid %d was reported as a key-set outage: %v", i, err)
 		}
 	}
@@ -406,7 +410,7 @@ func TestVerifyPicksUpRotatedKeys(t *testing.T) {
 	old := testsupport.NewRS256Key(t, "old")
 	set := testsupport.StartJWKS(t, old)
 
-	verifier, err := auth.NewVerifier(t.Context(), auth.VerifierConfig{
+	verifier, err := token.NewVerifier(t.Context(), token.VerifierConfig{
 		Issuer:             set.Issuer,
 		Audience:           testAudience,
 		JWKSURL:            set.Issuer + testsupport.JWKSPath,
@@ -485,7 +489,7 @@ func TestVerifyErrorsAreNotSentinel(t *testing.T) {
 	claims["exp"] = time.Now().Add(-time.Hour).Unix()
 
 	_, err := verifier.Verify(t.Context(), key.Sign(t, claims))
-	if !errors.Is(err, auth.ErrTokenRejected) {
+	if !errors.Is(err, token.ErrTokenRejected) {
 		t.Errorf("Verify on an expired token = %v, want it to wrap ErrTokenRejected", err)
 	}
 
@@ -493,7 +497,35 @@ func TestVerifyErrorsAreNotSentinel(t *testing.T) {
 	broken := newVerifier(t, set)
 
 	_, err = broken.Verify(t.Context(), key.Sign(t, validClaims(set.Issuer)))
-	if !errors.Is(err, auth.ErrKeysUnavailable) {
+	if !errors.Is(err, token.ErrKeysUnavailable) {
 		t.Errorf("Verify with an unreachable key set = %v, want it to wrap ErrKeysUnavailable", err)
+	}
+}
+
+// A token with only the stock role claim carries no product role, and that is a
+// real state rather than a malformed token: the issuance hook removes
+// cadence_role for a user with no profile — an invited account that has not been
+// provisioned. The verifier hands back an empty role and lets the impersonation
+// seam refuse it, with a reason of its own; refusing here would make every
+// unprovisioned account indistinguishable from a bad token.
+func TestVerifyLeavesTheRoleEmptyWhenTheTokenCarriesOnlyTheStockClaim(t *testing.T) {
+	key := testsupport.NewES256Key(t, "kid-1")
+	set := testsupport.StartJWKS(t, key)
+	verifier := newVerifier(t, set)
+
+	claims := validClaims(set.Issuer)
+	delete(claims, "cadence_role")
+
+	principal, err := verifier.Verify(t.Context(), key.Sign(t, claims))
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+
+	if principal.Role != "" {
+		t.Errorf("Role = %q, want empty — the stock role claim is not a product role",
+			principal.Role)
+	}
+	if principal.Subject != claims["sub"] {
+		t.Errorf("Subject = %q, want %q", principal.Subject, claims["sub"])
 	}
 }

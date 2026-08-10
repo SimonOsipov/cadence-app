@@ -67,16 +67,17 @@ docker-down:
 # a password on the request-path role. Requires DATABASE_MIGRATION_URL — see
 # .env.example.
 #
-# The last step exists because the chain creates cadence_app without a password
-# on purpose: the credential is provisioned outside the repository, in Railway
-# and Supabase variables. A developer machine has no such place, so this target
-# plays that part. It is local-only, and the password it sets is the one in
-# .env.example — never run it against a deployed database.
+# The password steps exist because the chain creates both LOGIN roles without
+# one on purpose: the credential is provisioned outside the repository, in the
+# deployment's variable store. A developer machine has no such place, so this
+# target plays that part. It is local-only, and the passwords it sets are the
+# ones in .env.example — never run it against a deployed database.
 dev-up: docker-up
 	@until docker compose exec -T postgres pg_isready -U cadence -d cadence >/dev/null 2>&1; do sleep 1; done
 	$(MAKE) migrate-up
 	docker compose exec -T postgres psql -q -U cadence -d cadence \
-		-c "ALTER ROLE cadence_app PASSWORD 'cadence_app'"
+		-c "ALTER ROLE cadence_app PASSWORD 'cadence_app'" \
+		-c "ALTER ROLE cadence_service_app PASSWORD 'cadence_service_app'"
 	@until curl -fsS http://localhost:9999/health >/dev/null 2>&1; do sleep 1; done
 	@echo
 	@echo "local stack ready:"
