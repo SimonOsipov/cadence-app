@@ -76,6 +76,13 @@ style:
       # bury the one thing the line says. Its neighbours in `mock/` are not
       # excluded — they hold logic, and the rule should keep watching them.
       - '**/MockSeed.kt'
+      # And the parsing package's canned meal data, for the same reason: three
+      # meals ported whole from the prototype's `SAMPLE_PARSES`
+      # (`mobile/src/features/meal/data.ts:76-115`) — grams, kcal and macros
+      # are the specification, not thresholds a name would clarify. Its
+      # neighbour `MockMealParser.kt` is not excluded — the scoring loop is
+      # logic, and the rule should keep watching it.
+      - '**/CannedMealParses.kt'
   MaxLineLength:
     maxLineLength: 120
     # CadenceIcons.kt is generated path data carried over from the prototype.
