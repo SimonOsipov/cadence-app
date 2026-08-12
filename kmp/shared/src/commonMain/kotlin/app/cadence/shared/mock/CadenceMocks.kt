@@ -8,6 +8,9 @@ import app.cadence.shared.domain.DoseEventId
 import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.JournalEntry
 import app.cadence.shared.domain.JournalSource
+import app.cadence.shared.domain.Meal
+import app.cadence.shared.domain.MealDraft
+import app.cadence.shared.domain.MealId
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.MetricTrend
 import app.cadence.shared.domain.OccurrenceStatus
@@ -22,6 +25,7 @@ import app.cadence.shared.domain.VialDetail
 import app.cadence.shared.domain.VialDraft
 import app.cadence.shared.domain.VialId
 import app.cadence.shared.domain.cycleWeek
+import app.cadence.shared.domain.dayTotals
 import app.cadence.shared.domain.doseBands
 import app.cadence.shared.domain.dosesPerWeek
 import app.cadence.shared.domain.inventorySummary
@@ -33,9 +37,7 @@ import app.cadence.shared.domain.rangeOn
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
 import app.cadence.shared.domain.suggestNextSite
-import app.cadence.shared.domain.sumTenths
 import app.cadence.shared.domain.titrationStepAfter
-import app.cadence.shared.domain.toMacros
 import app.cadence.shared.domain.today
 import app.cadence.shared.domain.trendSeries
 import app.cadence.shared.domain.vialDetail
@@ -45,9 +47,14 @@ import app.cadence.shared.repository.DoseLogRepository
 import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.InventoryRepository
 import app.cadence.shared.repository.JournalRepository
+import app.cadence.shared.repository.MealLogResult
 import app.cadence.shared.repository.MeasurementsRepository
 import app.cadence.shared.repository.MetricDetail
 import app.cadence.shared.repository.MetricSeries
+import app.cadence.shared.repository.NutritionDay
+import app.cadence.shared.repository.NutritionRepository
+import app.cadence.shared.repository.NutritionWeek
+import app.cadence.shared.repository.NutritionWeekDay
 import app.cadence.shared.repository.ScheduleDay
 import app.cadence.shared.repository.ScheduleRepository
 import app.cadence.shared.repository.TodayRepository
@@ -58,8 +65,12 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+
+/** Days in [CadenceMocks.MockNutritionRepository.week] — Monday through «Сег». */
+private const val NUTRITION_WEEK_DAYS = 7
 
 /**
  * Everything a screen can ask for, and one place it is assembled.
@@ -96,6 +107,13 @@ class CadenceMocks(
     // for a second entry on one day to go.
     private val journalByDate = mutableMapOf<LocalDate, JournalEntry>()
 
+    // One list, read by both Today and Nutrition — the same shape as [events]
+    // above, and for the same reason: a nutrition repository holding its own
+    // copy would agree with Today only by accident, the moment two screens
+    // were open at once (see `NutritionRepository`'s KDoc).
+    private val meals = MockSeed.meals.toMutableList()
+    private var nextMealId = 0
+
     val today: TodayRepository = MockTodayRepository()
     val schedule: ScheduleRepository = MockScheduleRepository()
     val dosing: DoseLogRepository = MockDoseLogRepository()
@@ -103,6 +121,7 @@ class CadenceMocks(
     val inventory: InventoryRepository = MockInventoryRepository()
     val measurements: MeasurementsRepository = MockMeasurementsRepository()
     val trends: TrendsRepository = MockTrendsRepository()
+    val nutrition: NutritionRepository = MockNutritionRepository()
 
     private fun currentDate(): LocalDate = clock.today(zone)
 
@@ -119,7 +138,7 @@ class CadenceMocks(
                     .filter { it.metric == Metric.WEIGHT }
                     .sortedBy { it.measuredAt }
                     .takeLast(MeasurementsRepository.DEFAULT_POINTS)
-            val todaysMeals = MockSeed.meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
+            val todaysMeals = meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
 
             return TodaySummary(
                 date = date,
@@ -146,11 +165,12 @@ class CadenceMocks(
                 // happen to agree.
                 mealCount = todaysMeals.size,
                 // Exact fold across the day's meals, then the one rounding to
-                // whole grams — the spec's boundary. Rounding each meal's
-                // totals first and summing those would be a second, upstream
-                // rounding this repository is not the place for.
-                mealMacros = todaysMeals.map { it.totals }.sumTenths().toMacros(),
-                targets = MockSeed.targets,
+                // whole grams — the spec's boundary. `dayTotals()` is also
+                // what `MockNutritionRepository.day` folds through, so this
+                // and the Nutrition screen cannot round the same day two
+                // different ways.
+                mealMacros = todaysMeals.dayTotals(),
+                targets = MockSeed.targets.macros,
                 // «Latest reading wins», §03 — by `measuredAt` and for this metric,
                 // not by position in a list. The same defect as the unfiltered
                 // meals, hidden by a seed holding exactly one measurement.
@@ -172,6 +192,53 @@ class CadenceMocks(
                     ),
             )
         }
+    }
+
+    private inner class MockNutritionRepository : NutritionRepository {
+        override suspend fun day(date: LocalDate): NutritionDay {
+            val dayMeals = mealsOn(date)
+            return NutritionDay(
+                date = date,
+                meals = dayMeals,
+                totals = dayMeals.dayTotals(),
+                targets = MockSeed.targets,
+            )
+        }
+
+        override suspend fun week(endingOn: LocalDate): NutritionWeek {
+            val days =
+                (NUTRITION_WEEK_DAYS - 1 downTo 0).map { daysAgo ->
+                    val date = endingOn.minus(DatePeriod(days = daysAgo))
+                    val totals = mealsOn(date).dayTotals()
+                    NutritionWeekDay(date = date, kcal = totals.kcal, proteinG = totals.proteinG)
+                }
+            return NutritionWeek(days = days)
+        }
+
+        override suspend fun log(draft: MealDraft): MealLogResult {
+            val name = draft.name
+            val source = draft.source
+            if (!draft.canLog() || name == null || source == null) return MealLogResult.Rejected
+
+            val id = MealId("meal-added-${nextMealId++}")
+            meals +=
+                Meal(
+                    id = id,
+                    patientId = MockSeed.patientId,
+                    eatenAt = clock.now(),
+                    name = name,
+                    source = source,
+                    recipeId = draft.recipeId,
+                    items = draft.items,
+                )
+
+            // A fresh read, not the day computed before the write — the
+            // written meal must be inside the sum it confirms.
+            return MealLogResult.Written(id = id, dayTotals = mealsOn(currentDate()).dayTotals())
+        }
+
+        private fun mealsOn(date: LocalDate): List<Meal> =
+            meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
     }
 
     private inner class MockMeasurementsRepository : MeasurementsRepository {

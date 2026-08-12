@@ -16,6 +16,7 @@ import app.cadence.shared.domain.Measurement
 import app.cadence.shared.domain.MeasurementId
 import app.cadence.shared.domain.MeasurementSource
 import app.cadence.shared.domain.Metric
+import app.cadence.shared.domain.NutritionTargets
 import app.cadence.shared.domain.PatientProfile
 import app.cadence.shared.domain.Protocol
 import app.cadence.shared.domain.ProtocolCadence
@@ -370,8 +371,16 @@ object MockSeed {
             joinedAt = LocalDate(2026, 4, 20),
         )
 
-    /** §03: «kcal 1800 · protein 140 · carbs 200 · fat 60». */
-    val targets = Macros(kcal = 1800, proteinG = 140, carbsG = 200, fatG = 60)
+    /**
+     * §03's `nutrition_targets`: «kcal 1800 · protein 140 · carbs 200 · fat 60».
+     * The one place these four constants exist.
+     */
+    val targets =
+        NutritionTargets(
+            patientId = patientId,
+            macros = Macros(kcal = 1800, proteinG = 140, carbsG = 200, fatG = 60),
+            waterMl = null,
+        )
 
     /**
      * The last day any metric was measured — the morning of «today», and a day
@@ -552,8 +561,144 @@ object MockSeed {
         note = null,
     )
 
+    /**
+     * A week of history ending on [DEMO_NOW], the day the demo runs on.
+     *
+     * Today — 2026-05-31, `meal-1` and `meal-2` — is untouched: 840 kcal
+     * across two meals is what `ConfirmToastTest`, `CadenceShellDataTest` and
+     * `TodayScreenTest` already assert, and this seed does not move a number
+     * those tests pin. The other six days carry the variety instead: 2026-05-25
+     * is a single under-target meal, 2026-05-27 is a three-meal day, and
+     * 2026-05-28 runs over target — the rest are plain two-meal days, present
+     * so the week is seven pairwise-distinct totals rather than six empty ones
+     * around a single real day.
+     *
+     * Every `eatenAt` sits inside 03:00Z–20:00Z on purpose: `CadenceMocks`
+     * filters meals by their *local* date (`Europe/Moscow` in the test suite,
+     * UTC+3 with no DST), and a time outside that band would cross midnight in
+     * one zone but not the other, moving the meal to a different day than its
+     * literal date says.
+     *
+     * `MealSource.MANUAL` throughout is this seed's fixture value, not a path
+     * the port writes — see the note on the enum constant itself.
+     */
     val meals =
         listOf(
+            // 2026-05-25, Monday — under target: one meal, well under 1800 kcal.
+            Meal(
+                id = MealId("meal-3"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-25T06:30:00Z"),
+                name = "Завтрак",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Творог с мёдом", 200, MacrosTenths(4150, 280, 380, 90))),
+            ),
+            // 2026-05-26, Tuesday — plain two-meal day.
+            Meal(
+                id = MealId("meal-4"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-26T05:30:00Z"),
+                name = "Завтрак",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Омлет с овощами", 220, MacrosTenths(3400, 220, 120, 220))),
+            ),
+            Meal(
+                id = MealId("meal-5"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-26T10:00:00Z"),
+                name = "Обед",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Паста с индейкой", 350, MacrosTenths(6600, 380, 780, 180))),
+            ),
+            // 2026-05-27, Wednesday — three meals.
+            Meal(
+                id = MealId("meal-6"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-27T05:00:00Z"),
+                name = "Завтрак",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Овсянка с бананом", 250, MacrosTenths(3000, 100, 520, 60))),
+            ),
+            Meal(
+                id = MealId("meal-7"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-27T09:30:00Z"),
+                name = "Обед",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Салат с курицей", 300, MacrosTenths(6000, 420, 300, 300))),
+            ),
+            Meal(
+                id = MealId("meal-8"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-27T15:30:00Z"),
+                name = "Ужин",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Рыба с рисом", 280, MacrosTenths(5000, 360, 480, 140))),
+            ),
+            // 2026-05-28, Thursday — over target: two large meals, 2100 kcal.
+            Meal(
+                id = MealId("meal-9"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-28T10:00:00Z"),
+                name = "Обед",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Бургер домашний", 350, MacrosTenths(9000, 400, 700, 460))),
+            ),
+            Meal(
+                id = MealId("meal-10"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-28T15:00:00Z"),
+                name = "Ужин",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Паста Карбонара", 400, MacrosTenths(12000, 460, 1100, 620))),
+            ),
+            // 2026-05-29, Friday — plain two-meal day.
+            Meal(
+                id = MealId("meal-11"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-29T06:00:00Z"),
+                name = "Завтрак",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Сырники", 220, MacrosTenths(7000, 320, 640, 260))),
+            ),
+            Meal(
+                id = MealId("meal-12"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-29T11:00:00Z"),
+                name = "Обед",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Плов с курицей", 350, MacrosTenths(8500, 400, 980, 260))),
+            ),
+            // 2026-05-30, Saturday — plain two-meal day.
+            Meal(
+                id = MealId("meal-13"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-30T06:30:00Z"),
+                name = "Завтрак",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Гранола с йогуртом", 250, MacrosTenths(8000, 280, 900, 260))),
+            ),
+            Meal(
+                id = MealId("meal-14"),
+                patientId = patientId,
+                eatenAt = Instant.parse("2026-05-30T12:30:00Z"),
+                name = "Обед",
+                source = MealSource.MANUAL,
+                recipeId = null,
+                items = listOf(MealItem("Стейк с овощами", 320, MacrosTenths(9200, 520, 340, 480))),
+            ),
+            // 2026-05-31, Sunday — DEMO_NOW. Untouched: 840 kcal across two meals.
             Meal(
                 id = MealId("meal-1"),
                 patientId = patientId,

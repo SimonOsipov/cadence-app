@@ -141,6 +141,12 @@ data class Recipe(
 enum class MealSource(
     val code: String,
 ) {
+    /**
+     * §03's value, kept for the enum's completeness. `MockSeed.meals` is the
+     * only writer of it in this port — `LogMealScreen` writes [AI_TEXT] and
+     * `RecipeDetailScreen` writes [RECIPE]; `MealDraft.canLog` requires a
+     * caller to name one of the two explicitly rather than default here.
+     */
     MANUAL("manual"),
     RECIPE("recipe"),
     AI_TEXT("ai_text"),
@@ -177,6 +183,18 @@ data class Meal(
     val totals: MacrosTenths
         get() = items.map { it.macros }.sumTenths()
 }
+
+/**
+ * A day's macros, rounded once — every meal's exact [Meal.totals] folded
+ * together and only then handed to [toMacros].
+ *
+ * The repository layer's one call site for [toMacros]: `TodaySummary.mealMacros`
+ * and `NutritionDay.totals` both fold their day's meals through this function
+ * rather than each calling [toMacros] on its own sum, so «today» on the Today
+ * screen and «today» on the Nutrition screen cannot end up rounding the same
+ * numbers two different ways.
+ */
+fun List<Meal>.dayTotals(): Macros = map { it.totals }.sumTenths().toMacros()
 
 /**
  * Rescales [original]'s macros to [newGrams], grams and all four fields
