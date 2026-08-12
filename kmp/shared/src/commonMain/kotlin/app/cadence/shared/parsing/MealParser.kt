@@ -20,11 +20,13 @@ sealed interface MealParseResult {
     ) : MealParseResult
 
     /**
-     * No parse happened: blank input, or [MockMealParser]'s unavailable mode —
-     * the stand-in for what photo and voice input will call once M9 gives them
-     * a real endpoint. Never a substitute for a canned success: nutrition
-     * invariant 5 forbids that, even though the prototype does exactly this
-     * for its own photo and voice segments.
+     * No parse happened: blank input, or [MockMealParser]'s unavailable mode.
+     * Never a substitute for a canned success: nutrition invariant 5 forbids
+     * handing back a prepared result in place of a real one, even though the
+     * prototype does exactly that for its own photo and voice segments. What
+     * M9 replaces is free-text parsing (`POST /me/meals/parse-text`); whether
+     * photo and voice ever reach a parser at all is undecided, so this states
+     * only what the state is reachable through today.
      */
     data object Unavailable : MealParseResult
 }
