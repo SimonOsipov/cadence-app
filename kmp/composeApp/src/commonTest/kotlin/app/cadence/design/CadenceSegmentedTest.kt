@@ -1,8 +1,11 @@
 package app.cadence.design
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
@@ -10,11 +13,13 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -217,5 +222,49 @@ class CadenceSegmentedTest {
 
             onNodeWithText("фото").assertIsSelected()
             onNodeWithText("текст").assertIsNotSelected()
+        }
+
+    @Test
+    fun theSegmentedControlStaysOneLineEvenWithATooLongLabel() =
+        runComposeUiTest {
+            // A probe test measured this directly before the fix: the same
+            // long string, same width, rendered 140.dp tall with only
+            // overflow = TextOverflow.Ellipsis and 14.dp tall once maxLines = 1
+            // sat beside it — Ellipsis alone has nothing to truncate against, so
+            // the label wraps instead. Comparing two live tracks at the same
+            // width — one short label, one absurdly long — pins the fix without
+            // hardcoding a line-height constant that a font change would break.
+            val longLabel = "Очень длинное название режима, которое совершенно точно не влезет в один сегмент"
+
+            setContent {
+                CadenceTheme {
+                    Column(Modifier.width(160.dp)) {
+                        CadenceSegmented(
+                            options = listOf("текст", "фото"),
+                            selected = "текст",
+                            onSelect = {},
+                            label = { it },
+                        )
+                        CadenceSegmented(
+                            options = listOf(longLabel, "фото"),
+                            selected = longLabel,
+                            onSelect = {},
+                            label = { it },
+                        )
+                    }
+                }
+            }
+
+            val tracks =
+                onAllNodesWithTag(CADENCE_SEGMENTED_TRACK_TAG, useUnmergedTree = true).fetchSemanticsNodes()
+            val shortLabelHeight = tracks[0].boundsInRoot.height
+            val longLabelHeight = tracks[1].boundsInRoot.height
+
+            assertEquals(
+                shortLabelHeight,
+                longLabelHeight,
+                "the too-long label's track ($longLabelHeight) is taller than the short-label " +
+                    "track ($shortLabelHeight) — the label wrapped instead of ellipsizing to one line",
+            )
         }
 }

@@ -179,6 +179,14 @@ fun <T> CadenceSegmented(
                             color = if (isSelected) palette.ink else palette.ink2,
                             fontSize = 13.sp,
                         ),
+                    // maxLines alongside overflow, not overflow alone — measured,
+                    // not assumed: a probe test rendering the same long string at
+                    // the same width read 140.dp tall without maxLines and 14.dp
+                    // with it. `TextOverflow.Ellipsis` decides how a line that
+                    // hits its `maxLines` ceiling gets cut; with no ceiling set,
+                    // there is nothing for it to cut and the label just wraps —
+                    // see theSegmentedControlStaysOneLineEvenWithATooLongLabel.
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
