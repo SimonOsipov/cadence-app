@@ -126,7 +126,7 @@ class NutritionTest {
         assertEquals(1, halfGram.toMacros().proteinG)
     }
 
-    /** §03's error-handling convention: an unsatisfiable rate is refused, not silently computed. */
+    /** A rate off a zero base is unsatisfiable, so it is refused rather than silently computed. */
     @Test
     fun rescaleMealItemRejectsZeroGramOriginal() {
         val zeroGramOriginal = mealItem("Пустая позиция", 0, MacrosTenths(0, 0, 0, 0))
@@ -135,10 +135,14 @@ class NutritionTest {
     }
 
     /**
-     * A negative target is not an error — the stepper's floor is a UI
-     * concern (§03's LogMealScreen step) — but it has to land somewhere
-     * defined rather than somewhere merely untested: coerced to 0 g, with
-     * every field at zero.
+     * A negative target is not an error — the floor is a UI concern, and the
+     * prototype's stepper puts it at 5 g (`LogMealScreen.tsx:855`,
+     * `Math.max(5, item.grams - 10)`) — but it has to land somewhere defined
+     * rather than somewhere merely untested: coerced to 0 g, with every field
+     * at zero. This diverges from the prototype, which clamps grams and leaves
+     * the macros untouched (`meal/data.ts:141`); zeroed macros are the honest
+     * reading of a zero-gram portion, and nothing consumes the difference until
+     * the inline stepper lands in step-5.
      */
     @Test
     fun rescaleMealItemCoercesNegativeGramsToZero() {
