@@ -7,6 +7,7 @@ import app.cadence.shared.domain.DoseEvent
 import app.cadence.shared.domain.DoseEventId
 import app.cadence.shared.domain.DoseUnit
 import app.cadence.shared.domain.Macros
+import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.Meal
 import app.cadence.shared.domain.MealId
 import app.cadence.shared.domain.MealItem
@@ -560,7 +561,7 @@ object MockSeed {
                 name = "Завтрак",
                 source = MealSource.MANUAL,
                 recipeId = null,
-                items = listOf(MealItem("Овсянка на воде", 250, Macros(320, 12, 54, 6))),
+                items = listOf(MealItem("Овсянка на воде", 250, MacrosTenths(3200, 120, 540, 60))),
             ),
             Meal(
                 id = MealId("meal-2"),
@@ -569,7 +570,7 @@ object MockSeed {
                 name = "Обед",
                 source = MealSource.MANUAL,
                 recipeId = null,
-                items = listOf(MealItem("Куриная грудка с гречкой", 320, Macros(520, 48, 46, 12))),
+                items = listOf(MealItem("Куриная грудка с гречкой", 320, MacrosTenths(5200, 480, 460, 120))),
             ),
         )
 }

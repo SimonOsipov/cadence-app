@@ -8,7 +8,6 @@ import app.cadence.shared.domain.DoseEventId
 import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.JournalEntry
 import app.cadence.shared.domain.JournalSource
-import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.MetricTrend
 import app.cadence.shared.domain.OccurrenceStatus
@@ -34,7 +33,9 @@ import app.cadence.shared.domain.rangeOn
 import app.cadence.shared.domain.remainingDoses
 import app.cadence.shared.domain.reorderHint
 import app.cadence.shared.domain.suggestNextSite
+import app.cadence.shared.domain.sumTenths
 import app.cadence.shared.domain.titrationStepAfter
+import app.cadence.shared.domain.toMacros
 import app.cadence.shared.domain.today
 import app.cadence.shared.domain.trendSeries
 import app.cadence.shared.domain.vialDetail
@@ -144,15 +145,11 @@ class CadenceMocks(
                 // own numbers survived, because on the seeded day the two
                 // happen to agree.
                 mealCount = todaysMeals.size,
-                mealMacros =
-                    todaysMeals.fold(Macros(0, 0, 0, 0)) { acc, meal ->
-                        Macros(
-                            kcal = acc.kcal + meal.totals.kcal,
-                            proteinG = acc.proteinG + meal.totals.proteinG,
-                            carbsG = acc.carbsG + meal.totals.carbsG,
-                            fatG = acc.fatG + meal.totals.fatG,
-                        )
-                    },
+                // Exact fold across the day's meals, then the one rounding to
+                // whole grams — the spec's boundary. Rounding each meal's
+                // totals first and summing those would be a second, upstream
+                // rounding this repository is not the place for.
+                mealMacros = todaysMeals.map { it.totals }.sumTenths().toMacros(),
                 targets = MockSeed.targets,
                 // «Latest reading wins», §03 — by `measuredAt` and for this metric,
                 // not by position in a list. The same defect as the unfiltered
