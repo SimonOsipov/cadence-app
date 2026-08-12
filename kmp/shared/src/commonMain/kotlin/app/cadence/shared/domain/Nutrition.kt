@@ -30,6 +30,14 @@ private const val ROUND_HALF = 0.5
  * The reference table (`Ingredient.per100g`) and a logged position
  * (`MealItem.macros`) both carry this type — decision spec's §4. `Macros`
  * itself stays whole grams; [toMacros] is the only place tenths become it.
+ *
+ * `kcalTenths` deviates from §4's literal wording, which scopes «0,1 г» to the
+ * gram fields — see the step-2 deviation note. kcal is not exempt from the
+ * "sum precisely, round once" boundary the other three fields get: scaling an
+ * ingredient's per-100g kcal by an item's actual grams fractures the same way
+ * the gram fields do (rice at 240 g is 123 × 2,4 = 295,2 kcal, not a whole
+ * number), so a whole-kcal-per-item type would smuggle a second rounding in
+ * upstream of the one boundary this type exists to guarantee.
  */
 data class MacrosTenths(
     val kcalTenths: Int,

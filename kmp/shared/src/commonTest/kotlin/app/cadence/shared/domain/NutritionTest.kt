@@ -2,6 +2,7 @@ package app.cadence.shared.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.time.Instant
 
@@ -55,11 +56,11 @@ private fun chickenBowlOneServing(): Meal =
 
 class NutritionTest {
     /**
-     * Exact sum then one rounding: 46.5 + 3.24 + 2.24 + 1.6 + 2.55 + 0 =
-     * 56.13 → 56. The mutation this kills is rounding each position to whole
-     * grams before summing, which the prompt's own arithmetic gives as 57
-     * (47 + 3 + 2 + 2 + 3 + 0) — verified against the prototype's per-100g
-     * table by hand before this test was written.
+     * Exact sum then one rounding: the stored (tenth-rounded) items add to
+     * 46.5 + 3.2 + 2.2 + 1.6 + 2.6 + 0 = 56.1 → 56. The mutation this kills is
+     * rounding each position to whole grams before summing, which the spec's
+     * step-2 text gives as 57 (47 + 3 + 2 + 2 + 3 + 0) — verified against the
+     * prototype's per-100g table by hand before this test was written.
      */
     @Test
     fun chickenBowlOneServingProteinSumsPreciselyThenRoundsOnce() {
@@ -89,18 +90,64 @@ class NutritionTest {
      * takes the base explicitly, so this is not testing luck: the scale
      * factor at the second call is exactly `original.grams / original.grams`,
      * which is one, for every field, every time.
+     *
+     * The 100 g → 90 g step is chosen so protein actually lands on a tie:
+     * 1,5 g × 90/100 = 13,5 tenths exactly. A fixture that merely *differs*
+     * from the original at 90 g would pass under a truncating `scaleTenths`
+     * too (13 instead of 14) — asserting the intermediate's exact tenths is
+     * what pins round-half-up here, not just "it moved".
      */
     @Test
     fun rescaleFromOriginalRoundTripsExactly() {
-        val original = mealItem("Овсянка", 200, MacrosTenths(3200, 120, 540, 60))
+        val original = mealItem("Овсянка", 100, MacrosTenths(2000, 15, 400, 50))
 
         val steppedDown = rescaleMealItem(original, original.grams - 10)
         val steppedBackUp = rescaleMealItem(original, steppedDown.grams + 10)
 
-        // Proves the rescale is not a no-op: the intermediate step actually moved.
-        assertNotEquals(original.macros, steppedDown.macros)
+        // 90/100 of (2000, 15, 400, 50): kcal and carbs and fat divide evenly;
+        // protein's 13,5-tenths tie rounds up to 14, not down to 13.
+        assertEquals(MacrosTenths(1800, 14, 360, 45), steppedDown.macros)
         assertEquals(original.grams, steppedBackUp.grams)
         assertEquals(original.macros, steppedBackUp.macros)
+    }
+
+    /**
+     * `toMacros` is the one conversion boundary in the whole nutrition
+     * context, and a tie there is not exercised by
+     * [dayTotalsAcrossMealsSumPreciselyThenRoundOnce]: that test's tie is
+     * consumed by the exact fold before it ever reaches [MacrosTenths.toMacros]
+     * — two 0,5 g terms sum to an untied 1,0 g. This test puts the tie
+     * directly at the boundary: 0,5 g rounds up to 1 g, not down to 0.
+     */
+    @Test
+    fun toMacrosRoundsHalfUpAtExactTie() {
+        val halfGram = MacrosTenths(0, 5, 0, 0)
+
+        assertEquals(1, halfGram.toMacros().proteinG)
+    }
+
+    /** §03's error-handling convention: an unsatisfiable rate is refused, not silently computed. */
+    @Test
+    fun rescaleMealItemRejectsZeroGramOriginal() {
+        val zeroGramOriginal = mealItem("Пустая позиция", 0, MacrosTenths(0, 0, 0, 0))
+
+        assertFailsWith<IllegalArgumentException> { rescaleMealItem(zeroGramOriginal, 50) }
+    }
+
+    /**
+     * A negative target is not an error — the stepper's floor is a UI
+     * concern (§03's LogMealScreen step) — but it has to land somewhere
+     * defined rather than somewhere merely untested: coerced to 0 g, with
+     * every field at zero.
+     */
+    @Test
+    fun rescaleMealItemCoercesNegativeGramsToZero() {
+        val original = mealItem("Овсянка", 100, MacrosTenths(2000, 15, 400, 50))
+
+        val rescaled = rescaleMealItem(original, -20)
+
+        assertEquals(0, rescaled.grams)
+        assertEquals(MacrosTenths.ZERO, rescaled.macros)
     }
 
     /**
