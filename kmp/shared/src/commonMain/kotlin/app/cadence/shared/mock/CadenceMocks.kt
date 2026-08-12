@@ -223,12 +223,16 @@ class CadenceMocks(
             val source = draft.source
             if (!draft.canLog() || name == null || source == null) return MealLogResult.Rejected
 
+            // One reading, used for both the stored meal and the totals below —
+            // two reads near midnight could otherwise put the meal on one day
+            // and the confirming total on the next.
+            val loggedAt = clock.now()
             val id = MealId("meal-added-${nextMealId++}")
             meals +=
                 Meal(
                     id = id,
                     patientId = MockSeed.patientId,
-                    eatenAt = clock.now(),
+                    eatenAt = loggedAt,
                     name = name,
                     source = source,
                     recipeId = draft.recipeId,
@@ -237,7 +241,8 @@ class CadenceMocks(
 
             // A fresh read, not the day computed before the write — the
             // written meal must be inside the sum it confirms.
-            return MealLogResult.Written(id = id, dayTotals = mealsOn(currentDate()).dayTotals())
+            val loggedDate = loggedAt.toLocalDateTime(zone).date
+            return MealLogResult.Written(id = id, dayTotals = mealsOn(loggedDate).dayTotals())
         }
 
         private fun mealsOn(date: LocalDate): List<Meal> =
