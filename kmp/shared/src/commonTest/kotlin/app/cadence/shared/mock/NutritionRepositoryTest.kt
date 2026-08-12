@@ -1,5 +1,6 @@
 package app.cadence.shared.mock
 
+import app.cadence.shared.domain.CadenceClock
 import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.MealDraft
@@ -12,6 +13,7 @@ import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.time.Instant
 
 private val MOSCOW = TimeZone.of("Europe/Moscow")
 private const val DEMO_NOW = "2026-05-31T09:00:00Z"
@@ -20,7 +22,75 @@ private val DEMO_DATE = LocalDate(2026, 5, 31)
 /** The mock wound to [DEMO_NOW], in [zone]. */
 private fun mocks(zone: TimeZone = MOSCOW) = CadenceMocks(clock = FixedCadenceClock.at(DEMO_NOW), zone = zone)
 
+/**
+ * Returns [instants] in order, one per call, and repeats the last one once
+ * exhausted — a [FixedCadenceClock] cannot tell a single-read implementation
+ * from a two-read one, since every call answers the same instant either way.
+ * This is the only way to make `log`'s own two former reads of `clock.now()`
+ * observably disagree.
+ */
+private class SteppingClock(
+    private vararg val instants: Instant,
+) : CadenceClock {
+    private var index = 0
+
+    override fun now(): Instant =
+        instants[index].also {
+            if (index < instants.size - 1) index++
+        }
+}
+
 class NutritionRepositoryTest {
+    @Test
+    fun aMealLoggedJustBeforeMidnightReturnsTotalsForTheDayItWasLoggedOn() =
+        runTest {
+            // `log` used to read clock.now() twice: once for the stored meal's
+            // eatenAt, once more (via currentDate()) for the totals it hands
+            // back. A clock that ticks from 23:59:59 to 00:00:01 MSK between
+            // those two reads used to file the meal under 31 May and confirm
+            // 1 June instead — a day with nothing seeded, so the write would
+            // report zero rather than the item just logged.
+            val justBeforeMidnightMoscow = Instant.parse("2026-05-31T20:59:59Z")
+            val justAfterMidnightMoscow = Instant.parse("2026-05-31T21:00:01Z")
+            val clock = SteppingClock(justBeforeMidnightMoscow, justAfterMidnightMoscow)
+            val cadence = CadenceMocks(clock = clock, zone = MOSCOW)
+
+            val draft =
+                MealDraft(
+                    name = "Полночный перекус",
+                    source = MealSource.AI_TEXT,
+                    items =
+                        listOf(
+                            MealItem(
+                                name = "Кефир",
+                                grams = 200,
+                                macros =
+                                    MacrosTenths(
+                                        kcalTenths = 800,
+                                        proteinGTenths = 60,
+                                        carbsGTenths = 80,
+                                        fatGTenths = 20,
+                                    ),
+                            ),
+                        ),
+                )
+
+            val result = cadence.nutrition.log(draft)
+            assertIs<MealLogResult.Written>(result)
+
+            // 840 seeded for 31 May in Moscow (same seed the other tests in
+            // this file pin), plus 80 from the drafted item. A version that
+            // reads the second, post-midnight instant for the totals would
+            // report 1 June's own kcal instead — 0, since nothing is seeded
+            // for that date.
+            assertEquals(
+                920,
+                result.dayTotals.kcal,
+                "the returned totals ($result) do not carry the meal just logged — " +
+                    "the write and the confirming read landed on different days",
+            )
+        }
+
     @Test
     fun aMealLoggedThroughNutritionShowsUpOnToday() =
         runTest {
