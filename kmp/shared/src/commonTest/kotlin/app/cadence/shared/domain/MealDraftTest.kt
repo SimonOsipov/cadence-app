@@ -34,4 +34,25 @@ class MealDraftTest {
 
         assertTrue(draft.canLog())
     }
+
+    @Test
+    fun aRecipeSourceWithoutARecipeIdRefusesToLogEvenWithANameAndAnItem() {
+        val draft =
+            MealDraft(name = "Обед", source = MealSource.RECIPE, recipeId = null, items = listOf(item()))
+
+        assertFalse(draft.canLog())
+    }
+
+    @Test
+    fun aRecipeSourceWithARecipeIdCanLog() {
+        val draft =
+            MealDraft(
+                name = "Обед",
+                source = MealSource.RECIPE,
+                recipeId = RecipeId("recipe-1"),
+                items = listOf(item()),
+            )
+
+        assertTrue(draft.canLog())
+    }
 }
