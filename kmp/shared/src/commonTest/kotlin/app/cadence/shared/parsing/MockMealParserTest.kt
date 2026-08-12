@@ -199,6 +199,16 @@ class MockMealParserTest {
     }
 
     @Test
+    fun theSamplePromptsCarryOnlyThePlaceholderAndTranscriptInOrder() {
+        // The step-5 accessor's whole point: composeApp reads placeholder and
+        // transcript without seeing triggerWords, mealName or items.
+        assertEquals(
+            CANNED_MEAL_PARSES.map { MealSamplePrompt(it.placeholder, it.transcript) },
+            mealSamplePrompts(),
+        )
+    }
+
+    @Test
     fun aContestedScoreEndsWithTheHigherScoringParseNotTheFirstMatch() =
         runTest {
             // "йогурт" scores breakfast 1; "рис" (inside "рисом") and "тахини"

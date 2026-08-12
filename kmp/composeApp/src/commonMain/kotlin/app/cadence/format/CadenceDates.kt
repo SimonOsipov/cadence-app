@@ -3,6 +3,7 @@ package app.cadence.format
 import app.cadence.shared.domain.PartOfDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.isoDayNumber
 
@@ -61,6 +62,21 @@ private val MONTHS_GENITIVE =
 
 /** «7 июня» — the genitive the date reads in, not the nominative «Июнь». */
 fun dayAndMonth(date: LocalDate): String = "${date.day} ${MONTHS_GENITIVE[date.month.ordinal]}"
+
+private const val CLOCK_DIGIT_WIDTH = 2
+
+/**
+ * «08:05» — a zero-padded 24-hour clock reading, for the log-meal header
+ * chip. The prototype writes this whole chip as the literal «08:42 · вс 24
+ * мая» (`LogMealScreen.tsx:133`); every part of it, the clock reading
+ * included, is a function of [CadenceClock][app.cadence.shared.domain.CadenceClock]
+ * and the calendar, so it is assembled here rather than baked into the screen.
+ */
+fun clockTime(time: LocalDateTime): String {
+    val hour = time.hour.toString().padStart(CLOCK_DIGIT_WIDTH, '0')
+    val minute = time.minute.toString().padStart(CLOCK_DIGIT_WIDTH, '0')
+    return "$hour:$minute"
+}
 
 private val WEEKDAYS_SHORT =
     listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")

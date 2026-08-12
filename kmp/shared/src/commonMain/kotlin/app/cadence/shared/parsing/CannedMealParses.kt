@@ -52,6 +52,36 @@ private fun item(
 )
 
 /**
+ * The two facts a text-input hint control needs from a canned parse, without
+ * the parse itself.
+ *
+ * **Visibility decision (step-4's own open question).** [CannedMealParse] and
+ * [CANNED_MEAL_PARSES] stay `internal`; this type and [mealSamplePrompts] are
+ * the public surface instead of widening them. Making the canned list itself
+ * public would hand `composeApp` the mock's whole matching table —
+ * `triggerWords`, `mealName`, `items` and all — for the sake of a control
+ * that only ever reads two of its five fields. [MealParser] is documented as
+ * "a service, not a repository": a widened [CANNED_MEAL_PARSES] would make it
+ * one anyway, just via a second, undocumented door next to `parse`. This
+ * accessor is that door, narrowed to what «Пример» actually needs, and it
+ * costs nothing at the real M9 parser: nothing requires a service's mock to
+ * expose its fixtures wholesale.
+ */
+data class MealSamplePrompt(
+    val placeholder: String,
+    val transcript: String,
+)
+
+/**
+ * The canned prompts «Пример» cycles through, in [CANNED_MEAL_PARSES]'s own
+ * order — cycling in a different order than [MockMealParser] scores in would
+ * make the button's next placeholder disagree with what a matching parse of
+ * that same placeholder would return.
+ */
+fun mealSamplePrompts(): List<MealSamplePrompt> =
+    CANNED_MEAL_PARSES.map { MealSamplePrompt(placeholder = it.placeholder, transcript = it.transcript) }
+
+/**
  * The three canned parses, ported whole from `SAMPLE_PARSES`
  * (`mobile/src/features/meal/data.ts:76-115`) in the prototype's own order.
  * Order matters: [MockMealParser]'s tie-break keeps whichever entry is
