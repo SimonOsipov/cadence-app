@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +42,7 @@ import app.cadence.design.CadencePillTone
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceSyringeBar
+import app.cadence.design.CadenceTextField
 import app.cadence.design.CadenceTitle
 import app.cadence.format.formatDose
 import app.cadence.shared.domain.Dose
@@ -373,24 +373,13 @@ private fun NoteField(
     draft: DoseDraft,
     onDraft: (DoseDraft) -> Unit,
 ) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(CadenceRadius.md))
-            .background(Cadence.palette.paper)
-            .border(HAIRLINE, Cadence.palette.border, RoundedCornerShape(CadenceRadius.md))
-            .padding(CadenceSpacing.md),
-    ) {
-        if (draft.note.isNullOrEmpty()) CadenceMeta("Что-то важное про эту дозу?")
-        BasicTextField(
-            value = draft.note.orEmpty(),
-            // Empty means «не написали», not «написали пустое»: a blank note
-            // would render an empty row in the review.
-            onValueChange = { onDraft(draft.copy(note = it.ifBlank { null })) },
-            textStyle = Cadence.typography.body.copy(color = Cadence.palette.ink),
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
+    CadenceTextField(
+        value = draft.note.orEmpty(),
+        // Empty means «не написали», not «написали пустое»: a blank note
+        // would render an empty row in the review.
+        onValueChange = { onDraft(draft.copy(note = it.ifBlank { null })) },
+        placeholder = "Что-то важное про эту дозу?",
+    )
 }
 
 /** «Шаг 5 · Проверка» — the hero card and the rows under it. */

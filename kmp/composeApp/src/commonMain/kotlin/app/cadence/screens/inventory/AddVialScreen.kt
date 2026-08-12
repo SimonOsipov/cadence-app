@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +32,7 @@ import app.cadence.design.CadenceEyebrow
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
+import app.cadence.design.CadenceTextField
 import app.cadence.design.CadenceTitle
 import app.cadence.shared.domain.Compound
 import app.cadence.shared.domain.CompoundId
@@ -113,22 +113,12 @@ private fun Field(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(CadenceSpacing.xxs)) {
         CadenceEyebrow(label)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(CadenceRadius.md))
-                .background(Cadence.palette.paper)
-                .border(HAIRLINE, Cadence.palette.border, RoundedCornerShape(CadenceRadius.md))
-                .padding(CadenceSpacing.md),
-        ) {
-            if (value.isEmpty()) CadenceMeta(placeholder)
-            BasicTextField(
-                value = value,
-                onValueChange = onChange,
-                textStyle = Cadence.typography.body.copy(color = Cadence.palette.ink),
-                modifier = Modifier.fillMaxWidth().testTag(addVialFieldTag(tag)),
-            )
-        }
+        CadenceTextField(
+            value = value,
+            onValueChange = onChange,
+            placeholder = placeholder,
+            fieldModifier = Modifier.testTag(addVialFieldTag(tag)),
+        )
     }
 }
 

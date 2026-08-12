@@ -37,6 +37,11 @@ object CadenceColors {
 
     val sand900 = Color(0xFF6B4A25)
     val sand700 = Color(0xFFB8895A)
+
+    // Not named in mobile/src/theme/index.ts — the prototype writes this shade as
+    // the literal #a5773d at its one call site (NutritionScreen.tsx carb macro bar).
+    // Added here so that call site has a token to port to.
+    val sand600 = Color(0xFFA5773D)
     val sand500 = Color(0xFFD4A574)
     val sand300 = Color(0xFFE8D4B8)
     val sand100 = Color(0xFFF3E8D6)
