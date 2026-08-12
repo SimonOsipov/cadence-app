@@ -50,13 +50,20 @@ class NutritionRepositoryTest {
             val result = cadence.nutrition.log(draft)
             assertIs<MealLogResult.Written>(result)
 
+            // 840 seeded, plus 80 from the drafted item — `kcalTenths = 800`
+            // is already a whole number of kcal, so no rounding is involved
+            // here, only the exact fold. Absolute values, not `before + 80`:
+            // the field this pins is `MealLogResult.Written.dayTotals`, which
+            // has to carry the sum taken *after* the write, not a snapshot
+            // hoisted above it — a pre-write snapshot would report the same
+            // 840 and this assertion would catch it where `before`/`after` on
+            // `Today` cannot, because those are read fresh either way.
+            assertEquals(920, result.dayTotals.kcal)
+            assertEquals(120, result.dayTotals.carbsG)
+
             val after = cadence.today.today().mealMacros
-            // 84 kcal from the new item's own rounding, folded exactly with
-            // the two seeded meals rather than as a second, separate figure —
-            // the mutation this kills is a nutrition repository that keeps its
-            // own list, which `today()` would never see.
-            assertEquals(before.kcal + 80, after.kcal)
-            assertEquals(before.proteinG, after.proteinG)
+            assertEquals(840, before.kcal)
+            assertEquals(920, after.kcal)
         }
 
     @Test
@@ -86,9 +93,14 @@ class NutritionRepositoryTest {
 
             assertEquals(LocalDate(2026, 5, 27), week.days[2].date)
             assertEquals(1400, week.days[2].kcal)
+            // Protein, not just kcal — a mutation that zeroes `proteinG` while
+            // leaving `kcal` alone would return seven empty protein columns
+            // and this is the only pair of assertions that would notice.
+            assertEquals(88, week.days[2].proteinG)
 
             assertEquals(LocalDate(2026, 5, 28), week.days[3].date)
             assertEquals(2100, week.days[3].kcal)
+            assertEquals(86, week.days[3].proteinG)
 
             assertEquals(LocalDate(2026, 5, 29), week.days[4].date)
             assertEquals(1550, week.days[4].kcal)
@@ -100,7 +112,7 @@ class NutritionRepositoryTest {
             assertEquals(840, week.days[6].kcal)
 
             val kcals = week.days.map { it.kcal }
-            assertEquals(kcals.distinct().size, kcals.size, "the seven days must be pairwise distinct")
+            assertEquals(kcals.size, kcals.distinct().size, "the seven days must be pairwise distinct")
 
             val day = mocks().nutrition.day(DEMO_DATE)
             assertEquals(day.totals.kcal, week.days[6].kcal, "the week's last column is the day's own total")
@@ -109,11 +121,32 @@ class NutritionRepositoryTest {
     @Test
     fun dailyTotalsAgreeInUtcAndMoscow() =
         runTest {
-            val utcDay = mocks(zone = TimeZone.UTC).nutrition.day(DEMO_DATE)
-            val moscowDay = mocks(zone = MOSCOW).nutrition.day(DEMO_DATE)
+            // All seven seeded dates, not just DEMO_DATE — that one day is
+            // untouched from before this step and passing on it alone would
+            // not exercise the six days this step added. A seed time outside
+            // 03:00Z-20:00Z on any one of them crosses midnight in Moscow but
+            // not in UTC, and only a date that actually has such a meal would
+            // show the disagreement.
+            val expectedKcal =
+                listOf(
+                    LocalDate(2026, 5, 25) to 415,
+                    LocalDate(2026, 5, 26) to 1000,
+                    LocalDate(2026, 5, 27) to 1400,
+                    LocalDate(2026, 5, 28) to 2100,
+                    LocalDate(2026, 5, 29) to 1550,
+                    LocalDate(2026, 5, 30) to 1720,
+                    DEMO_DATE to 840,
+                )
+            val utc = mocks(zone = TimeZone.UTC)
+            val moscow = mocks(zone = MOSCOW)
 
-            assertEquals(840, utcDay.totals.kcal)
-            assertEquals(moscowDay.totals, utcDay.totals)
+            for ((date, kcal) in expectedKcal) {
+                val utcDay = utc.nutrition.day(date)
+                val moscowDay = moscow.nutrition.day(date)
+
+                assertEquals(kcal, utcDay.totals.kcal, "UTC total for $date")
+                assertEquals(moscowDay.totals, utcDay.totals, "UTC and Moscow disagree on $date")
+            }
         }
 
     @Test

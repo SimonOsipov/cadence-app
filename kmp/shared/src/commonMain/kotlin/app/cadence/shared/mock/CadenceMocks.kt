@@ -69,7 +69,10 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
-/** Days in [CadenceMocks.MockNutritionRepository.week] — Monday through «Сег». */
+/**
+ * Days in [NutritionRepository.week] — the seven ending on whatever date is
+ * asked for, not aligned to any particular weekday.
+ */
 private const val NUTRITION_WEEK_DAYS = 7
 
 /**

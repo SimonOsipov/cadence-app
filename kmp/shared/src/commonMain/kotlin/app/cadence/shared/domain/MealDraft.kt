@@ -16,6 +16,6 @@ data class MealDraft(
     val recipeId: RecipeId? = null,
     val items: List<MealItem> = emptyList(),
 ) {
-    /** A name and at least one item — what a meal cannot be logged without. */
+    /** A non-blank name, a source and at least one item — what a meal cannot be logged without. */
     fun canLog(): Boolean = !name.isNullOrBlank() && source != null && items.isNotEmpty()
 }
