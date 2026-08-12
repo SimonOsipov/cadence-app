@@ -122,11 +122,13 @@ class NutritionRepositoryTest {
     fun dailyTotalsAgreeInUtcAndMoscow() =
         runTest {
             // All seven seeded dates, not just DEMO_DATE — that one day is
-            // untouched from before this step and passing on it alone would
-            // not exercise the six days this step added. A seed time outside
-            // 03:00Z-20:00Z on any one of them crosses midnight in Moscow but
-            // not in UTC, and only a date that actually has such a meal would
-            // show the disagreement.
+            // untouched from before this step, and passing on it alone would
+            // not exercise the six days this step added. At UTC+3 it is the
+            // upper bound that bites: a meal at or after 21:00Z is already the
+            // next day in Moscow while still today in UTC, so only a date that
+            // actually carries such a meal shows the disagreement. The band's
+            // lower bound guards zones west of UTC, which this test does not
+            // exercise — it is a seed rule, not something measured here.
             val expectedKcal =
                 listOf(
                     LocalDate(2026, 5, 25) to 415,
