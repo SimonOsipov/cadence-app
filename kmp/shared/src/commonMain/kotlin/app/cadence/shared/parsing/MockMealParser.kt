@@ -14,9 +14,10 @@ private const val NO_MATCH_YET = -1
  * ties keep whichever [CANNED_MEAL_PARSES] entry was checked first.
  *
  * [available] is the mode the spec calls for separately: `false` always
- * answers [MealParseResult.Unavailable], the seam photo and voice input will
- * use once step-5 wires them — never the keyword matcher, per nutrition
- * invariant 5, which forbids substituting a canned result for either.
+ * answers [MealParseResult.Unavailable] — the branch that state is reachable
+ * through until M9 supplies a real endpoint, never the keyword matcher, per
+ * nutrition invariant 5, which forbids substituting a canned result for
+ * either.
  */
 class MockMealParser(
     private val available: Boolean = true,

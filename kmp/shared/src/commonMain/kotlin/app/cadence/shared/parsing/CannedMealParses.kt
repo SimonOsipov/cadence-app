@@ -26,9 +26,10 @@ internal data class CannedMealParse(
  * never re-derived downstream.
  *
  * Six parameters name the six fields `MealItem` (`mobile/src/features/meal/data.ts:11-19`)
- * carries — the same trade CadenceShell's own wiring already makes (its KDoc
- * names the same suppression) rather than wrapping a one-off tuple type around
- * a table that exists nowhere else.
+ * carries — the same trade `CadenceShell.kt` already makes three times over
+ * (`tabRoutes`, `pushedRoutes`, `modalRoutes`, each under this same
+ * `@Suppress`) rather than wrapping a one-off tuple type around a table that
+ * exists nowhere else.
  */
 @Suppress("LongParameterList")
 private fun item(

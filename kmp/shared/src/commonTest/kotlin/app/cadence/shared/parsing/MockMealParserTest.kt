@@ -144,4 +144,77 @@ class MockMealParserTest {
             CANNED_MEAL_PARSES.map { it.placeholder },
         )
     }
+
+    @Test
+    fun cannedParsesCarryThePrototypesTriggerWordsVerbatim() {
+        // meal/data.ts:78,92,106 — the actual scoring input; a corrupted
+        // trigger silently resolves real text ("chicken bowl", "yogurt") to
+        // the wrong canned meal without any test noticing, since every other
+        // fixture here only exercises the winning entry's own triggers.
+        assertEquals(
+            listOf(
+                listOf(
+                    "yogurt",
+                    "eggs",
+                    "sourdough",
+                    "avocado",
+                    "berries",
+                    "oats",
+                    "oatmeal",
+                    "йогурт",
+                    "яйц",
+                    "хлеб",
+                    "авокадо",
+                    "ягод",
+                ),
+                listOf(
+                    "bowl",
+                    "chicken",
+                    "rice",
+                    "salmon",
+                    "quinoa",
+                    "salad",
+                    "lunch",
+                    "обед",
+                    "курица",
+                    "рис",
+                    "батат",
+                    "тахини",
+                    "капуста",
+                ),
+                listOf(
+                    "snack",
+                    "cottage",
+                    "almond",
+                    "apple",
+                    "peanut",
+                    "перекус",
+                    "творог",
+                    "яблок",
+                    "миндаль",
+                ),
+            ),
+            CANNED_MEAL_PARSES.map { it.triggerWords },
+        )
+    }
+
+    @Test
+    fun aContestedScoreEndsWithTheHigherScoringParseNotTheFirstMatch() =
+        runTest {
+            // "йогурт" scores breakfast 1; "рис" (inside "рисом") and "тахини"
+            // score lunch-bowl 2; snack scores 0. Counting, not existence, is
+            // what `pickSampleForInput` actually does (meal/data.ts:122-124):
+            // `triggerWords.reduce((acc, w) => acc + (t.includes(w) ? 1 : 0), 0)`,
+            // one point per matching trigger, not one point for having any.
+            // An `any`-based mutant would tie breakfast and lunch-bowl at 1
+            // each and, checked first, land on breakfast — this input asserts
+            // Обед and so catches that. A `>=` tie-break mutant does not
+            // change this particular result (2 still beats 1 either way) —
+            // `tiedZeroScoresBreakToTheFirstEntryNotTheLastOne` above is what
+            // catches that mutant instead.
+            val result = MockMealParser().parse("йогурт с рисом и тахини")
+
+            val parsed = assertIs<MealParseResult.Parsed>(result)
+            assertEquals("Обед", parsed.mealName)
+        }
 }
