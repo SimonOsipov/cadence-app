@@ -50,7 +50,11 @@ import app.cadence.design.cadenceEmphasisedTitle
 import app.cadence.format.clockTime
 import app.cadence.format.dayAndMonth
 import app.cadence.format.weekdayHeadings
+import app.cadence.shared.domain.Macros
+import app.cadence.shared.domain.MealDraft
 import app.cadence.shared.domain.MealItem
+import app.cadence.shared.domain.MealSource
+import app.cadence.shared.domain.rescaleMealItem
 import app.cadence.shared.parsing.MealParseResult
 import app.cadence.shared.parsing.mealSamplePrompts
 import kotlinx.coroutines.launch
@@ -59,12 +63,12 @@ import kotlinx.datetime.isoDayNumber
 
 // «Что вы ели?» — the meal-log modal, ported from LogMealScreen.tsx.
 //
-// This file is the screen's shell and its parse states (idle / parsing /
-// parsed / failed): the header, the title, the Текст·Фото·Голос segmented
-// control and each mode's own content. The item list, the macro totals strip
-// and the «Сохранить» footer are a second pass — [ItemsStub] marks exactly
-// where they attach, and [LOG_MEAL_ITEMS_STUB_TAG] is the seam a test (or the
-// next pass) reads until they exist.
+// This file is the screen's shell, its parse states (idle / parsing / parsed
+// / failed) and the state that keeps a grams edit rescaling from what was
+// actually parsed. The item list, the macro totals strip and the
+// «Сохранить» footer draw from [LogMealItemsList.kt] — split out once this
+// file's own component (shell + state) approached detekt's `LargeClass`
+// threshold, the same way `commonTest/design/` splits one test per primitive.
 
 private const val CLOSE_DESCRIPTION = "Закрыть"
 private const val EYEBROW = "Запись приёма"
@@ -104,11 +108,9 @@ private val HEADER_BALANCE_SIZE = 40.dp
 /** The chat field, so a test can reach it under `useUnmergedTree`. */
 const val LOG_MEAL_CHAT_FIELD_TAG = "log-meal-chat-field"
 
-/**
- * The item list, the macro totals strip and the «Сохранить» footer all
- * attach below this tag's node while they do not exist yet — see [ItemsStub].
- */
-const val LOG_MEAL_ITEMS_STUB_TAG = "log-meal-items-stub"
+/** The gram floor and step a parsed position's inline editor obeys — `LogMealScreen.tsx:855,880`. */
+internal const val LOG_MEAL_GRAM_FLOOR = 5.0
+internal const val LOG_MEAL_GRAM_STEP = 10.0
 
 /** The three ways of recording a meal — `MODES` in `LogMealScreen.tsx:38-42`. */
 enum class LogMealMode(
@@ -159,6 +161,23 @@ private fun MealParseUiState.afterParseResult(result: MealParseResult): MealPars
     }
 
 /**
+ * One parsed position paired with the values it was parsed at.
+ *
+ * [original] never changes once a parse lands — every grams edit rescales
+ * from it via [rescaleMealItem], not from [current], which is what makes
+ * «−10 г, then +10 г» return exactly the numbers the parse produced instead
+ * of compounding each edit's own rounding on top of the last. The prototype
+ * gets this wrong (`meal/data.ts:140-151` rescales from whatever the item
+ * currently holds); this pairing is the port's fix, kept as UI state because
+ * [MealParseUiState.items] is overwritten wholesale by the next parse, not
+ * edited in place.
+ */
+private data class LoggedMealItem(
+    val original: MealItem,
+    val current: MealItem,
+)
+
+/**
  * «Что вы ели?» — the meal-log modal (`CadenceRoute.LogMeal`).
  *
  * [parse] arrives as a `suspend` lambda, the same shape `onLoadMetric` takes
@@ -167,12 +186,18 @@ private fun MealParseUiState.afterParseResult(result: MealParseResult): MealPars
  * called from here — not wrapped a level up the way `LogDoseModal` wraps
  * `DoseWizard` in `CadenceShell.kt:531-610` — because this screen has no such
  * wrapper: the route names this file directly.
+ *
+ * [targets] is a DTO, the same shape `MealHero.kt:46-47` takes it in as —
+ * this screen reaches into no repository of its own, matching the spec's
+ * "экраны берут DTO и лямбды" rule.
  */
 @Composable
 fun LogMealScreen(
     now: LocalDateTime,
+    targets: Macros,
     modifier: Modifier = Modifier,
     parse: suspend (String) -> MealParseResult = { MealParseResult.Unavailable },
+    onSave: (MealDraft) -> Unit = { },
     onCancel: () -> Unit = { },
 ) {
     var mode by remember { mutableStateOf(LogMealMode.TEXT) }
@@ -181,6 +206,18 @@ fun LogMealScreen(
     var parseState by remember { mutableStateOf(MealParseUiState()) }
     val samples = remember { mealSamplePrompts() }
     val scope = rememberCoroutineScope()
+
+    // Keyed on `parseState.items`, not created once: a fresh parse (or a mode
+    // switch, which resets `parseState` to a fresh empty instance) must reset
+    // both the editable positions and which one is mid-edit. A failed retry
+    // leaves `parseState.items` the same list — see `afterParseResult` — so
+    // this key does not fire and the previous parse's edits survive it, which
+    // is the same "уже разобранные позиции остаются правимыми" guarantee
+    // [MealParseUiState] itself documents.
+    var loggedItems by
+        remember(parseState.items) { mutableStateOf(parseState.items.map { LoggedMealItem(it, it) }) }
+    var editingIndex by remember(parseState.items) { mutableStateOf<Int?>(null) }
+    val currentItems = loggedItems.map { it.current }
 
     fun switchMode(next: LogMealMode) {
         if (next == mode) return
@@ -198,6 +235,25 @@ fun LogMealScreen(
         scope.launch { parseState = parseState.afterParseResult(parse(chatText)) }
     }
 
+    fun toggleEdit(index: Int) {
+        editingIndex = if (editingIndex == index) null else index
+    }
+
+    fun changeGrams(
+        index: Int,
+        grams: Int,
+    ) {
+        loggedItems =
+            loggedItems.mapIndexed { i, entry ->
+                if (i == index) entry.copy(current = rescaleMealItem(entry.original, grams)) else entry
+            }
+    }
+
+    fun deleteItem(index: Int) {
+        loggedItems = loggedItems.filterIndexed { i, _ -> i != index }
+        editingIndex = null
+    }
+
     Column(
         modifier
             .fillMaxSize()
@@ -208,47 +264,113 @@ fun LogMealScreen(
         LogMealHeader(now, onCancel)
         LogMealTitleBlock()
 
-        Column(
-            Modifier.padding(horizontal = CadenceSpacing.lg),
-            verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
-        ) {
-            CadenceSegmented(
-                options = LogMealMode.entries,
-                selected = mode,
-                onSelect = ::switchMode,
-                label = { it.labelRu },
-            )
+        LogMealBody(
+            mode = mode,
+            onSwitchMode = ::switchMode,
+            chatText = chatText,
+            onChatTextChange = { chatText = it },
+            placeholder = samples[sampleIndex].placeholder,
+            onCycleSample = {
+                sampleIndex = (sampleIndex + 1) % samples.size
+                chatText = samples[sampleIndex].transcript
+            },
+            onParse = ::runParse,
+            parseState = parseState,
+            targets = targets,
+            currentItems = currentItems,
+            editingIndex = editingIndex,
+            onToggleEdit = ::toggleEdit,
+            onGramsChange = ::changeGrams,
+            onDelete = ::deleteItem,
+            onSave = {
+                onSave(MealDraft(name = parseState.mealName, source = MealSource.AI_TEXT, items = currentItems))
+            },
+        )
+    }
+}
 
-            when (mode) {
-                LogMealMode.TEXT -> {
-                    TextModeInput(
-                        text = chatText,
-                        onTextChange = { chatText = it },
-                        placeholder = samples[sampleIndex].placeholder,
-                        parsing = parseState.parsing,
-                        onCycleSample = {
-                            sampleIndex = (sampleIndex + 1) % samples.size
-                            chatText = samples[sampleIndex].transcript
-                        },
-                        onParse = ::runParse,
-                    )
-                }
+/**
+ * Everything below the title: the mode picker, each mode's own content, the
+ * parse-state notices, the item list and the footer. Pulled out of
+ * [LogMealScreen] itself so that function's own job — owning the state a
+ * grams edit rescales from — is not also its cyclomatic complexity; this
+ * composable owns none of that state, only what it takes to render it.
+ */
+@Suppress("LongParameterList")
+@Composable
+private fun LogMealBody(
+    mode: LogMealMode,
+    onSwitchMode: (LogMealMode) -> Unit,
+    chatText: String,
+    onChatTextChange: (String) -> Unit,
+    placeholder: String,
+    onCycleSample: () -> Unit,
+    onParse: () -> Unit,
+    parseState: MealParseUiState,
+    targets: Macros,
+    currentItems: List<MealItem>,
+    editingIndex: Int?,
+    onToggleEdit: (Int) -> Unit,
+    onGramsChange: (Int, Int) -> Unit,
+    onDelete: (Int) -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(
+        Modifier.padding(horizontal = CadenceSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
+    ) {
+        CadenceSegmented(
+            options = LogMealMode.entries,
+            selected = mode,
+            onSelect = onSwitchMode,
+            label = { it.labelRu },
+        )
 
-                LogMealMode.PHOTO -> {
-                    UnavailableModeNotice(PHOTO_UNAVAILABLE)
-                }
-
-                LogMealMode.VOICE -> {
-                    UnavailableModeNotice(VOICE_UNAVAILABLE)
-                }
+        when (mode) {
+            LogMealMode.TEXT -> {
+                TextModeInput(
+                    text = chatText,
+                    onTextChange = onChatTextChange,
+                    placeholder = placeholder,
+                    parsing = parseState.parsing,
+                    onCycleSample = onCycleSample,
+                    onParse = onParse,
+                )
             }
 
-            if (parseState.parsing) ParsingNotice()
-            if (parseState.failed) FailedNotice()
-            if (parseState.showsHeardChip) HeardChip(parseState.transcript)
+            LogMealMode.PHOTO -> {
+                UnavailableModeNotice(PHOTO_UNAVAILABLE)
+            }
 
-            ItemsStub(parseState.items)
+            LogMealMode.VOICE -> {
+                UnavailableModeNotice(VOICE_UNAVAILABLE)
+            }
         }
+
+        if (parseState.parsing) ParsingNotice()
+        if (parseState.failed) FailedNotice()
+        if (parseState.showsHeardChip) HeardChip(parseState.transcript)
+
+        // Hidden rather than drawn empty: an empty parse is unreachable
+        // through a canned parser, but deleting every position is not, and
+        // «Обед · 0 позиций» over a blank strip is not a state the spec's
+        // step-5 section describes.
+        if (currentItems.isNotEmpty()) {
+            LogMealItemsSection(
+                mealName = parseState.mealName,
+                items = currentItems,
+                targets = targets,
+                editingIndex = editingIndex,
+                onToggleEdit = onToggleEdit,
+                onGramsChange = onGramsChange,
+                onDelete = onDelete,
+            )
+        }
+
+        // Always drawn, even at `idle` — the prototype's footer sits outside
+        // every stage branch (`LogMealScreen.tsx:344-394`), inactive until
+        // there is something to save rather than absent until there is.
+        LogMealFooter(items = currentItems, onSave = onSave)
     }
 }
 
@@ -409,18 +531,4 @@ private fun HeardChip(transcript: String) {
             CadenceBody(transcript, color = Cadence.palette.ink2)
         }
     }
-}
-
-/**
- * Stands in for the item list, the macro totals strip and the «Сохранить»
- * footer (`LogMealScreen.tsx:270-394`), none of which this pass builds.
- *
- * Shows the true item count and nothing else — never a fabricated number —
- * so that a mode-switch test and an Unavailable test have a real, tagged
- * fact to read even though the rows themselves are not drawn yet.
- */
-@Composable
-private fun ItemsStub(items: List<MealItem>) {
-    if (items.isEmpty()) return
-    CadenceMeta(text = items.size.toString(), modifier = Modifier.testTag(LOG_MEAL_ITEMS_STUB_TAG))
 }
