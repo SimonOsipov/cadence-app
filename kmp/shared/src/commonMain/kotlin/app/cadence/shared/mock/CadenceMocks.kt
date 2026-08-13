@@ -51,6 +51,7 @@ import app.cadence.shared.repository.MealLogResult
 import app.cadence.shared.repository.MeasurementsRepository
 import app.cadence.shared.repository.MetricDetail
 import app.cadence.shared.repository.MetricSeries
+import app.cadence.shared.repository.NUTRITION_WEEK_DAYS
 import app.cadence.shared.repository.NutritionDay
 import app.cadence.shared.repository.NutritionRepository
 import app.cadence.shared.repository.NutritionWeek
@@ -68,12 +69,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
-
-/**
- * Days in [NutritionRepository.week] — the seven ending on whatever date is
- * asked for, not aligned to any particular weekday.
- */
-private const val NUTRITION_WEEK_DAYS = 7
 
 /**
  * Everything a screen can ask for, and one place it is assembled.

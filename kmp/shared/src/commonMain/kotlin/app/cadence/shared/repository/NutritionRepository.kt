@@ -28,8 +28,16 @@ data class NutritionWeekDay(
     val proteinG: Int,
 )
 
-/** How many days [NutritionWeek.days] carries — one column per day of `CadenceWeekBars`. */
-private const val NUTRITION_WEEK_DAYS = 7
+/**
+ * How many days [NutritionWeek.days] carries — one column per day of `CadenceWeekBars`.
+ *
+ * `internal`, not `private`: `CadenceMocks`' own `MockNutritionRepository.week()` builds
+ * the seven-day walk this constant bounds, and used to carry its own same-named,
+ * same-valued copy rather than reading this one — two unlinked literals both claiming
+ * "seven days" is the defect [NutritionWeek]'s `init` guard exists to rule out, moved one
+ * level up rather than fixed. This module owns the number; `CadenceMocks` reads it.
+ */
+internal const val NUTRITION_WEEK_DAYS = 7
 
 /**
  * Seven days ending on the date [NutritionRepository.week] was asked for, oldest first.

@@ -84,9 +84,16 @@ private fun twoItemMeal(): Meal =
  * `meals.size == 2`, not 1. A one-meal fixture cannot tell `formatInteger(meals.size)`
  * apart from a hardcoded `"1"`, or `pluralMeals(mealCount)` apart from the literal
  * «приём» — both read the same at `count == 1`, the exact one-shape-hides-an-axis defect
- * this branch keeps reintroducing. Never expanded by any test, so its own item is never
- * rendered — only its collapsed card's header and kcal readout need to stay distinct
- * from [twoItemMeal]'s.
+ * this branch keeps reintroducing.
+ *
+ * Its own single item plays the same role a third time: `MealFeedCard`'s header renders
+ * `russianPlural(meal.items.size, …)` for *every* meal, expanded or not — [twoItemMeal]
+ * alone (always two items) cannot tell that call apart from a hardcoded «2 позиции», since
+ * every rendered item count on screen would then read 2. This meal's own header, «1
+ * позиция», is the one count on screen that a wrong declension changes. Never expanded by
+ * any test, so its single item's own row (and the `150 г` its grams share with
+ * [twoItemMeal]'s chicken) is never rendered — only its collapsed card's header and kcal
+ * readout need to stay distinct from [twoItemMeal]'s.
  */
 private fun singleItemMeal(): Meal =
     Meal(
@@ -166,7 +173,10 @@ class NutritionScreenTest {
      * told apart from a hardcoded `"1"`, and `pluralMeals(1)` cannot be told apart from
      * the literal «приём» — both mutations left the whole suite green against a
      * one-meal fixture. [singleItemMeal] is never expanded, so it only has to keep its
-     * own collapsed header and kcal readout distinct from [twoItemMeal]'s.
+     * own collapsed header and kcal readout distinct from [twoItemMeal]'s — but its own
+     * header's «1 позиция» is what tells `MealFeedCard`'s `russianPlural(meal.items.size,
+     * …)` call apart from a hardcoded «2 позиции», since [twoItemMeal] alone (always two
+     * items) cannot.
      */
     @Test
     fun aLoggedMealCardShowsItsHeaderThenItsRoundedItemsOnExpand() =
@@ -195,6 +205,9 @@ class NutritionScreenTest {
             // meal's own total protein.
             onNodeWithText("09:15 · 2 позиции · 50 г белка").assertExists()
             onNodeWithText("Обед").assertExists()
+            // The second meal's own header — its «1 позиция» is the one item-count
+            // declension on screen a hardcoded «2 позиции» would get wrong.
+            onNodeWithText("07:00 · 1 позиция · 3 г белка").assertExists("the second meal's own item-count declension")
             // The card's own kcal readout: the exact fold rounded once (395), not the
             // sum of each item's own already-rounded kcal (248 + 148 = 396) — the field
             // that actually distinguishes the two, unlike the protein line above (497
