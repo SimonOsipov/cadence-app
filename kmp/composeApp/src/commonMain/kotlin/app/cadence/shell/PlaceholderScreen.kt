@@ -21,15 +21,9 @@ import app.cadence.design.CadenceTitle
 import app.cadence.shared.currentPlatform
 
 /**
- * Scaffolding, not a screen. Every route renders one until steps 3–9 of the
- * block replace it with the ported article, and each replacement is one line in
- * [CadenceShell].
- *
- * It shows the platform name because `AppTest` used to prove `:shared` is linked
- * into the UI and not merely into the module graph, and the showcase that
- * carried that proof is gone. **Whoever deletes the last placeholder owes that
- * assertion a new home** — a real screen must not grow a platform label to keep
- * a test green.
+ * Scaffolding, not a screen — each route's replacement is one line in [CadenceShell].
+ * Shows the platform name because `AppTest` proves `:shared` is linked into the UI via this
+ * label; whoever deletes the last placeholder owes that assertion a new home.
  */
 @Composable
 fun PlaceholderScreen(
@@ -57,9 +51,8 @@ fun PlaceholderScreen(
                     onClick = onBack,
                 )
             }
-            // «Экран «Сегодня»», not «Сегодня»: the bare label is also the tab's
-            // own text, and two nodes reading the same word make every
-            // assertion about which screen is showing ambiguous.
+            // Not the bare label: it's also the tab's own text, and two nodes with the same
+            // word make every assertion about which screen is showing ambiguous.
             CadenceTitle("Экран «$title»")
             CadenceMeta("заглушка · ${currentPlatform().name}")
             if (action != null) {
@@ -68,10 +61,8 @@ fun PlaceholderScreen(
         }
 
         if (destination != null) {
-            // In the prototype the bar lives inside the four screens that have
-            // one, not in the navigator — Schedule and Journal have none. The
-            // port keeps it there rather than hoisting it into the shell,
-            // because hoisting it would put a bar on the screens without one.
+            // Kept per-screen like the prototype, not hoisted to the shell: Schedule and
+            // Journal have no bar, and hoisting would put one there too.
             CadenceTabBar(active = destination, onSelect = onSelectTab, onLog = onLog)
         }
     }

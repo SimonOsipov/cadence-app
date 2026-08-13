@@ -66,8 +66,7 @@ class ActionChooserSheetTest {
             var picked = ""
             openSheet(picked = { picked = it })
 
-            // The two rows sit one above the other and carry the same shape; a
-            // port that wires both to the same lambda looks identical.
+            // Same shape, same lambda risk — a port that wires both rows together looks identical.
             onNodeWithText("Записать приём пищи").performClick()
             assertEquals("meal", picked)
 
@@ -90,13 +89,8 @@ class ActionChooserSheetTest {
     @Test
     fun theDueLineIsTheOneItWasGivenAndNotACompoundOfItsOwn() =
         runComposeUiTest {
-            // This row read «Семаглутид · 0,25 мг ждёт» as a literal for three
-            // blocks after the repositories landed, with the live summary
-            // already in the caller's scope — so a patient on another compound,
-            // or past the first titration band, was told the wrong drug and the
-            // wrong dose on the sheet they open to record one. Asserting the
-            // seed's own line would not have caught it: it has to be a line the
-            // seed does not produce.
+            // Regressed to a literal for three blocks with the live summary already in scope.
+            // Asserting the seed's own line wouldn't catch it — needs a line the seed can't produce.
             openSheet(Day(doseDue = "BPC-157 · 250 мкг ждёт"))
 
             onNodeWithText("BPC-157 · 250 мкг ждёт").assertIsDisplayed()
@@ -120,20 +114,16 @@ class ActionChooserSheetTest {
             openSheet(Day(doseLogged = true, mealCount = 2, mealKcal = 1240))
 
             onNodeWithText("Уже записано сегодня · открыть или поправить").assertIsDisplayed()
-            // Both formatting rules in one string: the plural and the
-            // grouping. The separator here is U+00A0, and it has to be —
-            // the first version of this line carried a plain space and
-            // failed against a correct implementation, which is what an
-            // invisible character does to a literal.
+            // Separator is U+00A0, not a plain space: an earlier version of this line used a
+            // plain space and failed against a correct implementation.
             onNodeWithText("2 приёма сегодня · 1\u00A0240 ккал").assertIsDisplayed()
         }
 
     @Test
     fun theMealNounFollowsTheCount() =
         runComposeUiTest {
-            // A second count, in the other plural form. Without it the row
-            // passes with «приёма» hardcoded — which it did, until this
-            // test was added because a mutation survived.
+            // Without this, the row passes with «приёма» hardcoded — which it did, until a
+            // surviving mutation added this test.
             openSheet(Day(mealCount = 5, mealKcal = 2100))
 
             onNodeWithText("5 приёмов сегодня · 2\u00A0100 ккал").assertIsDisplayed()
