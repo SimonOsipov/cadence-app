@@ -156,6 +156,12 @@ class NutritionScreenTest {
                 }
             }
 
+            // The hero's own non-empty branch and its `pluralMeals` declension — the
+            // other half of `dayOf`'s hardcoded `meals = emptyList()` this fixture reaches.
+            onNodeWithText("1 приём.").assertExists("the hero's non-empty branch")
+            // The feed's own bare meal counter.
+            onNodeWithText("1").assertExists("the feed's own meal counter")
+
             // Collapsed: the card's own header line — time, position count and the
             // meal's own total protein, tenths rounded once, not each item's own.
             onNodeWithText("09:15 · 2 позиции · 50 г белка").assertExists()
