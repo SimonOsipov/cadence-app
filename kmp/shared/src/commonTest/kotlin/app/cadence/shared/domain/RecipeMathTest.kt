@@ -201,6 +201,66 @@ class RecipeMathTest {
         assertNull(pick(emptyList(), emptyList(), pickConsumed, pickGoals))
     }
 
+    @Test
+    fun pickScoresPerServingRatherThanTheWholeRecipesTotals() {
+        // A: 1 serving, 100 g ingredient -> 500 kcal / 100 g protein, both
+        // per serving and in total (one serving makes the two agree).
+        val ingredientA = ingredient("a", kcalTenths = 5000, proteinGTenths = 1000)
+        val recipeA = recipe("a", servings = 1, ingredients = listOf(RecipeIngredient(IngredientId("a"), 100)))
+
+        // B: 2 servings, one 200 g ingredient at 300 kcal / 80 g protein per
+        // 100 g -> totals of 600 kcal / 160 g, but per serving (halved) only
+        // 300 kcal / 80 g. Both bases keep B under the 1250 kcal ceiling, so
+        // the only thing that can move the winner is which basis scores the
+        // protein: per serving, B's 80 g loses to A's 100 g; scored on whole
+        // totals, B's 160 g would beat A's 100 g instead. That is exactly
+        // the mutation this test exists to catch — `perServing` swapped for
+        // `totals` at the scoring call site.
+        val ingredientB = ingredient("b", kcalTenths = 3000, proteinGTenths = 800)
+        val recipeB = recipe("b", servings = 2, ingredients = listOf(RecipeIngredient(IngredientId("b"), 200)))
+
+        val result = pick(listOf(recipeA, recipeB), listOf(ingredientA, ingredientB), pickConsumed, pickGoals)
+
+        assertEquals(
+            RecipeId("a"),
+            result?.recipe?.id,
+            "per-serving protein must decide, not the two-serving recipe's total",
+        )
+    }
+
+    @Test
+    fun aRecipeStrictlyUnderTheSoftCeilingBufferStaysUnpenalized() {
+        // remaining.kcal is 1000; the soft ceiling is remaining.kcal + 250 =
+        // 1250. 1200 kcal sits strictly between the two, so it must count as
+        // "fits" — this is what pins the 250 buffer itself: shrinking it to
+        // 0 (ceiling 1000) would push 1200 kcal over and flip the winner.
+        val (fits, fitsIngredient) = onePortionRecipe("fits", kcal = 1200, proteinG = 100)
+        val (never, neverIngredient) = onePortionRecipe("never", kcal = 500, proteinG = 90)
+
+        val result = pick(listOf(fits, never), listOf(fitsIngredient, neverIngredient), pickConsumed, pickGoals)
+
+        assertEquals(
+            RecipeId("fits"),
+            result?.recipe?.id,
+            "1200 kcal is under the 1250 kcal ceiling and must stay unpenalized",
+        )
+    }
+
+    @Test
+    fun aRecipeExactlyAtTheSoftCeilingStaysUnpenalized() {
+        // Exactly at the ceiling (1250 kcal) must still "fit" — the
+        // prototype's own `ps.kcal <= rem.kcal + 250` is inclusive. Pins the
+        // `>` in the over-ceiling comparison against a `>=` mutant, which
+        // would penalize this recipe and flip the winner to `never`.
+        val (atCeiling, atCeilingIngredient) = onePortionRecipe("at-ceiling", kcal = 1250, proteinG = 100)
+        val (never, neverIngredient) = onePortionRecipe("never", kcal = 500, proteinG = 90)
+
+        val result =
+            pick(listOf(atCeiling, never), listOf(atCeilingIngredient, neverIngredient), pickConsumed, pickGoals)
+
+        assertEquals(RecipeId("at-ceiling"), result?.recipe?.id, "exactly at the ceiling must still count as fitting")
+    }
+
     // ── filteredByTypeAndTag ─────────────────────────────────────────
     //
     // A hand-built fixture, not MockSeed: every one of MockSeed's six seed

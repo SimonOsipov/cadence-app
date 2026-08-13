@@ -221,20 +221,32 @@ fun rescaleMealItem(
         grams = grams,
         macros =
             MacrosTenths(
-                kcalTenths = scaleTenths(original.macros.kcalTenths, grams, original.grams),
-                proteinGTenths = scaleTenths(original.macros.proteinGTenths, grams, original.grams),
-                carbsGTenths = scaleTenths(original.macros.carbsGTenths, grams, original.grams),
-                fatGTenths = scaleTenths(original.macros.fatGTenths, grams, original.grams),
+                kcalTenths = scaleRounded(original.macros.kcalTenths, grams, original.grams),
+                proteinGTenths = scaleRounded(original.macros.proteinGTenths, grams, original.grams),
+                carbsGTenths = scaleRounded(original.macros.carbsGTenths, grams, original.grams),
+                fatGTenths = scaleRounded(original.macros.fatGTenths, grams, original.grams),
             ),
     )
 }
 
-/** Round-half-up scale of a tenths value by `newGrams / originalGrams`. */
-private fun scaleTenths(
-    tenths: Int,
-    newGrams: Int,
-    originalGrams: Int,
-): Int = floor(tenths.toDouble() * newGrams / originalGrams + ROUND_HALF).toInt()
+/**
+ * Round-half-up scale of [value] by `numerator / denominator` — the tie
+ * always rounds up, never to even, matching [MacrosTenths]'s KDoc on why a
+ * patient reading a whole number expects a half to go up.
+ *
+ * `internal`, not `private`: `RecipeMath.kt`'s per-serving divide and its
+ * requested-servings grams scale are the same "scale this integer by a
+ * ratio, round half up" arithmetic as [rescaleMealItem]'s grams scale here —
+ * a division by servings is `scaleRounded(total, 1, servings)`, and a grams
+ * scale by `requestedServings / servings` is `scaleRounded(grams,
+ * requestedServings, servings)`. One implementation shared across both
+ * files rather than a second copy of the rule living beside this one.
+ */
+internal fun scaleRounded(
+    value: Int,
+    numerator: Int,
+    denominator: Int,
+): Int = floor(value.toDouble() * numerator / denominator + ROUND_HALF).toInt()
 
 /**
  * §03's `nutrition_targets` — «set by the clinic per patient — was a hardcoded

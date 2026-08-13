@@ -93,7 +93,7 @@ class NutritionTest {
      *
      * The 100 g → 90 g step is chosen so protein actually lands on a tie:
      * 1,5 g × 90/100 = 13,5 tenths exactly. A fixture that merely *differs*
-     * from the original at 90 g would pass under a truncating `scaleTenths`
+     * from the original at 90 g would pass under a truncating `scaleRounded`
      * too (13 instead of 14) — asserting the intermediate's exact tenths is
      * what pins round-half-up here, not just "it moved".
      */

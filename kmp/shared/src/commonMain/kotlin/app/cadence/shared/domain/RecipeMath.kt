@@ -1,7 +1,5 @@
 package app.cadence.shared.domain
 
-import kotlin.math.floor
-
 // step-8: the recipe context's pure arithmetic — an ingredient's macros for N
 // grams, a recipe's totals and per-serving figures, its total time, the
 // remainder against a patient's goals, the pick score, the library filter,
@@ -10,7 +8,6 @@ import kotlin.math.floor
 
 private const val REFERENCE_GRAMS = 100
 private const val TENTHS_PER_UNIT = 10
-private const val ROUND_HALF = 0.5
 
 /**
  * [grams] worth of this ingredient's macros, scaled from its 100 g reference
@@ -46,28 +43,28 @@ fun Recipe.totals(ingredients: List<Ingredient>): MacrosTenths {
 
 /**
  * [totals] divided evenly across [Recipe.servings], round-half-up per field —
- * recipe/data.ts's `perServing`.
+ * recipe/data.ts's `perServing`. The division is [scaleRounded] at
+ * `numerator = 1`, the same round-half-up rule [rescaleMealItem] uses for its
+ * grams ratio, not a second copy of it.
  */
 fun Recipe.perServing(ingredients: List<Ingredient>): MacrosTenths {
     require(servings > 0) { "a recipe with zero servings has no per-serving rate to divide by" }
     val total = totals(ingredients)
     return MacrosTenths(
-        kcalTenths = divideTenths(total.kcalTenths, servings),
-        proteinGTenths = divideTenths(total.proteinGTenths, servings),
-        carbsGTenths = divideTenths(total.carbsGTenths, servings),
-        fatGTenths = divideTenths(total.fatGTenths, servings),
+        kcalTenths = scaleRounded(total.kcalTenths, numerator = 1, denominator = servings),
+        proteinGTenths = scaleRounded(total.proteinGTenths, numerator = 1, denominator = servings),
+        carbsGTenths = scaleRounded(total.carbsGTenths, numerator = 1, denominator = servings),
+        fatGTenths = scaleRounded(total.fatGTenths, numerator = 1, denominator = servings),
     )
 }
-
-private fun divideTenths(
-    tenths: Int,
-    servings: Int,
-): Int = floor(tenths.toDouble() / servings + ROUND_HALF).toInt()
 
 /** Prep plus cook, treating either absent minute count as zero — recipe/data.ts's `totalTime`. */
 fun Recipe.totalTimeMin(): Int = (prepMin ?: 0) + (cookMin ?: 0)
 
-/** What is left of a patient's daily goals after [remaining]'s two fields — floored at zero, never negative. */
+/**
+ * What is left of a patient's daily goals after what they have already
+ * eaten — [remaining]'s two fields, floored at zero, never negative.
+ */
 data class Remaining(
     val kcal: Int,
     val proteinG: Int,
@@ -156,7 +153,9 @@ fun List<Recipe>.filteredByTypeAndTag(
  * ingredient's own grams before its macros are computed — never applied to
  * [totals] after the fact, so a two-serving recipe logged at one serving
  * rescales every ingredient row exactly the way a half-sized version of the
- * same recipe would.
+ * same recipe would. The grams scale is [scaleRounded] at
+ * `numerator = requestedServings, denominator = servings` — the same
+ * round-half-up rule [rescaleMealItem] uses for its own grams ratio.
  */
 fun Recipe.toMealDraft(
     ingredients: List<Ingredient>,
@@ -166,11 +165,10 @@ fun Recipe.toMealDraft(
     require(requestedServings > 0) { "requestedServings must be positive, got $requestedServings" }
 
     val byId = ingredients.associateBy { it.id }
-    val factor = requestedServings.toDouble() / servings
     val items =
         this.ingredients.map { row ->
             val ingredient = byId[row.ingredientId] ?: error("no ingredient with id ${row.ingredientId.raw}")
-            val grams = floor(row.grams * factor + ROUND_HALF).toInt()
+            val grams = scaleRounded(row.grams, numerator = requestedServings, denominator = servings)
             MealItem(name = ingredient.nameRu, grams = grams, macros = ingredient.macrosFor(grams))
         }
 
