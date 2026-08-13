@@ -63,11 +63,15 @@ const val LOG_MEAL_TOTALS_TAG = "log-meal-totals"
 const val LOG_MEAL_SAVE_TAG = "log-meal-save"
 
 /**
- * One totals-strip column's value and «/ {цель}» caption, merged onto this
- * tag so a test can read both with one `assertTextEquals(value, caption)` —
- * [id] is stable English, kept separate from the Russian [TotalsColumn.label]
- * for the same reason `macroTrackTag`/`macroFillTag` in `CadenceMacroBar.kt`
- * key on a stable id rather than display copy.
+ * One totals-strip column's own label, value and «/ {цель}» caption, all
+ * merged onto this tag so a test can read the three with one
+ * `assertTextEquals(label, value, caption)` — the label has to be part of
+ * that merged node, not just the number, or a swap of two columns' labels
+ * (protein rendering fat's, say) would leave every value/caption pair still
+ * correct and no assertion able to see it. [id] is stable English, kept
+ * separate from the Russian [TotalsColumn.label] for the same reason
+ * `macroTrackTag`/`macroFillTag` in `CadenceMacroBar.kt` key on a stable id
+ * rather than display copy.
  */
 fun logMealTotalTag(id: String) = "log-meal-total-$id"
 
