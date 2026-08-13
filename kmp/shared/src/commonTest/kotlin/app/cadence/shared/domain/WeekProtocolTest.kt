@@ -8,8 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
-// The prototype's three rows: a weekly injection, a daily one, and a nightly
-// supplement — the shape the strip has to draw whatever day it is.
+// The prototype's three rows: a weekly injection, a daily one, and a nightly supplement.
 
 private val START = LocalDate(2026, 5, 10)
 private val PID = ProtocolId("pr")
@@ -89,9 +88,8 @@ private fun logged(
 class WeekProtocolTest {
     @Test
     fun everyItemOfTheProtocolGetsARowWhateverDayItIs() {
-        // The strip is «Протокол этой недели», not «сегодня»: the weekly
-        // injection is on it on a Wednesday too. A projection built from the
-        // day's occurrences would drop it six days out of seven.
+        // The strip is «Протокол этой недели», not «сегодня»: a projection built from the
+        // day's occurrences would drop the weekly injection six days out of seven.
         val wednesday = LocalDate(2026, 5, 20)
 
         assertEquals(listOf(SEMA, BPC, GLYCINE), rowsOn(wednesday).map { it.itemId })
@@ -99,8 +97,8 @@ class WeekProtocolTest {
 
     @Test
     fun theRowCarriesTheDoseOfTheWeekItIsIn() {
-        // Not the protocol's first phase. The prototype's row reads «Семаглутид
-        // · 0,25 мг» hardcoded, and stays 0,25 for all twelve weeks.
+        // Not the protocol's first phase: the prototype's row is hardcoded «0,25 мг» for all
+        // twelve weeks.
         assertEquals(Dose(0.25, DoseUnit.MG), rowsOn(LocalDate(2026, 5, 31)).first().dose)
         assertEquals(Dose(0.5, DoseUnit.MG), rowsOn(LocalDate(2026, 6, 10)).first().dose)
         assertEquals(Dose(1.0, DoseUnit.MG), rowsOn(LocalDate(2026, 7, 8)).first().dose)
@@ -108,8 +106,6 @@ class WeekProtocolTest {
 
     @Test
     fun anItemWithNoPhasesHasNoDoseRatherThanAWrongOne() {
-        // The supplement carries none in §03's model, and a row that borrowed
-        // its neighbour's would be a number on screen with no source.
         assertEquals(null, rowsOn(LocalDate(2026, 5, 20)).first { it.itemId == GLYCINE }.dose)
     }
 
@@ -126,25 +122,19 @@ class WeekProtocolTest {
 
     @Test
     fun anItemNotDueTodayHasNoStatusForToday() {
-        // Wednesday has no semaglutide occurrence, so «сегодня · ждёт» would be
-        // a claim about a day that does not have one.
         assertEquals(null, rowsOn(LocalDate(2026, 5, 20)).first { it.itemId == SEMA }.todayStatus)
         assertTrue(rowsOn(LocalDate(2026, 5, 20)).first { it.itemId == BPC }.todayStatus != null)
     }
 
     @Test
     fun aRowNamesItsCompoundRatherThanCarryingAnId() {
-        // §11's Today row is «Семаглутид · 0,25 мг». A screen holding an id
-        // would need a repository to turn it into a word, which is exactly
-        // what a screen is not allowed to have.
         assertEquals("SEMA", rowsOn(LocalDate(2026, 5, 20)).first().compound?.nameRu)
     }
 
     @Test
     fun eachRowGetsItsOwnCompoundAndNotTheFirstOne() {
-        // The previous version passed an empty compound list, so it asserted
-        // «no compounds at all» rather than the per-row mapping — and
-        // `firstOrNull { it.id.raw.isNotEmpty() }` survived it.
+        // An earlier version passed an empty compound list, asserting "no compounds" rather
+        // than the per-row mapping.
         assertEquals(
             listOf("SEMA", "BPC", "GLYCINE"),
             rowsOn(LocalDate(2026, 5, 20)).map { it.compound?.nameRu },
@@ -163,8 +153,6 @@ class WeekProtocolTest {
 
     @Test
     fun theRowCarriesTheKindTheStripDrawsItBy() {
-        // The supplement's whole treatment — its tile colour and its subtitle —
-        // hangs off this, and nothing asserted it.
         assertEquals(
             listOf(ProtocolItemKind.INJECTION, ProtocolItemKind.INJECTION, ProtocolItemKind.SUPPLEMENT),
             rowsOn(LocalDate(2026, 5, 20)).map { it.kind },
@@ -184,12 +172,8 @@ class WeekProtocolTest {
 
     @Test
     fun aTwiceDailyItemIsNotDoneUntilBothSlotsAre() {
-        // `firstOrNull` was here, and it read the 08:00 slot for the whole day:
-        // log the morning BPC-157 injection and the row said «Сегодня ·
-        // записано» with the 20:00 one still due. `statusOf` gets this right one
-        // layer down — its KDoc is about exactly this failure — and the strip
-        // undid it, on the surface a patient checks to decide whether they have
-        // finished for the day.
+        // `firstOrNull` was here once, and read the 08:00 slot for the whole day: logging
+        // the morning injection said «Сегодня · записано» with the 20:00 one still due.
         val day = LocalDate(2026, 5, 20)
 
         fun bpcStatus(events: List<DoseEvent>) = rowsOn(day, events).first { it.itemId == BPC }.todayStatus
@@ -204,8 +188,6 @@ class WeekProtocolTest {
             bpcStatus(listOf(logged(BPC, day, LocalTime(8, 0)), logged(BPC, day, LocalTime(20, 0)))),
             "both slots logged",
         )
-        // And a single-slot item is unaffected — the aggregate must not turn
-        // «one occurrence, done» into anything else.
         assertEquals(
             OccurrenceStatus.PENDING,
             bpcStatus(emptyList()),
@@ -215,9 +197,8 @@ class WeekProtocolTest {
 
     @Test
     fun theStripCarriesWhichItemsCanBeLogged() {
-        // The dose wizard offers only loggable rows, and this is the one line
-        // that decides. Guarded here rather than only through a simulator UI
-        // test: a mapping in `shared` should fail in `shared`.
+        // Guarded here, not only through a simulator UI test: a mapping in `shared` should
+        // fail in `shared`.
         val rows = rowsOn(LocalDate(2026, 5, 20))
 
         assertEquals(
