@@ -98,6 +98,21 @@ class CadenceShellDataTest {
         }
 
     @Test
+    fun theRecentMealsListOnTheRealTodayScreenReadsTheRepositoryAndTheMocksZone() =
+        runComposeUiTest {
+            // `TodayScreenTest` and `CadenceFormatTest` both drive `TodayScreen`
+            // directly with hand-built `meals`/`zone` arguments — neither one
+            // exercises `CadenceApp`'s own `todayMeals =
+            // mocks.nutrition.day(today.date).meals` and `zone = mocks.zone`
+            // lines. Mutating either to a constant (`emptyList()`, `TimeZone.UTC`)
+            // left every other gate green; this is the one path that reads them.
+            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
+
+            // The seeded breakfast, 06:30 UTC — 09:30 in Moscow, `mocks().zone`.
+            onNodeWithText("09:30 · 1 позиция").performScrollTo().assertIsDisplayed()
+        }
+
+    @Test
     fun theAppOpensOnTheRealTodayScreen() =
         runComposeUiTest {
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }

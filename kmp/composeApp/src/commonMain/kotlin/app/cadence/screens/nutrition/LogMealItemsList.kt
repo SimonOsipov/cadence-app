@@ -35,7 +35,7 @@ import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceStepper
 import app.cadence.format.formatDecimal
 import app.cadence.format.formatInteger
-import app.cadence.format.russianPlural
+import app.cadence.format.pluralItems
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.MealItem
@@ -146,7 +146,7 @@ private fun ItemsHeaderLine(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
     ) {
-        val posWord = russianPlural(items.size, "позиция", "позиции", "позиций")
+        val posWord = pluralItems(items.size)
         CadenceEyebrow("$mealName · ${items.size} $posWord")
         CadenceMeta("${tenthsLabel(items.foldedMacros().kcalTenths)} ккал")
     }

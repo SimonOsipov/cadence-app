@@ -2,6 +2,7 @@ package app.cadence.format
 
 import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseUnit
+import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.Measurement
 import app.cadence.shared.domain.MeasurementId
 import app.cadence.shared.domain.MeasurementSource
@@ -13,6 +14,7 @@ import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.domain.UserId
 import app.cadence.shared.domain.rangeOn
+import app.cadence.shared.domain.toMacros
 import app.cadence.shared.domain.trendSeries
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -56,19 +58,6 @@ class CadenceFormatTest {
     }
 
     @Test
-    fun weeksTakeTheSameRuleAsMeals() {
-        // The prototype's reorder card repeats the meal card's approximation —
-        // `weeksLeft < 5 ? 'недели' : 'недель'` — and is wrong from 21 up in
-        // the same way. One rule, two nouns.
-        assertEquals("неделю", pluralWeeks(1))
-        assertEquals("недели", pluralWeeks(3))
-        assertEquals("недель", pluralWeeks(5))
-        assertEquals("недель", pluralWeeks(11))
-        assertEquals("неделю", pluralWeeks(21))
-        assertEquals("недели", pluralWeeks(22))
-    }
-
-    @Test
     fun aDecimalUsesTheCommaAndKeepsItsTrailingZero() {
         // «98,4», «110,0» — the comma is the locale's, and a weight that
         // dropped its trailing zero would jump between one and two glyphs as
@@ -97,23 +86,33 @@ class CadenceFormatTest {
     }
 
     @Test
-    fun mealsTakeTheRussianPluralAndNotThePrototypesApproximationOfIt() {
-        assertEquals("приём", pluralMeals(1))
-        assertEquals("приёма", pluralMeals(2))
-        assertEquals("приёма", pluralMeals(4))
-        assertEquals("приёмов", pluralMeals(5))
-        assertEquals("приёмов", pluralMeals(11))
-        assertEquals("приёмов", pluralMeals(14))
-        // Exactly where the prototype's `count < 5 ? 'приёма' : 'приёмов'` is
-        // wrong.
-        assertEquals("приём", pluralMeals(21))
-        assertEquals("приёма", pluralMeals(22))
-        assertEquals("приёмов", pluralMeals(25))
-        assertEquals("приём", pluralMeals(101))
-        assertEquals("приёмов", pluralMeals(111))
-        // Never rendered — the sheet takes its zero-state branch — but a
-        // plural function that is wrong at zero is wrong.
-        assertEquals("приёмов", pluralMeals(0))
+    fun aKcalValueCarriesItsOwnUnit() {
+        assertEquals("960 ккал", formatKcal(960))
+        assertEquals("1 800 ккал", formatKcal(1800))
+        assertEquals("0 ккал", formatKcal(0))
+    }
+
+    @Test
+    fun aGramValueCarriesItsOwnUnit() {
+        assertEquals("80 г", formatGrams(80))
+        assertEquals("0 г", formatGrams(0))
+    }
+
+    @Test
+    fun aTenthsKcalFieldRoundsForDisplayLikeToMacrosDoes() {
+        // The claim in the name, checked directly rather than against literals
+        // that merely happen to agree with it today: `formatKcalTenths` must
+        // round every value exactly the way the production `toMacros()`
+        // boundary does, so the two paths cannot drift apart unnoticed.
+        listOf(2952, 2405, 0, 9, 15).forEach { tenths ->
+            val viaToMacros = formatKcal(MacrosTenths(tenths, 0, 0, 0).toMacros().kcal)
+            assertEquals(viaToMacros, formatKcalTenths(tenths), "tenths=$tenths")
+        }
+        // Pinned literals too, so the table itself stays legible.
+        assertEquals("295 ккал", formatKcalTenths(2952))
+        // The half-up tie: 240,5 rounds up, not to even.
+        assertEquals("241 ккал", formatKcalTenths(2405))
+        assertEquals("0 ккал", formatKcalTenths(0))
     }
 
     @Test

@@ -35,6 +35,7 @@ import app.cadence.shared.domain.DoseStep
 import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.InventorySummary
+import app.cadence.shared.domain.Meal
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.ProtocolCadence
 import app.cadence.shared.domain.ProtocolRow
@@ -51,6 +52,7 @@ import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 
 /**
  * The one stand-in left, until the meal wizard lands in step 8 of the block.
@@ -67,6 +69,38 @@ private const val PRIMARY_THREAD = "ksenia"
 
 /** §03: `protocols.weeks (12)`. Read from the protocol once one is fetched. */
 private const val CYCLE_WEEKS = 12
+
+/**
+ * The trends tab's own window and its latest read, bundled so `CadenceApp`
+ * holds one declaration rather than two — the pairing is what
+ * [rememberTrendsState] needs to re-read on a window change.
+ *
+ * Held above the trends screen rather than inside it, same as before this was
+ * split out: the list and the detail both read it, and a window remembered
+ * inside one would reset every time the patient came back from the other.
+ */
+private class TrendsUiState {
+    var window by mutableStateOf(TrendWindow.THREE_MONTHS)
+    var overview by mutableStateOf<TrendsOverview?>(null)
+}
+
+/**
+ * «3 месяца», the prototype's own initial timeframe, and a fresh read whenever
+ * the window or [reloads] changes — keyed on both, the same reason
+ * `CadenceApp`'s own effect used to be: a window switch has to re-read, and
+ * keying on [reloads] alone would leave the chips changing nothing.
+ */
+@Composable
+private fun rememberTrendsState(
+    mocks: CadenceMocks,
+    reloads: Int,
+): TrendsUiState {
+    val state = remember { TrendsUiState() }
+    LaunchedEffect(state.window, reloads) {
+        state.overview = mocks.trends.overview(state.window)
+    }
+    return state
+}
 
 /** The month around [today], in the shape «График» draws. */
 private suspend fun CadenceMocks.scheduleFor(today: TodaySummary): ScheduleState =
@@ -108,17 +142,14 @@ fun CadenceApp(
 ) {
     val scope = rememberCoroutineScope()
     var summary by remember { mutableStateOf<TodaySummary?>(null) }
+    // `TodaySummary` carries only the count and the fold — `TodayMeals`' own list.
+    var todayMeals by remember { mutableStateOf<List<Meal>>(emptyList()) }
     // Bumped by every write, so the next read goes back to the repository
     // rather than to a snapshot taken before it. The real client will invalidate
     // the same way; nothing about this line knows it is talking to a mock.
     var reloads by remember { mutableStateOf(0) }
 
-    // «3 месяца», the prototype's own initial timeframe. Held here rather than
-    // on either screen because both read it: the list and the detail share the
-    // choice, and a window remembered inside one would reset every time the
-    // patient came back from the other.
-    var trendWindow by remember { mutableStateOf(TrendWindow.THREE_MONTHS) }
-    var trends by remember { mutableStateOf<TrendsOverview?>(null) }
+    val trendsState = rememberTrendsState(mocks, reloads)
 
     var schedule by remember { mutableStateOf<ScheduleState?>(null) }
     var cabinet by remember { mutableStateOf<InventorySummary?>(null) }
@@ -129,13 +160,7 @@ fun CadenceApp(
         summary = today
         schedule = mocks.scheduleFor(today)
         cabinet = mocks.inventory.cabinet()
-    }
-
-    // Keyed on the window as well as on the reload counter: switching «7 дней»
-    // has to re-read, and a single effect keyed on `reloads` alone would leave
-    // the chips changing nothing.
-    LaunchedEffect(trendWindow, reloads) {
-        trends = mocks.trends.overview(trendWindow)
+        todayMeals = mocks.nutrition.day(today.date).meals
     }
 
     var actionsOpen by remember { mutableStateOf(false) }
@@ -168,6 +193,8 @@ fun CadenceApp(
                 result
             },
             summary = summary,
+            todayMeals = todayMeals,
+            zone = mocks.zone,
             schedule = schedule,
             cabinet = cabinet,
             onOpenVial = { scope.launch { openVial = mocks.inventory.vial(it) } },
@@ -177,9 +204,9 @@ fun CadenceApp(
                     reloads++
                 }
             },
-            trends = trends,
-            trendWindow = trendWindow,
-            onTrendWindow = { trendWindow = it },
+            trends = trendsState.overview,
+            trendWindow = trendsState.window,
+            onTrendWindow = { trendsState.window = it },
             onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
             onMealLogged = { name ->
                 // The day's running total, from the repository — §03 puts
@@ -253,6 +280,8 @@ fun CadenceShell(
     // the screen is not composed until it has, rather than being shown a day
     // made of zeroes.
     summary: TodaySummary? = null,
+    todayMeals: List<Meal> = emptyList(),
+    zone: TimeZone = TimeZone.currentSystemDefault(),
     schedule: ScheduleState? = null,
 ) {
     NavHost(
@@ -270,7 +299,7 @@ fun CadenceShell(
         popEnterTransition = { if (initialState.destination.isModal()) modalUnderlayEnter() else popEnter() },
         popExitTransition = { if (initialState.destination.isModal()) modalExit() else popExit() },
     ) {
-        tabRoutes(navController, onOpenActions, summary, cabinet, onOpenVial, trends, onTrendWindow)
+        tabRoutes(navController, onOpenActions, summary, todayMeals, zone, cabinet, onOpenVial, trends, onTrendWindow)
         pushedRoutes(navController, schedule, trendWindow, onTrendWindow, onLoadMetric)
         modalRoutes(navController, onMealLogged, onDoseLogged, onAddVial, summary, cabinet)
     }
@@ -288,6 +317,8 @@ private fun NavGraphBuilder.tabRoutes(
     nav: NavHostController,
     onOpenActions: () -> Unit,
     summary: TodaySummary?,
+    todayMeals: List<Meal>,
+    zone: TimeZone,
     cabinet: InventorySummary?,
     onOpenVial: (VialId) -> Unit,
     trends: TrendsOverview?,
@@ -311,7 +342,7 @@ private fun NavGraphBuilder.tabRoutes(
         when (destination) {
             CadenceDestination.TODAY -> {
                 composable<CadenceRoute.Today> {
-                    TodayRoute(nav, summary, onOpenActions, body)
+                    TodayRoute(nav, summary, todayMeals, zone, onOpenActions, body)
                 }
             }
 
@@ -731,6 +762,8 @@ private fun VialSheet(
 private fun TodayRoute(
     nav: NavHostController,
     summary: TodaySummary?,
+    todayMeals: List<Meal>,
+    zone: TimeZone,
     onOpenActions: () -> Unit,
     body: @Composable () -> Unit,
 ) {
@@ -740,6 +773,8 @@ private fun TodayRoute(
         TodayScreen(
             summary = summary,
             patientName = PATIENT_NAME,
+            meals = todayMeals,
+            zone = zone,
             onLogDose = { nav.openRoute(CadenceRoute.LogDose()) },
             onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
             onOpenQuickFeel = { nav.openRoute(CadenceRoute.Journal) },

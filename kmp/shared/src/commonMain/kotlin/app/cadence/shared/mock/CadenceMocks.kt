@@ -100,7 +100,13 @@ class CadenceMocks(
     // `PatientProfile` — so until sign-in says whose profile it is, a patient
     // in Kaliningrad with a phone on Moscow time sees a different week than the
     // server does.
-    private val zone: TimeZone = TimeZone.currentSystemDefault(),
+    //
+    // Public, not private: `TodayScreen.kt`'s recent-meal row renders a
+    // `Meal.eatenAt` through the same zone this class reads its own dates by
+    // (`NutritionScreen.kt:94-98` states the same rule for its own screen), and
+    // a composition root that built its own default would agree with this one
+    // only in production, not in a test that winds a fixed zone here.
+    val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) {
     // Seeded, not empty. What the patient has already done is half of every
     // number the cabinet shows — a remaining count is `totalDoses` minus these,

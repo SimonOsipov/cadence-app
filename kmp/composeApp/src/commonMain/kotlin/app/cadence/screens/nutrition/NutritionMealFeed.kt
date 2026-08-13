@@ -37,7 +37,7 @@ import app.cadence.design.pressable
 import app.cadence.format.clockTime
 import app.cadence.format.formatDecimal
 import app.cadence.format.formatInteger
-import app.cadence.format.russianPlural
+import app.cadence.format.pluralItems
 import app.cadence.shared.domain.Meal
 import app.cadence.shared.domain.MealItem
 import kotlinx.datetime.TimeZone
@@ -179,7 +179,7 @@ private fun MealFeedCard(
 
             Column(Modifier.weight(1f)) {
                 CadenceBody(meal.name, maxLines = 1)
-                val posWord = russianPlural(meal.items.size, "позиция", "позиции", "позиций")
+                val posWord = pluralItems(meal.items.size)
                 CadenceMeta(
                     "${clockTime(meal.eatenAt.toLocalDateTime(zone))} · " +
                         "${meal.items.size} $posWord · ${tenthsLabel(totals.proteinGTenths)} г белка",
