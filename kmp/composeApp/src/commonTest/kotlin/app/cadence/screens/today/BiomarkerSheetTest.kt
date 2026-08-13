@@ -44,8 +44,7 @@ class BiomarkerSheetTest {
             }
 
             onNodeWithText("Вес").assertIsDisplayed()
-            // Value and unit as separate runs — a measurement is {value, unit}
-            // for the same reason a dose is.
+            // Value and unit as separate runs — a measurement is {value, unit}, same as a dose.
             onNodeWithText("98,4").assertIsDisplayed()
             onNodeWithText("кг").assertIsDisplayed()
         }
@@ -73,8 +72,8 @@ class BiomarkerSheetTest {
     @Test
     fun aMetricWithNoReadingsSaysSoRatherThanDrawingAnEmptyChart() =
         runComposeUiTest {
-            // A blank chart beside a caption reads as «failed to load», and a
-            // patient waits instead of measuring.
+            // A blank chart beside a caption reads as «failed to load», so a patient waits
+            // instead of measuring.
             setContent {
                 CadenceTheme {
                     BiomarkerSheet(

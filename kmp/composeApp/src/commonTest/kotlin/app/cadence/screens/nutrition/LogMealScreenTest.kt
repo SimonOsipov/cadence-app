@@ -44,18 +44,11 @@ private val LUNCH_PARSE =
     MealParseResult.Parsed(mealName = "Обед", transcript = "Курица с рисом.", items = LUNCH_ITEMS)
 
 /**
- * grams = 15, protein = 1,4 г (14 tenths). Chosen, not copied from the seed:
- * scaling this item down 10 g and back up is the case where rescaling from
- * the *previous* current value (the prototype's bug, `meal/data.ts:140-151`)
- * and rescaling from the true original disagree on the **displayed**, rounded
- * whole gram — not merely on an internal tenths digit no test could see.
- *
- * −10 g lands exactly on the floor (15 − 10 = 5), and +10 g returns to 15:
- *   - correct (`rescaleMealItem(original, …)` both times): 14 tenths → 1 г
- *     both before and after, because the up-edit's scale factor is
- *     `15 / 15 == 1` regardless of what happened in between.
- *   - wrong (scaling from the −10 result, 5 g / 5 tenths, back up to 15 g):
- *     `5 * 15 / 5` rounds to 15 tenths → displays as 2 г, not 1 г.
+ * grams = 15, protein = 1,4 г (14 tenths). Chosen, not copied from the seed: scaling this item
+ * down 10 g and back up (to the floor, 5 g, and back to 15) is the case where rescaling from the
+ * *previous* current value (the prototype's bug, `meal/data.ts:140-151`) and rescaling from the
+ * true original disagree on the **displayed** rounded gram — correct stays at 1 г throughout
+ * (scale factor `15/15 == 1`), wrong rounds `5 * 15 / 5` to 2 г.
  */
 private val RESCALE_ITEM = MealItem("Тестовый гарнир", 15, MacrosTenths(100, 14, 0, 0))
 private val RESCALE_PARSE =
@@ -81,9 +74,8 @@ class LogMealScreenTest {
 
     private fun ComposeUiTest.deleteButtons() = onAllNodesWithContentDescription("Удалить позицию")
 
-    // Merged tree, not unmerged: the tag sits on the same clickable node that
-    // merges its own label `BasicText` child upward, the same reason the
-    // grams pill is read this way in `steppingGramsDownThenUpRestoresTheOriginalMacros`.
+    // Merged tree: the tag sits on the clickable node that merges its label `BasicText` child
+    // upward — same reason as the grams pill in `steppingGramsDownThenUpRestoresTheOriginalMacros`.
     private fun ComposeUiTest.saveFooter() = onNodeWithTag(LOG_MEAL_SAVE_TAG)
 
     private fun ComposeUiTest.parseAndAwait(text: String = "курица с рисом") {
@@ -115,10 +107,9 @@ class LogMealScreenTest {
     @Test
     fun photoAndVoiceProduceNoItems() =
         runComposeUiTest {
-            // The parser would succeed on any call — proving Photo/Voice never
-            // reach it is what makes this fixture meaningful; a parser that
-            // always answers Unavailable would pass even if the segments did
-            // call it.
+            // The parser would succeed on any call, so proving Photo/Voice never reach it is
+            // what makes this fixture meaningful — an always-Unavailable parser would pass
+            // even if the segments did call it.
             setContent {
                 CadenceTheme {
                     LogMealScreen(now = NOW, targets = TARGETS, parse = queuedParser(LUNCH_PARSE, LUNCH_PARSE))
@@ -139,17 +130,12 @@ class LogMealScreenTest {
         }
 
     /**
-     * "Уже разобранные позиции остаются правимыми" (spec line 295) means the
-     * *edits* survive a failed retry, not merely that the row count does —
-     * `parseState.items` itself never changes on `Unavailable`
-     * (`afterParseResult`), so a row count alone would read the same whether
-     * the screen kept this attempt's edit or silently re-seeded from the
-     * first parse's untouched originals. Deleting a row before the failed
-     * retry and asserting *which* row remains is what tells those two apart:
-     * this is `generation`'s only witness — `afterParseResult`'s
-     * `Unavailable` branch deliberately does not bump it, and
-     * `loggedItems`/`editingIndex` are keyed on `parseState.generation`
-     * precisely so a failed retry's unchanged generation leaves them alone.
+     * "Уже разобранные позиции остаются правимыми" (spec line 295): the *edits* must survive a
+     * failed retry, not merely the row count — `parseState.items` never changes on `Unavailable`,
+     * so a row-count check alone can't tell a kept edit from a silent re-seed from the original.
+     * Deleting a row before the failed retry and asserting *which* one remains is `generation`'s
+     * only witness: `afterParseResult`'s `Unavailable` branch deliberately does not bump it, and
+     * `loggedItems`/`editingIndex` are keyed on that generation for exactly this reason.
      */
     @Test
     fun unavailableLeavesTheScreenAliveAndWhatWasParsedStillEditable() =
@@ -178,15 +164,11 @@ class LogMealScreenTest {
             parseAndAwait("другой текст")
 
             onNodeWithText("Не получилось разобрать — можно попробовать ещё раз.").assertExists()
-            // The failed attempt did not touch what the first attempt parsed
-            // — nor did it undo the deletion made to it. A `generation` bump
-            // on the `Unavailable` branch would re-seed `loggedItems` from
-            // `parseState.items` (still both original rows) and restore the
-            // deleted position; this stays at 1.
+            // A `generation` bump on the `Unavailable` branch would re-seed `loggedItems` from
+            // `parseState.items` (still both original rows) and restore the deleted position.
             itemRows().assertCountEquals(1)
             onNodeWithTag(logMealItemKcalTag(0), useUnmergedTree = true).assertTextEquals("145 ккал")
-            // The field is still there to retry from, and the screen still
-            // responds to its own controls rather than being torn down.
+            // The screen still responds to its own controls rather than being torn down.
             chatField().assertExists()
             onNodeWithContentDescription("Закрыть").performClick()
             waitForIdle()
@@ -195,14 +177,10 @@ class LogMealScreenTest {
         }
 
     /**
-     * Against "draw the total" (both rows would read 385 — `2 400 + 1 450`
-     * tenths kcal, rounded) and "draw a constant" (both rows would read the
-     * same fabricated number regardless of which item they belong to).
-     *
-     * Extended to cover deletion (`LogMealScreen.kt`'s `deleteItem`, unmeasured
-     * before this round): removing one row must leave the *other* item behind
-     * — not a blank slot and not a stale kcal figure — and the header count
-     * and footer total must follow the smaller list.
+     * Against "draw the total" (both rows would read 385, the rounded sum) and "draw a
+     * constant" (both rows would read the same fabricated number). Also covers deletion
+     * (`LogMealScreen.kt`'s `deleteItem`, previously unmeasured): the remaining row, header
+     * count and footer total must all follow the smaller list.
      */
     @Test
     fun twoItemsWithDifferentKcalDrawTwoDifferentNumbers() =
@@ -221,7 +199,7 @@ class LogMealScreenTest {
 
             itemRows().assertCountEquals(1)
             onNodeWithTag(logMealItemKcalTag(0), useUnmergedTree = true).assertTextEquals("145 ккал")
-            // CadenceEyebrow uppercases its own text (`CadenceText.kt:29`).
+            // `CadenceEyebrow` uppercases its own text (`CadenceText.kt:29`).
             onNodeWithText("ОБЕД · 1 ПОЗИЦИЯ").assertExists()
             saveFooter().assertTextEquals("Сохранить · 145 ккал")
         }
@@ -251,16 +229,12 @@ class LogMealScreenTest {
         }
 
     /**
-     * The four totals-strip columns against `TARGETS` — its only witness
-     * before this round was arithmetic read by eye, and a transposed column
-     * (protein rendering fat's number, say) would have shipped silently.
-     * 385/48/30/7 are the two-item lunch fixture's exact folded kcal / protein
-     * / carbs / fat, each read off `logMealTotalTag`'s own merged node —
-     * which now also carries the column's Russian label (uppercased by
-     * `CadenceEyebrow`) — so a label swap between two columns (e.g. «белок»
-     * and «жиры» trading places) reddens the same assertion that catches a
-     * transposed number, not just a lookup that could pass against the wrong
-     * column's value.
+     * The four totals-strip columns against `TARGETS` — previously only checked by arithmetic
+     * read by eye, so a transposed column (protein rendering fat's number) shipped silently.
+     * 385/48/30/7 are the fixture's exact folded kcal/protein/carbs/fat, each read off
+     * `logMealTotalTag`'s merged node, which also carries the column's Russian label — so a
+     * label swap between two columns reddens the same assertion as a transposed number, not
+     * just a lookup that could pass against the wrong column.
      */
     @Test
     fun totalsStripShowsFourColumnsAgainstTargets() =
@@ -282,14 +256,11 @@ class LogMealScreenTest {
         }
 
     /**
-     * The trap the step names explicitly: rescaling must always start from
-     * the position's *parsed* values, never from whatever the previous edit
-     * left behind. −10 г lands exactly on the floor; +10 г returns to the
-     * start — see [RESCALE_ITEM]'s own KDoc for why this specific item
-     * catches a base-on-current implementation and a base-on-original one
-     * would not both pass it. Also exercises the floor itself: a second
-     * decrement at 5 г must not go lower — `LOG_MEAL_GRAM_FLOOR` had no test
-     * that could tell it apart from a floor of 0 before this round.
+     * The trap the step names explicitly: rescaling must always start from the position's
+     * *parsed* values, not whatever the previous edit left behind — see [RESCALE_ITEM]'s KDoc
+     * for why this item catches a base-on-current implementation. Also exercises the floor
+     * itself: a second decrement at 5 г must not go lower — `LOG_MEAL_GRAM_FLOOR` had no test
+     * distinguishing it from a floor of 0 before this.
      */
     @Test
     fun steppingGramsDownThenUpRestoresTheOriginalMacros() =
@@ -303,10 +274,9 @@ class LogMealScreenTest {
             val proteinBadge = onNodeWithText("Белок 1 г", substring = false)
             proteinBadge.assertExists()
 
-            // `CadenceChip`'s own text merges up onto its (clickable) tagged
-            // node — the same reason `onNodeWithText("Разобрать →").performClick()`
-            // works above without `useUnmergedTree` — so the grams pill's
-            // number is read off the merged tree, not the raw one.
+            // `CadenceChip`'s text merges up onto its clickable tagged node (same reason
+            // `onNodeWithText("Разобрать →").performClick()` works above unmerged), so the
+            // grams pill's number is read off the merged tree.
             onNodeWithTag(logMealItemGramsTag(0)).performClick()
             waitForIdle()
 
@@ -327,12 +297,10 @@ class LogMealScreenTest {
         }
 
     /**
-     * Reproduces the round-1 defect exactly: parsing, deleting every
-     * position, and then re-parsing the *same* text (a structurally equal
-     * `MealItem` list) must still repopulate the list. Keying the editable
-     * state on `parseState.items` instead of a per-attempt generation left
-     * the screen a dead end here — the list stayed empty and the footer
-     * stuck on «Добавьте что-нибудь» — with mode-switching the only escape.
+     * Reproduces the round-1 defect: re-parsing the *same* text after deleting every position
+     * must still repopulate the list. Keying editable state on `parseState.items` instead of a
+     * per-attempt generation left the screen a dead end here — empty list, stuck footer, with
+     * mode-switching the only escape.
      */
     @Test
     fun reParsingTheSameTextAfterDeletingEverythingRepopulatesTheList() =
@@ -360,17 +328,13 @@ class LogMealScreenTest {
         }
 
     /**
-     * The recorded divergence from the prototype (`LogMealScreen.tsx:476-507`
-     * starts a parse on an empty field and substitutes breakfast): the guard
-     * has two halves — the button's own `enabled` and `runParse`'s own early
-     * return — and only their conjunction was pinned before this round.
-     * `assertIsNotEnabled` is what pins `enabled` on its own: a disabled
-     * `CadenceButton` merges `disabled()` onto its own semantics node
-     * (`CadenceControls.kt:136`), so a mutation that drops `enabled` from the
-     * guard while leaving `runParse`'s own early return in place — a button a
-     * tap can no longer reach, but one that would still look identical to a
-     * working one if nothing read its enabled state — reddens here even
-     * though the click below never fires.
+     * Recorded divergence from the prototype (`LogMealScreen.tsx:476-507` starts a parse on an
+     * empty field and substitutes breakfast): the guard has two halves — the button's `enabled`
+     * and `runParse`'s early return — and only their conjunction was pinned before this.
+     * `assertIsNotEnabled` pins `enabled` on its own, via the disabled `CadenceButton`'s own
+     * semantics node (`CadenceControls.kt:136`), so a mutation dropping `enabled` alone (a
+     * button a tap can't reach, but visually identical) reddens here even though the click
+     * below never fires.
      */
     @Test
     fun anEmptyFieldDoesNotStartAParse() =
@@ -403,11 +367,9 @@ class LogMealScreenTest {
         }
 
     /**
-     * The header chip's own reason for existing (`headerChipText`'s KDoc):
-     * every part read from the clock, none of it the prototype's literal
-     * «08:42 · вс 24 мая». Nothing asserted the rendered string before this
-     * round — replacing the whole function body with that literal left every
-     * other test green.
+     * `headerChipText`'s own reason for existing: every part reads from the clock, none of it
+     * the prototype's literal «08:42 · вс 24 мая». Nothing asserted the rendered string before
+     * this — replacing the whole function body with that literal left every other test green.
      */
     @Test
     fun headerChipReadsTheClockNotALiteral() =

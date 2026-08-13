@@ -12,23 +12,20 @@ class CadencePluralsTest {
         assertEquals("приёмов", pluralMeals(5))
         assertEquals("приёмов", pluralMeals(11))
         assertEquals("приёмов", pluralMeals(14))
-        // Exactly where the prototype's `count < 5 ? 'приёма' : 'приёмов'` is
-        // wrong.
+        // Exactly where the prototype's `count < 5 ? 'приёма' : 'приёмов'` is wrong.
         assertEquals("приём", pluralMeals(21))
         assertEquals("приёма", pluralMeals(22))
         assertEquals("приёмов", pluralMeals(25))
         assertEquals("приём", pluralMeals(101))
         assertEquals("приёмов", pluralMeals(111))
-        // Never rendered — the sheet takes its zero-state branch — but a
-        // plural function that is wrong at zero is wrong.
+        // Never rendered (the sheet takes its zero-state branch), but wrong at zero is still wrong.
         assertEquals("приёмов", pluralMeals(0))
     }
 
     @Test
     fun weeksTakeTheSameRuleAsMeals() {
-        // The prototype's reorder card repeats the meal card's approximation —
-        // `weeksLeft < 5 ? 'недели' : 'недель'` — and is wrong from 21 up in
-        // the same way. One rule, two nouns.
+        // The prototype's reorder card repeats the meal card's `< 5` approximation, wrong from 21
+        // up the same way. One rule, two nouns.
         assertEquals("неделю", pluralWeeks(1))
         assertEquals("недели", pluralWeeks(3))
         assertEquals("недель", pluralWeeks(5))
@@ -39,9 +36,8 @@ class CadencePluralsTest {
 
     @Test
     fun itemsTakeTheSameRuleAsMealsAndWeeks() {
-        // `NutritionMealFeed.kt` and `LogMealItemsList.kt` both call the
-        // named `pluralItems`, same as `TodayMeals` does — no site inlines
-        // `russianPlural(count, "позиция", "позиции", "позиций")` anymore.
+        // `NutritionMealFeed.kt`, `LogMealItemsList.kt` and `TodayMeals` all call `pluralItems` —
+        // no site inlines `russianPlural(count, "позиция", "позиции", "позиций")` anymore.
         assertEquals("позиция", pluralItems(1))
         assertEquals("позиции", pluralItems(2))
         assertEquals("позиции", pluralItems(4))
