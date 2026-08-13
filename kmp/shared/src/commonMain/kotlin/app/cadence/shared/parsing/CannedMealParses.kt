@@ -20,16 +20,12 @@ internal data class CannedMealParse(
 )
 
 /**
- * Builds one [MealItem] from the prototype's whole-gram, whole-kcal fields,
- * converting to [MacrosTenths] at the seed — an item of 45 kcal becomes
- * `kcalTenths = 450`, per the step-2 boundary: tenths are computed once, here,
- * never re-derived downstream.
- *
- * Six parameters name the six fields `MealItem` (`mobile/src/features/meal/data.ts:11-19`)
- * carries — the same trade `CadenceShell.kt` already makes three times over
- * (`tabRoutes`, `pushedRoutes`, `modalRoutes`, each under this same
- * `@Suppress`) rather than wrapping a one-off tuple type around a table that
- * exists nowhere else.
+ * Builds one [MealItem] from the prototype's whole-gram, whole-kcal fields, converting to
+ * [MacrosTenths] at the seed — 45 kcal becomes `kcalTenths = 450`, computed once here per
+ * the step-2 boundary, never re-derived downstream. Six parameters name the six fields
+ * `MealItem` (`mobile/src/features/meal/data.ts:11-19`) carries — the same trade
+ * `CadenceShell.kt` already makes three times over under this same `@Suppress`, rather than
+ * wrapping a one-off tuple type around a table that exists nowhere else.
  */
 @Suppress("LongParameterList")
 private fun item(
@@ -52,20 +48,13 @@ private fun item(
 )
 
 /**
- * The two facts a text-input hint control needs from a canned parse, without
- * the parse itself.
- *
- * **Visibility decision (step-4's own open question).** [CannedMealParse] and
- * [CANNED_MEAL_PARSES] stay `internal`; this type and [mealSamplePrompts] are
- * the public surface instead of widening them. Making the canned list itself
- * public would hand `composeApp` the mock's whole matching table —
- * `triggerWords`, `mealName`, `items` and all — for the sake of a control
- * that only ever reads two of its five fields. [MealParser] is documented as
- * "a service, not a repository": a widened [CANNED_MEAL_PARSES] would make it
- * one anyway, just via a second, undocumented door next to `parse`. This
- * accessor is that door, narrowed to what «Пример» actually needs, and it
- * costs nothing at the real M9 parser: nothing requires a service's mock to
- * expose its fixtures wholesale.
+ * The two facts a text-input hint control needs from a canned parse, without the parse
+ * itself. Visibility decision (step-4's own open question): [CannedMealParse] and
+ * [CANNED_MEAL_PARSES] stay `internal`; this type and [mealSamplePrompts] are the public
+ * surface instead of widening them — exposing the whole matching table for a control that
+ * reads two of five fields would make [MealParser], documented as "a service, not a
+ * repository", one anyway via a second, undocumented door next to `parse`. This accessor is
+ * that door, narrowed to what «Пример» actually needs.
  */
 data class MealSamplePrompt(
     val placeholder: String,
