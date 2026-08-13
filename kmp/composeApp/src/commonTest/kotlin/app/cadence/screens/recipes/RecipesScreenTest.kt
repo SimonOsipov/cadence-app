@@ -1,11 +1,14 @@
 package app.cadence.screens.recipes
 
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
@@ -21,6 +24,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import app.cadence.design.CadenceColors
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.domain.Ingredient
@@ -34,7 +39,6 @@ import app.cadence.shared.domain.RecipeIngredient
 import app.cadence.shared.domain.RecipeTag
 import app.cadence.shared.domain.UserId
 import app.cadence.shared.repository.RecipeList
-import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -69,6 +73,13 @@ import kotlin.test.assertTrue
 //     goal-vs-remainder axis is covered by giving `CONSUMED` a non-zero
 //     protein value instead (see `CONSUMED`'s own comment) rather than by
 //     varying the goal.
+//   - `cookMin` is non-null on all five fixture recipes, so `totalTimeMin`'s
+//     `?: 0` branch is never exercised from this screen. Left as-is: that
+//     branch is already covered at the domain level —
+//     `RecipeMathTest.kt`'s `totalTimeMinTreatsANullCookMinAsZero` — and this
+//     suite's own job for time is proving a *row* reads its own recipe's
+//     total at all (see `theRowShowsPerServingMacrosNotRecipeTotals`'s own
+//     KDoc), which a null-`cookMin` fixture would not add anything to.
 
 private val PATIENT = UserId("patient-1")
 
@@ -193,43 +204,36 @@ private val GOALS = Macros(kcal = 1000, proteinG = 200, carbsG = 0, fatG = 0)
 // assertion.
 private val CONSUMED = Macros(kcal = 0, proteinG = 60, carbsG = 0, fatG = 0)
 
-/** See [RecipesScreenTest.assertColorApprox]. */
-private const val COLOR_TOLERANCE = 0.02f
-
 /**
  * A row well inside the type pill's `CadenceSpacing.xxs` (4dp) top padding
- * band, in device pixels — see [RecipesScreenTest.topPaddingPixel]. 4dp at a
- * 3x simulator scale is ~12px; 2px stays clear of both the outer rounded
- * edge and the label's own ink.
+ * band, in device pixels — see [RecipesScreenTest.topPaddingPixel]. This
+ * backend renders the compose-ui-test surface at 1x (a ~21dp pill measures
+ * ~21px tall), so the 4dp padding band is ~4px; probing row 2 stays inside
+ * it — 2 of 4px, not 2 of some larger device-scaled band — while clearing
+ * both the outer rounded edge and the label's own ink.
  */
 private const val TOP_PADDING_PROBE_PX = 2
+
+/** `343dp minus 16dp gutters on each side` — iPhone SE's own 375pt width, the narrowest phone this product targets. */
+private val PHONE_CONTENT_WIDTH = 343.dp
+
+/**
+ * Comfortably above the 72dp «Мягкие для желудка» measured under
+ * `CadenceSegmented`'s equal-width segments (round 2's own finding) and
+ * comfortably below every width this backend has actually measured for the
+ * full, untruncated label (138–157dp across several runs — see
+ * [RecipesScreenTest.theGentleFilterChipIsNotShrunkToTheOldSegmentedAllotmentAtPhoneWidth]'s
+ * own KDoc) — a threshold rather than an equality check, because this
+ * backend's cross-composition text shaping is not pixel-stable enough for
+ * one.
+ */
+private const val TOO_NARROW_TO_BE_TRUNCATED_DP = 110.0
 
 @OptIn(ExperimentalTestApi::class)
 class RecipesScreenTest {
     private fun ComposeUiTest.featuredHasText(text: String) =
         onNodeWithTag(CADENCE_RECIPES_FEATURED_TAG, useUnmergedTree = true)
             .assert(hasAnyDescendant(hasText(text, substring = true)))
-
-    /**
-     * A same-uniform-fill sample against a rounded [app.cadence.design.CadenceRadius.pill]
-     * shape came back a few 8-bit levels off pure equality on this backend
-     * (`0.890…` where `0.902…` was painted) even after [waitForIdle] settled
-     * any scroll animation — read as renderer dithering on a non-rectangular
-     * fill, not a wrong colour, since [CadenceColors.slateBg]/[CadenceColors.clayBg]/
-     * the sand/forest tones this row could have been swapped for all differ
-     * from each other by tens of channel levels, far outside [COLOR_TOLERANCE].
-     */
-    private fun assertColorApprox(
-        expected: Color,
-        actual: Color,
-        label: String,
-    ) {
-        val close =
-            abs(actual.red - expected.red) < COLOR_TOLERANCE &&
-                abs(actual.green - expected.green) < COLOR_TOLERANCE &&
-                abs(actual.blue - expected.blue) < COLOR_TOLERANCE
-        assertTrue(close, "$label is not painted $expected — sampled $actual")
-    }
 
     /**
      * A point guaranteed to be pure background fill, never the label's own
@@ -425,7 +429,17 @@ class RecipesScreenTest {
      * recipe with `servings = 2`, so its totals (758 kcal, 26 g protein) and
      * its per-serving figures (379 kcal, 13 g protein) are provably different
      * numbers — a totals-instead-of-per-serving bug reads 758/26 here, not
-     * 379/13.
+     * 379/13. Also the only witness for a *row's* own «N мин» — every other
+     * test in this file that reads a time reads the featured card's
+     * (`totalTimeMin`'s own `?: 0` null-`cookMin` branch is already covered
+     * at the domain level, `RecipeMathTest.kt`'s
+     * `totalTimeMinTreatsANullCookMinAsZero`, so this fixture does not
+     * duplicate that with a null `cookMin` of its own — it only needed to
+     * prove a row reads *some* recipe's own total, which `OAT_PORRIDGE`'s
+     * default 10+10=20 already does). Scoped to `OAT_PORRIDGE`'s own merged
+     * node, the same reason the «Моё» pill check further down is scoped:
+     * several fixture recipes share the default 10+10 minutes, so a bare
+     * `onNodeWithText("20 мин")` would not be a single match.
      */
     @Test
     fun theRowShowsPerServingMacrosNotRecipeTotals() =
@@ -438,20 +452,34 @@ class RecipesScreenTest {
 
             onNodeWithText("379 ккал · 13 г белка").assertExists()
             onNodeWithText("758 ккал · 26 г белка").assertDoesNotExist()
+            onNodeWithText("Овсянка с бананом").assert(hasText("20 мин"))
         }
 
     /**
      * The four tokens `CadenceColors.kt` added for this step are used at
      * `mealTypeTone` but were otherwise unwitnessed — the same precedent
      * `NutritionScreenTest.kt:303` sets for `sand600`, a newly added token
-     * gets a pixel assertion, not just a compiling reference. `SALMON_SOLO`
-     * (DINNER) and `OWN_SMOOTHIE` (SNACK) are the fixture's own representatives
-     * of the two tones that are not already covered by an existing sand/forest
-     * token — swapping the two in `mealTypeTone` would still compile and
-     * still paint *a* colour, just the wrong one.
+     * gets a pixel assertion, not just a compiling reference. All four tones
+     * are checked, not only the two new ones: `sand100` (BREAKFAST) and
+     * `forest50` (LUNCH) already existed, but swapping either with its
+     * neighbour in `mealTypeTone` is a real, silent regression too, and nothing
+     * else in this suite reads a pixel off `OAT_PORRIDGE` or `CHICKEN_SOLO`'s
+     * own pill.
+     *
+     * Exact equality, not a tolerance: an earlier version of this test used a
+     * `0.02f` per-channel tolerance because a naive centre-of-the-pill sample
+     * came back a few 8-bit levels off pure equality — that turned out to be
+     * [topPaddingPixel]'s own problem (sampling the label's glyph ink, not
+     * the fill; see its KDoc), not a rendering-precision one: probed at the
+     * padding band, every one of these four tones samples *exactly*, to the
+     * 8-bit level. The tolerance was also wide enough to hide a real bug:
+     * `clayBg` (0xF4E4D8) and `sand100` (0xF3E8D6) differ by only 1, 4 and 2
+     * channel levels — nowhere near "tens", the (incorrect) claim an earlier
+     * version of this KDoc made — while `0.02f` is worth ~5.1 levels, wide
+     * enough to swallow that difference and let a SNACK/BREAKFAST swap pass.
      */
     @Test
-    fun theDinnerAndSnackTypePillsPaintTheirOwnTokens() =
+    fun theFourMealTypePillsPaintTheirOwnTokens() =
         runComposeUiTest {
             setContent {
                 CadenceTheme {
@@ -459,16 +487,22 @@ class RecipesScreenTest {
                 }
             }
 
-            onNodeWithTag(recipeTypeTag("salmon-solo"), useUnmergedTree = true).performScrollTo()
-            waitForIdle()
-            val dinnerPill = onNodeWithTag(recipeTypeTag("salmon-solo"), useUnmergedTree = true).captureToImage()
-            assertColorApprox(CadenceColors.slateBg, dinnerPill.topPaddingPixel(), "the DINNER pill")
-
-            onNodeWithTag(recipeTypeTag("own-smoothie"), useUnmergedTree = true).performScrollTo()
-            waitForIdle()
-            val snackPill = onNodeWithTag(recipeTypeTag("own-smoothie"), useUnmergedTree = true).captureToImage()
-            assertColorApprox(CadenceColors.clayBg, snackPill.topPaddingPixel(), "the SNACK pill")
+            assertPillToken("oat-porridge", CadenceColors.sand100, "the BREAKFAST pill")
+            assertPillToken("chicken-solo", CadenceColors.forest50, "the LUNCH pill")
+            assertPillToken("salmon-solo", CadenceColors.slateBg, "the DINNER pill")
+            assertPillToken("own-smoothie", CadenceColors.clayBg, "the SNACK pill")
         }
+
+    private fun ComposeUiTest.assertPillToken(
+        recipeId: String,
+        expected: Color,
+        label: String,
+    ) {
+        onNodeWithTag(recipeTypeTag(recipeId), useUnmergedTree = true).performScrollTo()
+        waitForIdle()
+        val pill = onNodeWithTag(recipeTypeTag(recipeId), useUnmergedTree = true).captureToImage()
+        assertEquals(expected, pill.topPaddingPixel(), "$label is not painted $expected")
+    }
 
     /**
      * `CADENCE_RECIPES_FEATURED_TAG`'s own KDoc says it exists "so a test can
@@ -476,12 +510,21 @@ class RecipesScreenTest {
      * row report through the same `onOpen`, and `RecipeRow`'s own `onOpen =
      * { onOpen(recipe.id) }` closure (one per row, built inside a
      * `forEachIndexed`) is exactly the shape that reports the wrong row's id
-     * when a loop variable is captured incorrectly — this test presses two
-     * different rows/cards and checks two different ids land, not just that
-     * *an* id lands.
+     * when a loop variable is captured incorrectly.
+     *
+     * Four presses, not two: the card, `mine`'s first row («Мой омлет») and
+     * `mine`'s second («Мой смузи») — proving `RecipesSection`'s own
+     * `forEachIndexed` reports each row's *own* id rather than, say,
+     * `recipes.first().id` for every row in the list — and, separately,
+     * `rest`'s third row («Лосось соло»), which is neither the screen's
+     * overall first row nor a member of `mine` at all. That last press is
+     * load-bearing: «Мой омлет» alone is index 0 of both `mine` and the whole
+     * screen, so a `RecipesSection`/`RecipesLibrarySection` bug that always
+     * reports `recipes.first().id` — or even a hardcoded wrong id — would
+     * have survived every press before it existed.
      */
     @Test
-    fun tappingTheFeaturedCardAndARowReportsTheirOwnRecipeId() =
+    fun everyPressReportsItsOwnRecipeId() =
         runComposeUiTest {
             var opened: RecipeId? = null
             setContent {
@@ -503,11 +546,81 @@ class RecipesScreenTest {
             opened = null
             onNodeWithText("Мой омлет").performScrollTo().performClick()
             waitForIdle()
-            assertEquals(RecipeId("own-omelette"), opened, "the row did not report its own recipe's id")
+            assertEquals(RecipeId("own-omelette"), opened, "mine's first row did not report its own recipe's id")
 
-            // The «Моё» pill exists on this same row — scoped to it rather
-            // than a bare `onNodeWithText("Моё")`, which both own recipes'
-            // rows satisfy and so is never a single match on this fixture.
+            opened = null
+            onNodeWithText("Мой смузи").performScrollTo().performClick()
+            waitForIdle()
+            assertEquals(RecipeId("own-smoothie"), opened, "mine's second row did not report its own recipe's id")
+
+            opened = null
+            onNodeWithText("Лосось соло").performScrollTo().performClick()
+            waitForIdle()
+            assertEquals(
+                RecipeId("salmon-solo"),
+                opened,
+                "the library section's own row did not report its own recipe's id",
+            )
+
+            // The «Моё» pill exists on «Мой омлет» — scoped to that row's own
+            // merged node rather than a bare `onNodeWithText("Моё")`, which
+            // both own recipes' rows satisfy and so is never a single match
+            // on this fixture.
             onNodeWithText("Мой омлет").assert(hasText("Моё"))
+        }
+
+    /**
+     * The other major of this round: `RecipesFilterRow`'s whole reason for
+     * existing is that a hug-width, horizontally scrolling chip never has to
+     * shrink below its label — but nothing constrained the test window's
+     * width (1024dp by default) to prove it.
+     *
+     * Not an equality check against a hardcoded natural width, and not a
+     * comparison against a *second*, unconstrained measurement — both were
+     * tried first and both turned out unreliable: a hardcoded 157.0dp (the
+     * reviewer's own figure) missed by 19dp against what this backend
+     * actually renders (138.0dp), and comparing two separate
+     * `runComposeUiTest` compositions against each other showed the same
+     * ~19dp gap regardless of which one was constrained and which one ran
+     * first — text shaping measured across two independent compositions on
+     * this backend is not pixel-stable enough to assert equality against,
+     * even before either one is truncated.
+     *
+     * What *is* stable, and what "not truncated" actually means: [TOO_NARROW_TO_BE_TRUNCATED_DP]
+     * sits well above 72dp — the exact width `CadenceSegmented`'s
+     * equal-width segments gave this label, measured in the round that
+     * found this bug — and well below every width this backend has
+     * actually measured for the full label (138–157dp across several
+     * runs). Putting `Modifier.width(72.dp)` back on the chip —
+     * reintroducing the exact defect this round exists to fix — reddens
+     * this test; the ~19dp of cross-composition shaping noise above does
+     * not.
+     */
+    @Test
+    fun theGentleFilterChipIsNotShrunkToTheOldSegmentedAllotmentAtPhoneWidth() =
+        runComposeUiTest {
+            lateinit var density: Density
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    RecipesScreen(
+                        library = FULL_LIBRARY,
+                        ingredients = INGREDIENTS,
+                        consumed = CONSUMED,
+                        goals = GOALS,
+                        modifier = Modifier.width(PHONE_CONTENT_WIDTH),
+                    )
+                }
+            }
+
+            val chipWidthPx = onNodeWithText("Мягкие для желудка").fetchSemanticsNode().boundsInRoot.width
+            val chipWidthDp = with(density) { chipWidthPx.toDp() }.value
+
+            assertTrue(
+                chipWidthDp > TOO_NARROW_TO_BE_TRUNCATED_DP,
+                "the chip measured only ${chipWidthDp}dp at phone width — at or below " +
+                    "$TOO_NARROW_TO_BE_TRUNCATED_DP" + "dp, its label would not fit and this test could not tell " +
+                    "a shrunk chip from a merely differently-shaped one",
+            )
         }
 }
