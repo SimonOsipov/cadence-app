@@ -68,7 +68,7 @@ internal fun tagLabel(tag: RecipeTag): String =
         RecipeTag.QUICK -> "Быстрые"
     }
 
-private data class MealTypeTone(
+internal data class MealTypeTone(
     val soft: Color,
     val fg: Color,
 )
@@ -79,8 +79,13 @@ private data class MealTypeTone(
  * their hexes match exactly; dinner and snack use [CadenceColors.slateBg]/
  * [CadenceColors.clayBg] and their `Fg` pairs, added for this call site (see
  * that file's own KDoc for why those two names).
+ *
+ * `internal`, not `private`: `RecipeDetailScreen.kt`'s hero (step-10) is this
+ * function's second call site — `RecipeDetailScreen.tsx:12` imports the same
+ * `TYPE_TINT` from `RecipesScreen.tsx` rather than declaring its own, and this
+ * port follows suit rather than growing a second, unlinked copy of the map.
  */
-private fun mealTypeTone(type: MealType): MealTypeTone =
+internal fun mealTypeTone(type: MealType): MealTypeTone =
     when (type) {
         MealType.BREAKFAST -> MealTypeTone(CadenceColors.sand100, CadenceColors.sand900)
         MealType.LUNCH -> MealTypeTone(CadenceColors.forest50, CadenceColors.forest700)
