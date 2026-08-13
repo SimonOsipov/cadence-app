@@ -46,6 +46,18 @@ object CadenceColors {
     val sand300 = Color(0xFFE8D4B8)
     val sand100 = Color(0xFFF3E8D6)
 
+    // Not named in mobile/src/theme/index.ts either — recipe/data.ts's own
+    // TYPE_TINT (RecipesScreen.tsx:16-17) writes these two as unlabelled
+    // literals for the dinner/snack meal-type pill. A sibling prototype
+    // screen names the same two hexes `slate` and `clay`
+    // (mobile/src/features/learn/LearnScreen.tsx:15-16); this port borrows
+    // those names rather than inventing new ones for shades the prototype
+    // already called something.
+    val slateBg = Color(0xFFE6ECF2)
+    val slateFg = Color(0xFF41566B)
+    val clayBg = Color(0xFFF4E4D8)
+    val clayFg = Color(0xFF9A5A3C)
+
     val danger = Color(0xFFB8503C)
     val dangerBg = Color(0xFFF4DFD6)
     val dangerFg = Color(0xFF6B2818)
