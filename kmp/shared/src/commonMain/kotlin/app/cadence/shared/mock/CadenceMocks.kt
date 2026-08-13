@@ -31,6 +31,7 @@ import app.cadence.shared.domain.cycleWeek
 import app.cadence.shared.domain.dayTotals
 import app.cadence.shared.domain.doseBands
 import app.cadence.shared.domain.dosesPerWeek
+import app.cadence.shared.domain.filteredByTypeAndTag
 import app.cadence.shared.domain.inventorySummary
 import app.cadence.shared.domain.meta
 import app.cadence.shared.domain.occurrencesFor
@@ -269,13 +270,7 @@ class CadenceMocks(
             // `[recipe, ...prev]`. The library sits after all of them, per
             // `AppState.tsx:166`'s `[...userRecipes, ...RECIPES.STARTERS]`.
             val ordered = ownRecipes.asReversed() + MockSeed.recipes
-            return RecipeList(
-                recipes =
-                    ordered.filter { recipe ->
-                        (filter.mealType == null || recipe.mealType == filter.mealType) &&
-                            (filter.tag == null || filter.tag in recipe.tags)
-                    },
-            )
+            return RecipeList(recipes = ordered.filteredByTypeAndTag(filter.mealType, filter.tag))
         }
 
         override suspend fun recipe(id: RecipeId): Recipe? =
