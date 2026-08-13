@@ -130,7 +130,21 @@ services:
     restart: "no"
 
   auth:
-    image: supabase/gotrue:v2.194.0
+    # Pinned by digest, not by tag: the trust boundary model rests on three
+    # measured-and-undocumented GoTrue behaviours (see verifier_test.go and
+    # SKL step-2's contract tests), so an image upgrade must run into those
+    # tests rather than silently carry the foundation away. The tag is kept
+    # in the comment for a human resolving the digest back to a release; only
+    # the digest is what compose pulls.
+    #
+    #   docker pull supabase/gotrue:v2.194.0
+    #   docker inspect supabase/gotrue:v2.194.0 --format '{{index .RepoDigests 0}}'
+    #
+    # Verified 2026-08-13: the digest below is the multi-arch manifest list
+    # for v2.194.0, not a single platform's manifest, so it resolves
+    # correctly on both amd64 (deployment) and arm64 (Apple Silicon dev
+    # machines).
+    image: supabase/gotrue@sha256:2b352c02adf11a2025cd5993c246ef85db73743553c39194d2b1862d1cc4d1fd
     depends_on:
       postgres:
         condition: service_healthy
@@ -182,17 +196,34 @@ services:
       # Asymmetric signing, as a JSON *array* of JWKs — the decoder unmarshals
       # into a list and keys the result by each entry's kid. `key_ops: ["sign"]`
       # is not decoration: GoTrue picks the signing key by looking for exactly
-      # that, and refuses to start with "no signing key detected" without it.
+      # that marker, and refuses to start with "no signing key detected" if no
+      # key carries it, or with "multiple signing keys detected" if more than
+      # one does — both measured against live GoTrue and pinned by the
+      # contract tests in step-2.
       #
-      # A development key pair, generated for this file and committed on
-      # purpose: it signs nothing that exists outside a laptop. The deployed
-      # instance gets its own, and that one never comes from a repository.
+      # Two keys, distinct kids, exactly one signing:
       #
-      # It matters that this is ES256 and not the legacy shared secret: the API
-      # accepts ES256 and RS256 and nothing else, so a GoTrue left on HS256 has
-      # every one of its tokens refused. Better to meet that here than against
-      # a deployment.
-      GOTRUE_JWT_KEYS: '[{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"a1323fc3-c42d-37ae-8be6-1ebfb524403f","x":"2e9iv7Gxg80pCO61rNEtPEs-mIr1mErwg8vW7QcugY8","y":"9K6Q4xt--k5fF48WfBjVeFnxsn3NAJY-so03DMZnEH0","d":"oTI_w8QtN66L5h6_tSRAP5I4FbDa13nXQrT2KWM3fuQ","key_ops":["sign"]}]'
+      #   - a1323fc3-...403f, key_ops: ["sign"] — the session key. GoTrue
+      #     signs every session token with it, and it is the only kid
+      #     AUTH_JWT_SESSION_KIDS (below, and in .env.example) permits.
+      #   - xr8--Dw (kid xr8-HA0zUfG0zdB40mJdFNwX3DvkinwdnhXB1g2W_Dw), no
+      #     key_ops — the admin key. GoTrue's admin routes accept a token
+      #     signed by *any* configured key regardless of key_ops, so this key
+      #     verifies admin bearer tokens without ever being the one GoTrue
+      #     signs sessions with. It is deliberately absent from
+      #     AUTH_JWT_SESSION_KIDS, and config.Load refuses to start if it is
+      #     ever added there — see AUTH_JWT_ADMIN_KID in .env.example.
+      #
+      # Both are development key pairs, generated for this file and committed
+      # on purpose: they sign nothing that exists outside a laptop. The
+      # deployed instance gets its own pair for each role, and neither one
+      # ever comes from a repository.
+      #
+      # It matters that both are ES256 and not the legacy shared secret: the
+      # API accepts ES256 and RS256 and nothing else, so a GoTrue left on
+      # HS256 has every one of its tokens refused. Better to meet that here
+      # than against a deployment.
+      GOTRUE_JWT_KEYS: '[{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"a1323fc3-c42d-37ae-8be6-1ebfb524403f","x":"2e9iv7Gxg80pCO61rNEtPEs-mIr1mErwg8vW7QcugY8","y":"9K6Q4xt--k5fF48WfBjVeFnxsn3NAJY-so03DMZnEH0","d":"oTI_w8QtN66L5h6_tSRAP5I4FbDa13nXQrT2KWM3fuQ","key_ops":["sign"]},{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"xr8-HA0zUfG0zdB40mJdFNwX3DvkinwdnhXB1g2W_Dw","x":"rtiaY2jMvLAFdxMFASN2GZ5EigwL4ka3TjAb4Yz_wE8","y":"ye74OWWh2AjB4jPLni3z3OIpByWz2QCh-u7N7DachxM","d":"XPA_FXtwbdWb0sxa9Dr7MZdKQboGjZA4jfvFhfvTIBA"}]'
 
       # The token issuance hook. This is the one place the product role gets into
       # a token: GoTrue calls app.access_token_hook while minting an access

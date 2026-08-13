@@ -15,7 +15,7 @@ func clearEnv(t *testing.T) {
 		"DATABASE_URL", "DATABASE_SERVICE_URL", "DATABASE_MIGRATION_URL", "MIGRATIONS_PATH",
 		"SERVER_PORT", "SERVER_READ_TIMEOUT", "SERVER_WRITE_TIMEOUT", "SERVER_IDLE_TIMEOUT",
 		"CORS_ALLOWED_ORIGINS",
-		"AUTH_JWT_ISSUER", "AUTH_JWT_AUDIENCE",
+		"AUTH_JWT_ISSUER", "AUTH_JWT_AUDIENCE", "AUTH_JWT_SESSION_KIDS", "AUTH_JWT_ADMIN_KID",
 	} {
 		t.Setenv(key, "")
 	}
@@ -31,6 +31,8 @@ func setRequired(t *testing.T) {
 	t.Setenv("DATABASE_SERVICE_URL", "postgres://cadence_service_app@localhost:5432/cadence")
 	t.Setenv("AUTH_JWT_ISSUER", "https://auth.cadence.example/auth/v1")
 	t.Setenv("AUTH_JWT_AUDIENCE", "authenticated")
+	t.Setenv("AUTH_JWT_SESSION_KIDS", "session-kid-1")
+	t.Setenv("AUTH_JWT_ADMIN_KID", "admin-kid-1")
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {
@@ -219,6 +221,28 @@ func TestLoadKeepsIssuerVerbatim(t *testing.T) {
 	}
 }
 
+// TestLoadParsesSessionKIDsAndAdminKID pins the shape of the two variables the
+// pinning check reads: a comma-separated allowlist, trimmed the same way
+// CORS_ALLOWED_ORIGINS is, and a single admin key id kept apart from it.
+func TestLoadParsesSessionKIDsAndAdminKID(t *testing.T) {
+	clearEnv(t)
+	setRequired(t)
+	t.Setenv("AUTH_JWT_SESSION_KIDS", "kid-old, kid-new ,")
+	t.Setenv("AUTH_JWT_ADMIN_KID", "kid-admin")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if want := []string{"kid-old", "kid-new"}; !slices.Equal(cfg.Auth.SessionKIDs, want) {
+		t.Errorf("Auth.SessionKIDs = %v, want %v", cfg.Auth.SessionKIDs, want)
+	}
+	if cfg.Auth.AdminKID != "kid-admin" {
+		t.Errorf("Auth.AdminKID = %q, want kid-admin", cfg.Auth.AdminKID)
+	}
+}
+
 func TestLoadRejectsBadInput(t *testing.T) {
 	tests := []struct {
 		name string
@@ -239,6 +263,30 @@ func TestLoadRejectsBadInput(t *testing.T) {
 		{
 			name: "missing JWT audience",
 			env:  map[string]string{"AUTH_JWT_AUDIENCE": ""},
+		},
+		{
+			// Unset has to mean "trust no session key id", never "trust
+			// whatever the key set publishes" — the fallback pinning exists
+			// to remove. A comma-separated value with nothing but separators
+			// is the same failure spelled differently, so it is covered here
+			// too rather than left to look parsed.
+			name: "missing permitted session key ids",
+			env:  map[string]string{"AUTH_JWT_SESSION_KIDS": " , ,"},
+		},
+		{
+			// Without an admin key id there is nothing to check
+			// AUTH_JWT_SESSION_KIDS against, and "cannot check" must not be
+			// silently read as "nothing to check".
+			name: "missing admin key id",
+			env:  map[string]string{"AUTH_JWT_ADMIN_KID": ""},
+		},
+		{
+			// The one configuration mistake this variable exists to catch:
+			// were the admin key id ever also a permitted session key id, a
+			// compromised provisioner would turn its admin key into an
+			// accepted session token in one step.
+			name: "admin key id is also a permitted session key id",
+			env:  map[string]string{"AUTH_JWT_SESSION_KIDS": "session-kid-1,admin-kid-1"},
 		},
 		{
 			// A relative or malformed issuer cannot produce a JWKS address, and

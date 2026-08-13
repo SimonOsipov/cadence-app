@@ -46,9 +46,10 @@ func assembled(t *testing.T, probe func(context.Context) error) (*chi.Mux, *fixt
 	set := testsupport.StartJWKS(t, key)
 
 	verifier, err := token.NewVerifier(t.Context(), token.VerifierConfig{
-		Issuer:   set.Issuer,
-		Audience: "authenticated",
-		JWKSURL:  set.Issuer + testsupport.JWKSPath,
+		Issuer:      set.Issuer,
+		Audience:    "authenticated",
+		JWKSURL:     set.Issuer + testsupport.JWKSPath,
+		SessionKIDs: []string{key.KID},
 	})
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)

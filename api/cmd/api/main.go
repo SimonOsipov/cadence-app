@@ -82,10 +82,11 @@ func run(logger *slog.Logger) error {
 	// correct, and a startup failure would turn a provider blip into a deploy
 	// that needs a human.
 	verifier, err := token.NewVerifier(ctx, token.VerifierConfig{
-		Issuer:   cfg.Auth.Issuer,
-		Audience: cfg.Auth.Audience,
-		JWKSURL:  cfg.Auth.JWKSURL,
-		Logger:   logger,
+		Issuer:      cfg.Auth.Issuer,
+		Audience:    cfg.Auth.Audience,
+		JWKSURL:     cfg.Auth.JWKSURL,
+		SessionKIDs: cfg.Auth.SessionKIDs,
+		Logger:      logger,
 	})
 	if err != nil {
 		return fmt.Errorf("building the token verifier: %w", err)

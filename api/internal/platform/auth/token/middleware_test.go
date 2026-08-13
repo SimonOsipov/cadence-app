@@ -22,7 +22,7 @@ func guarded(t *testing.T, exempt []string) (http.Handler, *testsupport.SigningK
 
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	seen := &reached{}
 	handler := token.Middleware(verifier, exempt)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +360,7 @@ func TestMiddlewareRefusesWhenKeysAreUnavailable(t *testing.T) {
 	set := testsupport.StartJWKS(t, key)
 	set.Break()
 
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	called := false
 	handler := token.Middleware(verifier, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
