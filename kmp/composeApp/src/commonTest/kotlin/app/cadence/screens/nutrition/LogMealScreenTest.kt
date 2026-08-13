@@ -4,6 +4,7 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -14,12 +15,14 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CADENCE_STEPPER_MINUS_TAG
 import app.cadence.design.CADENCE_STEPPER_PLUS_TAG
 import app.cadence.design.CadenceTheme
+import app.cadence.format.formatInteger
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.MealDraft
 import app.cadence.shared.domain.MealItem
 import app.cadence.shared.domain.MealSource
 import app.cadence.shared.parsing.MealParseResult
+import app.cadence.shared.parsing.mealSamplePrompts
 import kotlinx.datetime.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -74,6 +77,13 @@ class LogMealScreenTest {
     private fun ComposeUiTest.itemRows() = onAllNodesWithTag(LOG_MEAL_ITEM_ROW_TAG, useUnmergedTree = true)
 
     private fun ComposeUiTest.itemsHeader() = onNodeWithTag(LOG_MEAL_ITEMS_HEADER_TAG, useUnmergedTree = true)
+
+    private fun ComposeUiTest.deleteButtons() = onAllNodesWithContentDescription("Удалить позицию")
+
+    // Merged tree, not unmerged: the tag sits on the same clickable node that
+    // merges its own label `BasicText` child upward, the same reason the
+    // grams pill is read this way in `steppingGramsDownThenUpRestoresTheOriginalMacros`.
+    private fun ComposeUiTest.saveFooter() = onNodeWithTag(LOG_MEAL_SAVE_TAG)
 
     private fun ComposeUiTest.parseAndAwait(text: String = "курица с рисом") {
         chatField().performTextReplacement(text)
@@ -164,6 +174,11 @@ class LogMealScreenTest {
      * Against "draw the total" (both rows would read 385 — `2 400 + 1 450`
      * tenths kcal, rounded) and "draw a constant" (both rows would read the
      * same fabricated number regardless of which item they belong to).
+     *
+     * Extended to cover deletion (`LogMealScreen.kt`'s `deleteItem`, unmeasured
+     * before this round): removing one row must leave the *other* item behind
+     * — not a blank slot and not a stale kcal figure — and the header count
+     * and footer total must follow the smaller list.
      */
     @Test
     fun twoItemsWithDifferentKcalDrawTwoDifferentNumbers() =
@@ -176,6 +191,15 @@ class LogMealScreenTest {
 
             onNodeWithTag(logMealItemKcalTag(0), useUnmergedTree = true).assertTextEquals("240 ккал")
             onNodeWithTag(logMealItemKcalTag(1), useUnmergedTree = true).assertTextEquals("145 ккал")
+
+            deleteButtons()[0].performClick()
+            waitForIdle()
+
+            itemRows().assertCountEquals(1)
+            onNodeWithTag(logMealItemKcalTag(0), useUnmergedTree = true).assertTextEquals("145 ккал")
+            // CadenceEyebrow uppercases its own text (`CadenceText.kt:29`).
+            onNodeWithText("ОБЕД · 1 ПОЗИЦИЯ").assertExists()
+            saveFooter().assertTextEquals("Сохранить · 145 ккал")
         }
 
     @Test
@@ -194,7 +218,7 @@ class LogMealScreenTest {
             }
 
             parseAndAwait()
-            onNodeWithTag(LOG_MEAL_SAVE_TAG, useUnmergedTree = true).performClick()
+            saveFooter().performClick()
             waitForIdle()
 
             assertEquals(MealSource.AI_TEXT, saved?.source)
@@ -203,12 +227,40 @@ class LogMealScreenTest {
         }
 
     /**
+     * The four totals-strip columns against `TARGETS` — its only witness
+     * before this round was arithmetic read by eye, and a transposed column
+     * (protein rendering fat's number, say) would have shipped silently.
+     * 385/48/30/7 are the two-item lunch fixture's exact folded kcal / protein
+     * / carbs / fat, each read off `logMealTotalTag`'s own merged node so a
+     * value and its caption are asserted together, not two separate lookups
+     * that could each pass against the wrong column.
+     */
+    @Test
+    fun totalsStripShowsFourColumnsAgainstTargets() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme { LogMealScreen(now = NOW, targets = TARGETS, parse = queuedParser(LUNCH_PARSE)) }
+            }
+
+            parseAndAwait()
+
+            onNodeWithTag(logMealTotalTag("kcal")).assertTextEquals("385", "/ ${formatInteger(TARGETS.kcal)}")
+            onNodeWithTag(
+                logMealTotalTag("protein"),
+            ).assertTextEquals("48", "/ ${formatInteger(TARGETS.proteinG)} г")
+            onNodeWithTag(logMealTotalTag("carbs")).assertTextEquals("30", "/ ${formatInteger(TARGETS.carbsG)} г")
+            onNodeWithTag(logMealTotalTag("fat")).assertTextEquals("7", "/ ${formatInteger(TARGETS.fatG)} г")
+        }
+
+    /**
      * The trap the step names explicitly: rescaling must always start from
      * the position's *parsed* values, never from whatever the previous edit
      * left behind. −10 г lands exactly on the floor; +10 г returns to the
      * start — see [RESCALE_ITEM]'s own KDoc for why this specific item
      * catches a base-on-current implementation and a base-on-original one
-     * would not both pass it.
+     * would not both pass it. Also exercises the floor itself: a second
+     * decrement at 5 г must not go lower — `LOG_MEAL_GRAM_FLOOR` had no test
+     * that could tell it apart from a floor of 0 before this round.
      */
     @Test
     fun steppingGramsDownThenUpRestoresTheOriginalMacros() =
@@ -233,10 +285,100 @@ class LogMealScreenTest {
             waitForIdle()
             onNodeWithTag(logMealItemGramsTag(0)).assertTextEquals("5 г")
 
+            // The floor holds: a second decrement at 5 г does not go lower.
+            onNodeWithTag(CADENCE_STEPPER_MINUS_TAG, useUnmergedTree = true).performClick()
+            waitForIdle()
+            onNodeWithTag(logMealItemGramsTag(0)).assertTextEquals("5 г")
+
             onNodeWithTag(CADENCE_STEPPER_PLUS_TAG, useUnmergedTree = true).performClick()
             waitForIdle()
 
             onNodeWithTag(logMealItemGramsTag(0)).assertTextEquals("15 г")
             onNodeWithText("Белок 1 г", substring = false).assertExists()
+        }
+
+    /**
+     * Reproduces the round-1 defect exactly: parsing, deleting every
+     * position, and then re-parsing the *same* text (a structurally equal
+     * `MealItem` list) must still repopulate the list. Keying the editable
+     * state on `parseState.items` instead of a per-attempt generation left
+     * the screen a dead end here — the list stayed empty and the footer
+     * stuck on «Добавьте что-нибудь» — with mode-switching the only escape.
+     */
+    @Test
+    fun reParsingTheSameTextAfterDeletingEverythingRepopulatesTheList() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    LogMealScreen(now = NOW, targets = TARGETS, parse = queuedParser(LUNCH_PARSE, LUNCH_PARSE))
+                }
+            }
+
+            parseAndAwait()
+            itemRows().assertCountEquals(LUNCH_ITEMS.size)
+
+            deleteButtons()[0].performClick()
+            waitForIdle()
+            deleteButtons()[0].performClick()
+            waitForIdle()
+            itemRows().assertCountEquals(0)
+            saveFooter().assertTextEquals("Добавьте что-нибудь")
+
+            parseAndAwait()
+
+            itemRows().assertCountEquals(LUNCH_ITEMS.size)
+            saveFooter().assertTextEquals("Сохранить · 385 ккал")
+        }
+
+    /**
+     * The recorded divergence from the prototype (`LogMealScreen.tsx:476-507`
+     * starts a parse on an empty field and substitutes breakfast): both
+     * halves of the guard — the button's own `enabled` and `runParse`'s own
+     * early return — had nothing pinning them before this round.
+     */
+    @Test
+    fun anEmptyFieldDoesNotStartAParse() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme { LogMealScreen(now = NOW, targets = TARGETS, parse = queuedParser(LUNCH_PARSE)) }
+            }
+
+            // No text typed — the field starts and stays empty.
+            onNodeWithText("Разобрать →").performClick()
+            waitForIdle()
+
+            itemsHeader().assertDoesNotExist()
+            saveFooter().assertTextEquals("Добавьте что-нибудь")
+        }
+
+    /** «Пример» must write the transcript into the field, not just cycle the placeholder. */
+    @Test
+    fun cyclingTheSampleFillsTheFieldWithItsTranscript() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme { LogMealScreen(now = NOW, targets = TARGETS) }
+            }
+
+            onNodeWithText("Пример").performClick()
+            waitForIdle()
+
+            chatField().assertTextEquals(mealSamplePrompts()[1].transcript)
+        }
+
+    /**
+     * The header chip's own reason for existing (`headerChipText`'s KDoc):
+     * every part read from the clock, none of it the prototype's literal
+     * «08:42 · вс 24 мая». Nothing asserted the rendered string before this
+     * round — replacing the whole function body with that literal left every
+     * other test green.
+     */
+    @Test
+    fun headerChipReadsTheClockNotALiteral() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme { LogMealScreen(now = NOW, targets = TARGETS) }
+            }
+
+            onNodeWithText("08:05 · Вс 31 мая").assertExists()
         }
 }

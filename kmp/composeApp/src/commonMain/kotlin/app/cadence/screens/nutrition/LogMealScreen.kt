@@ -98,7 +98,7 @@ private const val HEARD_LABEL = "Услышали"
 private const val PHOTO_UNAVAILABLE = "Распознавание снимка пока не работает — опишите еду текстом"
 private const val VOICE_UNAVAILABLE = "Распознавание голоса пока не работает — опишите еду текстом"
 
-/** «Услышали»'s own sparkles icon — sized like every other inline icon here, e.g. `MealHero.kt:83`. */
+/** «Услышали»'s sparkles icon — 16dp beside text, same as `TodayHero.kt:163`'s own inline icon. */
 private val SPARKLES_ICON_SIZE = 16.dp
 private const val TEXT_FIELD_MIN_LINES = 3
 
@@ -136,6 +136,17 @@ private data class MealParseUiState(
     val mealName: String = "",
     val transcript: String = "",
     val items: List<MealItem> = emptyList(),
+    /**
+     * Bumped on every *successful* parse, never on a failed retry — see
+     * [afterParseResult]. [LogMealScreen] keys its editable-position state on
+     * this, not on [items]: [MealItem] is a data class, so re-parsing the
+     * same text returns a structurally equal list, and a key on content alone
+     * would not fire — a second «курица с рисом» after deleting every row
+     * would leave the list empty and the footer stuck on «Добавьте
+     * что-нибудь» forever, mode-switching the only escape. This field states
+     * "a new attempt happened" as a fact independent of what it produced.
+     */
+    val generation: Int = 0,
 ) {
     /** Only once a parse has actually settled — not while [parsing] is still true. */
     val showsHeardChip: Boolean get() = transcript.isNotEmpty() && !parsing
@@ -147,12 +158,19 @@ private data class MealParseUiState(
  * also the composable's own cyclomatic complexity. A fresh
  * [MealParseUiState] on success, not [MealParseUiState.copy]: a stale
  * [MealParseUiState.failed] from a *previous* attempt must not survive into a
- * new success.
+ * new success. [MealParseUiState.generation] carries forward from `this`
+ * (the pre-parse state) precisely because a fresh instance would otherwise
+ * reset it to its default and defeat the one thing it exists for.
  */
 private fun MealParseUiState.afterParseResult(result: MealParseResult): MealParseUiState =
     when (result) {
         is MealParseResult.Parsed -> {
-            MealParseUiState(mealName = result.mealName, transcript = result.transcript, items = result.items)
+            MealParseUiState(
+                mealName = result.mealName,
+                transcript = result.transcript,
+                items = result.items,
+                generation = generation + 1,
+            )
         }
 
         MealParseResult.Unavailable -> {
@@ -207,16 +225,20 @@ fun LogMealScreen(
     val samples = remember { mealSamplePrompts() }
     val scope = rememberCoroutineScope()
 
-    // Keyed on `parseState.items`, not created once: a fresh parse (or a mode
-    // switch, which resets `parseState` to a fresh empty instance) must reset
-    // both the editable positions and which one is mid-edit. A failed retry
-    // leaves `parseState.items` the same list — see `afterParseResult` — so
-    // this key does not fire and the previous parse's edits survive it, which
-    // is the same "уже разобранные позиции остаются правимыми" guarantee
+    // Keyed on `parseState.generation`, not on `parseState.items`: a fresh
+    // successful parse (or a mode switch, which resets `parseState` to a
+    // fresh instance with `generation = 0`) must reset both the editable
+    // positions and which one is mid-edit, and `generation` is what makes
+    // that true even when the new parse's items are a content-equal list —
+    // `MealItem` is a data class, so re-parsing identical text would
+    // otherwise not change the key at all. A failed retry leaves
+    // `generation` untouched — see `afterParseResult` — so this key does not
+    // fire and the previous parse's edits survive it, which is the same
+    // "уже разобранные позиции остаются правимыми" guarantee
     // [MealParseUiState] itself documents.
     var loggedItems by
-        remember(parseState.items) { mutableStateOf(parseState.items.map { LoggedMealItem(it, it) }) }
-    var editingIndex by remember(parseState.items) { mutableStateOf<Int?>(null) }
+        remember(parseState.generation) { mutableStateOf(parseState.items.map { LoggedMealItem(it, it) }) }
+    var editingIndex by remember(parseState.generation) { mutableStateOf<Int?>(null) }
     val currentItems = loggedItems.map { it.current }
 
     fun switchMode(next: LogMealMode) {

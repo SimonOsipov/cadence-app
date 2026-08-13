@@ -3,6 +3,7 @@ package app.cadence.format
 import app.cadence.shared.domain.PartOfDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -58,6 +59,15 @@ class CadenceDatesTest {
         assertEquals(0, leadingBlanks(LocalDate(2026, 6, 1)), "1 June 2026 is a Monday")
         assertEquals(4, leadingBlanks(LocalDate(2026, 5, 1)), "1 May 2026 is a Friday")
         assertEquals(6, leadingBlanks(LocalDate(2026, 11, 1)), "1 November 2026 is a Sunday")
+    }
+
+    @Test
+    fun clockTimeZeroPadsBothHalves() {
+        // The log-meal header chip's own reason for existing: the prototype's
+        // «08:42» has a leading zero on both halves, and nothing here proves
+        // this function pads rather than being ported as a literal.
+        assertEquals("08:05", clockTime(LocalDateTime(2026, 5, 31, 8, 5)))
+        assertEquals("23:59", clockTime(LocalDateTime(2026, 5, 31, 23, 59)))
     }
 
     @Test

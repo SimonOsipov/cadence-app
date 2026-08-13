@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.cadence.design.Cadence
 import app.cadence.design.CadenceBody
@@ -60,6 +61,15 @@ const val LOG_MEAL_ITEMS_HEADER_TAG = "log-meal-items-header"
 
 const val LOG_MEAL_TOTALS_TAG = "log-meal-totals"
 const val LOG_MEAL_SAVE_TAG = "log-meal-save"
+
+/**
+ * One totals-strip column's value and «/ {цель}» caption, merged onto this
+ * tag so a test can read both with one `assertTextEquals(value, caption)` —
+ * [id] is stable English, kept separate from the Russian [TotalsColumn.label]
+ * for the same reason `macroTrackTag`/`macroFillTag` in `CadenceMacroBar.kt`
+ * key on a stable id rather than display copy.
+ */
+fun logMealTotalTag(id: String) = "log-meal-total-$id"
 
 /** One position's own kcal — `logMealItemKcalTag(0) != logMealItemKcalTag(1)` is the whole point of it existing. */
 fun logMealItemKcalTag(index: Int) = "log-meal-item-kcal-$index"
@@ -190,8 +200,8 @@ private fun MealItemRow(
         }
 
         // Steps of 10, a floor of 5, no ceiling — `LogMealScreen.tsx:855,880`.
-        // `min`/`max` come from the shell so the same two constants back both
-        // this stepper and `rescaleMealItem`'s own grams clamp.
+        // The floor is this stepper's own: `rescaleMealItem` clamps only at
+        // zero (`coerceAtLeast(0)`), so 5 is enforced here, not there.
         if (editing) {
             CadenceStepper(
                 value = item.grams.toDouble(),
@@ -247,24 +257,28 @@ private fun TotalsStrip(
         horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.md),
     ) {
         TotalsColumn(
+            id = "kcal",
             label = "ккал",
             value = tenthsLabel(totals.kcalTenths),
             goal = formatInteger(targets.kcal),
             modifier = Modifier.weight(1f),
         )
         TotalsColumn(
+            id = "protein",
             label = "белок",
             value = tenthsLabel(totals.proteinGTenths),
             goal = "${formatInteger(targets.proteinG)} г",
             modifier = Modifier.weight(1f),
         )
         TotalsColumn(
+            id = "carbs",
             label = "углев",
             value = tenthsLabel(totals.carbsGTenths),
             goal = "${formatInteger(targets.carbsG)} г",
             modifier = Modifier.weight(1f),
         )
         TotalsColumn(
+            id = "fat",
             label = "жиры",
             value = tenthsLabel(totals.fatGTenths),
             goal = "${formatInteger(targets.fatG)} г",
@@ -275,6 +289,7 @@ private fun TotalsStrip(
 
 @Composable
 private fun TotalsColumn(
+    id: String,
     label: String,
     value: String,
     goal: String,
@@ -282,8 +297,19 @@ private fun TotalsColumn(
 ) {
     Column(modifier) {
         CadenceEyebrow(label)
-        CadenceNumber(value = value)
-        CadenceMeta("/ $goal", color = Cadence.palette.subtle)
+        // Merged onto `logMealTotalTag(id)` deliberately, not tagged at the
+        // strip's own outer Row: neither `CadenceNumber` nor `CadenceMeta`
+        // takes a modifier that lands on their own text node, and this Row
+        // is not clickable, so nothing merges its descendants' text upward
+        // without saying so explicitly.
+        Column(
+            Modifier
+                .semantics(mergeDescendants = true) { }
+                .testTag(logMealTotalTag(id)),
+        ) {
+            CadenceNumber(value = value)
+            CadenceMeta("/ $goal", color = Cadence.palette.subtle)
+        }
     }
 }
 
