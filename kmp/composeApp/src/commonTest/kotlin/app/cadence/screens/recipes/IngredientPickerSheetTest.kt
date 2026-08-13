@@ -25,6 +25,7 @@ import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.IngredientId
 import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.RecipeIngredient
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -334,19 +335,31 @@ class IngredientPickerSheetTest {
         }
 
     /**
-     * No `waitForIdle()` before the assertion: this is the sheet's opening frame,
-     * before `LaunchedEffect(query)` has had any chance to run at all — the one state
-     * the spec names as an error, and the one a search-not-yet-answered/answered-empty
-     * mix-up would draw regardless of what the mock eventually returns.
+     * `gate` holds the search suspended, so `results` genuinely has no answer yet —
+     * `waitForIdle()` still returns, since a coroutine parked on an un-completed
+     * `Deferred` is not "pending recomposition work". Proves the not-found message
+     * cannot be a stand-in for "no answer yet": it must wait for the gate before
+     * drawing anything, and only draws once the gate resolves empty.
      */
     @Test
-    fun theNotFoundMessageDoesNotDrawOnTheOpeningFrame() =
+    fun theNotFoundMessageWaitsForTheFirstSearchToAnswer() =
         runComposeUiTest {
-            setContent {
-                CadenceTheme { IngredientPickerSheet(search = fakeSearch()) }
+            val gate = CompletableDeferred<Unit>()
+            val pendingSearch: suspend (String) -> List<Ingredient> = {
+                gate.await()
+                emptyList()
             }
+            setContent {
+                CadenceTheme { IngredientPickerSheet(search = pendingSearch) }
+            }
+            waitForIdle()
 
             onNodeWithText("Ничего не найдено.").assertDoesNotExist()
+
+            gate.complete(Unit)
+            waitForIdle()
+
+            onNodeWithText("Ничего не найдено.").assertExists()
         }
 
     /**
