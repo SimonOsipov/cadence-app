@@ -27,7 +27,9 @@ import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceTabBar
 import app.cadence.design.CadenceTitle
 import app.cadence.format.greeting
+import app.cadence.shared.domain.Meal
 import app.cadence.shared.repository.TodaySummary
+import kotlinx.datetime.TimeZone
 
 /**
  * «Сегодня», ported from mobile/src/features/today/TodayScreen.tsx.
@@ -36,12 +38,22 @@ import app.cadence.shared.repository.TodaySummary
  * a day and reports taps, which is what lets the mock be swapped for the Ktor
  * client without this file changing. Everything it renders that carries a
  * number goes through `app.cadence.format`.
+ *
+ * [meals] is the day's full meal list, separate from [summary] the way
+ * `NutritionScreen.kt` keeps `NutritionDay` separate from its own screen data
+ * — `TodaySummary` carries only the count and the fold (§11's screen → data
+ * map), and `TodayMeals`' recent-three list needs the meals themselves. [zone]
+ * is a parameter for the same reason `NutritionScreen.kt:94-98` takes one: a
+ * meal's `eatenAt` is an `Instant`, and the clock reading it renders as is a
+ * choice a test needs to be able to fix.
  */
 @Composable
 fun TodayScreen(
     summary: TodaySummary,
     patientName: String,
     modifier: Modifier = Modifier,
+    meals: List<Meal> = emptyList(),
+    zone: TimeZone = TimeZone.currentSystemDefault(),
     onLogDose: () -> Unit = { },
     onOpenQuickFeel: () -> Unit = { },
     onOpenJournal: () -> Unit = { },
@@ -71,6 +83,8 @@ fun TodayScreen(
 
         TodayBody(
             summary = summary,
+            meals = meals,
+            zone = zone,
             modifier = Modifier.weight(1f),
             onLogDose = onLogDose,
             onOpenQuickFeel = onOpenQuickFeel,
@@ -147,6 +161,8 @@ private fun TodayHeader(
 @Composable
 private fun TodayBody(
     summary: TodaySummary,
+    meals: List<Meal>,
+    zone: TimeZone,
     modifier: Modifier = Modifier,
     onLogDose: () -> Unit,
     onOpenQuickFeel: () -> Unit,
@@ -186,6 +202,7 @@ private fun TodayBody(
         MealHero(
             eaten = summary.mealMacros,
             targets = summary.targets,
+            mealCount = summary.mealCount,
             onLogMeal = onLogMeal,
             onOpenRecipes = onOpenRecipes,
         )
@@ -193,6 +210,8 @@ private fun TodayBody(
         TodayMeals(
             eaten = summary.mealMacros,
             targets = summary.targets,
+            meals = meals,
+            zone = zone,
             onOpenNutrition = onOpenNutrition,
         )
 

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.Meal
 import app.cadence.shared.domain.ProtocolItemKind
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.repository.TodaySummary
@@ -30,6 +31,13 @@ private const val PROTOCOL_ITEMS = 3
 /** The seeded day, read through the repository the screen will be handed. */
 private fun summary(iso: String = "2026-05-31T04:00:00Z"): TodaySummary =
     runBlocking { CadenceMocks(FixedCadenceClock.at(iso), ZONE).today.today() }
+
+/** The same day's meals, through `NutritionRepository` — `TodayMeals`' own source. */
+private fun meals(iso: String = "2026-05-31T04:00:00Z"): List<Meal> =
+    runBlocking {
+        val mocks = CadenceMocks(FixedCadenceClock.at(iso), ZONE)
+        mocks.nutrition.day(mocks.today.today().date).meals
+    }
 
 @OptIn(ExperimentalTestApi::class)
 class TodayScreenTest {
@@ -322,6 +330,66 @@ class TodayScreenTest {
 
             // 1 800 − 840 and 140 − 60, both computed rather than written.
             onNodeWithText("Осталось 960 ккал · 80 г белка").assertExists()
+        }
+
+    @Test
+    fun theMealHintOnAZeroMealDayIsTheFirstOfFourStates() =
+        runComposeUiTest {
+            // A day the seed has no meals for (`MockRepositoryTest
+            // .anotherDayHasItsOwnMealsAndNotTheSeededDays`) — `suggestNextMeal`'s
+            // `meals.length == 0` branch.
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary("2026-06-07T09:00:00Z"), patientName = "Марина")
+                }
+            }
+
+            // The eyebrow goes through `CadenceEyebrow`, which uppercases its text.
+            onNodeWithText("Начнём день".uppercase()).assertExists()
+            onNodeWithText("Завтрак?").assertExists()
+        }
+
+    @Test
+    fun theMealHintOnATwoMealDayDiffersFromTheZeroMealState() =
+        runComposeUiTest {
+            // The default fixture's seeded Sunday: two meals, `suggestNextMeal`'s
+            // `meals.length == 2` branch. Against the mutation «the hint is
+            // constant» — a fixed eyebrow/title would pass one of this test and
+            // `theMealHintOnAZeroMealDayIsTheFirstOfFourStates`, never both.
+            setContent { CadenceTheme { TodayScreen(summary = summary(), patientName = "Марина") } }
+
+            onNodeWithText("Следующий приём".uppercase()).assertExists()
+            onNodeWithText("Перекус?").assertExists()
+            assertTrue(onAllNodesWithText("Начнём день".uppercase()).fetchSemanticsNodes().isEmpty())
+            assertTrue(onAllNodesWithText("Завтрак?").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
+    fun theRecentMealsListShowsALoggedMealWithItsTimeAndItemCount() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary(), patientName = "Марина", meals = meals(), zone = ZONE)
+                }
+            }
+
+            onNodeWithText("Завтрак").assertExists()
+            onNodeWithText("Обед").assertExists()
+            // 06:30 UTC is 09:30 in Moscow — the seeded meal's one item.
+            onNodeWithText("09:30 · 1 позиция").assertExists()
+        }
+
+    @Test
+    fun theRecentMealsListShowsTheEmptyStateOnADayWithNoMeals() =
+        runComposeUiTest {
+            val iso = "2026-06-07T09:00:00Z"
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary(iso), patientName = "Марина", meals = meals(iso), zone = ZONE)
+                }
+            }
+
+            onNodeWithText("Сегодня пока ничего — первый приём приземлится здесь.").assertExists()
         }
 
     @Test

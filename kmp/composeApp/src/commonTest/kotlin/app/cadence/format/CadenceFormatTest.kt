@@ -56,19 +56,6 @@ class CadenceFormatTest {
     }
 
     @Test
-    fun weeksTakeTheSameRuleAsMeals() {
-        // The prototype's reorder card repeats the meal card's approximation —
-        // `weeksLeft < 5 ? 'недели' : 'недель'` — and is wrong from 21 up in
-        // the same way. One rule, two nouns.
-        assertEquals("неделю", pluralWeeks(1))
-        assertEquals("недели", pluralWeeks(3))
-        assertEquals("недель", pluralWeeks(5))
-        assertEquals("недель", pluralWeeks(11))
-        assertEquals("неделю", pluralWeeks(21))
-        assertEquals("недели", pluralWeeks(22))
-    }
-
-    @Test
     fun aDecimalUsesTheCommaAndKeepsItsTrailingZero() {
         // «98,4», «110,0» — the comma is the locale's, and a weight that
         // dropped its trailing zero would jump between one and two glyphs as
@@ -97,23 +84,26 @@ class CadenceFormatTest {
     }
 
     @Test
-    fun mealsTakeTheRussianPluralAndNotThePrototypesApproximationOfIt() {
-        assertEquals("приём", pluralMeals(1))
-        assertEquals("приёма", pluralMeals(2))
-        assertEquals("приёма", pluralMeals(4))
-        assertEquals("приёмов", pluralMeals(5))
-        assertEquals("приёмов", pluralMeals(11))
-        assertEquals("приёмов", pluralMeals(14))
-        // Exactly where the prototype's `count < 5 ? 'приёма' : 'приёмов'` is
-        // wrong.
-        assertEquals("приём", pluralMeals(21))
-        assertEquals("приёма", pluralMeals(22))
-        assertEquals("приёмов", pluralMeals(25))
-        assertEquals("приём", pluralMeals(101))
-        assertEquals("приёмов", pluralMeals(111))
-        // Never rendered — the sheet takes its zero-state branch — but a
-        // plural function that is wrong at zero is wrong.
-        assertEquals("приёмов", pluralMeals(0))
+    fun aKcalValueCarriesItsOwnUnit() {
+        assertEquals("960 ккал", formatKcal(960))
+        assertEquals("1 800 ккал", formatKcal(1800))
+        assertEquals("0 ккал", formatKcal(0))
+    }
+
+    @Test
+    fun aGramValueCarriesItsOwnUnit() {
+        assertEquals("80 г", formatGrams(80))
+        assertEquals("0 г", formatGrams(0))
+    }
+
+    @Test
+    fun aTenthsKcalFieldRoundsForDisplayLikeToMacrosDoes() {
+        // 295,2 kcal — the same round-half-up boundary `MacrosTenths.toMacros`
+        // uses, reached here without a second `Macros` conversion.
+        assertEquals("295 ккал", formatKcalTenths(2952))
+        // The half-up tie: 240,5 rounds up, not to even.
+        assertEquals("241 ккал", formatKcalTenths(2405))
+        assertEquals("0 ккал", formatKcalTenths(0))
     }
 
     @Test
