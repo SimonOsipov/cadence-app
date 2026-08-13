@@ -65,13 +65,13 @@ docker-down:
 
 # One command for a usable local stack: Postgres, GoTrue, the chain applied,
 # passwords on the two LOGIN roles and the identity provider joined to the hook.
-# Requires DATABASE_MIGRATION_URL — see .env.example.
+# Requires DATABASE_MIGRATION_URL.
 #
 # The password steps exist because the chain creates both LOGIN roles without
 # one on purpose: the credential is provisioned outside the repository, in the
 # deployment's variable store. A developer machine has no such place, so this
 # target plays that part. It is local-only, and the passwords it sets are the
-# ones in .env.example — never run it against a deployed database.
+# ones this target sets — never run it against a deployed database.
 #
 # The membership is here rather than in docker-compose.yml for an ordering
 # reason: cadence_auth_hook is created by migration 000005, and compose brings
@@ -120,4 +120,4 @@ dev-up: docker-up
 	@echo "  postgres  localhost:5433"
 	@echo "  gotrue    localhost:9999  (JWKS at /.well-known/jwks.json)"
 	@echo
-	@echo "the API needs AUTH_JWT_ISSUER, AUTH_JWT_SESSION_KIDS and AUTH_JWT_ADMIN_KID — see .env.example"
+	@echo "the API needs AUTH_JWT_ISSUER, AUTH_JWT_SESSION_KIDS and AUTH_JWT_ADMIN_KID; config.Load refuses to start without them"

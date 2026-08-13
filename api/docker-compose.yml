@@ -185,44 +185,15 @@ services:
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_EXP: "3600"
 
-      # Required by config validation even when asymmetric keys are configured,
-      # and this is worth knowing rather than being surprised by: GoTrue refuses
-      # to start without it. It does not sign anything here — with JWT_KEYS set,
-      # new tokens are ES256 — it stays for verifying tokens issued before a key
-      # pair existed. Local only, and the API would refuse an HS256 token
-      # signed with it anyway.
+      # GoTrue refuses to start without this even when JWT_KEYS is set; it
+      # signs nothing here.
       GOTRUE_JWT_SECRET: local-development-only-not-a-secret
 
-      # Asymmetric signing, as a JSON *array* of JWKs — the decoder unmarshals
-      # into a list and keys the result by each entry's kid. `key_ops: ["sign"]`
-      # is not decoration: GoTrue picks the signing key by looking for exactly
-      # that marker, and refuses to start with "no signing key detected" if no
-      # key carries it, or with "multiple signing keys detected" if more than
-      # one does — both measured against live GoTrue and pinned by the
-      # contract tests in step-2.
-      #
-      # Two keys, distinct kids, exactly one signing:
-      #
-      #   - a1323fc3-...403f, key_ops: ["sign"] — the session key. GoTrue
-      #     signs every session token with it, and it is the only kid
-      #     AUTH_JWT_SESSION_KIDS (below, and in .env.example) permits.
-      #   - xr8--Dw (kid xr8-HA0zUfG0zdB40mJdFNwX3DvkinwdnhXB1g2W_Dw), no
-      #     key_ops — the admin key. GoTrue's admin routes accept a token
-      #     signed by *any* configured key regardless of key_ops, so this key
-      #     verifies admin bearer tokens without ever being the one GoTrue
-      #     signs sessions with. It is deliberately absent from
-      #     AUTH_JWT_SESSION_KIDS, and config.Load refuses to start if it is
-      #     ever added there — see AUTH_JWT_ADMIN_KID in .env.example.
-      #
-      # Both are development key pairs, generated for this file and committed
-      # on purpose: they sign nothing that exists outside a laptop. The
-      # deployed instance gets its own pair for each role, and neither one
-      # ever comes from a repository.
-      #
-      # It matters that both are ES256 and not the legacy shared secret: the
-      # API accepts ES256 and RS256 and nothing else, so a GoTrue left on
-      # HS256 has every one of its tokens refused. Better to meet that here
-      # than against a deployment.
+      # `key_ops: ["sign"]` picks the signing key — GoTrue refuses to start
+      # with none or with more than one. The second kid is the admin key,
+      # deliberately absent from AUTH_JWT_SESSION_KIDS; config.Load refuses to
+      # start if it is ever added there. Both pairs are development-only and
+      # committed on purpose.
       GOTRUE_JWT_KEYS: '[{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"a1323fc3-c42d-37ae-8be6-1ebfb524403f","x":"2e9iv7Gxg80pCO61rNEtPEs-mIr1mErwg8vW7QcugY8","y":"9K6Q4xt--k5fF48WfBjVeFnxsn3NAJY-so03DMZnEH0","d":"oTI_w8QtN66L5h6_tSRAP5I4FbDa13nXQrT2KWM3fuQ","key_ops":["sign"]},{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"xr8-HA0zUfG0zdB40mJdFNwX3DvkinwdnhXB1g2W_Dw","x":"rtiaY2jMvLAFdxMFASN2GZ5EigwL4ka3TjAb4Yz_wE8","y":"ye74OWWh2AjB4jPLni3z3OIpByWz2QCh-u7N7DachxM","d":"XPA_FXtwbdWb0sxa9Dr7MZdKQboGjZA4jfvFhfvTIBA"}]'
 
       # The token issuance hook. This is the one place the product role gets into
