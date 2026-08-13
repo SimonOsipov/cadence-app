@@ -281,8 +281,14 @@ class CadenceMocks(
         override suspend fun recipe(id: RecipeId): Recipe? =
             ownRecipes.firstOrNull { it.id == id } ?: MockSeed.recipes.firstOrNull { it.id == id }
 
-        override suspend fun ingredients(query: String): List<Ingredient> =
-            MockSeed.ingredients.filter { it.nameRu.contains(query, ignoreCase = true) }
+        override suspend fun ingredients(query: String): List<Ingredient> {
+            // Trimmed, matching `RecipeBuilderScreen.tsx:127`'s
+            // `q.trim().toLowerCase()` — a trailing space off a mobile
+            // keyboard (`"тво "`) must still find «Творог 5%», not zero
+            // results.
+            val trimmed = query.trim()
+            return MockSeed.ingredients.filter { it.nameRu.contains(trimmed, ignoreCase = true) }
+        }
 
         override suspend fun save(draft: RecipeDraft): RecipeSaveResult {
             val name = draft.name

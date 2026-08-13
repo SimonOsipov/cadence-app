@@ -55,7 +55,24 @@ class RecipeRepositoryTest {
         }
 
     @Test
-    fun aSavedRecipeComesBackWithANonEmptyOwnerIdAndSortsBeforeTheLibrary() =
+    fun searchTrimsWhitespaceBeforeMatching() =
+        runTest {
+            // `RecipeBuilderScreen.tsx:127` trims before matching
+            // (`q.trim().toLowerCase()`) — a trailing space off a mobile
+            // keyboard must not turn a real match into an empty result.
+            val cadence = CadenceMocks()
+
+            val untrimmed = cadence.recipes.ingredients("тво")
+            val withTrailingSpace = cadence.recipes.ingredients("тво ")
+            val withSurroundingSpace = cadence.recipes.ingredients("  тво  ")
+
+            assertEquals(listOf(IngredientId("cottage")), withTrailingSpace.map { it.id })
+            assertEquals(untrimmed.map { it.id }, withTrailingSpace.map { it.id })
+            assertEquals(untrimmed.map { it.id }, withSurroundingSpace.map { it.id })
+        }
+
+    @Test
+    fun aSavedRecipeComesBackOwnedByThePatientAndSortsBeforeTheLibrary() =
         runTest {
             val cadence = CadenceMocks()
 
@@ -70,13 +87,17 @@ class RecipeRepositoryTest {
 
             val library = cadence.recipes.library(RecipeFilter())
             val saved = library.recipes.first { it.id == result.id }
-            assertTrue(saved.ownerId != null, "a saved recipe must carry a non-empty ownerId")
+            // Not just non-null: the seeded patient, specifically — a mock
+            // world with one patient makes `!= null` and `== MockSeed.patientId`
+            // agree today, but only the latter is the claim step-9's «Мои
+            // рецепты» actually depends on.
+            assertEquals(MockSeed.patientId, saved.ownerId, "a saved recipe must be owned by the seeded patient")
 
             // The set, not just membership: every own recipe ahead of every
             // library one, not merely the new recipe somewhere before the
             // library's first entry — a mutation that inserted it second
             // among six library recipes would still satisfy "somewhere before".
-            val ownCount = library.recipes.count { it.ownerId != null }
+            val ownCount = library.recipes.count { it.ownerId == MockSeed.patientId }
             assertEquals(1, ownCount)
             assertEquals(result.id, library.recipes.first().id, "the own recipe must be the very first entry")
             assertTrue(
@@ -96,7 +117,7 @@ class RecipeRepositoryTest {
             assertIs<RecipeSaveResult.Saved>(second)
 
             val library = cadence.recipes.library(RecipeFilter())
-            val ownIds = library.recipes.filter { it.ownerId != null }.map { it.id }
+            val ownIds = library.recipes.filter { it.ownerId == MockSeed.patientId }.map { it.id }
 
             assertEquals(listOf(second.id, first.id), ownIds, "the most recently saved recipe sorts first")
         }
