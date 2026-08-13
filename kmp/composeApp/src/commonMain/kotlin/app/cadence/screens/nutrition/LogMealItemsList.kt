@@ -42,11 +42,10 @@ import app.cadence.shared.domain.MealItem
 import app.cadence.shared.domain.sumTenths
 import kotlin.math.roundToInt
 
-// The item list, the totals strip and the «Сохранить» footer for
-// `LogMealScreen.kt` (`LogMealScreen.tsx:270-394`) — split into their own
-// file once the shell plus these three components would have crossed
-// detekt's `LargeClass` threshold, the same way `commonTest/design/` already
-// splits one test file per primitive rather than keeping one large file.
+// The item list, totals strip and «Сохранить» footer for `LogMealScreen.kt`
+// (`LogMealScreen.tsx:270-394`) — split out once the shell plus these three
+// components would have crossed detekt's `LargeClass` threshold, the same way
+// `commonTest/design/` splits one test file per primitive.
 
 private val HAIRLINE = 1.dp
 private val MACRO_DOT = 5.dp
@@ -63,15 +62,13 @@ const val LOG_MEAL_TOTALS_TAG = "log-meal-totals"
 const val LOG_MEAL_SAVE_TAG = "log-meal-save"
 
 /**
- * One totals-strip column's own label, value and «/ {цель}» caption, all
- * merged onto this tag so a test can read the three with one
- * `assertTextEquals(label, value, caption)` — the label has to be part of
- * that merged node, not just the number, or a swap of two columns' labels
- * (protein rendering fat's, say) would leave every value/caption pair still
- * correct and no assertion able to see it. [id] is stable English, kept
- * separate from the Russian [TotalsColumn.label] for the same reason
- * `macroTrackTag`/`macroFillTag` in `CadenceMacroBar.kt` key on a stable id
- * rather than display copy.
+ * One totals-strip column's label, value and «/ {цель}» caption, merged onto this
+ * tag so `assertTextEquals(label, value, caption)` reads all three — the label
+ * must be part of that merged node, or a swap of two columns' labels (protein
+ * rendering fat's, say) would leave every value/caption pair correct and no
+ * assertion able to see it. [id] is stable English, kept apart from the Russian
+ * [TotalsColumn.label] for the same reason `macroTrackTag`/`macroFillTag` in
+ * `CadenceMacroBar.kt` key on a stable id rather than display copy.
  */
 fun logMealTotalTag(id: String) = "log-meal-total-$id"
 
@@ -83,30 +80,26 @@ fun logMealItemGramsTag(index: Int) = "log-meal-item-grams-$index"
 
 /**
  * The sum of what is currently shown, tenths-exact and never turned into a
- * [Macros]. `MacrosTenths.toMacros()` stays the single production
- * conversion to [Macros], at the `TodaySummary` boundary (`Nutrition.kt:62-77`);
- * this file's four labels round straight from tenths through [tenthsLabel]
- * instead of minting a second, competing `Macros` value that nothing else
- * would ever read.
+ * [Macros]. `MacrosTenths.toMacros()` stays the single production conversion, at
+ * the `TodaySummary` boundary (`Nutrition.kt:62-77`); this file's four labels round
+ * straight from tenths through [tenthsLabel] instead of minting a second, unread
+ * `Macros` value.
  */
 private fun List<MealItem>.foldedMacros(): MacrosTenths = map { it.macros }.sumTenths()
 
 /**
- * A tenths field as a whole unit, for display only — not
- * `MacrosTenths.toMacros()`; see [foldedMacros] for why this file
- * never calls it. [formatDecimal]'s round-half-up is already the tested rule
- * for a `Double`; treating a tenths count as `tenths / 10.0` reuses that rule
- * instead of re-deriving round-half-up a second time in this file.
+ * A tenths field as a whole unit, for display only — not `MacrosTenths.toMacros()`;
+ * see [foldedMacros]. Treats a tenths count as `tenths / 10.0` to reuse
+ * [formatDecimal]'s already-tested round-half-up rather than re-deriving it.
  */
 private fun tenthsLabel(tenths: Int): String = formatDecimal(tenths / TENTHS_PER_UNIT, digits = 0)
 
 /**
  * The list, its header line and the totals strip — `LogMealScreen.tsx:270-318`.
- *
  * Takes the *current* (possibly edited) items, not the parsed originals:
- * [LogMealScreen] is what keeps each position's original values, threading
- * them into [app.cadence.shared.domain.rescaleMealItem] on every edit, so
- * everything below only ever renders the result of that.
+ * [LogMealScreen] keeps each position's original values, threading them into
+ * [app.cadence.shared.domain.rescaleMealItem] on every edit, so everything below
+ * only ever renders that result.
  */
 @Composable
 internal fun LogMealItemsSection(
@@ -238,10 +231,9 @@ private fun MacroBadge(
 }
 
 /**
- * Four numeric columns, not a bar: the spec is explicit that this strip is
- * its own code rather than three calls to `CadenceMacroBar` — a bar measures
- * a value against a goal as a fraction, and this reads as two numbers side by
- * side (`LogMealScreen.tsx:903-959`).
+ * Four numeric columns, not a bar: the spec is explicit this strip is its own code
+ * rather than three `CadenceMacroBar` calls — a bar measures value against goal as a
+ * fraction, and this reads as two numbers side by side (`LogMealScreen.tsx:903-959`).
  */
 @Composable
 private fun TotalsStrip(
@@ -319,10 +311,10 @@ private fun TotalsColumn(
 }
 
 /**
- * «Сохранить · {N} ккал», inactive «Добавьте что-нибудь» — always drawn, not
- * only once there are items: the prototype's footer sits outside every stage
- * branch (`LogMealScreen.tsx:344-394`), inactive rather than absent until
- * there is something to save.
+ * «Сохранить · {N} ккал», inactive «Добавьте что-нибудь» — always drawn, not only
+ * once there are items: the prototype's footer sits outside every stage branch
+ * (`LogMealScreen.tsx:344-394`), inactive rather than absent until there is
+ * something to save.
  */
 @Composable
 internal fun LogMealFooter(

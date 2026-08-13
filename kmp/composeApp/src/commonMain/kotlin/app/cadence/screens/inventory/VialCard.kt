@@ -46,11 +46,9 @@ private fun VialStatus.pill(): Pair<String, CadencePillTone>? =
 private val HAIRLINE = 1.dp
 
 /**
- * One vial, as the cabinet lists it.
- *
- * Everything on it is already resolved — the compound's name, the dose in
- * force, what is left. The card computes nothing, which is what stops it
- * disagreeing with the Today screen about the same number.
+ * One vial, as the cabinet lists it. Everything on it is already resolved — the
+ * compound's name, the dose in force, what is left — so the card computes nothing,
+ * which is what stops it disagreeing with the Today screen about the same number.
  */
 @Composable
 fun VialCard(

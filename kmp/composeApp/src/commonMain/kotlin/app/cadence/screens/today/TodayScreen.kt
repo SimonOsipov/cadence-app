@@ -32,20 +32,19 @@ import app.cadence.shared.repository.TodaySummary
 import kotlinx.datetime.TimeZone
 
 /**
- * «Сегодня», ported from mobile/src/features/today/TodayScreen.tsx.
- *
- * Takes a [TodaySummary] and lambdas, never a repository: the screen is handed
- * a day and reports taps, which is what lets the mock be swapped for the Ktor
- * client without this file changing. Everything it renders that carries a
- * number goes through `app.cadence.format`.
+ * «Сегодня», ported from mobile/src/features/today/TodayScreen.tsx. Takes a
+ * [TodaySummary] and lambdas, never a repository: the screen is handed a day and
+ * reports taps, which lets the mock be swapped for the Ktor client without this
+ * file changing. Everything it renders that carries a number goes through
+ * `app.cadence.format`.
  *
  * [meals] is the day's full meal list, separate from [summary] the way
- * `NutritionScreen.kt` keeps `NutritionDay` separate from its own screen data
- * — `TodaySummary` carries only the count and the fold (§11's screen → data
- * map), and `TodayMeals`' recent-three list needs the meals themselves. [zone]
- * is a parameter for the same reason `NutritionScreen.kt:94-98` takes one: a
- * meal's `eatenAt` is an `Instant`, and the clock reading it renders as is a
- * choice a test needs to be able to fix.
+ * `NutritionScreen.kt` keeps `NutritionDay` separate from its own screen data —
+ * `TodaySummary` carries only the count and the fold (§11's screen → data map),
+ * and `TodayMeals`' recent-three list needs the meals themselves. [zone] is a
+ * parameter for the same reason `NutritionScreen.kt:94-98` takes one: a meal's
+ * `eatenAt` is an `Instant`, and the clock reading it renders as is a choice a
+ * test needs to fix.
  */
 @Composable
 fun TodayScreen(

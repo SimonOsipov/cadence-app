@@ -59,14 +59,12 @@ import kotlinx.datetime.TimeZone
 import kotlin.math.roundToInt
 
 // «Питание» — the nutrition tab (`CadenceRoute.Nutrition`), ported from
-// mobile/src/features/meal/NutritionScreen.tsx.
-//
-// Step-6 of docs/specs/kmp-nutrition-and-recipes.md was split across two
-// agents. This file draws the header, the hero, the rings-plus-macros card,
-// the week section, the «Рецепты» transition card and the tab bar; its
-// sibling [NutritionMealFeed.kt] draws the meal feed — split out the same way
-// `LogMealItemsList.kt` was, once this file plus the feed would have crossed
-// detekt's `LargeClass` threshold.
+// mobile/src/features/meal/NutritionScreen.tsx. Step-6 of
+// docs/specs/kmp-nutrition-and-recipes.md was split across two agents: this file
+// draws the header, hero, rings-plus-macros card, week section, «Рецепты»
+// transition card and tab bar; sibling [NutritionMealFeed.kt] draws the meal feed
+// — split out the same way `LogMealItemsList.kt` was, once the two would have
+// crossed detekt's `LargeClass` threshold.
 
 /** The scrolling body, so a test can reach the screen without knowing its shape. */
 const val CADENCE_NUTRITION_TAG = "cadence-nutrition"
@@ -84,18 +82,15 @@ private val CARD_SHAPE = RoundedCornerShape(CadenceRadius.lg)
 private val HAIRLINE = 1.dp
 
 /**
- * «Питание» (`CadenceRoute.Nutrition`).
+ * «Питание» (`CadenceRoute.Nutrition`). Takes a [NutritionDay] and lambdas, never a
+ * repository — the same rule `TodayScreen.kt:35-38` states for its own screen: this
+ * file is handed a day and reports taps, so the mock repository can become the Ktor
+ * client without this file changing.
  *
- * Takes a [NutritionDay] and lambdas, never a repository — the same rule
- * `TodayScreen.kt:35-38` states for its own screen: this file is handed a
- * day and reports taps, so the mock repository can become the Ktor client
- * without this file changing.
- *
- * [zone] is a parameter rather than read off the platform inside this file:
- * a meal's own `eatenAt` is an `Instant` (`Nutrition.kt:171`), and the local
- * clock reading it renders as is a rendering choice a test needs to be able
- * to fix, the same reason `CadenceMocks.kt:99` takes a zone rather than
- * calling `TimeZone.currentSystemDefault()` inline where it is used.
+ * [zone] is a parameter, not read off the platform inside this file: a meal's
+ * `eatenAt` is an `Instant` (`Nutrition.kt:171`), and the local clock reading it
+ * renders as is a choice a test needs to fix, the same reason `CadenceMocks.kt:99`
+ * takes a zone rather than calling `TimeZone.currentSystemDefault()` inline.
  */
 @Composable
 fun NutritionScreen(
@@ -156,10 +151,10 @@ fun NutritionScreen(
 }
 
 /**
- * Back, «Питание». The prototype's «⋯» button (`NutritionScreen.tsx:435`) is
- * not ported — it has no handler in the source, so there is nothing for this
- * port to wire. The trailing [Spacer] keeps the title centred the way that
- * inert button did, honestly, without drawing a control that does nothing.
+ * Back, «Питание». The prototype's «⋯» button (`NutritionScreen.tsx:435`) is not
+ * ported — it has no handler in the source, so there is nothing to wire. The
+ * trailing [Spacer] keeps the title centred the way that inert button did, without
+ * drawing a control that does nothing.
  */
 @Composable
 private fun NutritionHeader(onBack: () -> Unit) {
@@ -185,10 +180,10 @@ private fun NutritionHeader(onBack: () -> Unit) {
 }
 
 /**
- * «Тарелка сегодня» — empty reads «Пока ничего — начнём, когда *будете
- * готовы*.», otherwise «{N} приём/приёма/приёмов.» (`NutritionScreen.tsx:438-466`).
- * [pluralMeals] is the declension this project already carries for exactly
- * this noun — no second one is written here.
+ * «Тарелка сегодня» — empty reads «Пока ничего — начнём, когда *будете готовы*.»,
+ * otherwise «{N} приём/приёма/приёмов.» (`NutritionScreen.tsx:438-466`).
+ * [pluralMeals] is the declension this project already carries for this noun — no
+ * second one is written here.
  */
 @Composable
 private fun NutritionHero(mealCount: Int) {
@@ -216,18 +211,16 @@ private fun NutritionHero(mealCount: Int) {
 }
 
 /**
- * `CadenceRings` with «ККАЛ» and the calorie percentage in the centre, plus
- * an overline, the eaten/target readout and three [CadenceMacroBar]s — the
- * ring-and-macros block (`NutritionScreen.tsx:468-522`).
+ * `CadenceRings` with «ККАЛ» and the calorie percentage centred, plus an overline,
+ * the eaten/target readout and three [CadenceMacroBar]s — the ring-and-macros block
+ * (`NutritionScreen.tsx:468-522`).
  *
- * This is [CadenceMacroBar]'s first real call site with three siblings on
- * one screen — [id] keys each bar's own track/fill tags
- * (`macroTrackTag`/`macroFillTag` in `CadenceMacroBar.kt`) so a test can
- * address any one of the three without touching the other two.
+ * [CadenceMacroBar]'s first real call site with three siblings on one screen — [id]
+ * keys each bar's own track/fill tags (`macroTrackTag`/`macroFillTag` in
+ * `CadenceMacroBar.kt`) so a test can address any one without touching the others.
  *
- * Carbs draw in `sand600` — the token this branch added for exactly this bar
- * (`CadenceColors.kt:41-44`); the prototype's own literal `#a5773d` had no
- * name before it.
+ * Carbs draw in `sand600` — the token this branch added for this bar
+ * (`CadenceColors.kt:41-44`); the prototype's literal `#a5773d` had no name before it.
  */
 @Composable
 private fun NutritionRingsCard(
@@ -333,12 +326,12 @@ private val PROTEIN_AVERAGE_SIZE = 18.sp
 const val CADENCE_NUTRITION_RECIPES_LINK_TAG = "cadence-nutrition-recipes-link"
 
 /**
- * Day labels for [CadenceWeekBars], read from each column's own `date`
- * rather than a fixed `listOf("Пн", "Вт", ...)` — the prototype's own literal
- * (`NutritionScreen.tsx:317`). The step's test winds the week off a Wednesday precisely
- * because `DEMO_NOW` is a Sunday: on that day the derived order coincides with the
- * prototype's literal Monday-first list, so a mutation that hardcodes the labels back to
- * that literal would pass silently on the demo fixture alone.
+ * Day labels for [CadenceWeekBars], read from each column's own `date` rather than a
+ * fixed `listOf("Пн", "Вт", ...)` — the prototype's own literal (`NutritionScreen.tsx:317`).
+ * The step's test winds the week off a Wednesday precisely because `DEMO_NOW` is a
+ * Sunday: on that day the derived order coincides with the prototype's Monday-first
+ * list, so a mutation hardcoding the labels back to that literal would pass silently
+ * on the demo fixture alone.
  */
 private fun weekDayLabels(week: NutritionWeek): List<String> =
     week.days.mapIndexed { index, day ->
@@ -347,25 +340,21 @@ private fun weekDayLabels(week: NutritionWeek): List<String> =
 
 /**
  * «Белок · средн.» — the week's average daily protein, rounded half up like the
- * prototype's own `Math.round(sum / length)` (`NutritionScreen.tsx:410-411`). No
+ * prototype's `Math.round(sum / length)` (`NutritionScreen.tsx:410-411`). No
  * empty-list guard: unlike `weekBarFraction`/`weekGoalFraction`'s zero-scale guards,
- * which pin a state a real week can actually reach (nothing logged, no goal set),
- * [NutritionWeek]'s own `init` rules an empty (or short) `days` out — not just a
- * comment on the contract but a constructor that enforces it, so a guard here would
- * be dead code no test could reach honestly, and the contract stands instead of
- * being defended twice.
+ * which pin a state a real week can reach, [NutritionWeek]'s own `init` rules an
+ * empty (or short) `days` out via constructor, not just a comment — a guard here
+ * would be dead code defending a contract already enforced.
  */
 private fun weekProteinAverage(week: NutritionWeek): Int =
     (week.days.sumOf { it.proteinG }.toDouble() / week.days.size).roundToInt()
 
 /**
- * «Прошлая неделя» — [CadenceWeekBars], weekday labels read from real dates, the dashed
- * «цель {N}» line and the «Белок · средн.» footer (`NutritionScreen.tsx:585-645`).
- *
- * The prototype's «↑ 6 г к прошлой» pill (`NutritionScreen.tsx:642`) is a static string
- * with no source and is **not** ported — see the KDoc on [weekDayLabels] for the other
- * deliberate omission this section carries, and the file-level note above for why this one
- * needed a wound clock to prove.
+ * «Прошлая неделя» — [CadenceWeekBars], weekday labels read from real dates, the
+ * dashed «цель {N}» line and the «Белок · средн.» footer (`NutritionScreen.tsx:585-645`).
+ * The prototype's «↑ 6 г к прошлой» pill (`NutritionScreen.tsx:642`) is a static
+ * string with no source and is **not** ported — see [weekDayLabels]'s KDoc for the
+ * other deliberate omission this section carries.
  */
 @Composable
 private fun NutritionWeekSection(
