@@ -1,6 +1,8 @@
 package app.cadence.screens.recipes
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,8 +30,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
@@ -42,7 +48,6 @@ import app.cadence.design.CadenceIcon
 import app.cadence.design.CadenceIconButton
 import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceRadius
-import app.cadence.design.CadenceSegmented
 import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceTitle
 import app.cadence.design.pressable
@@ -320,25 +325,33 @@ private fun FeaturedBadge() {
  * (`:298-307`), independent and additive — both flow straight into
  * [app.cadence.shared.domain.filteredByTypeAndTag] by the caller.
  *
- * The prototype draws each row as a horizontally scrolling strip of
- * individually bordered [app.cadence.design.CadenceChip]-shaped pills built
- * by its own file-private `FilterChip`. This port uses
- * [CadenceSegmented] instead — the design system's one segmented-control
- * primitive, whose own KDoc already names a recipe card's per-serving toggle
- * as one of its two call sites — rather than adding a second, near-identical
- * chip-row component for the same "exactly one of these, or none" shape.
+ * Ported as the prototype draws it: a horizontally scrolling strip of
+ * hug-width pills ([RecipesFilterChip]/[RecipesFilterRow]), not
+ * [app.cadence.design.CadenceSegmented]. An earlier version of this screen
+ * used [app.cadence.design.CadenceSegmented] — every segment forced to equal
+ * width by [Modifier.weight] — because it already existed and named a
+ * recipe card's per-serving toggle as a call site. Measured against this
+ * screen's own nine values rather than assumed: at a 358dp row (390pt phone
+ * minus the 16dp gutters) «Мягкие для желудка» is allotted 72dp against a
+ * natural width of 132dp, and at 343dp (375pt, iPhone SE) «Завтрак» and
+ * «Перекус» clip too — three of nine values unreadable on ordinary phones,
+ * which is a broken filter, not a visual divergence a smaller device could
+ * shrug off. Hug-width chips in a scrolling row never truncate, because
+ * nothing forces a chip narrower than its own label.
  *
- * [CadenceSegmented] does not know "tap the active option to clear it" on
- * its own: its `onSelect` fires the tapped value unconditionally, which is
+ * [RecipesFilterRow] does not know "tap the active option to clear it" on
+ * its own: it forwards whatever option was tapped unconditionally, which is
  * exactly right for every *other* option (tapping «Все» while «Завтрак» is
  * active must still land on «Все», not toggle). The wrapper below adds
  * exactly the one extra rule the prototype's own handler has
  * (`setMealType(mealType === t.id ? null : t.id)`, `RecipesScreen.tsx:290`):
  * tapping the option that is already selected reports `null` instead of
  * reporting itself. Because «Все»/«Любые» are themselves modelled as the
- * `null` option in [MEAL_TYPE_OPTIONS]/[RECIPE_TAG_OPTIONS], the same one
- * line of logic covers both "clear a real filter" and "tapping «Все» while
- * it is already selected is a no-op" without a special case for either.
+ * `null` option in [MEAL_TYPE_OPTIONS]/[RECIPE_TAG_OPTIONS] — the prototype
+ * draws «Все»/«Любые» as a real chip too, not a "no chip selected" state
+ * (`RecipesScreen.tsx:284,299`) — the same one line of logic covers both
+ * "clear a real filter" and "tapping «Все» while it is already selected is
+ * a no-op" without a special case for either.
  */
 @Composable
 private fun RecipesFilters(
@@ -349,17 +362,87 @@ private fun RecipesFilters(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(CadenceSpacing.sm)) {
-        CadenceSegmented(
+        RecipesFilterRow(
             options = MEAL_TYPE_OPTIONS,
             selected = mealType,
             onSelect = { tapped -> onMealType(if (tapped == mealType) null else tapped) },
             label = { option -> option?.let(::mealTypeLabel) ?: "Все" },
         )
-        CadenceSegmented(
+        RecipesFilterRow(
             options = RECIPE_TAG_OPTIONS,
             selected = tag,
             onSelect = { tapped -> onTag(if (tapped == tag) null else tapped) },
             label = { option -> option?.let(::tagLabel) ?: "Любые" },
+        )
+    }
+}
+
+/**
+ * One filter axis: every [options] value as its own hug-width, horizontally
+ * scrolling pill — `RecipesScreen.tsx:279-293`/`:294-308`'s two `ScrollView`s.
+ * Generic over `T` the same reason `CadenceSegmented` is: a screen selects
+ * with its own type ([MealType]`?`/[RecipeTag]`?` here), and [label] is the
+ * one place that turns a value into Russian copy.
+ */
+@Composable
+private fun <T> RecipesFilterRow(
+    options: List<T>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    label: (T) -> String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
+    ) {
+        options.forEach { option ->
+            RecipesFilterChip(
+                label = label(option),
+                active = option == selected,
+                onClick = { onSelect(option) },
+            )
+        }
+    }
+}
+
+/**
+ * `FilterChip` (`RecipesScreen.tsx:20-39`): a hug-width pill, solid forest
+ * when active, an outline in [app.cadence.design.CadencePalette.border]
+ * otherwise. Not [app.cadence.design.CadenceChip] — that primitive's active
+ * state is `palette.ink`, matching a different prototype control, while this
+ * screen's own filter chip is `forest700`/`cream`, read directly off
+ * `RecipesScreen.tsx:29-34` rather than off a component built for another
+ * screen's colours.
+ */
+@Composable
+private fun RecipesFilterChip(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    val palette = Cadence.palette
+    val shape = RoundedCornerShape(CadenceRadius.pill)
+    val background = if (active) CadenceColors.forest700 else Color.Transparent
+    val outline = if (active) CadenceColors.forest700 else palette.border
+    val foreground = if (active) CadenceColors.cream else palette.ink2
+
+    Box(
+        Modifier
+            .pressable(onClick, remember { MutableInteractionSource() })
+            .background(background, shape)
+            .border(1.dp, outline, shape)
+            // Merged `selected`, the same idiom `CadenceSegmented` uses for its
+            // own option boxes — lets a test assert both that this chip is
+            // selected and that a sibling is not.
+            .semantics(mergeDescendants = true) { this.selected = active }
+            .padding(horizontal = CadenceSpacing.md, vertical = CadenceSpacing.xs),
+    ) {
+        BasicText(
+            text = label,
+            style = Cadence.typography.label.copy(color = foreground, fontSize = 13.sp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

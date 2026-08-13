@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
@@ -26,6 +27,7 @@ import app.cadence.design.CadenceHairline
 import app.cadence.design.CadenceMeta
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
+import app.cadence.design.CadenceTitle
 import app.cadence.design.pressable
 import app.cadence.format.formatInteger
 import app.cadence.shared.domain.Ingredient
@@ -45,6 +47,9 @@ private val ROW_NAME_SIZE = 20.sp
 private val MINE_BADGE_SIZE = 10.sp
 private val TYPE_PILL_SHAPE = RoundedCornerShape(CadenceRadius.pill)
 private const val ROW_DEK_MAX_LINES = 2
+
+/** A row's own meal-type pill, so a test can capture its fill colour without matching on copy. */
+fun recipeTypeTag(recipeId: String) = "cadence-recipe-type-$recipeId"
 
 /** «Завтрак» / «Обед» / «Ужин» / «Перекус» — `recipe/data.ts:95-100`'s `MEAL_TYPES`. */
 internal fun mealTypeLabel(type: MealType): String =
@@ -169,9 +174,14 @@ private fun RecipeRow(
             .padding(vertical = CadenceSpacing.md, horizontal = CadenceSpacing.xxs),
     ) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm)) {
-            BasicText(
+            // CadenceTitle, not a raw BasicText: every text primitive in
+            // `CadenceText.kt` pairs `maxLines` with `TextOverflow.Ellipsis`
+            // (`:51,75,138,154`) — a raw `BasicText(maxLines = 1)` here clips a
+            // long name mid-glyph instead of ellipsizing it.
+            CadenceTitle(
                 text = recipe.name,
-                style = Cadence.typography.title.copy(fontSize = ROW_NAME_SIZE, color = palette.ink),
+                size = ROW_NAME_SIZE,
+                color = palette.ink,
                 maxLines = 1,
                 modifier = Modifier.weight(1f, fill = false),
             )
@@ -192,6 +202,7 @@ private fun RecipeRow(
         ) {
             Box(
                 Modifier
+                    .testTag(recipeTypeTag(recipe.id.raw))
                     .background(
                         tone.soft,
                         TYPE_PILL_SHAPE,
