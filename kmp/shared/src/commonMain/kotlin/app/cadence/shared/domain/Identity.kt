@@ -10,11 +10,8 @@ enum class UserRole { PATIENT, DOCTOR, ADMIN }
 enum class Sex { FEMALE, MALE }
 
 /**
- * §03's `profiles`.
- *
- * `avatar_bg/fg` do not come over: they are presentation, and the design system
- * already owns colour. The initials do, because they are data the server sends
- * and both surfaces render.
+ * §03's `profiles`. `avatar_bg/fg` don't come over — they're presentation, and the design
+ * system already owns colour. Initials do, since the server sends them.
  */
 data class Profile(
     val userId: UserId,
@@ -53,16 +50,13 @@ enum class CareRole(
 }
 
 /**
- * §03's `care_team_assignments`, and its sixth correction: the mobile prototype
- * has three people, the web one has a single doctor, and the schema has a team.
- * Every doctor's access routes through this rather than through «role = doctor
- * ⇒ sees all», which is what keeps the multi-clinic escape hatch additive.
+ * §03's sixth correction: the mobile prototype has three people, the web one a single
+ * doctor, the schema a team. Every doctor's access routes through this, not «role = doctor
+ * ⇒ sees all».
  */
 data class CareTeamAssignment(
-    // §03 gives this row a surrogate id; the client never needs it, because
-    // (patient, provider) is UNIQUE there and every read and write the app
-    // makes is keyed by the pair. Recorded as a deliberate omission rather
-    // than an oversight — same for JournalEntry, which is upserted per date.
+    // §03 gives this row a surrogate id the client never needs: (patient, provider) is
+    // UNIQUE there and every read/write is keyed by the pair.
     val patientId: UserId,
     val providerId: UserId,
     val careRole: CareRole,

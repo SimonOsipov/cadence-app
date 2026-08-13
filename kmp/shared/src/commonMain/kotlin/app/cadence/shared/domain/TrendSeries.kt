@@ -5,17 +5,10 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
- * One metric, clipped to one window.
- *
- * Everything below the points is a `get()`, and that is the project's «nothing
- * derived is stored» applied to a chart: a base and a delta held as fields could
- * disagree with the readings they were taken from, and §03 already calls trend
- * series and timeframes «queries, not tables».
- *
- * The nulls are the point of the type. A metric the patient has not measured in
- * this window has no base, no delta and no average — not zeros. Zero is a
- * reading; «нет данных» is not, and rendering one as the other tells a patient
- * their heart rate variability collapsed.
+ * Everything below the points is a `get()` — «nothing derived is stored» applied to a chart,
+ * since §03 already calls trend series and timeframes «queries, not tables». The nulls are
+ * the point: a metric not measured in this window has no base, delta or average, not zeros
+ * — zero is a reading, «нет данных» is not.
  */
 data class TrendSeries(
     val metric: Metric,
@@ -24,12 +17,8 @@ data class TrendSeries(
     val zone: TimeZone,
 ) {
     /**
-     * Which day of the window a reading belongs to.
-     *
-     * The zone travels with the series for this: a chart places its readings on
-     * the axis [range] describes, and the days it clips by have to be the days
-     * it draws by. Read in a second zone the two disagree, and a reading
-     * admitted at the window's edge is drawn beyond it.
+     * The zone travels with the series so the days a chart clips by are the days it draws
+     * by; in a second zone, a reading admitted at the window's edge is drawn beyond it.
      */
     fun dayOf(point: Measurement): LocalDate = point.measuredAt.toLocalDateTime(zone).date
 
@@ -39,18 +28,10 @@ data class TrendSeries(
     val latest: Double? get() = points.lastOrNull()?.value
 
     /**
-     * How far the metric moved across the window — the last reading less the
-     * base.
-     *
-     * A different question from the one «Сегодня» asks. `formatDeltaSincePrevious`
-     * answers «how far did the last reading move», which on 100 → 98,4 → 98,8
-     * is +0,4; this answers «how far has the patient come since the window
-     * opened», which on the same three readings is −1,2. Both are true and
-     * neither substitutes for the other, so they are named apart.
-     *
-     * Null below two readings rather than zero: one reading has nothing to
-     * compare itself to, and a zero would render as «→ 0,0» — a plateau the
-     * data never claimed.
+     * A different question from `formatDeltaSincePrevious`'s «how far did the last reading
+     * move» (100 → 98,4 → 98,8 is +0,4) — this answers «how far since the window opened»
+     * (−1,2 on the same readings). Null below two readings, not zero: a zero would render
+     * as a plateau the data never claimed.
      */
     val delta: Double? get() = if (points.size < 2) null else points.last().value - points.first().value
 
@@ -62,25 +43,11 @@ data class TrendSeries(
 }
 
 /**
- * The readings for one metric inside one window, oldest first.
- *
- * Sorted here rather than trusted: §03 specifies no ordering for `measurements`
- * at all, so none may be assumed, the seed puts one of its weights out of list
- * order on purpose, and a base read off an unsorted list is whichever row
- * arrived first. Two readings sharing an instant are broken apart by id, so that
- * «the last one» does not depend on the order they happened to arrive in.
- *
- * [zone] rather than UTC, for the same reason `CadenceClock.today` takes one: a
- * reading taken at half past one in the morning belongs to the day the patient
- * took it on, while in UTC it is still the previous evening — and a comparison
- * done there drops it out of a window that opens that morning. It travels into
- * the result rather than staying here, so that whoever draws these points on
- * the axis [TrendRange] describes reads their days the same way this filter
- * did.
- *
- * Filtering is by metric and date only. A list holding two patients' rows would
- * merge into one plausible-looking series, so the caller owns that narrowing —
- * §03 keys every reading by `patient_id` and the repository is where that lives.
+ * Sorted here, not trusted: §03 specifies no ordering, and the seed puts one weight out of
+ * list order on purpose. Ties broken by id so «the last one» doesn't depend on arrival order.
+ * [zone], not UTC, same reason `CadenceClock.today` takes one — travels into the result so
+ * whoever draws these points reads days the same way this filter did. Filtering is by metric
+ * and date only; the caller owns narrowing by patient (§03 keys every reading by `patient_id`).
  */
 fun trendSeries(
     measurements: List<Measurement>,

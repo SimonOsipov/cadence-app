@@ -11,30 +11,11 @@ data class TitrationStep(
 )
 
 /**
- * Every dose change this item makes, earliest first.
- *
- * The prototype writes `TITRATION_STEPS` as a pair of hand-written entries
- * whose dates are `addDays(CYCLE_START, 4 * 7)` and `8 * 7` — computed from one
- * frozen constant, which is correct for exactly one protocol starting on
- * exactly one day. Both the doses and the dates are functions of the phases and
- * `protocol.startDate`.
- *
- * One list rather than a second reading of `phases` beside `doseBands`: the
- * chart's dashed marks and the schedule screen's «следующий шаг» are the same
- * events asked about differently, and written twice they disagree the first
- * time a band moves — which is `phaseDose`'s argument, applied to the boundaries
- * instead of to the interiors.
- *
- * A boundary between two phases carrying the *same* dose is not a step. §03
- * lets a course split its table that way — «hold 0,5 for another four weeks» —
- * and «0,5 мг → 0,5 мг» is a dose change that did not happen. A cancelled
- * course has no steps at all, for `phaseDose`'s reason.
- *
- * Steps falling past the course's last prescribed day are dropped here rather
- * than at each reader: §03 joins `to_week` on the phase to `weeks` on the
- * protocol with nothing, so a phase reaching week 20 of a twelve-week course is
- * representable — and a step on such a date is one the chart draws over no
- * band, and the schedule screen promises outside the protocol.
+ * The prototype hardcodes `TITRATION_STEPS` from one frozen constant; here doses and dates
+ * are functions of the phases and `protocol.startDate`. Written once, not read twice beside
+ * `doseBands`, so the chart's marks and the schedule's «следующий шаг» can't disagree. A
+ * boundary between two phases with the *same* dose isn't a step (§03 allows holding a dose).
+ * Steps past the last prescribed day are dropped here, same reason as [doseBands]'s clipping.
  */
 fun titrationSteps(
     plan: ProtocolPlan,
@@ -57,10 +38,8 @@ fun titrationSteps(
 }
 
 /**
- * The next dose change after [today], or null if the protocol has none left.
- *
- * Bounded by the cycle rather than by the calendar: a date outside the
- * protocol's window has no «next step», the same way it has no cycle week.
+ * Bounded by the cycle, not the calendar: a date outside the protocol's window has no
+ * «next step», the same way it has no cycle week.
  */
 fun titrationStepAfter(
     plan: ProtocolPlan,
