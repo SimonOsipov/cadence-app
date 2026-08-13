@@ -474,6 +474,65 @@ class TodayScreenTest {
         }
 
     @Test
+    fun theRecentMealsListOrdersByEatenAtNotByListPosition() =
+        runComposeUiTest {
+            // The fixture above builds its four meals with `mapIndexed`, so
+            // `eatenAt` climbs in lockstep with list position — list order and
+            // time order never disagree there, and `meals.sortedBy { it.eatenAt }`
+            // could be deleted outright without reddening it. Here the list
+            // arrives out of order (08:00, 06:00, 09:00, 07:00) while the
+            // fixture's own name still names each meal's true hour, so both the
+            // *set* TodayMeals keeps (dropping the sort changes which three
+            // survive `takeLast(3)`, since it would then trim off the input
+            // list's own first entry rather than its earliest one) and the
+            // *order* it renders them in are pinned against the sort being
+            // dropped or reversed.
+            val shuffled =
+                listOf("Приём 3" to 8, "Приём 1" to 6, "Приём 4" to 9, "Приём 2" to 7)
+                    .mapIndexed { index, (name, hour) ->
+                        Meal(
+                            id = MealId("meal-order-$index"),
+                            patientId = UserId("patient-order"),
+                            eatenAt = Instant.parse("2026-05-31T0$hour:00:00Z"),
+                            name = name,
+                            source = MealSource.MANUAL,
+                            recipeId = null,
+                            items = listOf(MealItem("Позиция", 100, MacrosTenths(1000, 100, 100, 100))),
+                        )
+                    }
+
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary(), patientName = "Марина", meals = shuffled, zone = ZONE)
+                }
+            }
+
+            // Chronologically, Приём 1 (06:00) is the earliest of the four and
+            // must be the one `takeLast(3)` drops — not Приём 3, which the
+            // shuffled list happens to put first. Scrolled into view once,
+            // through the middle row, so all three land on screen together
+            // for the position check below rather than each scroll bumping
+            // the other two back off it.
+            onNodeWithText("Приём 3").performScrollTo()
+            onNodeWithText("Приём 2").assertExists()
+            onNodeWithText("Приём 3").assertExists()
+            onNodeWithText("Приём 4").assertExists()
+            assertTrue(onAllNodesWithText("Приём 1").fetchSemanticsNodes().isEmpty())
+
+            // And rendered top-to-bottom in chronological order (07:00, 08:00,
+            // 09:00) rather than the shuffled input order (08:00, 09:00, 07:00
+            // once Приём 1 is trimmed off). `useUnmergedTree = true` because
+            // `TodayMeals`' own card is one `pressable`, merging every child
+            // row's text into a single semantics node otherwise — every match
+            // would then report that one card's bounds, not its own row's.
+            val top2 = onNodeWithText("Приём 2", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
+            val top3 = onNodeWithText("Приём 3", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
+            val top4 = onNodeWithText("Приём 4", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
+            assertTrue(top2 < top3, "Приём 2 (07:00) must render above Приём 3 (08:00)")
+            assertTrue(top3 < top4, "Приём 3 (08:00) must render above Приём 4 (09:00)")
+        }
+
+    @Test
     fun theGlanceOpensTheBiomarkerSheet() =
         runComposeUiTest {
             // The sheet shipped unreachable: 129 lines and five green tests

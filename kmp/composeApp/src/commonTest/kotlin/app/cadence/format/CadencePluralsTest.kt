@@ -39,9 +39,9 @@ class CadencePluralsTest {
 
     @Test
     fun itemsTakeTheSameRuleAsMealsAndWeeks() {
-        // `NutritionMealFeed.kt` and `LogMealItemsList.kt` both call
-        // `russianPlural(count, "позиция", "позиции", "позиций")` inline;
-        // `pluralItems` is the named version `TodayMeals` reads.
+        // `NutritionMealFeed.kt` and `LogMealItemsList.kt` both call the
+        // named `pluralItems`, same as `TodayMeals` does — no site inlines
+        // `russianPlural(count, "позиция", "позиции", "позиций")` anymore.
         assertEquals("позиция", pluralItems(1))
         assertEquals("позиции", pluralItems(2))
         assertEquals("позиции", pluralItems(4))

@@ -101,6 +101,25 @@ class RecipeMathTest {
         assertEquals(MacrosTenths(3300, 620, 0, 0), perServing)
     }
 
+    @Test
+    fun perServingRoundsHalfUpAtATenthsTie() {
+        // 100 g of a single ingredient is `macrosFor`'s reference grams, so
+        // `total` here is this row's own tenths, untouched by any rescale
+        // rounding — every field below is exactly what division by 2
+        // servings sees. Every field is odd, so each division lands on an
+        // exact `.5`: the one shape a plain integer divide (`1651 / 2 ==
+        // 825`) resolves differently from round-half-up (`-> 826`). Every
+        // other `perServing` fixture in this file divides exactly (6600/2,
+        // 1240/2), so none of them can tell `scaleRounded` apart from plain
+        // division at this call site — this one can.
+        val tie = ingredient("tie", kcalTenths = 1651, proteinGTenths = 311, carbsGTenths = 201, fatGTenths = 91)
+        val bowl = recipe("tie-bowl", servings = 2, ingredients = listOf(RecipeIngredient(tie.id, 100)))
+
+        val perServing = bowl.perServing(listOf(tie))
+
+        assertEquals(MacrosTenths(826, 156, 101, 46), perServing)
+    }
+
     // ── totalTimeMin ───────────────────────────────────────────────────
 
     @Test
@@ -350,6 +369,28 @@ class RecipeMathTest {
         assertEquals(300, oneRecipeWorth.items.single().grams)
         assertEquals(600, doublePortions.items.single().grams)
         assertEquals(150, halfPortions.items.single().grams)
+    }
+
+    @Test
+    fun toMealDraftRoundsTheGramsScaleHalfUpAtATenthsTie() {
+        // 150 g at requestedServings = 1 over a 4-serving recipe scales by
+        // 1/4: `150 * 1 / 4 == 37.5`, an exact tie — the one shape a plain
+        // integer divide (`37`) resolves differently from round-half-up
+        // (`-> 38`). [toMealDraftOnATwoServingRecipeScalesGramsByPortionsOverServings]'s
+        // own factors (1, 2, 1/2) all divide exactly, so it cannot tell
+        // `scaleRounded` apart from plain division at this call site — this
+        // one can.
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+        val fourServingBowl =
+            recipe(
+                "chicken-bowl",
+                servings = 4,
+                ingredients = listOf(RecipeIngredient(chicken.id, 150)),
+            )
+
+        val draft = fourServingBowl.toMealDraft(listOf(chicken), requestedServings = 1)
+
+        assertEquals(38, draft.items.single().grams)
     }
 
     @Test

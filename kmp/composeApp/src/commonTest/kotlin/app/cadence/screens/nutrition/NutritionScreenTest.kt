@@ -87,7 +87,7 @@ private fun twoItemMeal(): Meal =
  * this branch keeps reintroducing.
  *
  * Its own single item plays the same role a third time: `MealFeedCard`'s header renders
- * `russianPlural(meal.items.size, …)` for *every* meal, expanded or not — [twoItemMeal]
+ * `pluralItems(meal.items.size)` for *every* meal, expanded or not — [twoItemMeal]
  * alone (always two items) cannot tell that call apart from a hardcoded «2 позиции», since
  * every rendered item count on screen would then read 2. This meal's own header, «1
  * позиция», is the one count on screen that a wrong declension changes. Never expanded by
@@ -174,8 +174,8 @@ class NutritionScreenTest {
      * the literal «приём» — both mutations left the whole suite green against a
      * one-meal fixture. [singleItemMeal] is never expanded, so it only has to keep its
      * own collapsed header and kcal readout distinct from [twoItemMeal]'s — but its own
-     * header's «1 позиция» is what tells `MealFeedCard`'s `russianPlural(meal.items.size,
-     * …)` call apart from a hardcoded «2 позиции», since [twoItemMeal] alone (always two
+     * header's «1 позиция» is what tells `MealFeedCard`'s `pluralItems(meal.items.size)`
+     * call apart from a hardcoded «2 позиции», since [twoItemMeal] alone (always two
      * items) cannot.
      */
     @Test
