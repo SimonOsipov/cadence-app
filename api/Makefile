@@ -120,4 +120,4 @@ dev-up: docker-up
 	@echo "  postgres  localhost:5433"
 	@echo "  gotrue    localhost:9999  (JWKS at /.well-known/jwks.json)"
 	@echo
-	@echo "the API needs AUTH_JWT_ISSUER=http://localhost:9999 — see .env.example"
+	@echo "the API needs AUTH_JWT_ISSUER, AUTH_JWT_SESSION_KIDS and AUTH_JWT_ADMIN_KID — see .env.example"

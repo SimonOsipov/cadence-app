@@ -278,7 +278,7 @@ func TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet(t *testing.T
 	before := set.Requests()
 
 	for i := range 5 {
-		kid := fmt.Sprintf("published-but-impermissible-%d", i)
+		kid := fmt.Sprintf("unpublished-and-impermissible-%d", i)
 		signed := key.SignWithKID(t, kid, validClaims(set.Issuer))
 
 		_, err := verifier.Verify(t.Context(), signed)

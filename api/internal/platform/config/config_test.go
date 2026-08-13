@@ -221,14 +221,18 @@ func TestLoadKeepsIssuerVerbatim(t *testing.T) {
 	}
 }
 
-// TestLoadParsesSessionKIDsAndAdminKID pins the shape of the two variables the
-// pinning check reads: a comma-separated allowlist, trimmed the same way
-// CORS_ALLOWED_ORIGINS is, and a single admin key id kept apart from it.
-func TestLoadParsesSessionKIDsAndAdminKID(t *testing.T) {
+// TestLoadParsesSessionKIDs pins the shape of AUTH_JWT_SESSION_KIDS: a
+// comma-separated allowlist, trimmed the same way CORS_ALLOWED_ORIGINS is.
+//
+// AUTH_JWT_ADMIN_KID is set (Load requires it) but not asserted on the
+// result: AuthConfig deliberately carries no field for it, so there is
+// nothing on cfg for a test to read — see the comment on
+// AuthConfig.SessionKIDs. Its own parsing (trimming, the required and
+// non-intersection checks) is covered below in TestLoadRejectsBadInput.
+func TestLoadParsesSessionKIDs(t *testing.T) {
 	clearEnv(t)
 	setRequired(t)
 	t.Setenv("AUTH_JWT_SESSION_KIDS", "kid-old, kid-new ,")
-	t.Setenv("AUTH_JWT_ADMIN_KID", "kid-admin")
 
 	cfg, err := Load()
 	if err != nil {
@@ -237,9 +241,6 @@ func TestLoadParsesSessionKIDsAndAdminKID(t *testing.T) {
 
 	if want := []string{"kid-old", "kid-new"}; !slices.Equal(cfg.Auth.SessionKIDs, want) {
 		t.Errorf("Auth.SessionKIDs = %v, want %v", cfg.Auth.SessionKIDs, want)
-	}
-	if cfg.Auth.AdminKID != "kid-admin" {
-		t.Errorf("Auth.AdminKID = %q, want kid-admin", cfg.Auth.AdminKID)
 	}
 }
 
@@ -281,12 +282,33 @@ func TestLoadRejectsBadInput(t *testing.T) {
 			env:  map[string]string{"AUTH_JWT_ADMIN_KID": ""},
 		},
 		{
+			// Whitespace is not "unset": if this passed, a value of all
+			// spaces would satisfy "required" while comparing equal to
+			// nothing on the session list, permanently disarming the
+			// non-intersection check below for every session kid.
+			name: "whitespace-only admin key id",
+			env:  map[string]string{"AUTH_JWT_ADMIN_KID": "   "},
+		},
+		{
 			// The one configuration mistake this variable exists to catch:
 			// were the admin key id ever also a permitted session key id, a
 			// compromised provisioner would turn its admin key into an
 			// accepted session token in one step.
 			name: "admin key id is also a permitted session key id",
 			env:  map[string]string{"AUTH_JWT_SESSION_KIDS": "session-kid-1,admin-kid-1"},
+		},
+		{
+			// The exact mistake a naive comparison misses: sessionKIDsEnv
+			// already trims every entry of AUTH_JWT_SESSION_KIDS, so
+			// "admin-kid-1" (untrimmed input has surrounding whitespace) is
+			// indistinguishable, once parsed, from the admin key id below —
+			// unless the admin key id is trimmed the same way before the two
+			// are compared.
+			name: "admin key id matches a permitted session key id modulo whitespace",
+			env: map[string]string{
+				"AUTH_JWT_SESSION_KIDS": "session-kid-1, admin-kid-1 ",
+				"AUTH_JWT_ADMIN_KID":    " admin-kid-1",
+			},
 		},
 		{
 			// A relative or malformed issuer cannot produce a JWKS address, and

@@ -69,17 +69,21 @@ type AuthConfig struct {
 	// list would have to mean "trust whatever the key set publishes", which
 	// is the door pinning exists to close. An empty list therefore fails
 	// startup rather than falling back to "accept anything".
+	//
+	// AUTH_JWT_ADMIN_KID — the key id GoTrue's admin routes sign with, held
+	// only by provisioner — is read and checked against this list inside
+	// loadAuth, but deliberately does not appear as a field here. It exists
+	// purely to let Load refuse a SessionKIDs value that names it: were the
+	// admin key id ever a permitted session key id, a compromised provisioner
+	// would turn its admin key into an accepted session token in one step,
+	// which is the one barrier this pinning is meant to provide. Nothing past
+	// startup validation needs the admin kid, and carrying it on this struct
+	// would be an invitation to use it for something else — the API's own
+	// stated direction is to hold as little of the admin side as possible.
+	// The rotation order — how SessionKIDs and GoTrue's key material are
+	// meant to change over the lifetime of a key — is documented on
+	// token.VerifierConfig.SessionKIDs.
 	SessionKIDs []string
-
-	// AdminKID is the key id GoTrue's admin routes sign with — held only by
-	// provisioner, never by this process. It exists here purely so Load can
-	// refuse a SessionKIDs list that names it: were the admin key id ever a
-	// permitted session key id, a compromised provisioner would turn its
-	// admin key into an accepted session token in one step, which is the one
-	// barrier this pinning is meant to provide. The rotation order — how
-	// SessionKIDs and AdminKID are meant to change over the lifetime of a key
-	// — is documented on token.VerifierConfig.SessionKIDs.
-	AdminKID string
 }
 
 // jwksSuffix is where an OAuth 2.0 authorisation server publishes its keys
@@ -183,16 +187,8 @@ func loadAuth() (*AuthConfig, error) {
 		return nil, err
 	}
 
-	adminKID := getEnv("AUTH_JWT_ADMIN_KID", "")
-	if adminKID == "" {
-		return nil, errors.New("AUTH_JWT_ADMIN_KID is required")
-	}
-
-	if slices.Contains(sessionKIDs, adminKID) {
-		return nil, fmt.Errorf(
-			"AUTH_JWT_SESSION_KIDS names the admin key id %q: a compromised provisioner "+
-				"could then turn its admin key into an accepted session token", adminKID,
-		)
+	if err := requireSessionKIDsExcludeTheAdminOne(sessionKIDs); err != nil {
+		return nil, err
 	}
 
 	return &AuthConfig{
@@ -200,8 +196,33 @@ func loadAuth() (*AuthConfig, error) {
 		Audience:    audience,
 		JWKSURL:     strings.TrimSuffix(issuer, "/") + jwksSuffix,
 		SessionKIDs: sessionKIDs,
-		AdminKID:    adminKID,
 	}, nil
+}
+
+// requireSessionKIDsExcludeTheAdminOne reads AUTH_JWT_ADMIN_KID and refuses a
+// sessionKIDs list that names it.
+//
+// The admin key id is not carried past this function — see the comment on
+// AuthConfig.SessionKIDs for why. It is trimmed the same way sessionKIDsEnv
+// trims every entry of its own list: comparing an untrimmed admin kid against
+// a trimmed session list would silently accept the exact configuration
+// mistake this guard exists to catch — an admin kid that differs from a
+// listed session kid only by surrounding whitespace — and a whitespace-only
+// value would satisfy "required" while disarming the guard for every list.
+func requireSessionKIDsExcludeTheAdminOne(sessionKIDs []string) error {
+	adminKID := strings.TrimSpace(os.Getenv("AUTH_JWT_ADMIN_KID"))
+	if adminKID == "" {
+		return errors.New("AUTH_JWT_ADMIN_KID is required")
+	}
+
+	if slices.Contains(sessionKIDs, adminKID) {
+		return fmt.Errorf(
+			"AUTH_JWT_SESSION_KIDS names the admin key id %q: a compromised provisioner "+
+				"could then turn its admin key into an accepted session token", adminKID,
+		)
+	}
+
+	return nil
 }
 
 // sessionKIDsEnv reads the closed list of permitted session key ids.

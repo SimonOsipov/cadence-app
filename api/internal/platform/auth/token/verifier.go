@@ -123,7 +123,9 @@ type VerifierConfig struct {
 	// resolution at all.
 	//
 	// Rotating a key means changing this list, in this order, walked through
-	// on the local harness by TestVerifyPicksUpRotatedKeys: add the new kid
+	// against the JWKS fixture by TestVerifyPicksUpRotatedKeys and
+	// TestVerifyRefusesAKeyRotatedInWithoutBeingPermittedFirst — not against a
+	// real GoTrue, which is step-2's contract-test territory: add the new kid
 	// to SessionKIDs → deploy the API → hand GoTrue the signing marker for
 	// the new key → hold the old kid in the list for at least the
 	// refresh-token lifetime, so a session issued just before the handover
