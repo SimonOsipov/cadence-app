@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,7 +28,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
 import app.cadence.design.CadenceBody
@@ -90,7 +88,6 @@ private const val GRAMS_STEP = 10.0
 private const val TENTHS_PER_UNIT = 10.0
 
 private val HEADER_TITLE_SIZE = 24.sp
-private val GRAMS_STEPPER_WIDTH = 180.dp
 
 /**
  * «Ингредиент» — the ingredient picker (`docs/specs/kmp-nutrition-and-recipes.md`'s
@@ -99,8 +96,8 @@ private val GRAMS_STEPPER_WIDTH = 180.dp
  * (`RecipesScreen.kt:101-106`).
  *
  * Grams resets to [DEFAULT_GRAMS] whenever a **different** product is picked, but
- * survives re-tapping the one already selected — [pick] below is the one place that
- * decides, matching `RecipeBuilderScreen.tsx:130-132`'s own `setGrams(100)` on select.
+ * survives re-tapping the one already selected — a deliberate divergence from
+ * `RecipeBuilderScreen.tsx:130-132`, whose `pick` resets unconditionally on every tap.
  */
 @Composable
 fun IngredientPickerSheet(
@@ -110,7 +107,9 @@ fun IngredientPickerSheet(
     onAdd: (RecipeIngredient) -> Unit = { },
 ) {
     var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<Ingredient>>(emptyList()) }
+    // Null is "no answer yet" — distinct from an empty answer, so the opening frame
+    // doesn't draw «Ничего не найдено.» before the first search resolves.
+    var results by remember { mutableStateOf<List<Ingredient>?>(null) }
     var selected by remember { mutableStateOf<Ingredient?>(null) }
     var grams by remember { mutableStateOf(DEFAULT_GRAMS) }
 
@@ -141,7 +140,8 @@ fun IngredientPickerSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = CadenceSpacing.lg),
         ) {
-            if (results.isEmpty()) {
+            val answer = results
+            if (answer != null && answer.isEmpty()) {
                 CadenceBody(
                     NOT_FOUND_MESSAGE,
                     color = Cadence.palette.subtle,
@@ -151,7 +151,7 @@ fun IngredientPickerSheet(
                             .testTag(CADENCE_INGREDIENT_PICKER_EMPTY_TAG),
                 )
             } else {
-                results.forEach { ingredient ->
+                answer?.forEach { ingredient ->
                     IngredientPickerRow(
                         ingredient = ingredient,
                         isSelected = ingredient.id == selected?.id,
@@ -255,14 +255,12 @@ private fun referenceLabel(ingredient: Ingredient): String =
     "${formatKcalTenths(ingredient.per100g.kcalTenths)} · ${proteinLabel(ingredient.per100g.proteinGTenths)} / 100 г"
 
 /**
- * A [app.cadence.shared.domain.MacrosTenths] protein field, rounded for display without
- * a second `toMacros()` — the same reason [formatKcalTenths] gives for kcal, mirroring
- * the file-private `tenthsLabel` idiom `NutritionMealFeed.kt`/`LogMealItemsList.kt`
- * already use for this exact field. `toMacros()` stays the single conversion, at the
- * `TodaySummary` boundary (`Nutrition.kt:62-77`).
+ * Rounded for display without a second `toMacros()`, like [formatKcalTenths]. `digits = 1`,
+ * not whole grams: whole grams flatten most of the reference table (vegetables, oils,
+ * fruit) to «0»/«1» — matches the prototype's own `round1`.
  */
 private fun proteinLabel(proteinGTenths: Int): String =
-    "${formatDecimal(proteinGTenths / TENTHS_PER_UNIT, digits = 0)} г белка"
+    "${formatDecimal(proteinGTenths / TENTHS_PER_UNIT, digits = 1)} г белка"
 
 /**
  * Appears only once a product is selected: name, the live recalculation at [grams] via
@@ -283,9 +281,8 @@ private fun IngredientPickerFooter(
             .fillMaxWidth()
             .background(palette.bg)
             // Unverifiable by test: WindowInsets.navigationBars is zero in every test
-            // configuration. Kept for parity with every sibling bottom bar
-            // (`RecipeDetailScreen.kt`, `RecipesScreen.kt` and `TodayScreen.kt` all
-            // pad by this same inset).
+            // configuration. Kept for parity with the other bottom bars that pad by it
+            // (`RecipeDetailScreen.kt:342`, `DoseWizard.kt:283`).
             .windowInsetsPadding(WindowInsets.navigationBars)
             .testTag(CADENCE_INGREDIENT_PICKER_FOOTER_TAG),
     ) {
@@ -298,29 +295,25 @@ private fun IngredientPickerFooter(
                     color = CadenceColors.forest700,
                 )
             }
-            Row(
-                Modifier.fillMaxWidth().padding(top = CadenceSpacing.md),
-                horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CadenceStepper(
-                    value = grams.toDouble(),
-                    onChange = { onGramsChange(it.roundToInt()) },
-                    min = GRAMS_MIN,
-                    max = GRAMS_MAX,
-                    step = GRAMS_STEP,
-                    decimals = 0,
-                    unit = "г",
-                    modifier = Modifier.width(GRAMS_STEPPER_WIDTH),
-                )
-                CadenceButton(
-                    label = ADD_LABEL,
-                    onClick = onAdd,
-                    kind = CadenceButtonKind.PRIMARY,
-                    fillWidth = true,
-                    modifier = Modifier.weight(1f).testTag(CADENCE_INGREDIENT_PICKER_ADD_TAG),
-                )
-            }
+            // Stacked, not beside the button: `CadenceStepper` fills whatever width it
+            // gets, and a fixed dp guess here squeezed its plus button to a sliver.
+            CadenceStepper(
+                value = grams.toDouble(),
+                onChange = { onGramsChange(it.roundToInt()) },
+                min = GRAMS_MIN,
+                max = GRAMS_MAX,
+                step = GRAMS_STEP,
+                decimals = 0,
+                unit = "г",
+                modifier = Modifier.padding(top = CadenceSpacing.md),
+            )
+            CadenceButton(
+                label = ADD_LABEL,
+                onClick = onAdd,
+                kind = CadenceButtonKind.PRIMARY,
+                fillWidth = true,
+                modifier = Modifier.padding(top = CadenceSpacing.sm).testTag(CADENCE_INGREDIENT_PICKER_ADD_TAG),
+            )
         }
     }
 }

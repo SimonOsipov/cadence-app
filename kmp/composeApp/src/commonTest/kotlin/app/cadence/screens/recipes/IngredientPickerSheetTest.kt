@@ -1,5 +1,8 @@
 package app.cadence.screens.recipes
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
@@ -12,6 +15,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import app.cadence.design.CADENCE_STEPPER_MINUS_TAG
 import app.cadence.design.CADENCE_STEPPER_PLUS_TAG
 import app.cadence.design.CADENCE_STEPPER_VALUE_TAG
@@ -20,6 +25,7 @@ import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.IngredientId
 import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.RecipeIngredient
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -131,11 +137,30 @@ class IngredientPickerSheetTest {
 
             val chickenRow = onNodeWithTag(ingredientPickerRowTag(CHICKEN.id), useUnmergedTree = true)
             chickenRow.assert(hasAnyDescendant(hasText("165 ккал", substring = true)))
-            chickenRow.assert(hasAnyDescendant(hasText("31 г белка", substring = true)))
+            chickenRow.assert(hasAnyDescendant(hasText("31,0 г белка", substring = true)))
 
             val cottageRow = onNodeWithTag(ingredientPickerRowTag(COTTAGE.id), useUnmergedTree = true)
             cottageRow.assert(hasAnyDescendant(hasText("121 ккал", substring = true)))
-            cottageRow.assert(hasAnyDescendant(hasText("17 г белка", substring = true)))
+            cottageRow.assert(hasAnyDescendant(hasText("17,0 г белка", substring = true)))
+        }
+
+    /**
+     * The full reference-row string on one fixture, not substrings: proves «/ 100 г» is
+     * actually drawn (a footer's computed line has no such suffix), and RICE's 2,7 g
+     * protein — the one value in this fixture set that isn't a whole number — proves
+     * the row keeps a decimal rather than flattening it, since every other asserted
+     * protein value (31, 17) happens to round to a whole number regardless.
+     */
+    @Test
+    fun theReferenceRowDrawsTheFullStringIncludingThePer100gSuffixAndADecimal() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme { IngredientPickerSheet(search = fakeSearch()) }
+            }
+            waitForIdle()
+
+            onNodeWithTag(ingredientPickerRowTag(RICE.id), useUnmergedTree = true)
+                .assert(hasAnyDescendant(hasText("123 ккал · 2,7 г белка / 100 г")))
         }
 
     @Test
@@ -218,7 +243,7 @@ class IngredientPickerSheetTest {
             waitForIdle()
 
             footerHasText("165 ккал")
-            footerHasText("31 г белка")
+            footerHasText("31,0 г белка")
 
             // 100 g -> 200 g, ten +10 clicks — an exact double with no rounding.
             repeat(10) {
@@ -228,7 +253,7 @@ class IngredientPickerSheetTest {
             stepperShows("200")
 
             footerHasText("330 ккал")
-            footerHasText("62 г белка")
+            footerHasText("62,0 г белка")
         }
 
     /** The step's own fourth named test, both ends. */
@@ -306,6 +331,52 @@ class IngredientPickerSheetTest {
             waitForIdle()
 
             footerHasText("Рис")
+        }
+
+    /**
+     * No `waitForIdle()` before the assertion: this is the sheet's opening frame,
+     * before `LaunchedEffect(query)` has had any chance to run at all — the one state
+     * the spec names as an error, and the one a search-not-yet-answered/answered-empty
+     * mix-up would draw regardless of what the mock eventually returns.
+     */
+    @Test
+    fun theNotFoundMessageDoesNotDrawOnTheOpeningFrame() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme { IngredientPickerSheet(search = fakeSearch()) }
+            }
+
+            onNodeWithText("Ничего не найдено.").assertDoesNotExist()
+        }
+
+    /**
+     * `CadenceStepper` fills whatever width it is given, so a fixed dp guess narrower
+     * than its own content (52 + 24 + «100 г» + 24 + 52) squeezes the plus button below
+     * its 52dp tap target — the idiom `CadenceTextFieldTest.kt`'s `aFieldGivenWeightLeavesRoomForItsRowSibling`
+     * and `CadenceSegmentedTest.kt` use to pin exactly this kind of layout bug.
+     */
+    @Test
+    fun thePlusButtonStaysA52dpTapTargetAtAPhoneWidth() =
+        runComposeUiTest {
+            lateinit var density: Density
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    IngredientPickerSheet(search = fakeSearch(), modifier = Modifier.width(343.dp))
+                }
+            }
+            waitForIdle()
+
+            onNodeWithTag(ingredientPickerRowTag(CHICKEN.id), useUnmergedTree = true).performClick()
+            waitForIdle()
+
+            val bounds =
+                onNodeWithTag(CADENCE_STEPPER_PLUS_TAG, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val widthDp = with(density) { bounds.width.toDp() }.value.roundToInt()
+            val heightDp = with(density) { bounds.height.toDp() }.value.roundToInt()
+
+            assertEquals(52, widthDp, "the plus button is not 52dp wide at 343dp — squeezed by a fixed stepper width")
+            assertEquals(52, heightDp, "the plus button is not 52dp tall at 343dp")
         }
 
     private fun ComposeUiTest.stepperShows(value: String) =
