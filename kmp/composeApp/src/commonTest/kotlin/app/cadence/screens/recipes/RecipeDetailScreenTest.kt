@@ -1,8 +1,11 @@
 package app.cadence.screens.recipes
 
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
@@ -15,6 +18,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import app.cadence.design.CADENCE_STEPPER_MINUS_TAG
 import app.cadence.design.CADENCE_STEPPER_PLUS_TAG
 import app.cadence.design.CADENCE_STEPPER_VALUE_TAG
@@ -31,6 +37,7 @@ import app.cadence.shared.domain.RecipeIngredient
 import app.cadence.shared.domain.RecipeTag
 import app.cadence.shared.domain.UserId
 import app.cadence.shared.domain.toMealDraft
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -127,9 +134,13 @@ class RecipeDetailScreenTest {
             }
 
             macrosCardHasText("371")
+            macrosCardHasText("1 порция")
             onNodeWithText("Всё").performClick()
             waitForIdle()
             macrosCardHasText("741")
+            // BOWL.servings = 2 — the whole-recipe caption, not the toggle
+            // sitting still on «1 порция».
+            macrosCardHasText("2 порц.")
 
             onNodeWithTag(CADENCE_RECIPE_DETAIL_ADD_TAG).performClick()
             waitForIdle()
@@ -303,6 +314,7 @@ class RecipeDetailScreenTest {
                 }
             }
 
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_TAG).assertExists()
             onNodeWithTag(CADENCE_RECIPE_DETAIL_BACK_TAG).assertExists()
             onNodeWithTag(CADENCE_RECIPE_DETAIL_BACK_TAG).performClick()
 
@@ -370,5 +382,64 @@ class RecipeDetailScreenTest {
 
             onNodeWithText("Всё").assertIsSelected()
             onNodeWithText("На порцию").assertIsNotSelected()
+        }
+
+    /**
+     * The hero's type label and one of its tags, and the first step's own
+     * badge number — three bullets the suite otherwise never touched.
+     * `recipeDetailStepTag(0)` rather than a bare `onNodeWithText("1")`: the
+     * servings stepper also reads «1» by default, in the same composition.
+     */
+    @Test
+    fun theHeroShowsTheTypeLabelAndATagAndTheFirstStepIsNumberedOne() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    RecipeDetailScreen(state = RecipeDetailState.Found(BOWL), ingredients = INGREDIENTS)
+                }
+            }
+
+            onNodeWithText("ОБЕД", substring = true).assertExists()
+            onNodeWithText("Быстрые").assertExists()
+            onNodeWithTag(recipeDetailStepTag(0), useUnmergedTree = true).assert(hasAnyDescendant(hasText("1")))
+        }
+
+    /**
+     * The major finding this round: `SERVINGS_STEPPER_WIDTH` narrower than
+     * the stepper's own content coerces the fixed-`.size(52.dp)` plus button
+     * down to whatever is left over, drawing an ellipse instead of a circle —
+     * measured at 32×52dp against a 150dp container. Checked at both
+     * commonly-cited Android widths, not only the narrower one: the defect
+     * was width-*independent* (it reproduced at 343dp and at 1024dp alike),
+     * so a fix that merely happens to clear 320dp is not proof it holds at
+     * 360dp too.
+     */
+    @Test
+    fun thePlusButtonStaysCircularAt320dp() = assertPlusButtonIsA52dpCircle(320.dp)
+
+    @Test
+    fun thePlusButtonStaysCircularAt360dp() = assertPlusButtonIsA52dpCircle(360.dp)
+
+    private fun assertPlusButtonIsA52dpCircle(width: Dp) =
+        runComposeUiTest {
+            lateinit var density: Density
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    RecipeDetailScreen(
+                        state = RecipeDetailState.Found(BOWL),
+                        ingredients = INGREDIENTS,
+                        modifier = Modifier.width(width),
+                    )
+                }
+            }
+
+            val bounds =
+                onNodeWithTag(CADENCE_STEPPER_PLUS_TAG, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val widthDp = with(density) { bounds.width.toDp() }.value.roundToInt()
+            val heightDp = with(density) { bounds.height.toDp() }.value.roundToInt()
+
+            assertEquals(52, widthDp, "the plus button is not 52dp wide at ${width.value}dp — an ellipse, not a circle")
+            assertEquals(52, heightDp, "the plus button is not 52dp tall at ${width.value}dp")
         }
 }

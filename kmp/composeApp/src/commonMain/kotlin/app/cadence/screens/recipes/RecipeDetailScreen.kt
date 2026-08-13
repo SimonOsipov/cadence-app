@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -107,6 +108,9 @@ const val CADENCE_RECIPE_DETAIL_MACROS_TAG = "cadence-recipe-detail-macros"
 /** One ingredient row, so a test can address the *second* row and not only the first. */
 fun recipeDetailIngredientTag(index: Int): String = "cadence-recipe-detail-ingredient-$index"
 
+/** One step's own numbered badge, so a test can read its number without matching «1» on the stepper too. */
+fun recipeDetailStepTag(index: Int): String = "cadence-recipe-detail-step-$index"
+
 /**
  * What `RecipeRepository.recipe(id)` (step-7) has told this screen so far.
  *
@@ -114,7 +118,7 @@ fun recipeDetailIngredientTag(index: Int): String = "cadence-recipe-detail-ingre
  * names the defect this type exists against: "«загружается» не равно «не
  * найден»" — a suspend read has an in-flight moment a plain `Recipe?` cannot
  * name, and collapsing "not yet answered" into "answered with nothing" is
- * exactly that collapse. `CadenceShell.kt:250,404-425`'s own `onLoadMetric`
+ * exactly that collapse. `CadenceShell.kt:413,436-446`'s own `onLoadMetric`
  * draws the same distinction one level up, at the call site, by combining two
  * nullable values (`metric != null && detail == null`) — `TrendDetailScreen`
  * itself only ever sees "answered" or "answered with nothing", because
@@ -160,13 +164,13 @@ private val HAIRLINE = 1.dp
 private val HERO_TITLE_SIZE = 34.sp
 private val HERO_META_ICON_SIZE = 15.dp
 
-/** `insets.top + 52` on the prototype's hero (`RecipeDetailScreen.tsx:132`) — 32dp + 20dp clears the floating back. */
+/** Padding beyond the status-bar inset — `insets.top + 52` on the prototype's hero (`RecipeDetailScreen.tsx:132`). */
 private val HERO_TOP_PADDING = CadenceSpacing.huge + CadenceSpacing.xl
 private const val HERO_TAG_ALPHA = 0.7f
 private val MACRO_KCAL_SIZE = 34.sp
 private val STEP_BADGE_SIZE = 30.dp
 private val FLOATING_BACK_SIZE = 40.dp
-private val SERVINGS_STEPPER_WIDTH = 150.dp
+private val SERVINGS_STEPPER_WIDTH = 180.dp
 
 /** Keeps the last piece of scrolling content clear of the fixed bottom bar overlaid above it. */
 private val BOTTOM_BAR_CLEARANCE = 96.dp
@@ -293,6 +297,7 @@ private fun RecipeDetailFound(
     val palette = Cadence.palette
     var mode by remember { mutableStateOf(MacroMode.PER_SERVING) }
     var servings by remember { mutableStateOf(RECIPE_DETAIL_DEFAULT_SERVINGS) }
+    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(modifier.fillMaxSize().background(palette.bg)) {
         Column(
@@ -318,14 +323,14 @@ private fun RecipeDetailFound(
                 recipe = recipe,
                 modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.md),
             )
-            Spacer(Modifier.height(BOTTOM_BAR_CLEARANCE))
+            Spacer(Modifier.height(BOTTOM_BAR_CLEARANCE + navigationBarInset))
         }
 
         Box(
             Modifier
                 .align(Alignment.TopStart)
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(CadenceSpacing.md),
+                .padding(start = CadenceSpacing.md, top = CadenceSpacing.xs),
         ) {
             FloatingBackButton(onBack)
         }
@@ -333,9 +338,6 @@ private fun RecipeDetailFound(
         RecipeDetailBottomBar(
             servings = servings,
             onServingsChange = { servings = it },
-            // requestedServings is the stepper's own value, read fresh at the
-            // moment of the tap — never the macros card's `mode`, which this
-            // draft does not take as a parameter at all.
             onAddToDay = { onAddToDay(recipe.toMealDraft(ingredients, requestedServings = servings)) },
             modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars),
         )
@@ -381,6 +383,7 @@ private fun RecipeDetailHero(recipe: Recipe) {
         Modifier
             .fillMaxWidth()
             .background(tone.soft)
+            .windowInsetsPadding(WindowInsets.statusBars)
             .padding(horizontal = CadenceSpacing.xl)
             .padding(top = HERO_TOP_PADDING, bottom = CadenceSpacing.xxl),
     ) {
@@ -441,14 +444,10 @@ private fun HeroTagPill(
  * «Макросы»: the «На порцию» / «Всё» toggle, the large kcal readout, the
  * portions caption and [CadenceSplitBar] (`RecipeDetailScreen.tsx:211-299`).
  *
- * [mode] changes only what this card *shows* — [recipe.perServing]/[totals]
- * decide which [app.cadence.shared.domain.MacrosTenths] to read, and neither
- * this card nor its caller ever feeds [mode] into [MealDraft] — that draft
- * comes from [recipe.toMealDraft] with the bottom bar's own `servings`, a
- * value this composable never sees. `CadenceSegmented` is used as it already
- * is — full-width, equal segments — rather than the prototype's hug-width
- * inline toggle: `CadenceSegmented.kt`'s own KDoc names this exact call site
- * as one of the component's two intended uses.
+ * `CadenceSegmented` is used as it already is — full-width, equal segments —
+ * rather than the prototype's hug-width inline toggle: `CadenceSegmented.kt`'s
+ * own KDoc names this exact call site as one of the component's two intended
+ * uses.
  */
 @Composable
 private fun RecipeDetailMacrosCard(
@@ -496,13 +495,7 @@ private fun RecipeDetailMacrosCard(
     }
 }
 
-/**
- * «Ингредиенты · N порц.», grams and kcal per row (`RecipeDetailScreen.tsx:301-360`).
- *
- * Always [recipe.servings], never the bottom bar's `servings` — this heading
- * and every row's grams describe the recipe's own card, which does not move
- * when the stepper does, the same rule [RecipeDetailMacrosCard] follows.
- */
+/** «Ингредиенты · N порц.», grams and kcal per row (`RecipeDetailScreen.tsx:301-360`). */
 @Composable
 private fun RecipeDetailIngredientsCard(
     recipe: Recipe,
@@ -560,7 +553,11 @@ private fun RecipeDetailSteps(
             recipe.steps.forEachIndexed { index, step ->
                 Row(horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.md)) {
                     Box(
-                        Modifier.size(STEP_BADGE_SIZE).clip(CircleShape).background(CadenceColors.forest50),
+                        Modifier
+                            .size(STEP_BADGE_SIZE)
+                            .clip(CircleShape)
+                            .background(CadenceColors.forest50)
+                            .testTag(recipeDetailStepTag(index)),
                         contentAlignment = Alignment.Center,
                     ) {
                         BasicText(
@@ -575,12 +572,7 @@ private fun RecipeDetailSteps(
     }
 }
 
-/**
- * The servings stepper (1…6, default 1) and «Добавить в день →»
- * (`RecipeDetailScreen.tsx:431-514`). [servings] never reaches the macros
- * card above — only [onAddToDay]'s caller reads it, via
- * [recipe.toMealDraft]'s `requestedServings`.
- */
+/** The servings stepper (1…6, default 1) and «Добавить в день →» (`RecipeDetailScreen.tsx:431-514`). */
 @Composable
 private fun RecipeDetailBottomBar(
     servings: Int,
