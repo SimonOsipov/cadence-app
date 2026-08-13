@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -62,6 +63,27 @@ type AuthConfig struct {
 	Issuer   string
 	Audience string
 	JWKSURL  string
+
+	// SessionKIDs is the closed list of key ids GoTrue may sign a session
+	// token with. It is mandatory rather than optional: an unset or empty
+	// list would have to mean "trust whatever the key set publishes", which
+	// is the door pinning exists to close. An empty list therefore fails
+	// startup rather than falling back to "accept anything".
+	//
+	// AUTH_JWT_ADMIN_KID — the key id GoTrue's admin routes sign with, held
+	// only by provisioner — is read and checked against this list inside
+	// loadAuth, but deliberately does not appear as a field here. It exists
+	// purely to let Load refuse a SessionKIDs value that names it: were the
+	// admin key id ever a permitted session key id, a compromised provisioner
+	// would turn its admin key into an accepted session token in one step,
+	// which is the one barrier this pinning is meant to provide. Nothing past
+	// startup validation needs the admin kid, and carrying it on this struct
+	// would be an invitation to use it for something else — the API's own
+	// stated direction is to hold as little of the admin side as possible.
+	// The rotation order — how SessionKIDs and GoTrue's key material are
+	// meant to change over the lifetime of a key — is documented on
+	// token.VerifierConfig.SessionKIDs.
+	SessionKIDs []string
 }
 
 // jwksSuffix is where an OAuth 2.0 authorisation server publishes its keys
@@ -135,7 +157,7 @@ func Load() (*Config, error) {
 	}, nil
 }
 
-// loadAuth reads the two authentication variables and derives the JWKS address
+// loadAuth reads the authentication variables and derives the JWKS address
 // from the issuer.
 //
 // The issuer is kept exactly as configured — it is compared byte for byte
@@ -160,11 +182,69 @@ func loadAuth() (*AuthConfig, error) {
 		return nil, fmt.Errorf("AUTH_JWT_ISSUER must be an absolute http(s) URL, got %q", issuer)
 	}
 
+	sessionKIDs, err := sessionKIDsEnv()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := requireSessionKIDsExcludeTheAdminOne(sessionKIDs); err != nil {
+		return nil, err
+	}
+
 	return &AuthConfig{
-		Issuer:   issuer,
-		Audience: audience,
-		JWKSURL:  strings.TrimSuffix(issuer, "/") + jwksSuffix,
+		Issuer:      issuer,
+		Audience:    audience,
+		JWKSURL:     strings.TrimSuffix(issuer, "/") + jwksSuffix,
+		SessionKIDs: sessionKIDs,
 	}, nil
+}
+
+// requireSessionKIDsExcludeTheAdminOne reads AUTH_JWT_ADMIN_KID and refuses a
+// sessionKIDs list that names it.
+//
+// The admin key id is not carried past this function — see the comment on
+// AuthConfig.SessionKIDs for why. It is trimmed the same way sessionKIDsEnv
+// trims every entry of its own list: comparing an untrimmed admin kid against
+// a trimmed session list would silently accept the exact configuration
+// mistake this guard exists to catch — an admin kid that differs from a
+// listed session kid only by surrounding whitespace — and a whitespace-only
+// value would satisfy "required" while disarming the guard for every list.
+func requireSessionKIDsExcludeTheAdminOne(sessionKIDs []string) error {
+	adminKID := strings.TrimSpace(os.Getenv("AUTH_JWT_ADMIN_KID"))
+	if adminKID == "" {
+		return errors.New("AUTH_JWT_ADMIN_KID is required")
+	}
+
+	if slices.Contains(sessionKIDs, adminKID) {
+		return fmt.Errorf(
+			"AUTH_JWT_SESSION_KIDS names the admin key id %q: a compromised provisioner "+
+				"could then turn its admin key into an accepted session token", adminKID,
+		)
+	}
+
+	return nil
+}
+
+// sessionKIDsEnv reads the closed list of permitted session key ids.
+//
+// Unlike originsEnv, there is no fallback: a session-key allowlist that
+// defaults to "accept anything published" is the exact door pinning exists to
+// close, so an unset or empty value fails startup rather than falling back to
+// anything.
+func sessionKIDsEnv() ([]string, error) {
+	raw := os.Getenv("AUTH_JWT_SESSION_KIDS")
+
+	var kids []string
+	for _, s := range strings.Split(raw, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			kids = append(kids, s)
+		}
+	}
+	if len(kids) == 0 {
+		return nil, errors.New("AUTH_JWT_SESSION_KIDS is required and must name at least one permitted key id")
+	}
+
+	return kids, nil
 }
 
 // MigrationConfig is what the migration command needs, and nothing else.

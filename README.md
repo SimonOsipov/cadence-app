@@ -68,7 +68,7 @@ cd api && make openapi    # regenerate the committed contract after any type cha
 `api/` uses three connection strings, deliberately: `DATABASE_URL` for the
 request path (a role that owns nothing), `DATABASE_MIGRATION_URL` for the role
 that owns the schema, and a service URL reserved for system jobs that do not
-exist yet. See `api/.env.example`.
+exist yet.
 
 ## The gate
 

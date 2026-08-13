@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
@@ -113,6 +114,27 @@ type VerifierConfig struct {
 	// another.
 	JWKSURL string
 
+	// SessionKIDs is the closed list of key ids this verifier accepts for a
+	// session token. Mandatory: NewVerifier refuses to start on an empty
+	// list, because "no permitted key ids configured" must never be read as
+	// "trust whatever the key set publishes" — that is the door pinning
+	// exists to close. It is checked in keyfunc before the key set is ever
+	// consulted, so a token naming a kid outside this list cannot reach key
+	// resolution at all.
+	//
+	// Rotating a key means changing this list, in this order, walked through
+	// against the JWKS fixture by TestVerifyPicksUpRotatedKeys and
+	// TestVerifyRefusesAKeyRotatedInWithoutBeingPermittedFirst — not against a
+	// real GoTrue, which is step-2's contract-test territory: add the new kid
+	// to SessionKIDs → deploy the API → hand GoTrue the signing marker for
+	// the new key → hold the old kid in the list for at least the
+	// refresh-token lifetime, so a session issued just before the handover
+	// still verifies → remove the old kid. Reversing the order — handing over
+	// the signing marker before the API knows the new kid — refuses every
+	// session GoTrue issues in between, because pinning has deliberately
+	// removed the fallback that used to pick up an unlisted key on demand.
+	SessionKIDs []string
+
 	Leeway             time.Duration
 	RefreshInterval    time.Duration
 	UnknownKIDInterval time.Duration
@@ -126,8 +148,9 @@ type VerifierConfig struct {
 // Verifier turns a bearer token into a Principal, or into a reason it is not
 // one. It is safe for concurrent use and holds the cached key set.
 type Verifier struct {
-	keys   keyfunc.Keyfunc
-	parser *jwt.Parser
+	keys        keyfunc.Keyfunc
+	parser      *jwt.Parser
+	sessionKIDs []string
 }
 
 // claims is the subset of a token this package reads. Everything not named here
@@ -156,6 +179,13 @@ func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 		return nil, errors.New("auth: issuer, audience and JWKS URL are all required")
 	}
 
+	// An empty list is refused here too, not only by config.Load: this
+	// package is what a flood of unknown kids would otherwise reach, and it
+	// must not depend on the composition root having remembered the check.
+	if len(cfg.SessionKIDs) == 0 {
+		return nil, errors.New("auth: at least one permitted session key id is required")
+	}
+
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -179,7 +209,8 @@ func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 	}
 
 	return &Verifier{
-		keys: keys,
+		keys:        keys,
+		sessionKIDs: cfg.SessionKIDs,
 		parser: jwt.NewParser(
 			jwt.WithValidMethods(permittedAlgorithms),
 			jwt.WithIssuer(cfg.Issuer),
@@ -233,6 +264,13 @@ func (v *Verifier) Verify(ctx context.Context, token string) (auth.Principal, er
 // It insists on a kid before it looks anything up. Without one, the key set has
 // to be searched and the token is accepted if *any* published key verifies it —
 // which is the door through which a key that was rotated out walks back in.
+//
+// The permitted-kid check runs before resolve is ever called. That ordering is
+// load-bearing, not cosmetic: resolve consults the JWKS client and, for a kid
+// it does not recognise, may spend the on-demand refresh budget fetching the
+// key set again. Checking membership first means a flood of kids nobody
+// configured is refused on the spot and never touches that budget — pinning
+// relieves the budget instead of costing it.
 func (v *Verifier) keyfunc(ctx context.Context) jwt.Keyfunc {
 	resolve := v.keys.KeyfuncCtx(ctx)
 
@@ -240,6 +278,11 @@ func (v *Verifier) keyfunc(ctx context.Context) jwt.Keyfunc {
 		kid, _ := token.Header["kid"].(string)
 		if kid == "" {
 			return nil, fmt.Errorf("%w: the token header names no key", ErrTokenRejected)
+		}
+
+		if !slices.Contains(v.sessionKIDs, kid) {
+			return nil, fmt.Errorf("%w: key id %q is not on the permitted session key id list",
+				ErrTokenRejected, kid)
 		}
 
 		key, err := resolve(token)

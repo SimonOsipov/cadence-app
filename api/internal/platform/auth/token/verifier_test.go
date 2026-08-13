@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,19 +20,43 @@ const testAudience = "authenticated"
 // newVerifier wires a verifier to a local key set, the way the composition root
 // wires one to Supabase: the JWKS address is derived from the issuer, never
 // passed alongside it.
-func newVerifier(t *testing.T, set *testsupport.JWKS) *token.Verifier {
+//
+// permittedKIDs is the caller's session-key allowlist and is required: a test
+// that forgets to name the kid it signs with fails at NewVerifier with "at
+// least one permitted session key id is required", not at some assertion
+// three lines later that only reports "Verify: unexpected error".
+func newVerifier(t *testing.T, set *testsupport.JWKS, permittedKIDs ...string) *token.Verifier {
 	t.Helper()
 
 	verifier, err := token.NewVerifier(t.Context(), token.VerifierConfig{
-		Issuer:   set.Issuer,
-		Audience: testAudience,
-		JWKSURL:  set.Issuer + testsupport.JWKSPath,
+		Issuer:      set.Issuer,
+		Audience:    testAudience,
+		JWKSURL:     set.Issuer + testsupport.JWKSPath,
+		SessionKIDs: permittedKIDs,
 	})
 	if err != nil {
 		t.Fatalf("NewVerifier: %v", err)
 	}
 
 	return verifier
+}
+
+// TestNewVerifierRejectsAnEmptySessionKIDsList is this package's own copy of
+// the "an empty list fails startup" requirement, independent of
+// config.Load's. This package is what a flood of unknown kids would actually
+// reach, so it must refuse to start on an empty allowlist even if the
+// composition root's own check were ever skipped or bypassed.
+func TestNewVerifierRejectsAnEmptySessionKIDsList(t *testing.T) {
+	set := testsupport.StartJWKS(t, testsupport.NewRS256Key(t, "primary"))
+
+	_, err := token.NewVerifier(t.Context(), token.VerifierConfig{
+		Issuer:   set.Issuer,
+		Audience: testAudience,
+		JWKSURL:  set.Issuer + testsupport.JWKSPath,
+	})
+	if err == nil {
+		t.Fatal("NewVerifier: want an error for an empty SessionKIDs list, got nil")
+	}
 }
 
 // validClaims is a token that must be accepted. Every rejection test below is
@@ -68,7 +93,7 @@ func TestVerifyAcceptsBothPermittedAlgorithms(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key := tt.key(t, "primary")
 			set := testsupport.StartJWKS(t, key)
-			verifier := newVerifier(t, set)
+			verifier := newVerifier(t, set, key.KID)
 
 			claims := validClaims(set.Issuer)
 			principal, err := verifier.Verify(t.Context(), key.Sign(t, claims))
@@ -155,6 +180,14 @@ func TestVerifyRejects(t *testing.T) {
 			},
 		},
 		{
+			// Before pinning, this kid was refused because it was absent
+			// from the published JWKS. Now it is refused one step earlier, by
+			// the permitted-kid check in keyfunc, before the JWKS is ever
+			// consulted for it — this case alone cannot tell the two apart
+			// any more. See
+			// TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet
+			// for the test that isolates the new check specifically, by
+			// proving key resolution is never reached at all.
 			name: "unknown key id",
 			token: func(t *testing.T, key, _ *testsupport.SigningKey, issuer string) string {
 				return key.SignWithKID(t, "not-in-the-set", validClaims(issuer))
@@ -205,12 +238,67 @@ func TestVerifyRejects(t *testing.T) {
 			key := testsupport.NewRS256Key(t, "primary")
 			other := testsupport.NewRS256Key(t, "unpublished")
 			set := testsupport.StartJWKS(t, key)
-			verifier := newVerifier(t, set)
+			// "unpublished" is deliberately absent from the permitted list
+			// too: the "signed by a key that is not published" case signs
+			// under key.KID (permitted) with other's private key, and must be
+			// caught by signature verification rather than by the kid check.
+			verifier := newVerifier(t, set, key.KID)
 
 			if _, err := verifier.Verify(t.Context(), tt.token(t, key, other, set.Issuer)); err == nil {
 				t.Fatal("Verify: want error, got nil")
 			}
 		})
+	}
+}
+
+// TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet is the
+// ordering proof the AC asks for directly: the permitted-kid check "stands
+// before key resolution, so a flood of unknown kids never reaches the JWKS
+// refresh budget."
+//
+// Every kid below is both unpublished and unpermitted, and distinct from one
+// another, so the library's own per-kid state cannot short-circuit a second
+// look at the same one. If the permitted check ran after key resolution
+// instead of before it, each one would still cost at least an attempt at the
+// on-demand refresh — one real HTTP request the first time, per
+// TestVerifyRateLimitsUnknownKeyIDRefresh's measurement of that path. Running
+// the check first means resolve is never reached at all, so the fixture sees
+// zero requests, not "at most one": that is the difference this test makes
+// observable, plus the refusal naming the kid and the reason in its message.
+func TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet(t *testing.T) {
+	key := testsupport.NewRS256Key(t, "primary")
+	set := testsupport.StartJWKS(t, key)
+	verifier := newVerifier(t, set, key.KID)
+
+	// One fetch to fill the cache and get it out of the count below.
+	if _, err := verifier.Verify(t.Context(), key.Sign(t, validClaims(set.Issuer))); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+
+	before := set.Requests()
+
+	for i := range 5 {
+		kid := fmt.Sprintf("unpublished-and-impermissible-%d", i)
+		signed := key.SignWithKID(t, kid, validClaims(set.Issuer))
+
+		_, err := verifier.Verify(t.Context(), signed)
+		if err == nil {
+			t.Fatalf("Verify with kid %q: want error, got nil", kid)
+		}
+		if !errors.Is(err, token.ErrTokenRejected) {
+			t.Errorf("kid %q: err = %v, want it to wrap ErrTokenRejected", kid, err)
+		}
+		if !strings.Contains(err.Error(), kid) {
+			t.Errorf("kid %q: error %q does not name the kid", kid, err)
+		}
+		if !strings.Contains(err.Error(), "permitted") {
+			t.Errorf("kid %q: error %q does not name the reason", kid, err)
+		}
+	}
+
+	if requests := set.Requests() - before; requests > 0 {
+		t.Errorf("the key set was fetched %d times for 5 impermissible kids, want 0 — "+
+			"the permitted-kid check must run before key resolution", requests)
 	}
 }
 
@@ -235,7 +323,7 @@ func TestVerifyRejectsAForeignAlgorithmSignedByTheRightKey(t *testing.T) {
 	// JWKS library does the comparison itself and this test would again be
 	// passing for a reason other than the one it names.
 	set := testsupport.StartJWKSWithoutAlg(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	if _, err := verifier.Verify(t.Context(), key.Sign(t, validClaims(set.Issuer))); err != nil {
 		t.Fatalf("Verify on the permitted algorithm: %v", err)
@@ -259,7 +347,7 @@ func TestVerifyRejectsAForeignAlgorithmSignedByTheRightKey(t *testing.T) {
 func TestVerifyRejectsUnsignedAndSymmetricTokens(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKSWithoutAlg(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	forged := testsupport.SignHS256(t, key.KID, key.PublicKeyPEM(t), validClaims(set.Issuer))
 	if _, err := verifier.Verify(t.Context(), forged); err == nil {
@@ -277,7 +365,7 @@ func TestVerifyRejectsUnsignedAndSymmetricTokens(t *testing.T) {
 func TestVerifyRejectsTamperedSignature(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	token := key.Sign(t, validClaims(set.Issuer))
 	if _, err := verifier.Verify(t.Context(), token); err != nil {
@@ -307,7 +395,7 @@ func TestVerifyRefusesWhenKeySetIsUnreachable(t *testing.T) {
 	set := testsupport.StartJWKS(t, key)
 	set.Break()
 
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	if _, err := verifier.Verify(t.Context(), key.Sign(t, validClaims(set.Issuer))); err == nil {
 		t.Fatal("Verify: want error while the key set is unreachable, got nil")
@@ -318,10 +406,23 @@ func TestVerifyRefusesWhenKeySetIsUnreachable(t *testing.T) {
 // unknown kid triggering a fetch turns a stream of junk tokens into a request
 // flood against the provider, whose rate limiter then takes down authentication
 // for everyone.
+//
+// The junk kids are on the permitted list, not off it. Pinning refuses an
+// impermissible kid before the key set is ever consulted (see
+// TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet), which would
+// make this test pass at zero requests for the wrong reason if its kids were
+// merely unpermitted. Permitting them in advance is how a kid still reaches
+// the JWKS library's own unknown-kid handling, which is the rate limiter this
+// test is actually about.
 func TestVerifyRateLimitsUnknownKeyIDRefresh(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+
+	permitted := []string{key.KID}
+	for i := range 20 {
+		permitted = append(permitted, fmt.Sprintf("unknown-%d", i))
+	}
+	verifier := newVerifier(t, set, permitted...)
 
 	// One fetch to fill the cache, so the count below is refreshes and not the
 	// initial load.
@@ -331,8 +432,8 @@ func TestVerifyRateLimitsUnknownKeyIDRefresh(t *testing.T) {
 
 	before := set.Requests()
 
-	for range 20 {
-		junk := key.SignWithKID(t, "unknown-"+time.Now().Format(time.RFC3339Nano), validClaims(set.Issuer))
+	for i := range 20 {
+		junk := key.SignWithKID(t, fmt.Sprintf("unknown-%d", i), validClaims(set.Issuer))
 		if _, err := verifier.Verify(t.Context(), junk); err == nil {
 			t.Fatal("Verify: want error for an unknown kid, got nil")
 		}
@@ -351,7 +452,13 @@ func TestVerifyRateLimitsUnknownKeyIDRefresh(t *testing.T) {
 func TestRateLimitedUnknownKeyIDIsStillTheCallersProblem(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+
+	// As in TestVerifyRateLimitsUnknownKeyIDRefresh: these kids must be
+	// permitted so they still reach classifyKeyFailure through the JWKS
+	// library's own unknown-kid path, rather than being turned away earlier
+	// by the pinning check — which would also produce ErrTokenRejected, but
+	// without exercising the outage-vs-refusal distinction this test names.
+	verifier := newVerifier(t, set, key.KID, "unknown-0", "unknown-1", "unknown-2", "unknown-3", "unknown-4")
 
 	if _, err := verifier.Verify(t.Context(), key.Sign(t, validClaims(set.Issuer))); err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -378,6 +485,16 @@ func TestRateLimitedUnknownKeyIDIsStillTheCallersProblem(t *testing.T) {
 // small a budget, the rotation is never picked up on demand and every token
 // signed by the new key is refused until the next scheduled refresh — an hour
 // of blanket 401s, invisible to any test that runs at localhost latency.
+//
+// Before pinning, "rotated" needed no advance permission: any kid the key set
+// published was trusted. Pinning deliberately removes that — see the
+// Architecture decision in the spec — so this test now names both kids on the
+// permitted list from the start, matching the documented rotation order
+// (VerifierConfig.SessionKIDs): the new kid joins the list before GoTrue is
+// ever told to sign with it. What is left to prove is narrower and still real:
+// a key GoTrue starts signing with while the verifier is already running must
+// still be picked up live, over a real round trip, or every rotation would
+// require restarting the API in lockstep with GoTrue.
 func TestVerifyPicksUpRotatedKeysOverANetwork(t *testing.T) {
 	old := testsupport.NewRS256Key(t, "old")
 	set := testsupport.StartJWKS(t, old)
@@ -389,7 +506,7 @@ func TestVerifyPicksUpRotatedKeysOverANetwork(t *testing.T) {
 	set.Delay(800 * time.Millisecond)
 
 	// Deliberately the production defaults: the budget under test is one of them.
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, "old", "rotated")
 
 	if _, err := verifier.Verify(t.Context(), old.Sign(t, validClaims(set.Issuer))); err != nil {
 		t.Fatalf("Verify with the original key: %v", err)
@@ -405,7 +522,10 @@ func TestVerifyPicksUpRotatedKeysOverANetwork(t *testing.T) {
 
 // TestVerifyPicksUpRotatedKeys is the other half of the rate limit: a bounded
 // refresh must still be a refresh. A key published after the verifier started
-// has to become usable without a restart.
+// has to become usable without a restart — provided its kid was already
+// permitted, per the rotation order on VerifierConfig.SessionKIDs. See
+// TestVerifyPicksUpRotatedKeysOverANetwork for why both kids are permitted in
+// advance rather than only the original one.
 func TestVerifyPicksUpRotatedKeys(t *testing.T) {
 	old := testsupport.NewRS256Key(t, "old")
 	set := testsupport.StartJWKS(t, old)
@@ -414,6 +534,7 @@ func TestVerifyPicksUpRotatedKeys(t *testing.T) {
 		Issuer:             set.Issuer,
 		Audience:           testAudience,
 		JWKSURL:            set.Issuer + testsupport.JWKSPath,
+		SessionKIDs:        []string{"old", "rotated"},
 		UnknownKIDInterval: time.Nanosecond,
 	})
 	if err != nil {
@@ -432,13 +553,49 @@ func TestVerifyPicksUpRotatedKeys(t *testing.T) {
 	}
 }
 
+// TestVerifyRefusesAKeyRotatedInWithoutBeingPermittedFirst is the negative
+// half TestVerifyPicksUpRotatedKeys alone cannot prove: that pinning actually
+// changed the behaviour, rather than the two tests above having merely grown
+// an unused parameter. GoTrue rotates to a kid nobody added to SessionKIDs —
+// the reverse of the documented order, where the signing marker moves before
+// the API is told about the new kid — and every token the new key signs must
+// still be refused, live traffic and all, exactly as the AC requires: "the
+// reverse order refuses all authenticated traffic".
+func TestVerifyRefusesAKeyRotatedInWithoutBeingPermittedFirst(t *testing.T) {
+	old := testsupport.NewRS256Key(t, "old")
+	set := testsupport.StartJWKS(t, old)
+
+	// Only "old" is permitted — "rotated" is deliberately absent, standing in
+	// for an operator who handed GoTrue the new signing marker before adding
+	// the kid to SessionKIDs.
+	verifier := newVerifier(t, set, "old")
+
+	if _, err := verifier.Verify(t.Context(), old.Sign(t, validClaims(set.Issuer))); err != nil {
+		t.Fatalf("Verify with the original key: %v", err)
+	}
+
+	rotated := testsupport.NewRS256Key(t, "rotated")
+	set.Publish(t, old, rotated)
+
+	_, err := verifier.Verify(t.Context(), rotated.Sign(t, validClaims(set.Issuer)))
+	if err == nil {
+		t.Fatal("Verify: want an error for a kid rotated in without being permitted first, got nil")
+	}
+	if !errors.Is(err, token.ErrTokenRejected) {
+		t.Errorf("err = %v, want it to wrap ErrTokenRejected", err)
+	}
+	if !strings.Contains(err.Error(), "rotated") {
+		t.Errorf("error %q does not name the kid", err)
+	}
+}
+
 // TestVerifyRejectsTokenWithoutSubject keeps a principal from existing without
 // an identity: everything downstream — impersonation, RLS, audit — is keyed on
 // it, and an empty subject would silently become a valid one.
 func TestVerifyRejectsTokenWithoutSubject(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	claims := validClaims(set.Issuer)
 	delete(claims, "sub")
@@ -455,7 +612,7 @@ func TestVerifyRejectsTokenWithoutSubject(t *testing.T) {
 func TestVerifyDoesNotCarryClaimsBeyondThePrincipal(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	claims := validClaims(set.Issuer)
 	claims["email"] = "patient@example.com"
@@ -483,7 +640,7 @@ func TestVerifyDoesNotCarryClaimsBeyondThePrincipal(t *testing.T) {
 func TestVerifyErrorsAreNotSentinel(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	claims := validClaims(set.Issuer)
 	claims["exp"] = time.Now().Add(-time.Hour).Unix()
@@ -494,7 +651,7 @@ func TestVerifyErrorsAreNotSentinel(t *testing.T) {
 	}
 
 	set.Break()
-	broken := newVerifier(t, set)
+	broken := newVerifier(t, set, key.KID)
 
 	_, err = broken.Verify(t.Context(), key.Sign(t, validClaims(set.Issuer)))
 	if !errors.Is(err, token.ErrKeysUnavailable) {
@@ -511,7 +668,7 @@ func TestVerifyErrorsAreNotSentinel(t *testing.T) {
 func TestVerifyLeavesTheRoleEmptyWhenTheTokenCarriesOnlyTheStockClaim(t *testing.T) {
 	key := testsupport.NewES256Key(t, "kid-1")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	claims := validClaims(set.Issuer)
 	delete(claims, "cadence_role")
@@ -552,7 +709,7 @@ func TestVerifyLeavesTheRoleEmptyWhenTheTokenCarriesOnlyTheStockClaim(t *testing
 func TestVerifyAcceptsTheAudienceInEitherShape(t *testing.T) {
 	key := testsupport.NewES256Key(t, "kid-1")
 	set := testsupport.StartJWKS(t, key)
-	verifier := newVerifier(t, set)
+	verifier := newVerifier(t, set, key.KID)
 
 	// The one-element list first, because that is the shape production emits;
 	// the longer one because RFC 7519 permits it and a naive check that compared
