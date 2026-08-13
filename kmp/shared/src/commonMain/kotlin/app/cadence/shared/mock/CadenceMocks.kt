@@ -5,6 +5,7 @@ import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseEvent
 import app.cadence.shared.domain.DoseEventId
+import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.JournalEntry
 import app.cadence.shared.domain.JournalSource
@@ -16,6 +17,8 @@ import app.cadence.shared.domain.MetricTrend
 import app.cadence.shared.domain.OccurrenceStatus
 import app.cadence.shared.domain.ProtocolItemId
 import app.cadence.shared.domain.ProtocolStatus
+import app.cadence.shared.domain.Recipe
+import app.cadence.shared.domain.RecipeId
 import app.cadence.shared.domain.SystemCadenceClock
 import app.cadence.shared.domain.TrendRange
 import app.cadence.shared.domain.TrendWindow
@@ -56,6 +59,11 @@ import app.cadence.shared.repository.NutritionDay
 import app.cadence.shared.repository.NutritionRepository
 import app.cadence.shared.repository.NutritionWeek
 import app.cadence.shared.repository.NutritionWeekDay
+import app.cadence.shared.repository.RecipeDraft
+import app.cadence.shared.repository.RecipeFilter
+import app.cadence.shared.repository.RecipeList
+import app.cadence.shared.repository.RecipeRepository
+import app.cadence.shared.repository.RecipeSaveResult
 import app.cadence.shared.repository.ScheduleDay
 import app.cadence.shared.repository.ScheduleRepository
 import app.cadence.shared.repository.TodayRepository
@@ -112,6 +120,15 @@ class CadenceMocks(
     private val meals = MockSeed.meals.toMutableList()
     private var nextMealId = 0
 
+    // The patient's own recipes, empty until `save` writes to it — the
+    // library (`MockSeed.recipes`) is the clinic's and stays immutable. One
+    // list rather than a private copy inside the repository's mock, matching
+    // [meals] above: `RecipeRepository` is the only reader either way, but a
+    // second mutable list next to this one would be a second place «own
+    // recipe» could mean something.
+    private val ownRecipes = mutableListOf<Recipe>()
+    private var nextRecipeId = 0
+
     val today: TodayRepository = MockTodayRepository()
     val schedule: ScheduleRepository = MockScheduleRepository()
     val dosing: DoseLogRepository = MockDoseLogRepository()
@@ -120,6 +137,7 @@ class CadenceMocks(
     val measurements: MeasurementsRepository = MockMeasurementsRepository()
     val trends: TrendsRepository = MockTrendsRepository()
     val nutrition: NutritionRepository = MockNutritionRepository()
+    val recipes: RecipeRepository = MockRecipeRepository()
 
     private fun currentDate(): LocalDate = clock.today(zone)
 
@@ -242,6 +260,58 @@ class CadenceMocks(
 
         private fun mealsOn(date: LocalDate): List<Meal> =
             meals.filter { it.eatenAt.toLocalDateTime(zone).date == date }
+    }
+
+    private inner class MockRecipeRepository : RecipeRepository {
+        override suspend fun library(filter: RecipeFilter): RecipeList {
+            // `ownRecipes` is written oldest-first (`+=`); `asReversed()` puts
+            // the most recently saved one first, matching `AppState.tsx:163`'s
+            // `[recipe, ...prev]`. The library sits after all of them, per
+            // `AppState.tsx:166`'s `[...userRecipes, ...RECIPES.STARTERS]`.
+            val ordered = ownRecipes.asReversed() + MockSeed.recipes
+            return RecipeList(
+                recipes =
+                    ordered.filter { recipe ->
+                        (filter.mealType == null || recipe.mealType == filter.mealType) &&
+                            (filter.tag == null || filter.tag in recipe.tags)
+                    },
+            )
+        }
+
+        override suspend fun recipe(id: RecipeId): Recipe? =
+            ownRecipes.firstOrNull { it.id == id } ?: MockSeed.recipes.firstOrNull { it.id == id }
+
+        override suspend fun ingredients(query: String): List<Ingredient> {
+            // Trimmed, matching `RecipeBuilderScreen.tsx:127`'s
+            // `q.trim().toLowerCase()` — a trailing space off a mobile
+            // keyboard (`"тво "`) must still find «Творог 5%», not zero
+            // results.
+            val trimmed = query.trim()
+            return MockSeed.ingredients.filter { it.nameRu.contains(trimmed, ignoreCase = true) }
+        }
+
+        override suspend fun save(draft: RecipeDraft): RecipeSaveResult {
+            val name = draft.name
+            if (!draft.canSave() || name == null) return RecipeSaveResult.Rejected
+
+            val id = RecipeId("recipe-added-${nextRecipeId++}")
+            ownRecipes +=
+                Recipe(
+                    id = id,
+                    ownerId = MockSeed.patientId,
+                    name = name,
+                    mealType = draft.mealType,
+                    tags = draft.tags,
+                    servings = draft.servings,
+                    prepMin = draft.prepMin,
+                    cookMin = draft.cookMin,
+                    dek = draft.dek,
+                    ingredients = draft.ingredients,
+                    steps = draft.steps,
+                )
+
+            return RecipeSaveResult.Saved(id)
+        }
     }
 
     private inner class MockMeasurementsRepository : MeasurementsRepository {

@@ -83,6 +83,12 @@ style:
       # neighbour `MockMealParser.kt` is not excluded — the scoring loop is
       # logic, and the rule should keep watching it.
       - '**/CannedMealParses.kt'
+      # And the recipe library's seed, for the same reason again: 25
+      # ingredients and six recipes ported whole from
+      # `mobile/src/features/recipe/data.ts` — grams, macro tenths and minutes
+      # are the specification, split into its own file (not `MockSeed.kt`)
+      # only to keep that object under `LargeClass`, per the file's own KDoc.
+      - '**/MockSeedRecipes.kt'
   MaxLineLength:
     maxLineLength: 120
     # CadenceIcons.kt is generated path data carried over from the prototype.
