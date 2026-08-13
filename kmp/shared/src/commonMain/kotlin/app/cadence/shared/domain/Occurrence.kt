@@ -7,11 +7,8 @@ import kotlinx.datetime.daysUntil
 private const val DAYS_PER_WEEK = 7
 
 /**
- * What the calendar shows for one item, on one date, at one time.
- *
- * Keyed by the time as well as the date because §03 gives an item a `times[]`:
- * BPC-157 at 08:00 and 20:00 is two occurrences on one day, and a patient who
- * logged the morning one has not logged the evening one.
+ * Keyed by time as well as date: §03's `times[]` makes BPC-157 at 08:00 and 20:00 two
+ * occurrences, and logging one doesn't log the other.
  */
 data class Occurrence(
     val itemId: ProtocolItemId,
@@ -23,18 +20,14 @@ data class Occurrence(
 )
 
 /**
- * Computed by comparing generated occurrences against logged events, never
- * stored — §03's L10 and the project's «nothing derived is stored».
+ * Computed by comparing generated occurrences against logged events, never stored — §03's
+ * L10 and «nothing derived is stored».
  */
 enum class OccurrenceStatus { DONE, PENDING, MISSED, SCHEDULED }
 
 /**
- * Which week of the cycle a date falls in, or null if it falls outside.
- *
- * Week 1 is the seven days from the protocol's start. The prototype hardcodes
- * «week 4» against a frozen 31 May; §03's second correction is that the answer
- * is this subtraction, so a protocol that began elsewhere gives a different
- * answer for the same date.
+ * Week 1 is the seven days from the protocol's start; §03's second correction replaces the
+ * prototype's hardcoded «week 4» against a frozen 31 May with this subtraction.
  */
 fun cycleWeek(
     protocol: Protocol,
@@ -46,13 +39,7 @@ fun cycleWeek(
     return if (week > protocol.weeks) null else week
 }
 
-/**
- * A protocol and everything needed to read it.
- *
- * One type rather than three parameters that always travel together: they come
- * from one fetch, they are meaningless apart, and detekt counting the arguments
- * was right about what that list was turning into.
- */
+/** One type, not three parameters that always travel together: they come from one fetch and are meaningless apart. */
 data class ProtocolPlan(
     val protocol: Protocol,
     val items: List<ProtocolItem>,
@@ -60,18 +47,10 @@ data class ProtocolPlan(
 )
 
 /**
- * The schedule for one date, generated.
- *
- * §03: «There is no materialized schedule table. The calendar is generated on
- * demand from protocol_items × protocol_phases in the patient's timezone. Only
- * actual events — a logged dose, a measurement — are rows.» So this is the
- * whole schedule: nothing to keep in sync when a doctor edits a protocol, and
- * the Today strip and the Schedule screen render the same call, which is §03's
- * seventh correction.
- *
- * `today` is passed rather than read from a clock: the status of a date depends
- * on where it sits relative to now, and a function that fetched its own «now»
- * could not be tested against a calendar.
+ * §03: no materialized schedule table; generated on demand from protocol_items ×
+ * protocol_phases. This is the whole schedule — Today and Schedule render the same call
+ * (§03's seventh correction). `today` is a parameter, not read from a clock, so this can be
+ * tested against a calendar.
  */
 fun occurrencesFor(
     plan: ProtocolPlan,
@@ -79,17 +58,10 @@ fun occurrencesFor(
     date: LocalDate,
     today: LocalDate,
 ): List<Occurrence> {
-    // CANCELLED only, and the narrowing matters. A cancelled course has no
-    // defensible history — §03 gives `protocols` no `cancelled_at` to bound one
-    // with — so it generates nothing. A COMPLETED one is every patient after
-    // twelve weeks, and blanking it would erase the dots from days they
-    // actually injected: `cycleWeek` already bounds generation to the protocol
-    // window, so a finished course yields exactly the DONE/MISSED history §11's
-    // `GET /me/schedule?month` is defined to render.
+    // CANCELLED only, and the narrowing matters: a COMPLETED course is every patient after
+    // twelve weeks, and blanking it would erase the dots from days they actually injected.
     if (plan.protocol.status == ProtocolStatus.CANCELLED) return emptyList()
 
-    // A date outside the protocol's window generates nothing; the dose each
-    // item carries is [phaseDose]'s answer for the same date.
     if (cycleWeek(plan.protocol, date) == null) return emptyList()
 
     return plan.items
@@ -110,16 +82,10 @@ fun occurrencesFor(
 }
 
 /**
- * The dose in force for one item on one date, or null when none is.
- *
- * Null has three causes and they are one answer: the protocol is cancelled, the
- * date falls outside its window, or the item has no phase covering that week —
- * a weigh-in, or a band that does not reach. In each case there is no number to
- * offer, and offering one is the defect the step-4 review found on the hero.
- *
- * One function rather than two readings of `phases`: the wizard resets its dose
- * to «the current phase» and the calendar stamps the same number on every
- * occurrence. Written twice, they disagree the first time a band moves.
+ * Null has three causes, one answer: cancelled, outside the window, or no phase covers
+ * that week — offering a number in any case is the defect the step-4 review found on the
+ * hero. One function, not two readings of `phases`: written twice, wizard and calendar
+ * disagree the first time a band moves.
  */
 fun phaseDose(
     plan: ProtocolPlan,
@@ -131,13 +97,7 @@ fun phaseDose(
     return plan.phases[itemId]?.firstOrNull { it.covers(week) }?.dose
 }
 
-/**
- * How many doses of this item a week burns — the rate stock runs down at.
- *
- * Derived rather than seeded: it is `daysOfWeek × times` for a weekly item and
- * `7 × times` for a daily one, and a stored copy is the sort of thing that goes
- * stale the first time a protocol is edited.
- */
+/** Derived, not seeded: a stored copy goes stale the first time a protocol is edited. */
 fun ProtocolItem.dosesPerWeek(): Double = scheduledDaysPerWeek() * times.size
 
 /** Shared with [fallsOn], so the two readings of `cadence` cannot drift apart. */
@@ -155,17 +115,9 @@ private fun ProtocolItem.fallsOn(date: LocalDate): Boolean =
     }
 
 /**
- * A logged event wins; otherwise the date decides.
- *
- * The event has to match the item, the date **and the slot**. Matching on the
- * item alone would mark every remaining Sunday done after the first injection;
- * matching without the slot did the same thing inside a day — one BPC-157 event
- * with a null time closed both 08:00 and 20:00, and a patient who had taken the
- * morning injection was told the evening one was already done.
- *
- * An event with no slot therefore satisfies nothing, which is the right answer:
- * §03 stores `scheduled_for (date + slot)`, so a dose logged outside the
- * schedule did not fulfil a scheduled occurrence.
+ * Match must include item, date **and slot**: matching on item alone would mark every
+ * remaining Sunday done after the first injection; without the slot, one BPC-157 event with
+ * a null time closed both 08:00 and 20:00, telling a patient the evening dose was already done.
  */
 private fun statusOf(
     item: ProtocolItem,

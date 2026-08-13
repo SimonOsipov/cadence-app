@@ -16,17 +16,13 @@ import androidx.compose.ui.Modifier
 val LocalCadencePalette = staticCompositionLocalOf { CadenceLightPalette }
 
 /**
- * The type scale in force.
- *
- * No usable default — the factory throws. The scale is built over bundled font
- * resources, which resolve only inside composition, so a constant default is
- * not merely undesirable here but impossible: any value one could write would
- * be a platform family, which is exactly the Cyrillic fallback this design
- * system exists to avoid. Throwing on a read outside the theme is the standard
- * Compose shape for a local with no meaningful default.
- *
- * static, like the palette: the scale does not change while the app runs, so
- * the local skips the invalidation bookkeeping a changing one would need.
+ * The type scale in force. No usable default — the factory throws. The scale
+ * is built over bundled font resources, which resolve only inside
+ * composition, so a constant default isn't merely undesirable but impossible:
+ * any value written would be a platform family, exactly the Cyrillic fallback
+ * this design system exists to avoid. Throwing on a read outside the theme is
+ * the standard Compose shape for a local with no meaningful default. Static,
+ * like the palette, since the scale doesn't change while the app runs.
  */
 val LocalCadenceTypography =
     staticCompositionLocalOf<CadenceTypography> {

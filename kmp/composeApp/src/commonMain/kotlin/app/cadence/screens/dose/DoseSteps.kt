@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +42,7 @@ import app.cadence.design.CadencePillTone
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceSpacing
 import app.cadence.design.CadenceSyringeBar
+import app.cadence.design.CadenceTextField
 import app.cadence.design.CadenceTitle
 import app.cadence.format.formatDose
 import app.cadence.shared.domain.Dose
@@ -195,12 +195,10 @@ fun DoseAmountStep(
 }
 
 /**
- * «Из вашей аптечки» — which vial this dose comes out of.
- *
- * Nothing is drawn when the patient has one open vial of the compound: a choice
- * with one option is not a choice, and the write makes the same one. Two open
- * at once is the case §03 allows, the seed contains and the prototype's own
- * `VIALS` has — and the only one where the app cannot know.
+ * «Из вашей аптечки» — which vial this dose comes out of. Nothing is drawn with one
+ * open vial of the compound: a choice with one option is not a choice, and the write
+ * makes the same one. Two open at once is the case §03 allows, the seed contains and
+ * the prototype's own `VIALS` has — the only one where the app cannot know.
  */
 @Composable
 private fun VialPicker(
@@ -211,11 +209,9 @@ private fun VialPicker(
     val vials = option?.vials.orEmpty()
     if (vials.size < 2) return
 
-    // The default goes into the draft, not just onto the screen. Shown but
-    // unrecorded, the picker's «fullest open vial» and the write's own
-    // «fullest open vial» are two implementations of one rule that agree until
-    // one of them changes — and the patient would have been shown a vial the
-    // record did not name.
+    // Into the draft, not just onto the screen: shown but unrecorded, the picker's
+    // «fullest open vial» and the write's own are two implementations of one rule
+    // that agree until one of them changes.
     LaunchedEffect(vials.first().id) {
         if (draft.vialId == null) onDraft(draft.copy(vialId = vials.first().id))
     }
@@ -310,12 +306,10 @@ fun ContextStep(
 }
 
 /**
- * The slot renders and reports a tap; nothing uploads.
- *
- * §03 routes photos straight to object storage under a path convention — the
- * one documented client→data exception — so the upload lands with the storage
- * work. A slot that was not here at all would leave `DoseDraft.photoAttached`
- * with no writer, which is state carried through the whole write for nothing.
+ * The slot renders and reports a tap; nothing uploads. §03 routes photos straight to
+ * object storage under a path convention — the one documented client→data exception
+ * — so the upload lands with the storage work; omitting the slot entirely would leave
+ * `DoseDraft.photoAttached` with no writer.
  */
 @Composable
 private fun PhotoSlot(
@@ -373,24 +367,13 @@ private fun NoteField(
     draft: DoseDraft,
     onDraft: (DoseDraft) -> Unit,
 ) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(CadenceRadius.md))
-            .background(Cadence.palette.paper)
-            .border(HAIRLINE, Cadence.palette.border, RoundedCornerShape(CadenceRadius.md))
-            .padding(CadenceSpacing.md),
-    ) {
-        if (draft.note.isNullOrEmpty()) CadenceMeta("Что-то важное про эту дозу?")
-        BasicTextField(
-            value = draft.note.orEmpty(),
-            // Empty means «не написали», not «написали пустое»: a blank note
-            // would render an empty row in the review.
-            onValueChange = { onDraft(draft.copy(note = it.ifBlank { null })) },
-            textStyle = Cadence.typography.body.copy(color = Cadence.palette.ink),
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
+    CadenceTextField(
+        value = draft.note.orEmpty(),
+        // Empty means «не написали», not «написали пустое»: a blank note
+        // would render an empty row in the review.
+        onValueChange = { onDraft(draft.copy(note = it.ifBlank { null })) },
+        placeholder = "Что-то важное про эту дозу?",
+    )
 }
 
 /** «Шаг 5 · Проверка» — the hero card and the rows under it. */

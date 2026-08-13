@@ -14,10 +14,9 @@ import app.cadence.design.CadenceSpacing
 import app.cadence.shared.domain.TrendWindow
 
 /**
- * What a metric with nothing in the window says.
- *
- * One copy, beside the switcher, for the switcher's reason: the list and the
- * detail must not come to disagree about the wording.
+ * What a metric with nothing in the window says. One copy, beside the switcher,
+ * for the switcher's reason: the list and the detail must not disagree about the
+ * wording.
  */
 internal const val NO_READINGS = "нет данных"
 
@@ -34,11 +33,10 @@ private fun windowLabel(window: TrendWindow): String =
     }
 
 /**
- * The window switcher, shared by the list and the detail.
- *
- * One component because the prototype shares the *choice* between the two
- * screens — it keeps the timeframe in app state — and two copies of the labels
- * would be two places to disagree about what «весь цикл» is called.
+ * The window switcher, shared by the list and the detail. One component because
+ * the prototype shares the *choice* between the two screens — it keeps the
+ * timeframe in app state — and two copies of the labels would be two places to
+ * disagree about what «весь цикл» is called.
  */
 @Composable
 internal fun TrendWindowChips(

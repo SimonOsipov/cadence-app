@@ -481,10 +481,6 @@ class ScrubChartTest {
                 }
             }
 
-            // `swipe` with a duration interpolates the moves. A single
-            // `moveTo` sends one event, so a handler that reported only the
-            // press and the final position would pass — and the middle reading
-            // would never be named.
             onNodeWithTag(CADENCE_SCRUB_CHART_TAG).performTouchInput {
                 val from = left + 2f
                 val to = right - 2f

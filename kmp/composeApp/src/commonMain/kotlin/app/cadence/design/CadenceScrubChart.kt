@@ -45,12 +45,10 @@ import kotlin.math.abs
 const val CADENCE_SCRUB_CHART_TAG = "cadence-scrub-chart"
 
 /**
- * The scrub cursor is a laid-out node rather than a drawing.
- *
- * A dot painted inside a `Canvas` asserts nothing about where it went: the
- * gauge fill shipped exactly that defect, and the syringe before it. Positioned
- * as a node, «the cursor stands on the reading you touched» becomes a bounds
- * comparison.
+ * The scrub cursor is a laid-out node, not a drawing: a dot painted inside a
+ * `Canvas` asserts nothing about where it went, the same defect the gauge fill
+ * and the syringe both shipped. As a node, «the cursor stands on the reading
+ * you touched» becomes a bounds comparison.
  */
 const val CADENCE_SCRUB_CURSOR_TAG = "cadence-scrub-cursor"
 
@@ -60,11 +58,9 @@ const val CADENCE_SCRUB_DOSE_ROW_TAG = "cadence-scrub-dose-row"
 fun cadenceScrubBandTag(index: Int): String = "cadence-scrub-band-$index"
 
 /**
- * One node per protocol mark, for the reason the cursor is one.
- *
- * The dashed line itself is painted — a canvas is the only way to dash — but a
- * zero-width node stands at the same x, so «the mark is on its day, on the axis
- * the readings use» is a bounds comparison rather than a claim.
+ * One node per protocol mark, for the reason the cursor is one. The dashed
+ * line itself is painted (a canvas is the only way to dash), but a node stands
+ * at the same x, so «the mark is on its day» is a bounds comparison.
  */
 fun cadenceScrubMarkTag(index: Int): String = "cadence-scrub-mark-$index"
 
@@ -87,19 +83,17 @@ private val MARK_DASH = floatArrayOf(2f, 3f)
  * One metric's window, drawn: the readings, the doses prescribed under them,
  * and the days the protocol changed.
  *
- * [scrubIndex] is hoisted. The prototype keeps it inside the chart and resets it
- * with an effect whenever the data changes, which is how its scrub position
- * survives a metric switch and points at a reading from the other series; here
- * the caller owns it and null means «the latest», so a new series is current by
- * construction rather than by remembering to reset.
+ * [scrubIndex] is hoisted, unlike the prototype's chart-owned state (reset by
+ * an effect on data change — the bug that lets scrub survive a metric switch
+ * pointing at the other series). Null here means «the latest», so a new series
+ * is current by construction, not by remembering to reset.
  *
- * [height] is the plot's requested height; a parent that allows less wins, and
- * the geometry follows the box that was actually laid out. The dose row adds its
- * own height beneath.
+ * [height] is the plot's requested height; a parent that allows less wins and
+ * geometry follows the laid-out box. The dose row adds its own height beneath.
  *
- * [onScrub] reports the index *and* the reading, because a caller that had only
- * the index would index back into the same list this component just walked —
- * and the two would disagree the first time an empty window returned early.
+ * [onScrub] reports the index *and* the reading — a caller with only the index
+ * would index back into the list this component just walked, and the two
+ * would disagree the first time an empty window returned early.
  */
 @Composable
 fun CadenceScrubChart(
@@ -126,22 +120,20 @@ fun CadenceScrubChart(
             val density = LocalDensity.current
             val widthPx = with(density) { maxWidth.toPx() }
             // `maxHeight`, not the parameter: `Modifier.height` is clamped by
-            // whatever the parent allows, and `ScrubPlot` draws against the
-            // laid-out `size.height`. Read from two places, a card that
-            // squeezed this chart would put the cursor below the line.
+            // the parent, and `ScrubPlot` draws against the laid-out
+            // `size.height` — reading from two places would put the cursor
+            // below the line in a squeezed card.
             val heightPx = with(density) { maxHeight.toPx() }
             val inset = with(density) { chartInset() }
-            // Remembered: during a drag this recomposes on every pointer
-            // event, and «3 месяца» of a daily metric is 84 instant-to-date
-            // conversions a frame.
+            // Remembered: this recomposes on every pointer event during a
+            // drag, and «3 месяца» of a daily metric is 84 conversions a frame.
             val readings = remember(series) { chartReadings(series) }
             val points =
                 remember(readings, widthPx, heightPx, inset) { scrubPoints(readings, widthPx, heightPx, inset) }
-            // Clamped rather than dropped. The window is hoisted into the shell
-            // and shared with the detail screen, so an index scrubbed on «весь
-            // цикл» outlives a switch to «7 дней»; the prototype clamps for the
-            // same reason, and a chart that answered a stale index with no
-            // cursor at all would be the worse of the two failures.
+            // Clamped, not dropped: the window is hoisted and shared with the
+            // detail screen, so an index scrubbed on «весь цикл» outlives a
+            // switch to «7 дней» (prototype clamps for the same reason) — a
+            // stale index with no cursor at all would be the worse failure.
             val cursorAt =
                 scrubIndex
                     ?.let { wanted -> readings.indexOfLast { it.index <= wanted }.coerceAtLeast(0) }
@@ -205,9 +197,8 @@ private fun ScrubPlot(
         drawProtocolMarks(marks, range, inset, plotTop, plotBottom)
 
         if (points.isEmpty()) {
-            // The same answer `CadenceSpark` gives an empty series: a rule says
-            // «there is a scale here and no values on it», where an empty box
-            // reads as «failed to load».
+            // Same answer `CadenceSpark` gives an empty series: a baseline, not
+            // an empty box that reads as «failed to load».
             drawLine(
                 color = hairline,
                 start = Offset(inset.left, (plotTop + plotBottom) / 2f),
@@ -253,10 +244,10 @@ private fun DoseRow(
     range: TrendRange,
     palette: CadencePalette,
 ) {
-    // Inset like the plot above it. Laid out against the full width, a band
-    // edge and the dashed mark that opens it drift apart by up to the inset,
-    // growing across the chart — the strip would claim a dose change slightly
-    // before the hairline did.
+    // Inset like the plot above it: laid out against the full width, a band
+    // edge would drift from its opening dashed mark by up to the inset,
+    // growing across the chart, and the strip would claim a dose change
+    // slightly before the hairline did.
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
@@ -326,10 +317,9 @@ private fun DrawScope.drawProtocolMarks(
 }
 
 /**
- * Touch and drag both report; the chart is scrubbed, not clicked.
- *
- * Written as a modifier so the geometry above stays a function of its inputs:
- * the gesture needs the laid-out width, which only the pointer scope knows.
+ * Touch and drag both report; the chart is scrubbed, not clicked. Written as a
+ * modifier so the geometry above stays a function of its inputs — the gesture
+ * needs the laid-out width, which only the pointer scope knows.
  */
 private fun Modifier.scrubbable(
     series: TrendSeries,
@@ -339,15 +329,13 @@ private fun Modifier.scrubbable(
         if (series.points.isEmpty()) return@pointerInput
         val readings = chartReadings(series)
 
-        // One handler for both, rather than `detectTapGestures` and
-        // `detectDragGestures` in sequence: the first of those suspends until
-        // cancellation, so the second would never be reached — and a chart that
-        // reported only taps is one a patient cannot drag along.
+        // One handler for both, not `detectTapGestures` then
+        // `detectDragGestures`: the first suspends until cancellation, so the
+        // second would never run, and a chart with taps only can't be dragged.
         awaitEachGesture {
-            // Laid out per gesture rather than once per series: `pointerInput`
-            // is not restarted by a remeasure, so a rotation would leave the
-            // touch mapping on the old width while the cursor moved to the new
-            // one. `size` is a live property of this scope.
+            // Laid out per gesture, not once per series: `pointerInput` isn't
+            // restarted by a remeasure, so a rotation would leave the touch
+            // mapping on the old width. `size` is live on this scope.
             val points = scrubPoints(readings, size.width.toFloat(), size.height.toFloat(), chartInset())
 
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -356,9 +344,8 @@ private fun Modifier.scrubbable(
             var pressed = true
             while (pressed) {
                 val event = awaitPointerEvent()
-                // One finger, not every pressed pointer: a second thumb on the
-                // chart would otherwise fire twice per event and the later
-                // report would win by arrival order.
+                // One finger, not every pressed pointer: a second thumb would
+                // otherwise fire twice per event, the later report winning.
                 event.changes.firstOrNull { it.pressed }?.let { change ->
                     nearestIndex(change.position.x, points)?.let { onIndex(readings[it].index) }
                 }

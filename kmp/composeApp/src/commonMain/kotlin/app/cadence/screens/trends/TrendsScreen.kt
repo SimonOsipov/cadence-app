@@ -71,12 +71,10 @@ private val GRID_SPARK_HEIGHT = 32.dp
 private val SHIFT_ICON = 40.dp
 
 /**
- * Every metric of the protocol, for one window.
- *
- * [window] is a parameter and [onWindowChange] an event because the detail
- * screen shares the choice: the prototype keeps it in app state for that
- * reason, and a window remembered here would reset every time a patient came
- * back from a metric.
+ * Every metric of the protocol, for one window. [window] is a parameter and
+ * [onWindowChange] an event because the detail screen shares the choice: the
+ * prototype keeps it in app state for that reason, and a window remembered here
+ * would reset every time a patient came back from a metric.
  */
 @Composable
 fun TrendsScreen(
@@ -150,11 +148,10 @@ fun TrendsScreen(
 }
 
 /**
- * The featured metric: its latest reading, how far it moved, and a sparkline.
- *
- * The prototype's hero reads its *value* from the cycle series and its *delta*
- * from the selected one, so switching to «7 дней» changes the pill under a
- * number that never moves. Both come from the same series here.
+ * The featured metric: its latest reading, how far it moved, and a sparkline. The
+ * prototype's hero reads its *value* from the cycle series and its *delta* from the
+ * selected one, so switching to «7 дней» changes the pill under a number that never
+ * moves. Both come from the same series here.
  */
 @Composable
 private fun HeroCard(
@@ -184,14 +181,12 @@ private fun HeroCard(
 }
 
 /**
- * The two-up grid, on its own.
- *
- * `internal` and separate so a test can compose it alone. Inside the whole
- * screen these cards sit below the test window, where a card cannot be clicked
- * at all and one scrolled into view is clicked at the bounds it had before the
- * scroll — every sweep across them reported the neighbouring metric. Composed
- * by itself with three cards, «this card opens this metric» is one exact check
- * each, against a list that is deliberately not in enum order.
+ * The two-up grid, on its own. `internal` and separate so a test can compose it
+ * alone: inside the whole screen these cards sit below the test window, where a
+ * card cannot be clicked at all and one scrolled into view is clicked at the
+ * bounds it had before the scroll — every sweep across them reported the
+ * neighbouring metric. Composed alone with three cards, «this card opens this
+ * metric» is one exact check each, against a list deliberately not in enum order.
  */
 @Composable
 internal fun TrendsMetricGrid(

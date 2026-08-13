@@ -18,8 +18,26 @@ test:
 # gate: a developer without Docker still gets a green `gate`, and CI runs this
 # as a required job of its own. Green here is not optional — it is where the
 # migration chain and the role separation are actually proven.
+#
+# TESTCONTAINERS_RYUK_DISABLED=true: every package in this run shares one Ryuk
+# reaper (testcontainers keys its session ID off the parent `go test` process,
+# specifically so packages started by the same invocation pool into one
+# session), and Ryuk reaps by that shared session label rather than per
+# package. A package that finishes — or whose own heartbeat to Ryuk drops for
+# longer than Ryuk's 10s reconnection window, which is far more likely once
+# the runner is short on CPU — can trigger a reap that removes a sibling
+# package's still-running container out from under it: a live connection dies
+# mid-test with exactly the reset/EOF signature this suite hit in CI, and
+# every test after it fails on a container that no longer exists. Ryuk is a
+# safety net for containers leaked by a crashed process; this harness never
+# depends on it for correctness, since every throwaway database is dropped in
+# t.Cleanup and every cluster is torn down by Cluster.Terminate in TestMain
+# regardless of how the run ends. Disabling it trades that net for removing a
+# cross-package failure mode that a single shared-fate `go test ./...` run
+# cannot otherwise avoid. A run killed uncleanly (Ctrl-C, OOM) can still leave
+# a container behind; `docker compose down` or `docker system prune` clears it.
 test-integration:
-	go test -tags=integration ./... -race -count=1
+	TESTCONTAINERS_RYUK_DISABLED=true go test -tags=integration ./... -race -count=1
 
 # gofmt -> build -> vet -> golangci-lint -> test -race. The same script CI and
 # the Ralph loop run, so there is one definition of green and not three.

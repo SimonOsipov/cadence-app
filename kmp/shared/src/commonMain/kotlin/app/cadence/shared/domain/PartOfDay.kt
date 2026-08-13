@@ -3,15 +3,9 @@ package app.cadence.shared.domain
 import kotlinx.datetime.LocalTime
 
 /**
- * The half of «Воскресенье, утро» that is not the weekday.
- *
- * The prototype writes the whole greeting as a literal, frozen at a Sunday
- * morning. It is a function of the clock, and it lives here rather than on the
- * screen because it is a rule about time, not about layout — and because this
- * is the half of the codebase the gate runs.
- *
- * Boundaries are the ones Russian actually uses rather than even quarters:
- * «ночь» runs to five, «утро» to noon, «день» to six, «вечер» to midnight.
+ * The half of «Воскресенье, утро» that isn't the weekday, computed here (not on the screen)
+ * as a rule about time. Boundaries are the ones Russian actually uses, not even quarters:
+ * «ночь» to five, «утро» to noon, «день» to six, «вечер» to midnight.
  */
 enum class PartOfDay(
     val ru: String,

@@ -41,14 +41,12 @@ private val GLANCE_SPARK_HEIGHT = 70.dp
 const val GLANCE_SPARK_TAG: String = "glance-spark"
 
 /**
- * «Вес · 7 недель» — the headline biomarker, with its own history beside it.
- *
- * The prototype captions this «7 дней» and draws seven hardcoded points, but
- * its own schedule weighs the patient **weekly**: seven readings are seven
- * weeks. The caption follows the data. Recorded in the divergence registry.
- *
- * The delta is computed from the series rather than written into it — the
- * prototype's «↓ 0,6 кг» is a literal that never moves.
+ * «Вес · 7 недель» — the headline biomarker, with its own history beside it. The
+ * prototype captions this «7 дней» and draws seven hardcoded points, but its own
+ * schedule weighs the patient **weekly**: seven readings are seven weeks, so the
+ * caption follows the data (recorded in the divergence registry). The delta is
+ * computed from the series, not written into it — the prototype's «↓ 0,6 кг» is a
+ * literal that never moves.
  */
 @Composable
 fun BiomarkerGlance(

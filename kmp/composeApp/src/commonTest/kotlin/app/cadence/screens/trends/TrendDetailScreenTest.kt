@@ -65,8 +65,7 @@ class TrendDetailScreenTest {
     @Test
     fun eachAggregateBoxHoldsItsOwnNumber() =
         runComposeUiTest {
-            // One check per box. All four come off the same window as the chart,
-            // and they are four different numbers on this fixture — a strip
+            // One check per box: they are four different numbers on this fixture, so a strip
             // wired to one of them four times passes any single assertion.
             val one = detail()
             val series = one.trend.series
@@ -85,9 +84,8 @@ class TrendDetailScreenTest {
                 cadenceTrendStatTag("delta"),
                 formatSignedDelta(requireNotNull(series.delta), unitRu(one.trend.meta.unit), digits),
             )
-            // Compared as *rendered*, not as raw doubles: two of the four can
-            // round to one string on a zero-decimal metric, and then a
-            // box-swap mutant survives.
+            // Compared as *rendered*, not raw doubles: two of the four can round to one string
+            // on a zero-decimal metric, letting a box-swap mutant survive.
             assertEquals(
                 4,
                 setOf(
@@ -103,11 +101,9 @@ class TrendDetailScreenTest {
     @Test
     fun theFourBoxesShareTheStripEvenly() =
         runComposeUiTest {
-            // Measured, not described. A `Row` hands width out in child order,
-            // and «Δ» — the only box carrying an arrow and a unit — is last and
-            // widest, so without an even share it is the one a narrow screen
-            // clips. Nothing else in this file reads geometry, so a missing
-            // weight would otherwise be invisible.
+            // Measured, not described: «Δ» carries an arrow and a unit, is last and widest, and
+            // is the box a narrow screen clips without an even share — invisible to any test
+            // here that doesn't read geometry.
             setContent {
                 CadenceTheme {
                     TrendDetailScreen(detail(), TrendWindow.FOUR_WEEKS, {}, {})
@@ -127,8 +123,7 @@ class TrendDetailScreenTest {
     @Test
     fun theAggregatesFollowTheWindowRatherThanTheWholeHistory() =
         runComposeUiTest {
-            // «Сред.» over four weeks is not «сред.» over three months, and the
-            // strip has to say which one it was asked about.
+            // «Сред.» over four weeks is not «сред.» over three months.
             val month = detail(window = TrendWindow.FOUR_WEEKS)
             val quarter = detail(window = TrendWindow.THREE_MONTHS)
             val digits = month.trend.meta.decimals
@@ -149,8 +144,7 @@ class TrendDetailScreenTest {
     @Test
     fun theRecentRowsAreTheTailOfTheWindowNewestFirst() =
         runComposeUiTest {
-            // Newest first, because that is the order a log is read in — and
-            // the opposite of the chart above, which runs left to right.
+            // Newest first, opposite the chart above which runs left to right.
             val one = detail()
             val newest =
                 one.trend.series.points
@@ -163,25 +157,22 @@ class TrendDetailScreenTest {
                 }
             }
 
-            // The day, not the value: HRV rounds to whole milliseconds and the
-            // last two readings both render «58», so a bare number is satisfied
-            // by the neighbouring row.
+            // The day, not the value: HRV rounds to whole ms and the last two readings both
+            // render «58», so a bare number is satisfied by the neighbouring row.
             val newestDay = dayAndMonth(one.trend.series.dayOf(newest))
             val olderDay =
                 dayAndMonth(one.trend.series.dayOf(one.trend.series.points[one.trend.series.points.size - 3]))
             says(CADENCE_TREND_DETAIL_RECENT_TAG, newestDay)
 
-            // The reading before the tail is not in the list: seven rows, not
-            // twenty-eight.
+            // The reading before the tail is not in the list: seven rows, not twenty-eight.
             val tooOld =
                 one.trend.series.points
                     .dropLast(7)
                     .last()
             assertEquals(0, matches(dayAndMonth(one.trend.series.dayOf(tooOld))), "only the tail is listed")
 
-            // And the newest sits above the older one. Presence alone says
-            // nothing about order: dropping `.reversed()` leaves the same seven
-            // rows, read the wrong way round.
+            // Newest above older: presence alone says nothing about order — dropping
+            // `.reversed()` leaves the same seven rows, read the wrong way round.
             val newestTop = onNodeWithText(newestDay, substring = true).fetchSemanticsNode().boundsInRoot.top
             val olderTop = onNodeWithText(olderDay, substring = true).fetchSemanticsNode().boundsInRoot.top
             assertTrue(newestTop < olderTop, "the newest reading is at the top: $newestTop vs $olderTop")
@@ -203,8 +194,8 @@ class TrendDetailScreenTest {
     @Test
     fun aMetricWithNoReadingsSaysSoAndDrawsNoAggregates() =
         runComposeUiTest {
-            // Chest is unmeasured in the seed on purpose. A strip of «—» under
-            // four headings is worse than saying there is nothing.
+            // Chest is unmeasured in the seed on purpose: a strip of «—» is worse than saying
+            // there is nothing.
             setContent {
                 CadenceTheme {
                     TrendDetailScreen(detail(Metric.CHEST), TrendWindow.FOUR_WEEKS, {}, {})
@@ -219,8 +210,8 @@ class TrendDetailScreenTest {
     @Test
     fun anIdentifierThatNamesNoMetricSaysSoRatherThanCrashing() =
         runComposeUiTest {
-            // The prototype has a `thigh` and a `bmi` that §03 does not, and a
-            // deep link can carry anything at all.
+            // The prototype has a `thigh` and a `bmi` that §03 does not, and a deep link can
+            // carry anything at all.
             setContent {
                 CadenceTheme {
                     TrendDetailScreen(null, TrendWindow.FOUR_WEEKS, {}, {})
@@ -236,10 +227,8 @@ class TrendDetailScreenTest {
     @Test
     fun theChipThatIsChosenIsTheWindowTheScreenWasGiven() =
         runComposeUiTest {
-            // `detail` and `window` are two parameters that have to agree, and
-            // nothing in `MetricDetail` enforces it — so a screen that
-            // hardcoded a window, or step-8 wiring a stale one, would show a
-            // chart of one window under a chip saying another.
+            // `detail` and `window` must agree, and nothing in `MetricDetail` enforces it —
+            // so a hardcoded or stale window would show a chart under a chip saying another.
             setContent {
                 CadenceTheme {
                     TrendDetailScreen(detail(window = TrendWindow.WEEK), TrendWindow.WEEK, {}, {})
@@ -255,9 +244,8 @@ class TrendDetailScreenTest {
     @Test
     fun theChartIsNotDrawnForAMetricWithNoReadings() =
         runComposeUiTest {
-            // «говорит об этом, а не рисует пустую ось» — the axis, the dose
-            // bands and the invitation to drag are all suppressed, the way
-            // `BiomarkerSheet` suppresses its chart.
+            // «говорит об этом, а не рисует пустую ось» — axis, dose bands and the drag
+            // invitation are all suppressed, the way `BiomarkerSheet` suppresses its chart.
             setContent {
                 CadenceTheme {
                     TrendDetailScreen(detail(Metric.CHEST), TrendWindow.FOUR_WEEKS, {}, {})
@@ -287,9 +275,8 @@ class TrendDetailScreenTest {
     @Test
     fun theWindowSwitcherReportsTheWindowItWasTapped() =
         runComposeUiTest {
-            // The same component the list screen uses, and the same hoisted
-            // choice: the prototype keeps the timeframe in app state so the two
-            // screens agree.
+            // The same component the list screen uses: the prototype keeps the timeframe in
+            // app state so the two screens agree.
             val chosen = mutableListOf<TrendWindow>()
 
             setContent {

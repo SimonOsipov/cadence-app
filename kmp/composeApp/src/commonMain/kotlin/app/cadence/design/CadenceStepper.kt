@@ -37,24 +37,21 @@ private const val STEP_MCG = 25.0
 
 /**
  * Rounding, not tidiness: `0.25 + 0.05` is `0.30000000000000004` in binary
- * floating point, and a dose is two significant figures. The prototype does the
- * same thing with `+(num + delta).toFixed(3)`.
- *
- * Three decimal places, and it has to *round* rather than truncate. Truncating
- * turns `0.35 + 0.05` into `0.399` — a value `formatDose` then rounds back to
- * «0,4 мг» on screen, so the number the patient reads and the number written to
- * `dose_events` stop being the same one.
+ * floating point, and a dose is two significant figures (the prototype does
+ * the same with `+(num + delta).toFixed(3)`). Three decimal places, and it has
+ * to *round*, not truncate — truncating turns `0.35 + 0.05` into `0.399`,
+ * which `formatDose` then rounds back to «0,4 мг» on screen, so the number the
+ * patient reads and the number written to `dose_events` stop being the same one.
  */
 private const val DOSE_SCALE = 1000.0
 
 private val STEPPER_BUTTON = 52.dp
 
 /**
- * The rate a unit steps at — the prototype's own two.
- *
- * A default rather than a rule buried in the control: a compound whose
- * titration moves in something other than 0,05 мг is a fact about the protocol,
- * and the caller overrides `step` without touching the design system.
+ * The rate a unit steps at — the prototype's own two. A default, not a rule
+ * buried in the control: a compound titrating in something other than
+ * 0,05 мг is a fact about the protocol, and the caller overrides `step`
+ * without touching the design system.
  */
 fun stepFor(unit: DoseUnit): Double =
     when (unit) {
@@ -63,12 +60,11 @@ fun stepFor(unit: DoseUnit): Double =
     }
 
 /**
- * «Сколько взять?» — the big mono number with a minus and a plus.
- *
- * It reports a [Dose] rather than a delta, and never a string. The prototype
- * holds `dose` as a `string` and does `parseFloat` on every tap, which is the
- * subtask's one explicit prohibition; the arithmetic is here, once, and the
- * comma in «0,25» is [formatDose]'s business.
+ * «Сколько взять?» — the big mono number with a minus and a plus. Reports a
+ * [Dose], never a delta or a string — the prototype holds `dose` as a
+ * `string` and does `parseFloat` on every tap, the subtask's one explicit
+ * prohibition; the arithmetic lives here, once, and the comma in «0,25» is
+ * [formatDose]'s business.
  */
 @Composable
 fun CadenceDoseStepper(
@@ -82,12 +78,11 @@ fun CadenceDoseStepper(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A bar rather than an icon: there is no «minus» in `CadenceIcons`,
-        // and `CadenceIcon` draws nothing for a name it does not know — so the
-        // decrement button on the product's critical path would have rendered
-        // as an empty circle with every test still green. The prototype draws
-        // its own `<Line strokeWidth={2} strokeLinecap="round">` for the same
-        // reason.
+        // A bar, not an icon: no «minus» exists in `CadenceIcons`, and
+        // `CadenceIcon` draws nothing for an unknown name — the decrement
+        // button on the critical path would render as an empty circle with
+        // every test green. The prototype draws its own `<Line
+        // strokeWidth={2} strokeLinecap="round">` for the same reason.
         StepperButton("Уменьшить дозу") { onChange(dose.bumped(-step)) }
 
         val (number, unit) = formatDose(dose)
@@ -147,12 +142,11 @@ const val CADENCE_SYRINGE_TAG = "cadence-syringe"
 const val CADENCE_SYRINGE_FILL_TAG = "cadence-syringe-fill"
 
 /**
- * How much of the barrel is filled, as a fraction.
- *
- * A function rather than arithmetic inside the drawing, so the clamping is
- * testable: `Canvas` renders and asserts nothing. Clamped at both ends, as the
- * prototype's `Math.min(100, Math.max(0, …))` is — a fill wider than the barrel
- * draws outside it. A barrel of zero draws nothing rather than dividing.
+ * How much of the barrel is filled, as a fraction. A function, not arithmetic
+ * inside the drawing, so the clamping is testable — `Canvas` renders and
+ * asserts nothing. Clamped at both ends like the prototype's
+ * `Math.min(100, Math.max(0, …))`, since a fill wider than the barrel draws
+ * outside it. A barrel of zero draws nothing rather than dividing.
  */
 fun syringeFillFraction(
     units: Float,
@@ -182,18 +176,18 @@ fun CadenceSyringeBar(
                 .border(HAIRLINE, Cadence.palette.border, RoundedCornerShape(CadenceRadius.pill))
                 .testTag(CADENCE_SYRINGE_TAG)
                 // `semantics`, not `clearAndSetSemantics`: clearing would take
-                // the fill's own tag with it, and the fill's width is the one
-                // thing a test can measure about a bar.
+                // the fill's tag with it, and its width is the one thing a
+                // test can measure about a bar.
                 .semantics {
                     contentDescription =
                         "${round(units.toDouble()).toInt()} из ${round(max.toDouble()).toInt()} ед. · " +
                         "${round(fraction * PERCENT).toInt()}%"
                 },
         ) {
-            // A laid-out box rather than a `Canvas`: a canvas's pixels are
-            // asserted nowhere in this codebase, so a barrel painted full
-            // regardless of the dose passed every test. A `fillMaxWidth(fraction)`
-            // child has bounds, and bounds are measurable.
+            // A laid-out box, not a `Canvas`: a canvas's pixels are asserted
+            // nowhere in this codebase, so a barrel painted full regardless of
+            // the dose passed every test. `fillMaxWidth(fraction)` has bounds,
+            // and bounds are measurable.
             Box(
                 Modifier
                     .fillMaxWidth(fraction)
@@ -204,7 +198,6 @@ fun CadenceSyringeBar(
 
             SyringeTicks()
 
-            // The needle, at the far end of the barrel.
             Box(
                 Modifier
                     .align(Alignment.CenterEnd)

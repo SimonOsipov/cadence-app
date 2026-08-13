@@ -3,14 +3,14 @@ package app.cadence.format
 import app.cadence.shared.domain.PartOfDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class CadenceDatesTest {
     @Test
     fun everyWeekdayHasARussianName() {
-        // getValue throws on a miss, so a short map is a crash on whichever day
-        // it forgot — and the greeting is the first line of the app.
+        // getValue throws on a miss, so a short map crashes on whichever day it forgot.
         assertEquals(
             7,
             DayOfWeek.entries
@@ -36,35 +36,38 @@ class CadenceDatesTest {
 
     @Test
     fun aDayOutsideTheProtocolDropsTheWeekRatherThanShowingNothing() {
-        // Between protocols there is no cycle week, and «Воскресенье, утро ·
-        // null-я неделя» is the shape that gets shipped when nobody asks.
+        // No cycle week between protocols — «Воскресенье, утро · null-я неделя» ships when nobody asks.
         assertEquals("Воскресенье, утро", greeting(LocalDate(2026, 5, 31), PartOfDay.MORNING, cycleWeek = null))
     }
 
     @Test
     fun theHeadingsAreMondayFirstInOrder() {
-        // Asserted as a sequence. The screen test checked that all seven labels
-        // are displayed, in any order — a Sunday-first calendar, wrong for a
-        // Russian product, would have shipped green.
+        // As a sequence: the screen test only checked all seven labels exist, so a wrong-for-RU
+        // Sunday-first calendar would still have shipped green.
         assertEquals(listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"), weekdayHeadings())
     }
 
     @Test
     fun theBlanksBeforeTheFirstOfTheMonthMatchItsWeekday() {
-        // Zero on a Monday, six on a Sunday, and the two are what a grid that
-        // is off by a column gets wrong. `leadingBlanks` had no direct test at
-        // all, and the screen's bounds comparison held for three of the seven
-        // possible offsets.
+        // Zero on Monday, six on Sunday — what an off-by-one-column grid gets wrong.
+        // `leadingBlanks` had no direct test before this.
         assertEquals(0, leadingBlanks(LocalDate(2026, 6, 1)), "1 June 2026 is a Monday")
         assertEquals(4, leadingBlanks(LocalDate(2026, 5, 1)), "1 May 2026 is a Friday")
         assertEquals(6, leadingBlanks(LocalDate(2026, 11, 1)), "1 November 2026 is a Sunday")
     }
 
     @Test
+    fun clockTimeZeroPadsBothHalves() {
+        // The prototype's «08:42» pads both halves; nothing else here proves this pads rather
+        // than being ported as a literal.
+        assertEquals("08:05", clockTime(LocalDateTime(2026, 5, 31, 8, 5)))
+        assertEquals("23:59", clockTime(LocalDateTime(2026, 5, 31, 23, 59)))
+    }
+
+    @Test
     fun allTwelveMonthsHaveTheirGenitiveForm() {
-        // The plan asked for a table test and got «мая» and «июня» by accident,
-        // through the schedule screen. A transposed pair would surface only
-        // when the calendar reached it.
+        // A table test: «мая»/«июня» were previously covered only by accident through the
+        // schedule screen, where a transposed pair would surface only if the calendar reached it.
         assertEquals(
             listOf(
                 "1 января",

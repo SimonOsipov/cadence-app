@@ -4,19 +4,18 @@ package app.cadence.design
  * The four destinations of the patient app, ported from `TABS` in
  * mobile/src/components/shared.tsx.
  *
- * Four, not five: the prototype's list carries the centre action alongside them
- * behind a `primary` flag, but an action is not a place. Keeping it in the same
- * set made "which destination is current" answerable with the action — a bar
- * with nothing highlighted, which is the state the prototype expressed as
- * `TabId | null` and which this port had claimed was impossible while leaving
- * it reachable. The showcase reached it on the first tap.
+ * Four, not five: the prototype's list carries the centre action alongside
+ * them behind a `primary` flag, but an action is not a place. Keeping it in
+ * the same set left "which destination is current" answerable with the
+ * action — a bar with nothing highlighted (the prototype's `TabId | null`)
+ * that this port had claimed was impossible while leaving it reachable; the
+ * showcase reached it on the first tap.
  *
- * Icons are the path data rather than a key into [CadenceIcons.byName]: the set
- * is closed and known at compile time, so a lookup that can miss has no reason
- * to exist here. `byName` is the adapter for the prototype's kebab strings, and
- * a destination is not a string from outside.
- *
- * Labels are product copy and stay Russian.
+ * Icons are path data, not a key into [CadenceIcons.byName]: the set is
+ * closed and known at compile time, so a lookup that can miss has no reason
+ * to exist here — `byName` is the adapter for the prototype's kebab strings,
+ * and a destination is not a string from outside. Labels are product copy
+ * and stay Russian.
  */
 enum class CadenceDestination(
     val icon: List<String>,
