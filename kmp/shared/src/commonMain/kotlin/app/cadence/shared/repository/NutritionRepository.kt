@@ -28,10 +28,28 @@ data class NutritionWeekDay(
     val proteinG: Int,
 )
 
-/** Seven days ending on the date [NutritionRepository.week] was asked for, oldest first. */
+/** How many days [NutritionWeek.days] carries — one column per day of `CadenceWeekBars`. */
+private const val NUTRITION_WEEK_DAYS = 7
+
+/**
+ * Seven days ending on the date [NutritionRepository.week] was asked for, oldest first.
+ *
+ * Enforced, not assumed: `NutritionScreen.kt`'s `weekProteinAverage` divides by
+ * `days.size` with no zero guard of its own, on the strength of this constructor
+ * ruling the empty (or short) list out. Before this `init` existed, that
+ * assumption was prose only — nothing stopped a caller from building a
+ * malformed [NutritionWeek] and turning that division into a crash rather
+ * than a wrong number.
+ */
 data class NutritionWeek(
     val days: List<NutritionWeekDay>,
-)
+) {
+    init {
+        require(days.size == NUTRITION_WEEK_DAYS) {
+            "a NutritionWeek carries $NUTRITION_WEEK_DAYS days, got ${days.size}"
+        }
+    }
+}
 
 /** What logging a meal did. */
 sealed interface MealLogResult {

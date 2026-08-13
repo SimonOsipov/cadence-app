@@ -350,10 +350,10 @@ private fun weekDayLabels(week: NutritionWeek): List<String> =
  * prototype's own `Math.round(sum / length)` (`NutritionScreen.tsx:410-411`). No
  * empty-list guard: unlike `weekBarFraction`/`weekGoalFraction`'s zero-scale guards,
  * which pin a state a real week can actually reach (nothing logged, no goal set),
- * [NutritionWeek] always carries seven days (`NutritionRepository.week`'s own
- * contract) — an empty list is not a shape this function's caller can produce, so a
- * guard against it would be dead code no test could reach honestly, and the
- * contract stands instead of being defended twice.
+ * [NutritionWeek]'s own `init` rules an empty (or short) `days` out — not just a
+ * comment on the contract but a constructor that enforces it, so a guard here would
+ * be dead code no test could reach honestly, and the contract stands instead of
+ * being defended twice.
  */
 private fun weekProteinAverage(week: NutritionWeek): Int =
     (week.days.sumOf { it.proteinG }.toDouble() / week.days.size).roundToInt()

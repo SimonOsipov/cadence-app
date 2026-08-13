@@ -79,6 +79,26 @@ private fun twoItemMeal(): Meal =
             ),
     )
 
+/**
+ * A second, single-item meal — so a day built from [twoItemMeal] plus this one has
+ * `meals.size == 2`, not 1. A one-meal fixture cannot tell `formatInteger(meals.size)`
+ * apart from a hardcoded `"1"`, or `pluralMeals(mealCount)` apart from the literal
+ * «приём» — both read the same at `count == 1`, the exact one-shape-hides-an-axis defect
+ * this branch keeps reintroducing. Never expanded by any test, so its own item is never
+ * rendered — only its collapsed card's header and kcal readout need to stay distinct
+ * from [twoItemMeal]'s.
+ */
+private fun singleItemMeal(): Meal =
+    Meal(
+        id = MealId("meal-2"),
+        patientId = UserId("patient-1"),
+        eatenAt = Instant.parse("2026-05-31T07:00:00Z"),
+        name = "Завтрак",
+        source = MealSource.MANUAL,
+        recipeId = null,
+        items = listOf(MealItem("Йогурт", 150, MacrosTenths(800, 30, 100, 20))),
+    )
+
 /** Seven days, oldest first, ending on [endDate] — the same walk `NutritionRepository.week()` does. */
 private fun weekEnding(
     endDate: LocalDate,
@@ -141,6 +161,12 @@ class NutritionScreenTest {
      * chicken item lands both its kcal and its protein on a `.5` tenths value,
      * so a stubbed `tenthsLabel` (always "0") or a half-to-even one (46, not 47)
      * both read wrong here.
+     *
+     * Two meals, not one: at `meals.size == 1`, `formatInteger(meals.size)` cannot be
+     * told apart from a hardcoded `"1"`, and `pluralMeals(1)` cannot be told apart from
+     * the literal «приём» — both mutations left the whole suite green against a
+     * one-meal fixture. [singleItemMeal] is never expanded, so it only has to keep its
+     * own collapsed header and kcal readout distinct from [twoItemMeal]'s.
      */
     @Test
     fun aLoggedMealCardShowsItsHeaderThenItsRoundedItemsOnExpand() =
@@ -149,23 +175,30 @@ class NutritionScreenTest {
             setContent {
                 CadenceTheme {
                     NutritionScreen(
-                        day = dayOf(Macros(kcal = 900, proteinG = 65, carbsG = 80, fatG = 15), meals = listOf(meal)),
+                        day =
+                            dayOf(
+                                Macros(kcal = 900, proteinG = 65, carbsG = 80, fatG = 15),
+                                meals = listOf(meal, singleItemMeal()),
+                            ),
                         week = weekEnding(TODAY),
                         zone = TimeZone.UTC,
                     )
                 }
             }
 
-            // The hero's own non-empty branch and its `pluralMeals` declension — the
-            // other half of `dayOf`'s hardcoded `meals = emptyList()` this fixture reaches.
-            onNodeWithText("1 приём.").assertExists("the hero's non-empty branch")
+            // The hero's own non-empty branch and its `pluralMeals` declension.
+            onNodeWithText("2 приёма.").assertExists("the hero's non-empty branch")
             // The feed's own bare meal counter.
-            onNodeWithText("1").assertExists("the feed's own meal counter")
+            onNodeWithText("2").assertExists("the feed's own meal counter")
 
             // Collapsed: the card's own header line — time, position count and the
-            // meal's own total protein, tenths rounded once, not each item's own.
+            // meal's own total protein.
             onNodeWithText("09:15 · 2 позиции · 50 г белка").assertExists()
             onNodeWithText("Обед").assertExists()
+            // The card's own kcal readout: the exact fold rounded once (395), not the
+            // sum of each item's own already-rounded kcal (248 + 148 = 396) — the field
+            // that actually distinguishes the two, unlike the protein line above (497
+            // tenths rounds to 50 either way).
             onNodeWithText("395").assertExists("the meal card's own kcal readout")
 
             onNodeWithText("Обед").performClick()
