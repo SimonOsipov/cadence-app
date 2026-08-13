@@ -6,16 +6,9 @@ import app.cadence.design.CadenceDestination
 import kotlinx.serialization.Serializable
 
 /**
- * The screen graph, ported one for one from `RootStackParamList` in
- * mobile/src/navigation/AppNavigator.tsx.
- *
- * Names are the prototype's, in English, because a route is not product copy —
- * nothing here is ever shown to a patient. The four routes carrying a parameter
- * carry exactly the parameter the prototype passes, and no more: `TrendDetail`
- * gets a biomarker id, not a biomarker.
- *
- * This is the area *after* sign-in. Block 7 adds the area before it; that
- * boundary lands above this graph rather than inside it.
+ * Ported one for one from `RootStackParamList` in mobile/src/navigation/AppNavigator.tsx.
+ * Names are the prototype's, in English — never shown to a patient. The area after sign-in;
+ * block 7 adds the area before it, above this graph rather than inside it.
  */
 sealed interface CadenceRoute {
     @Serializable
@@ -72,28 +65,15 @@ sealed interface CadenceRoute {
     ) : CadenceRoute
 
     /**
-     * The four the prototype presents as full-screen modals rather than
-     * pushing — `Stack.Group` with `presentation: 'fullScreenModal'`. They
-     * slide up, not in from the right.
-     *
-     * A marker interface rather than a comment over four declarations, because
-     * the argument for grouping them at all — that four repeated overrides
-     * invite one omission nobody would see — applies just as much to a group
-     * the compiler does not check. Registering `Schedule` as a modal, or
-     * `LogDose` as an ordinary push, now fails to compile.
+     * Presented as full-screen modals (`Stack.Group`, `fullScreenModal`), sliding up not in.
+     * A marker interface, not a comment, so registering one as an ordinary push fails to compile.
      */
     sealed interface Modal : CadenceRoute
 
     /**
-     * The dose wizard, optionally opened against one vial.
-     *
-     * [vialId] is null from the tab bar's «+» and from the Today hero — the
-     * patient said «записать дозу», not «записать дозу из этого флакона», and
-     * the write picks the fullest open vial of the compound. It is set only
-     * from a vial's own sheet, where the patient is holding a particular vial
-     * and the fullest one may not be it. Carried on the route rather than in
-     * shell state so it cannot outlive the screen that meant it: reopening the
-     * wizard from anywhere else is a different route instance with a null.
+     * [vialId] is null from the tab bar and Today hero (picks the fullest open vial); set
+     * only from a vial's own sheet. Carried on the route, not shell state, so it can't outlive
+     * the screen.
      */
     @Serializable
     data class LogDose(
@@ -111,14 +91,9 @@ sealed interface CadenceRoute {
 }
 
 /**
- * Whether a destination belongs to the modal group.
- *
- * Four explicit checks rather than a test against [CadenceRoute.Modal]: the
- * marker interface is not `@Serializable` — it has no route of its own — and
- * `hasRoute` matches on a serializer. The thing that stops a fifth modal being
- * forgotten here is not the compiler but
- * `CadenceNavigationTest.theScreenBeneathAModalDoesNotMove`, which fails the
- * moment a modal drifts the screen under it.
+ * Four explicit checks, not a test against [CadenceRoute.Modal]: the marker interface isn't
+ * `@Serializable`, so `hasRoute` can't match it. A forgotten fifth modal is caught by
+ * `CadenceNavigationTest.theScreenBeneathAModalDoesNotMove`, not the compiler.
  */
 internal fun NavDestination.isModal(): Boolean =
     hasRoute<CadenceRoute.LogDose>() ||
@@ -126,23 +101,12 @@ internal fun NavDestination.isModal(): Boolean =
         hasRoute<CadenceRoute.AddVial>() ||
         hasRoute<CadenceRoute.RecipeBuilder>()
 
-/**
- * The root of the after-sign-in graph.
- *
- * Named once because two places need to agree on it — `NavHost`'s
- * `startDestination` and [popToTop] — and block 7 will move the boundary above
- * this graph. Two literals that drifted apart would turn every tab tap into a
- * silent no-pop.
- */
+/** Named once so `NavHost`'s `startDestination` and [popToTop] can't drift apart into a silent no-pop. */
 val CADENCE_ROOT: CadenceRoute = CadenceRoute.Today
 
 /**
- * Where a bottom-bar destination lands.
- *
- * The prototype writes this as a ternary chain inside `changeTab`; here it is a
- * `when` over a closed enum, so a fifth destination fails to compile instead of
- * quietly falling through to Nutrition — which is what the chain's trailing
- * `: 'Nutrition'` does today.
+ * A `when` over a closed enum, unlike the prototype's ternary chain, so a fifth destination
+ * fails to compile instead of falling through to Nutrition.
  */
 val CadenceDestination.route: CadenceRoute
     get() =

@@ -4,11 +4,10 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 /**
- * The raw palette, carried over value for value from mobile/src/theme/index.ts,
- * which in turn was ported from web/prototype/design-system/colors_and_type.css.
- *
- * This is the only place a colour literal belongs. A screen that needs a colour
- * the palette does not have is a design question, not a coding one.
+ * The raw palette, carried over value for value from mobile/src/theme/index.ts
+ * (itself ported from web/prototype/design-system/colors_and_type.css). The
+ * only place a colour literal belongs — a screen needing one this lacks is a
+ * design question, not a coding one.
  */
 object CadenceColors {
     val paper = Color(0xFFFBF8F3)
@@ -37,9 +36,22 @@ object CadenceColors {
 
     val sand900 = Color(0xFF6B4A25)
     val sand700 = Color(0xFFB8895A)
+
+    // Unnamed in mobile/src/theme/index.ts; ported from #a5773d, the literal
+    // NutritionScreen.tsx writes inline for its carb macro bar.
+    val sand600 = Color(0xFFA5773D)
     val sand500 = Color(0xFFD4A574)
     val sand300 = Color(0xFFE8D4B8)
     val sand100 = Color(0xFFF3E8D6)
+
+    // Also unnamed in mobile/src/theme/index.ts: RecipesScreen.tsx's TYPE_TINT
+    // (`:16-17`) writes these as literals for the dinner/snack pill. A sibling
+    // screen names the same hexes `slate`/`clay` (learn/LearnScreen.tsx:15-16);
+    // this port borrows those names.
+    val slateBg = Color(0xFFE6ECF2)
+    val slateFg = Color(0xFF41566B)
+    val clayBg = Color(0xFFF4E4D8)
+    val clayFg = Color(0xFF9A5A3C)
 
     val danger = Color(0xFFB8503C)
     val dangerBg = Color(0xFFF4DFD6)
@@ -52,10 +64,8 @@ object CadenceColors {
 
     val hairline = Color(0xFF1A1A1A).copy(alpha = 0.08f)
 
-    // The prototype's theme names only `glassDark: 'rgba(20,44,31,.35)'` and
-    // writes the toast's `rgba(20,44,31,.25)` inline in ConfirmToast.tsx. Same
-    // ink at two weights — named once here so neither is a literal at a call
-    // site, which is the whole point of this file.
+    // Prototype names only `glassDark: 'rgba(20,44,31,.35)'`; the toast's
+    // `rgba(20,44,31,.25)` is inline in ConfirmToast.tsx. Same ink, two weights.
     private val forestScrim = Color(0xFF142C1F)
     val glassDark = forestScrim.copy(alpha = 0.35f)
     val glassSoft = forestScrim.copy(alpha = 0.25f)
@@ -63,10 +73,9 @@ object CadenceColors {
 
 /**
  * The semantic layer: what a colour is *for*, not what it is. Screens read this
- * and never CadenceColors, so a palette change is one edit.
- *
- * Mirrors `pal` in the prototype, which is the light "cream" scheme. A dark
- * scheme would be a second instance of this type, not a second set of names.
+ * and never CadenceColors, so a palette change is one edit. Mirrors `pal` in
+ * the prototype (the light "cream" scheme); a dark scheme would be a second
+ * instance of this type, not a second set of names.
  */
 @Immutable
 data class CadencePalette(

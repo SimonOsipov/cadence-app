@@ -31,11 +31,8 @@ enum class CardKind(
 }
 
 /**
- * §03's card blob.
- *
- * «Cards keep the prototype's snapshot semantics — a shared weight card shows
- * the value at share time» — so these are plain strings rather than references
- * that would re-resolve to today's number.
+ * Plain strings, not references: keeps the prototype's snapshot semantics — a shared
+ * weight card shows the value at share time, not today's number.
  */
 data class MessageCard(
     val kind: CardKind,

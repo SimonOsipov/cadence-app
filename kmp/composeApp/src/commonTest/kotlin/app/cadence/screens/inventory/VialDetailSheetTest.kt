@@ -31,16 +31,16 @@ private fun detail(id: String) =
 class VialDetailSheetTest {
     @Test
     fun aRelativeDayReadsTheWayAPatientWouldSayIt() {
-        // «3 дн назад», not «3 дня назад»: the prototype's own abbreviation,
-        // and the boundaries are where an off-by-one lives.
+        // «3 дн назад», not «3 дня назад»: the prototype's own abbreviation; boundaries are
+        // where an off-by-one lives.
         assertEquals("сегодня", relativeDay(TODAY, TODAY))
         assertEquals("вчера", relativeDay(LocalDate(2026, 5, 30), TODAY))
         assertEquals("3 дн назад", relativeDay(LocalDate(2026, 5, 28), TODAY))
         assertEquals("6 дн назад", relativeDay(LocalDate(2026, 5, 25), TODAY))
         assertEquals("1 нед назад", relativeDay(LocalDate(2026, 5, 24), TODAY))
         assertEquals("2 нед назад", relativeDay(LocalDate(2026, 5, 17), TODAY))
-        // Eleven days is where rounding and truncation part company: a patient
-        // placing a dose reads «2 нед назад», and «1 нед назад» is a week out.
+        // Eleven days is where rounding and truncation part company: «1 нед назад» would be a
+        // week out.
         assertEquals("2 нед назад", relativeDay(LocalDate(2026, 5, 20), TODAY))
     }
 
@@ -82,9 +82,8 @@ class VialDetailSheetTest {
         runComposeUiTest {
             setContent { CadenceTheme { VialDetailSheet(detail = detail("vial-sema-1"), today = TODAY) } }
 
-            // Three Sundays, each line naming the dose and the zone. Counted
-            // rather than named one by one: the zones come from the rotation,
-            // so which three they are is the rule's answer and not the test's.
+            // Counted rather than named one by one: the zones come from the rotation, so which
+            // three they are is the rule's answer, not the test's.
             onNodeWithText("Последние записи · 3", ignoreCase = true).assertExists()
             assertEquals(
                 3,
@@ -121,8 +120,7 @@ class VialDetailSheetTest {
     @Test
     fun theActionsThatAreNotBuiltSaySoInsteadOfDoingNothing() =
         runComposeUiTest {
-            // A row that looks live and does nothing is worse than one that
-            // says it is not ready. Both are recorded as owed.
+            // A row that looks live and does nothing is worse than one that says it is not ready.
             setContent { CadenceTheme { VialDetailSheet(detail = detail("vial-sema-1"), today = TODAY) } }
 
             onNodeWithText("Прикрепить фото").performScrollTo().assertIsNotEnabled()

@@ -1,0 +1,216 @@
+package app.cadence.shared.mock
+
+import app.cadence.shared.domain.CadenceClock
+import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.MacrosTenths
+import app.cadence.shared.domain.MealDraft
+import app.cadence.shared.domain.MealItem
+import app.cadence.shared.domain.MealSource
+import app.cadence.shared.repository.MealLogResult
+import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.time.Instant
+
+private val MOSCOW = TimeZone.of("Europe/Moscow")
+private const val DEMO_NOW = "2026-05-31T09:00:00Z"
+private val DEMO_DATE = LocalDate(2026, 5, 31)
+
+/** The mock wound to [DEMO_NOW], in [zone]. */
+private fun mocks(zone: TimeZone = MOSCOW) = CadenceMocks(clock = FixedCadenceClock.at(DEMO_NOW), zone = zone)
+
+/**
+ * Returns [instants] in order, repeating the last once exhausted — a [FixedCadenceClock]
+ * can't tell a single-read implementation from a two-read one, since every call answers the
+ * same instant either way.
+ */
+private class SteppingClock(
+    private vararg val instants: Instant,
+) : CadenceClock {
+    private var index = 0
+
+    override fun now(): Instant =
+        instants[index].also {
+            if (index < instants.size - 1) index++
+        }
+}
+
+class NutritionRepositoryTest {
+    @Test
+    fun aMealLoggedJustBeforeMidnightReturnsTotalsForTheDayItWasLoggedOn() =
+        runTest {
+            // `log` used to read clock.now() twice: once for eatenAt, once more for the
+            // totals. A clock ticking past midnight MSK between those two reads used to file
+            // the meal under 31 May and confirm 1 June — an empty day, reporting zero.
+            val justBeforeMidnightMoscow = Instant.parse("2026-05-31T20:59:59Z")
+            val justAfterMidnightMoscow = Instant.parse("2026-05-31T21:00:01Z")
+            val clock = SteppingClock(justBeforeMidnightMoscow, justAfterMidnightMoscow)
+            val cadence = CadenceMocks(clock = clock, zone = MOSCOW)
+
+            val draft =
+                MealDraft(
+                    name = "Полночный перекус",
+                    source = MealSource.AI_TEXT,
+                    items =
+                        listOf(
+                            MealItem(
+                                name = "Кефир",
+                                grams = 200,
+                                macros =
+                                    MacrosTenths(
+                                        kcalTenths = 800,
+                                        proteinGTenths = 60,
+                                        carbsGTenths = 80,
+                                        fatGTenths = 20,
+                                    ),
+                            ),
+                        ),
+                )
+
+            val result = cadence.nutrition.log(draft)
+            assertIs<MealLogResult.Written>(result)
+
+            // 840 seeded plus 80 drafted; a version reading the post-midnight instant for
+            // the totals would report 1 June's kcal instead — 0, nothing seeded there.
+            assertEquals(
+                920,
+                result.dayTotals.kcal,
+                "the returned totals ($result) do not carry the meal just logged — " +
+                    "the write and the confirming read landed on different days",
+            )
+        }
+
+    @Test
+    fun aMealLoggedThroughNutritionShowsUpOnToday() =
+        runTest {
+            val cadence = mocks()
+            val before = cadence.today.today().mealMacros
+
+            val draft =
+                MealDraft(
+                    name = "Перекус",
+                    source = MealSource.AI_TEXT,
+                    items =
+                        listOf(
+                            MealItem(
+                                name = "Яблоко",
+                                grams = 150,
+                                macros =
+                                    MacrosTenths(
+                                        kcalTenths = 800,
+                                        proteinGTenths = 4,
+                                        carbsGTenths = 200,
+                                        fatGTenths = 2,
+                                    ),
+                            ),
+                        ),
+                )
+
+            val result = cadence.nutrition.log(draft)
+            assertIs<MealLogResult.Written>(result)
+
+            // Absolute values, not `before + 80`: dayTotals must carry the sum taken *after*
+            // the write, not a snapshot hoisted above it — before/after on Today can't catch
+            // that since those are read fresh either way.
+            assertEquals(920, result.dayTotals.kcal)
+            assertEquals(120, result.dayTotals.carbsG)
+
+            val after = cadence.today.today().mealMacros
+            assertEquals(840, before.kcal)
+            assertEquals(920, after.kcal)
+        }
+
+    @Test
+    fun aRejectedDraftLeavesTodayUntouched() =
+        runTest {
+            val cadence = mocks()
+            val before = cadence.today.today().mealMacros
+
+            val result = cadence.nutrition.log(MealDraft(name = "", source = MealSource.AI_TEXT))
+            assertIs<MealLogResult.Rejected>(result)
+
+            assertEquals(before, cadence.today.today().mealMacros)
+        }
+
+    @Test
+    fun theWeekEndingOnDemoNowHasSevenNamedDaysPairwiseDistinct() =
+        runTest {
+            val week = mocks().nutrition.week(endingOn = DEMO_DATE)
+
+            assertEquals(7, week.days.size)
+
+            assertEquals(LocalDate(2026, 5, 25), week.days[0].date)
+            assertEquals(415, week.days[0].kcal)
+
+            assertEquals(LocalDate(2026, 5, 26), week.days[1].date)
+            assertEquals(1000, week.days[1].kcal)
+
+            assertEquals(LocalDate(2026, 5, 27), week.days[2].date)
+            assertEquals(1400, week.days[2].kcal)
+            // Protein too: a mutation zeroing proteinG while leaving kcal alone would return
+            // seven empty protein columns unnoticed otherwise.
+            assertEquals(88, week.days[2].proteinG)
+
+            assertEquals(LocalDate(2026, 5, 28), week.days[3].date)
+            assertEquals(2100, week.days[3].kcal)
+            assertEquals(86, week.days[3].proteinG)
+
+            assertEquals(LocalDate(2026, 5, 29), week.days[4].date)
+            assertEquals(1550, week.days[4].kcal)
+
+            assertEquals(LocalDate(2026, 5, 30), week.days[5].date)
+            assertEquals(1720, week.days[5].kcal)
+
+            assertEquals(DEMO_DATE, week.days[6].date)
+            assertEquals(840, week.days[6].kcal)
+
+            val kcals = week.days.map { it.kcal }
+            assertEquals(kcals.size, kcals.distinct().size, "the seven days must be pairwise distinct")
+
+            val day = mocks().nutrition.day(DEMO_DATE)
+            assertEquals(day.totals.kcal, week.days[6].kcal, "the week's last column is the day's own total")
+        }
+
+    @Test
+    fun dailyTotalsAgreeInUtcAndMoscow() =
+        runTest {
+            // All seven seeded dates, not just DEMO_DATE, which alone wouldn't exercise the
+            // six days this step added. At UTC+3 the upper bound bites: a meal at or after
+            // 21:00Z is already the next day in Moscow while still today in UTC.
+            val expectedKcal =
+                listOf(
+                    LocalDate(2026, 5, 25) to 415,
+                    LocalDate(2026, 5, 26) to 1000,
+                    LocalDate(2026, 5, 27) to 1400,
+                    LocalDate(2026, 5, 28) to 2100,
+                    LocalDate(2026, 5, 29) to 1550,
+                    LocalDate(2026, 5, 30) to 1720,
+                    DEMO_DATE to 840,
+                )
+            val utc = mocks(zone = TimeZone.UTC)
+            val moscow = mocks(zone = MOSCOW)
+
+            for ((date, kcal) in expectedKcal) {
+                val utcDay = utc.nutrition.day(date)
+                val moscowDay = moscow.nutrition.day(date)
+
+                assertEquals(kcal, utcDay.totals.kcal, "UTC total for $date")
+                assertEquals(moscowDay.totals, utcDay.totals, "UTC and Moscow disagree on $date")
+            }
+        }
+
+    @Test
+    fun theDayServesTargetsFromTheSeed() =
+        runTest {
+            val day = mocks().nutrition.day(DEMO_DATE)
+
+            assertEquals(1800, day.targets.macros.kcal)
+            assertEquals(140, day.targets.macros.proteinG)
+            assertEquals(200, day.targets.macros.carbsG)
+            assertEquals(60, day.targets.macros.fatG)
+            assertEquals(MockSeed.patientId, day.targets.patientId)
+        }
+}

@@ -7,9 +7,7 @@ import kotlin.test.assertEquals
 class PartOfDayTest {
     @Test
     fun eachBoundaryFallsOnTheSideRussianPutsIt() {
-        // The prototype freezes «утро» into the greeting; this is the rule it
-        // stands for. Boundaries are asserted on both sides, because that is
-        // the only place an off-by-one can hide.
+        // Both sides of each boundary: that's the only place an off-by-one can hide.
         assertEquals(PartOfDay.NIGHT, partOfDay(LocalTime(0, 0)))
         assertEquals(PartOfDay.NIGHT, partOfDay(LocalTime(4, 59)))
         assertEquals(PartOfDay.MORNING, partOfDay(LocalTime(5, 0)))
@@ -22,9 +20,8 @@ class PartOfDayTest {
 
     @Test
     fun theDayIsDividedAndNotJustLabelled() {
-        // The previous version asserted that mapping 24 hours yields 24
-        // results, which is true of any function at all — a stub returning
-        // NIGHT for every hour passed it. This asserts the division.
+        // An earlier version asserted 24 hours yield 24 results, true of any function — a
+        // stub returning NIGHT for every hour passed it.
         val hours = (0..23).map { partOfDay(LocalTime(it, 0)) }
 
         assertEquals(5, hours.count { it == PartOfDay.NIGHT }, "00:00–04:59")

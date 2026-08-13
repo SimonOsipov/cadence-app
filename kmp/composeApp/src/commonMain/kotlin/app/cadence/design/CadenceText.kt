@@ -80,19 +80,19 @@ fun CadenceTitle(
  * A title with one word set in the italic display face — «Кому *напишем*?»,
  * «Ваша *аптечка*», «Что *прибыло?*».
  *
- * One string with a span, not three composables in a row: in the prototype the
- * emphasis is a `Text` nested inside a `Text`, which flows inline and wraps as
- * one paragraph. Three siblings in a Row would neither wrap together nor be
- * reachable by the whole sentence.
+ * One string with a span, not three composables in a row: in the prototype
+ * the emphasis is a `Text` nested inside a `Text`, flowing inline as one
+ * paragraph — three Row siblings would neither wrap together nor be reachable
+ * by the whole sentence.
  *
- * Emphasis first, prefix and suffix optional: of the 12 uses across 6 files in
- * the frozen prototype, 11 are prefix + emphasis (+ optional suffix) and one —
- * the dose in VialDetailSheet — is the emphasis alone. An earlier count put it
- * at five, which is why the first shape made the prefix mandatory.
+ * Emphasis first, prefix/suffix optional: of 12 uses across 6 files in the
+ * frozen prototype, 11 are prefix + emphasis (+ optional suffix) and one (the
+ * dose in VialDetailSheet) is emphasis alone. An earlier count put it at
+ * five, which is why the first shape made the prefix mandatory.
  *
- * Not a general builder, because a second emphasised run has no call site to
- * design against. What breaks first is nesting, and that replaces this
- * signature rather than extending it — fixed arity does not grow a fourth part.
+ * Not a general builder: a second emphasised run has no call site to design
+ * against. What breaks first is nesting, and that replaces this signature
+ * rather than extending it — fixed arity doesn't grow a fourth part.
  */
 @Composable
 fun cadenceEmphasisedTitle(
@@ -105,15 +105,12 @@ fun cadenceEmphasisedTitle(
         Cadence.typography.titleEmphasis
             .toSpanStyle()
             // Everything the emphasis style carries, not a hand-picked three:
-            // naming fontFamily, weight and slant by hand happened to be enough
-            // only because title and titleEmphasis share their metrics today,
-            // and the first time the italic wants its own tracking the emphasis
-            // would silently keep the upright's.
-            //
-            // The size is the exception, and it has to be: the style carries the
-            // scale's default 28sp, while the call site chooses the size on
-            // CadenceTitle. Leaving it set would put a 28sp word inside a 22sp
-            // line.
+            // naming fontFamily/weight/slant by hand happens to be enough only
+            // because title and titleEmphasis share metrics today, and the
+            // first time the italic wants its own tracking it would silently
+            // keep the upright's. Size is the exception: the style carries the
+            // scale's default 28sp, but the call site chooses size on
+            // CadenceTitle — leaving it set would put a 28sp word in a 22sp line.
             .copy(fontSize = TextUnit.Unspecified, color = emphasisColor)
 
     return buildAnnotatedString {

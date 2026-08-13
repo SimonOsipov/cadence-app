@@ -35,13 +35,11 @@ private val HERO_PADDING = 22.dp
 private val HERO_TITLE = 36.sp
 
 /**
- * The forest card at the top of «Сегодня»: what is due, and the one button
- * that does something about it.
- *
- * The compound and its dose are two runs of one line — «Семаглутид» over
- * «0,25 мг» in the drawn italic — because the prototype nests them in one
- * `Text` and they wrap as one paragraph. The dose is the *week's*: it comes
- * from the phase, so the card titrates where the prototype's literal does not.
+ * The forest card at the top of «Сегодня»: what is due, and the one button that
+ * does something about it. The compound and its dose are two runs of one line —
+ * «Семаглутид» over «0,25 мг» in the drawn italic — because the prototype nests
+ * them in one `Text` and they wrap as one paragraph. The dose is the *week's*: it
+ * comes from the phase, so the card titrates where the prototype's literal does not.
  */
 @Composable
 fun TodayHero(

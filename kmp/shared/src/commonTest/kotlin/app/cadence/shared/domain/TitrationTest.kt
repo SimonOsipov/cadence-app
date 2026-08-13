@@ -30,9 +30,7 @@ private val PLAN =
         phases =
             mapOf(
                 SEMA to
-                    // Deliberately out of order: §03 does not promise the
-                    // server sends phases sorted, and a fixture that is already
-                    // sorted lets a missing `sortedBy` through.
+                    // Deliberately out of order: a sorted fixture lets a missing `sortedBy` through.
                     listOf(
                         ProtocolPhase(5, 8, Dose(0.5, DoseUnit.MG)),
                         ProtocolPhase(9, 12, Dose(1.0, DoseUnit.MG)),
@@ -44,8 +42,6 @@ private val PLAN =
 class TitrationTest {
     @Test
     fun theNextStepIsTheOneAfterTheWeekYouAreIn() {
-        // The prototype writes TITRATION_STEPS as a literal pair with literal
-        // dates. Both are functions of the phases and the protocol's start.
         val step = titrationStepAfter(PLAN, SEMA, LocalDate(2026, 5, 31))
 
         assertEquals(5, step?.week, "the week the new band begins")
@@ -66,8 +62,6 @@ class TitrationTest {
 
     @Test
     fun theLastBandHasNoNextStep() {
-        // Week 9 onward is the top dose; «доза растёт» would be a promise the
-        // protocol does not make.
         assertNull(titrationStepAfter(PLAN, SEMA, LocalDate(2026, 7, 20)))
     }
 

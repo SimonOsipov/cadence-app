@@ -113,12 +113,9 @@ class DoseWizardTest {
     }
 
     /**
-     * «Дальше» until the wizard is on [target].
-     *
-     * Bounded, and by the number of steps rather than by hope: an unbounded
-     * loop against a button that may be disabled does not fail, it hangs, and a
-     * hung suite says nothing at all. The counter is what the header shows, not
-     * the eyebrow — `CadenceEyebrow` renders its text uppercased.
+     * «Дальше» until the wizard is on [target]. Bounded by the step count rather than by hope —
+     * an unbounded loop against a possibly-disabled button hangs rather than fails. The counter
+     * is the header, not the eyebrow, which `CadenceEyebrow` renders uppercased.
      */
     private fun ComposeUiTest.walkTo(target: DoseStep) {
         repeat(DoseStep.entries.size) {
@@ -132,8 +129,7 @@ class DoseWizardTest {
     @Test
     fun everyStepNamesItselfInThePrototypesWords() =
         runComposeUiTest {
-            // «Шаг 1 · Препарат» and the rest, against `stepDefs` in
-            // `LogDoseScreen.tsx`. A step whose eyebrow drifted would still
+            // Against `stepDefs` in `LogDoseScreen.tsx`: a step whose eyebrow drifted would still
             // render, and only this says which one it is.
             assertEquals("Шаг 1 · Препарат", DoseStep.COMPOUND.eyebrowRu())
             assertEquals("Шаг 2 · Доза", DoseStep.DOSE.eyebrowRu())
@@ -169,10 +165,8 @@ class DoseWizardTest {
     @Test
     fun choosingACompoundPutsThatCompoundAndItsDoseInTheDraft() =
         runComposeUiTest {
-            // The second option, deliberately: tapping the first and checking
-            // «Дальше» went live proves only that *something* was chosen. The
-            // review is where the draft becomes visible, and BPC-157 differs
-            // from the default in both the name and the unit.
+            // The second option, deliberately: the first only proves *something* was chosen.
+            // BPC-157 differs from the default in both name and unit, visible at the review.
             var submitted: DoseDraft? = null
             wizard(onSubmit = { submitted = it })
 
@@ -251,10 +245,8 @@ class DoseWizardTest {
     @Test
     fun aZoneOnTheBackOfTheBodyCanBeChosen() =
         runComposeUiTest {
-            // Four of the ten zones live behind the toggle, and the rotation
-            // suggests all ten. A toggle that draws and does nothing means the
-            // wizard proposes a glute and then refuses to take it — and the
-            // patient records an injection somewhere they did not make one.
+            // Four of ten zones live behind the toggle, and the rotation suggests all ten: a
+            // dead toggle means the wizard proposes a glute and then refuses to take it.
             var submitted: DoseDraft? = null
             wizard(initial = complete().copy(site = null), onSubmit = { submitted = it })
 
@@ -262,8 +254,8 @@ class DoseWizardTest {
 
             onNodeWithText("Сзади").performClick()
             waitForIdle()
-            // Scrolled to first: the diagram is taller than the window, and a
-            // click on a target outside the viewport lands nowhere.
+            // Scrolled first: the diagram is taller than the window, and a click outside the
+            // viewport lands nowhere.
             onNodeWithContentDescription("Левая поясница").performScrollTo().performClick()
             waitForIdle()
 
@@ -277,10 +269,8 @@ class DoseWizardTest {
     @Test
     fun anItemThatIsNotAnInjectionNeedsNoZoneToGetPast() =
         runComposeUiTest {
-            // `DoseEvent.site` is nullable because a supplement has no zone,
-            // and `DoseDraft` carries the kind for exactly this. A compound
-            // step that stamped INJECTION on everything would demand a body
-            // zone for a capsule taken by mouth, and nothing could be logged.
+            // `DoseEvent.site` is nullable because a supplement has no zone; a compound step that
+            // stamped INJECTION on everything would demand a body zone for a capsule.
             var submitted: DoseDraft? = null
             wizard(onSubmit = { submitted = it })
 
@@ -302,23 +292,20 @@ class DoseWizardTest {
     @Test
     fun theDoseStepOffersTheOpenVialsAndDefaultsToTheFullest() =
         runComposeUiTest {
-            // The debt the wizard was left owing. Two open vials of one
-            // compound is a state §03 allows and the seed now contains, and
-            // until this the write picked one for the patient without asking.
+            // §03 allows two open vials of one compound, and the seed now contains that state;
+            // until this test the write picked one for the patient without asking.
             var submitted: DoseDraft? = null
             wizard(onSubmit = { submitted = it })
 
-            // BPC-157, because it is the compound with two open vials — the
-            // semaglutide draft `complete()` builds has one, and a picker with
-            // one option is not a picker.
+            // BPC-157 has two open vials; the semaglutide draft `complete()` builds has one,
+            // and a picker with one option is not a picker.
             onNodeWithText("BPC-157").performClick()
             waitForIdle()
             walkTo(DoseStep.DOSE)
 
             onNodeWithText("B-2601").assertExists()
             onNodeWithText("B-2510").assertExists()
-            // Sealed stock is not offered: a vial nobody has opened is not one
-            // this dose came out of.
+            // Sealed stock is not offered: a vial nobody has opened is not one this dose came out of.
             assertEquals(0, onAllNodesWithText("B-2610").fetchSemanticsNodes().size)
 
             onNodeWithText("Дальше").performClick()
@@ -359,10 +346,8 @@ class DoseWizardTest {
     @Test
     fun theCheckInStepPutsWhatWasTappedIntoTheDraft() =
         runComposeUiTest {
-            // The input half of «one action, two facts». Every earlier test
-            // seeded mood, chips and note into the initial draft and read them
-            // back at the review, so a slider wired to nothing was invisible —
-            // and `JournalEntry.tags` would have been silently empty forever.
+            // The input half of «one action, two facts»: every earlier test seeded these fields
+            // rather than tapping them, so a slider wired to nothing was invisible.
             var submitted: DoseDraft? = null
             wizard(initial = complete(), onSubmit = { submitted = it })
 
@@ -374,8 +359,7 @@ class DoseWizardTest {
             waitForIdle()
             onNodeWithText("Усталость").performClick()
             waitForIdle()
-            // On and off again: a chip row that only ever added would pass a
-            // test that only ever tapped once.
+            // On and off again: a chip row that only ever added would pass a single-tap test.
             onNodeWithText("Усталость").performClick()
             waitForIdle()
             onNodeWithText("Добавить фото").performClick()
@@ -406,13 +390,11 @@ class DoseWizardTest {
 
             walkTo(DoseStep.REVIEW)
 
-            // The eyebrow on a step that is not the first: walking by the
-            // header's counter leaves «every step shows step 1's eyebrow»
-            // invisible, and that is the whole heading being wrong.
+            // The eyebrow on a non-first step: walking by the header's counter would leave
+            // «every step shows step 1's eyebrow» invisible otherwise.
             onNodeWithText(DoseStep.REVIEW.eyebrowRu(), ignoreCase = true).assertIsDisplayed()
             onNodeWithText("Семаглутид").assertIsDisplayed()
-            // Two runs: the number and the unit are separate, because the
-            // prototype sets them in different faces and because a dose is
+            // Two runs: the prototype sets number and unit in different faces, and a dose is
             // never one string.
             onNodeWithText("0,5").assertIsDisplayed()
             onNodeWithText("мг").assertIsDisplayed()
@@ -425,8 +407,8 @@ class DoseWizardTest {
     @Test
     fun theReviewReadsTheDraftAndNotTheCompoundsOwnDefault() =
         runComposeUiTest {
-            // The defect this guards: the review renders `c.default` — the
-            // prescription — rather than the number the patient stepped to.
+            // Guards the review rendering `c.default` (the prescription) rather than the number
+            // the patient stepped to.
             wizard(initial = complete().copy(dose = Dose(0.2, DoseUnit.MG)))
 
             walkTo(DoseStep.REVIEW)
@@ -438,15 +420,13 @@ class DoseWizardTest {
     @Test
     fun anEmptyCheckInReadsAsEmptyRatherThanAsSomething() =
         runComposeUiTest {
-            // Step 4 is optional, so the review has to be able to say «—»
-            // rather than invent a mood or a side effect.
+            // Step 4 is optional, so the review has to say «—» rather than invent a mood.
             wizard(initial = complete())
 
             walkTo(DoseStep.REVIEW)
 
             assertEquals(0, onAllNodesWithText("Ровно").fetchSemanticsNodes().size, "a mood nobody chose")
-            // Two rows say «—»: the energy nobody rated and the complaints
-            // nobody made. Both are «пропущено», and both have to read as it.
+            // Two rows say «—»: mood nobody rated and side effects nobody reported.
             assertEquals(2, onAllNodesWithText("—").fetchSemanticsNodes().size)
         }
 
@@ -457,14 +437,12 @@ class DoseWizardTest {
 
             walkTo(DoseStep.SITE)
 
-            // `assertExists`: the diagram is taller than the test window, and
-            // the caption sits under it.
+            // `assertExists`: the diagram is taller than the test window, and the caption sits under it.
             onNodeWithText("Предложено: Левый живот — следующее в ротации", substring = true).assertExists()
             onNodeWithText("Дальше").assertIsNotEnabled()
 
-            // A shoulder rather than a thigh: the diagram sits in a scroll,
-            // and a target near the bottom of it is outside the viewport in
-            // a test window, where a click lands nowhere.
+            // A shoulder rather than a thigh: the diagram scrolls, and a target near its bottom
+            // is outside the test window's viewport, where a click lands nowhere.
             onNodeWithContentDescription("Правое плечо").performClick()
             waitForIdle()
 

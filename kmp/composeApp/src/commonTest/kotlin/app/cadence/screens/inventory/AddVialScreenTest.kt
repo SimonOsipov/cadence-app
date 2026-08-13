@@ -31,8 +31,8 @@ class AddVialScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { AddVialScreen(compounds = MockSeed.compounds, today = TODAY) } }
 
-            // By tag: a placeholder is not a handle — «12» matches the dose
-            // count, the date and the lot, and the labels are set in small caps.
+            // By tag: «12» matches the dose count, the date and the lot, and the labels are
+            // set in small caps — a placeholder is not a reliable handle.
             save().assertIsNotEnabled()
 
             onNodeWithText("Семаглутид").performScrollTo().performClick()
@@ -52,9 +52,8 @@ class AddVialScreenTest {
     @Test
     fun everythingElseFilledInIsStillNotAVialWithoutACompound() =
         runComposeUiTest {
-            // The mock refuses this too, but its own null-check catches it — so
-            // the rule in `canSave` was measured nowhere and the button would
-            // have gone live on a draft the write then rejected.
+            // The mock refuses this too via its own null-check, so the rule in `canSave` was
+            // previously unmeasured — the button would go live on a draft the write then rejected.
             setContent { CadenceTheme { AddVialScreen(compounds = MockSeed.compounds, today = TODAY) } }
 
             field("total").performTextReplacement("12")
@@ -116,9 +115,8 @@ class AddVialScreenTest {
     @Test
     fun theFormAsksForNoDoseBecauseTheProtocolDecidesIt() =
         runComposeUiTest {
-            // The prototype asks «Дозировка · 0,25 мг» and stores it on the
-            // vial — the same number the phase already decides, which is a
-            // derived value stored. What the glass carries is a concentration.
+            // The prototype stores «Дозировка · 0,25 мг» on the vial — a derived value the phase
+            // already decides. What the glass actually carries is a concentration.
             setContent { CadenceTheme { AddVialScreen(compounds = MockSeed.compounds, today = TODAY) } }
 
             // Uppercased on screen: the field labels are eyebrows.

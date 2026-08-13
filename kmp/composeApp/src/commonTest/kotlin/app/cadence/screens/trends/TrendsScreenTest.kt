@@ -67,11 +67,9 @@ private fun ComposeUiTest.matches(text: String): Int =
     onAllNodesWithText(text, substring = true).fetchSemanticsNodes().size
 
 /**
- * The text is under *this* node, not merely somewhere on the screen.
- *
- * Unmerged, because a clickable card folds its children's semantics into
- * itself: in the merged tree the label is not a descendant of the card, it *is*
- * the card, and `hasAnyDescendant` finds nothing.
+ * The text is under *this* node, not merely somewhere on the screen. Unmerged, because a
+ * clickable card folds its children's semantics into itself — in the merged tree the label
+ * *is* the card, not a descendant, and `hasAnyDescendant` finds nothing.
  */
 @OptIn(ExperimentalTestApi::class)
 private fun ComposeUiTest.assertCardSays(
@@ -84,10 +82,8 @@ class TrendsScreenTest {
     @Test
     fun everyMetricOfTheSetHasItsOwnCard() =
         runComposeUiTest {
-            // One check per card, all eight — «по одной проверке на карточку».
-            // Existence only: `onNodeWithTag` throws when the tag is missing, so
-            // a grid that dropped a metric fails here by name rather than by a
-            // count somewhere else.
+            // One check per card, all eight — «по одной проверке на карточку». Existence only:
+            // `onNodeWithTag` throws when missing, so a dropped metric fails here by name.
             setContent {
                 CadenceTheme {
                     TrendsScreen(overview(), {}, {}, {}, {})
@@ -102,9 +98,8 @@ class TrendsScreenTest {
     @Test
     fun theHeroOpensItsOwnMetric() =
         runComposeUiTest {
-            // The hero has its own lambda, and it is the one card reliably
-            // above the fold in the whole screen. The grid's seven are checked
-            // by `TrendsMetricGridTest`, which composes them alone.
+            // The hero has its own lambda and is the one card reliably above the fold; the
+            // grid's seven are checked by `TrendsMetricGridTest`, which composes them alone.
             val opened = mutableListOf<Metric>()
 
             setContent {
@@ -121,21 +116,18 @@ class TrendsScreenTest {
     @Test
     fun theHeroIsTheFirstMetricOfTheSetAndIsNotRepeatedInTheGrid() =
         runComposeUiTest {
-            // «What I looked at last time» is a second kind of memory, and there
-            // is nowhere to keep it until the profile block. The prototype
-            // features whichever biomarker was opened last.
+            // «What I looked at last time» is a second kind of memory with nowhere to keep it
+            // until the profile block. The prototype features whichever biomarker opened last.
             setContent {
                 CadenceTheme {
                     TrendsScreen(overview(), {}, {}, {}, {})
                 }
             }
 
-            // The hero *is* the weight card, rather than merely existing while
-            // weight happens to be drawn somewhere.
+            // The hero *is* the weight card, not merely drawn somewhere alongside it.
             onNodeWithTag(CADENCE_TRENDS_HERO_TAG, useUnmergedTree = true)
                 .assert(hasAnyDescendant(hasTestTag(cadenceTrendCardTag(Metric.WEIGHT))))
-            // And it is not repeated in the grid below. Exact text, not a
-            // substring: «Вес» is inside «Весь цикл» on the chip row.
+            // Not repeated in the grid below. Exact text: «Вес» is inside «Весь цикл» too.
             assertEquals(1, onAllNodesWithText("Вес").fetchSemanticsNodes().size)
         }
 
@@ -154,17 +146,16 @@ class TrendsScreenTest {
                 onNodeWithTag(cadenceTrendWindowTag(window)).performScrollTo().performClick()
             }
 
-            // Including the one already selected: the screen reports the tap and
-            // the shell decides, rather than swallowing it here.
+            // Including the one already selected: the screen reports the tap and the shell
+            // decides, rather than swallowing it here.
             assertEquals(TrendWindow.entries.toList(), chosen)
         }
 
     @Test
     fun theChosenChipSaysItIsChosen() =
         runComposeUiTest {
-            // `CadenceChip` expresses `active` in colour alone, and a colour
-            // lands in no semantics: without this a screen reader hears four
-            // identical chips and no test can tell which window is on.
+            // `CadenceChip` expresses `active` in colour alone, which lands in no semantics:
+            // without this a screen reader hears four identical chips.
             setContent {
                 CadenceTheme {
                     TrendsScreen(overview(TrendWindow.THREE_MONTHS), {}, {}, {}, {})
@@ -194,11 +185,10 @@ class TrendsScreenTest {
     @Test
     fun theHeroTakesItsNumberFromTheWindowAndNotFromTheWholeCycle() =
         runComposeUiTest {
-            // The half of the prototype's bug its own delta gets right, and the
-            // half nothing else here would catch. Its hero reads the value from
-            // `series.cycle` whatever window is chosen; on the seed the last
-            // weight is 31 May in every window, so the discriminating fixture
-            // is a week with no weight in it at all.
+            // The half of the prototype's value bug nothing else here would catch: the hero
+            // reads from `series.cycle` whatever window is chosen, and on the seed the last
+            // weight is 31 May in every window — so the discriminating fixture is a week with
+            // no weight in it at all.
             val noRecentWeight =
                 MockSeed.measurements.filterNot {
                     it.metric == Metric.WEIGHT && it.measuredAt >= LocalDate(2026, 5, 25).atStartOfDayIn(ZONE)
@@ -222,9 +212,8 @@ class TrendsScreenTest {
     @Test
     fun everyCardShowsItsOwnLatestReading() =
         runComposeUiTest {
-            // The number itself, which no other assertion here reads. Swapping
-            // `series.latest` for `series.base` — or for the average — leaves
-            // every other test in this file green.
+            // The number itself, unread by any other assertion here: swapping `series.latest`
+            // for `series.base` or the average leaves every other test in this file green.
             val all = overview()
 
             setContent {
@@ -243,9 +232,8 @@ class TrendsScreenTest {
     @Test
     fun aCardWithOneReadingShowsTheNumberAndNoDelta() =
         runComposeUiTest {
-            // «7 дней» leaves weight with a single reading. A delta defaulted to
-            // zero would draw «→ 0,0 кг» — the plateau `TrendSeries.delta`'s own
-            // KDoc refuses to claim — and every other test would stay green.
+            // «7 дней» leaves weight with a single reading. A delta defaulted to zero would
+            // draw «→ 0,0 кг» — the plateau `TrendSeries.delta`'s KDoc refuses to claim.
             val week = overview(TrendWindow.WEEK)
             val hero = requireNotNull(week.hero)
             assertEquals(1, hero.series.points.size, "the fixture has to leave weight with one reading")
@@ -263,15 +251,11 @@ class TrendsScreenTest {
     @Test
     fun theHeroReadsItsDeltaFromTheWindowThatWasChosen() =
         runComposeUiTest {
-            // The prototype's bug, not ported: its hero takes the *value* from
-            // the cycle series and the *delta* from the selected one, so
-            // switching to «7 дней» changes the pill under a number that never
-            // moves.
-            //
-            // «4 недели» and «3 месяца» are the pair that separates them: the
-            // weight's window opens on 10 May in one and 12 April in the other,
-            // so the base — and therefore the delta — differs, while the latest
-            // reading is 31 May in both.
+            // The prototype's bug, not ported: its hero takes the *value* from the cycle series
+            // and the *delta* from the selected one, so switching windows changes the pill
+            // under a number that never moves. «4 недели»/«3 месяца» separate them: the
+            // weight's window opens on 10 May vs. 12 April, so the delta differs while the
+            // latest reading (31 May) is the same in both.
             val month = overview(TrendWindow.FOUR_WEEKS)
             val quarter = overview(TrendWindow.THREE_MONTHS)
             val hero = requireNotNull(month.hero)
@@ -295,17 +279,15 @@ class TrendsScreenTest {
     @Test
     fun aMetricWithNoReadingsSaysSoRatherThanShowingAnEmptyCard() =
         runComposeUiTest {
-            // Chest is unmeasured in the seed on purpose, and this is the
-            // criterion that keeps it that way.
+            // Chest is unmeasured in the seed on purpose, and this test keeps it that way.
             setContent {
                 CadenceTheme {
                     TrendsScreen(overview(), {}, {}, {}, {})
                 }
             }
 
-            // Under the chest card, not merely somewhere on the screen: chest
-            // is the only unmeasured metric today, so an unanchored assertion
-            // would pass while some other card went blank.
+            // Under the chest card, not merely somewhere on the screen: an unanchored
+            // assertion would pass while some other card went blank.
             onNodeWithTag(cadenceTrendCardTag(Metric.CHEST))
             assertCardSays(cadenceTrendCardTag(Metric.CHEST), NO_DATA)
         }
@@ -323,10 +305,9 @@ class TrendsScreenTest {
             }
 
             onNodeWithTag(CADENCE_TRENDS_SHIFTS_TAG).assertExists()
-            // Derived, not the prototype's three hand-written cards — two of
-            // which name things §03 has no metric for at all.
-            // A label appears both in its own card and in the shifts row, so
-            // this counts rather than asserting a single node.
+            // Derived, not the prototype's three hand-written cards (two name things §03 has
+            // no metric for). A label appears both in its own card and the shifts row, so this
+            // counts rather than asserting a single node.
             shifts.forEach { shift ->
                 assertTrue(matches(shift.meta.label) >= 2, "${shift.meta.label} is named in the shifts as well")
             }
@@ -341,8 +322,7 @@ class TrendsScreenTest {
                 }
             }
 
-            // An empty «Заметные сдвиги» heading reads as a section that failed
-            // to load rather than one with nothing to say.
+            // An empty «Заметные сдвиги» heading reads as failed-to-load, not nothing-to-say.
             onNodeWithTag(CADENCE_TRENDS_SHIFTS_TAG).assertDoesNotExist()
         }
 
@@ -370,10 +350,9 @@ class TrendsMetricGridTest {
     @Test
     fun eachCardOpensItsOwnMetricAndNotTheOneBesideIt() =
         runComposeUiTest {
-            // One exact check per card, and the list is deliberately not in
-            // enum order: a grid reporting the card's *position* names the
-            // wrong metric for both. That is not hypothetical — it is what this
-            // grid actually did until this test was written.
+            // The list is deliberately not in enum order: a grid reporting the card's
+            // *position* names the wrong metric for both — what this grid actually did
+            // until this test was written.
             val opened = mutableListOf<Metric>()
             val order = listOf(Metric.CHEST, Metric.SLEEP)
 
@@ -391,11 +370,10 @@ class TrendsMetricGridTest {
     @Test
     fun anOddCardStillGetsARowOfItsOwn() =
         runComposeUiTest {
-            // Three cards fill one row and start a second, so the odd-one-out
-            // branch is exercised. Tags only, not clicks: on this target the
-            // first card of a multi-row grid is clicked at the row below it —
-            // deterministically, and unaffected by `waitForIdle`. Asserting
-            // through that would pin the anomaly rather than the screen.
+            // Three cards fill one row and start a second, exercising the odd-one-out branch.
+            // Tags only, not clicks: on this target the first card of a multi-row grid is
+            // clicked at the row below it, deterministically — asserting through that would
+            // pin the anomaly rather than the screen.
             val order = listOf(Metric.CHEST, Metric.SLEEP, Metric.HRV)
 
             setContent {
@@ -410,8 +388,7 @@ class TrendsMetricGridTest {
     @Test
     fun aCardWithNoReadingsSaysSoAndOneWithThemShowsItsNumber() =
         runComposeUiTest {
-            // Both branches of `MetricReading`, side by side: chest is
-            // unmeasured in the seed on purpose, weight is not.
+            // Both branches of `MetricReading`, side by side: chest is unmeasured, weight is not.
             val trends = listOf(Metric.CHEST, Metric.WEIGHT).map { MetricTrend(it.meta, seriesOf(it)) }
             val weight = trends.last()
 

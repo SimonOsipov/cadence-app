@@ -2,6 +2,7 @@ package app.cadence.format
 
 import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseUnit
+import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.Measurement
 import app.cadence.shared.domain.MeasurementId
 import app.cadence.shared.domain.MeasurementSource
@@ -13,6 +14,7 @@ import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.domain.UserId
 import app.cadence.shared.domain.rangeOn
+import app.cadence.shared.domain.toMacros
 import app.cadence.shared.domain.trendSeries
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -25,9 +27,8 @@ import kotlin.test.assertEquals
 class CadenceFormatTest {
     @Test
     fun integersGroupInThreesWithARussianNonBreakingSpace() {
-        // `toLocaleString('ru-RU')` in the prototype. The separator is U+00A0,
-        // not a plain space: a kcal count must not wrap between its thousands
-        // and its hundreds.
+        // `toLocaleString('ru-RU')` in the prototype. U+00A0, not a plain space: a kcal count
+        // must not wrap between its thousands and hundreds.
         assertEquals("0", formatInteger(0))
         assertEquals("999", formatInteger(999))
         assertEquals("1\u00A0000", formatInteger(1000))
@@ -38,9 +39,8 @@ class CadenceFormatTest {
 
     @Test
     fun negativeIntegersKeepTheirSignOutsideTheGrouping() {
-        // No call site passes one today; the guard exists because the obvious
-        // implementation groups the minus sign into the first triple, and
-        // whether that renders right is then a matter of digit count.
+        // No call site passes a negative today; guards the obvious-but-wrong implementation that
+        // groups the minus sign into the first triple.
         assertEquals("-1\u00A0234", formatInteger(-1234))
         assertEquals("-999", formatInteger(-999))
         assertEquals("-100", formatInteger(-100))
@@ -48,31 +48,16 @@ class CadenceFormatTest {
 
     @Test
     fun theExtremesDoNotWrapAround() {
-        // -Int.MIN_VALUE is Int.MIN_VALUE. An implementation that negates in
-        // Int returns the value unchanged and formats a very negative number
+        // -Int.MIN_VALUE is Int.MIN_VALUE: negating in Int would format a very negative number
         // as a very positive one.
         assertEquals("2\u00A0147\u00A0483\u00A0647", formatInteger(Int.MAX_VALUE))
         assertEquals("-2\u00A0147\u00A0483\u00A0648", formatInteger(Int.MIN_VALUE))
     }
 
     @Test
-    fun weeksTakeTheSameRuleAsMeals() {
-        // The prototype's reorder card repeats the meal card's approximation —
-        // `weeksLeft < 5 ? 'недели' : 'недель'` — and is wrong from 21 up in
-        // the same way. One rule, two nouns.
-        assertEquals("неделю", pluralWeeks(1))
-        assertEquals("недели", pluralWeeks(3))
-        assertEquals("недель", pluralWeeks(5))
-        assertEquals("недель", pluralWeeks(11))
-        assertEquals("неделю", pluralWeeks(21))
-        assertEquals("недели", pluralWeeks(22))
-    }
-
-    @Test
     fun aDecimalUsesTheCommaAndKeepsItsTrailingZero() {
-        // «98,4», «110,0» — the comma is the locale's, and a weight that
-        // dropped its trailing zero would jump between one and two glyphs as
-        // the patient loses weight.
+        // A weight that dropped its trailing zero would jump between one and two glyphs as the
+        // patient loses weight.
         assertEquals("98,4", formatDecimal(98.4, digits = 1))
         assertEquals("110,0", formatDecimal(110.0, digits = 1))
         assertEquals("0,25", formatDecimal(0.25, digits = 2))
@@ -88,8 +73,7 @@ class CadenceFormatTest {
 
     @Test
     fun aDoseIsItsValueAndItsUnitWithNoTrailingZeroes() {
-        // «0,25 мг», «250 мкг», «1 мг» — the protocol's own numbers, and a
-        // dose of 1,0 mg reads «1 мг» the way a clinician says it.
+        // The protocol's own numbers; 1,0 mg reads «1 мг» the way a clinician says it.
         assertEquals("0,25" to "мг", formatDose(Dose(0.25, DoseUnit.MG)))
         assertEquals("0,5" to "мг", formatDose(Dose(0.5, DoseUnit.MG)))
         assertEquals("1" to "мг", formatDose(Dose(1.0, DoseUnit.MG)))
@@ -97,50 +81,53 @@ class CadenceFormatTest {
     }
 
     @Test
-    fun mealsTakeTheRussianPluralAndNotThePrototypesApproximationOfIt() {
-        assertEquals("приём", pluralMeals(1))
-        assertEquals("приёма", pluralMeals(2))
-        assertEquals("приёма", pluralMeals(4))
-        assertEquals("приёмов", pluralMeals(5))
-        assertEquals("приёмов", pluralMeals(11))
-        assertEquals("приёмов", pluralMeals(14))
-        // Exactly where the prototype's `count < 5 ? 'приёма' : 'приёмов'` is
-        // wrong.
-        assertEquals("приём", pluralMeals(21))
-        assertEquals("приёма", pluralMeals(22))
-        assertEquals("приёмов", pluralMeals(25))
-        assertEquals("приём", pluralMeals(101))
-        assertEquals("приёмов", pluralMeals(111))
-        // Never rendered — the sheet takes its zero-state branch — but a
-        // plural function that is wrong at zero is wrong.
-        assertEquals("приёмов", pluralMeals(0))
+    fun aKcalValueCarriesItsOwnUnit() {
+        assertEquals("960 ккал", formatKcal(960))
+        assertEquals("1 800 ккал", formatKcal(1800))
+        assertEquals("0 ккал", formatKcal(0))
+    }
+
+    @Test
+    fun aGramValueCarriesItsOwnUnit() {
+        assertEquals("80 г", formatGrams(80))
+        assertEquals("0 г", formatGrams(0))
+    }
+
+    @Test
+    fun aTenthsKcalFieldRoundsForDisplayLikeToMacrosDoes() {
+        // Checked against production `toMacros()` directly, not literals that merely happen to
+        // agree today, so the two rounding paths cannot drift apart unnoticed.
+        listOf(2952, 2405, 0, 9, 15).forEach { tenths ->
+            val viaToMacros = formatKcal(MacrosTenths(tenths, 0, 0, 0).toMacros().kcal)
+            assertEquals(viaToMacros, formatKcalTenths(tenths), "tenths=$tenths")
+        }
+        // Pinned literals too, so the table itself stays legible.
+        assertEquals("295 ккал", formatKcalTenths(2952))
+        // The half-up tie: 240,5 rounds up, not to even.
+        assertEquals("241 ккал", formatKcalTenths(2405))
+        assertEquals("0 ккал", formatKcalTenths(0))
     }
 
     @Test
     fun aDeltaNeedsTwoReadingsAndSaysWhichWayItWent() {
-        // One reading is where every patient starts, and points[size - 2] on a
-        // one-point list throws. The guard was written twice inline and
-        // measured by nothing.
+        // One reading is where every patient starts, and points[size - 2] on a one-point list
+        // throws — previously unmeasured.
         assertEquals(null, formatDeltaSincePrevious(emptyList(), "кг"))
         assertEquals(null, formatDeltaSincePrevious(listOf(98.4), "кг"))
         assertEquals("↓ 0,4 кг", formatDeltaSincePrevious(listOf(98.8, 98.4), "кг"))
         assertEquals("↑ 0,6 кг", formatDeltaSincePrevious(listOf(98.4, 99.0), "кг"))
-        // A plateau is not a gain. Rendering two identical readings as «↑ 0,0»
-        // is a claim the data does not make.
+        // A plateau is not a gain: two identical readings must not render «↑ 0,0».
         assertEquals("→ 0,0 кг", formatDeltaSincePrevious(listOf(98.4, 98.4), "кг"))
-        // Only the *last pair* counts, whatever came before it — which is the
-        // whole difference from a window's delta, where the first reading is
-        // the base. Over this list a window would answer «↓ 2,8 кг».
+        // Only the *last pair* counts, unlike a window's delta (base = first reading) — over
+        // this list a window would answer «↓ 2,8 кг».
         assertEquals("↓ 0,4 кг", formatDeltaSincePrevious(listOf(101.2, 99.0, 98.8, 98.4), "кг"))
     }
 
     @Test
     fun aDeltaThatWasAlreadyComputedIsRenderedWithoutBeingRecomputed() {
-        // What the trends screens will hand over: `TrendSeries.delta` is a
-        // number taken across a window, and there is no pair of points left for
-        // a formatter to subtract. A second arrow-and-magnitude rule written
-        // beside this one is how the two deltas start disagreeing about what
-        // «↓» means.
+        // What trends screens hand over: `TrendSeries.delta` is already a number, with no pair of
+        // points left to subtract — a second arrow-and-magnitude rule here would let the two
+        // deltas disagree about what «↓» means.
         assertEquals("↓ 2,8 кг", formatSignedDelta(-2.8, "кг"))
         assertEquals("↑ 13 мс", formatSignedDelta(13.0, "мс", digits = 0))
         assertEquals("→ 0,0 кг", formatSignedDelta(0.0, "кг"))
@@ -148,10 +135,8 @@ class CadenceFormatTest {
 
     @Test
     fun aDeltaTooSmallToPrintIsNotAnArrow() {
-        // A window delta is an arbitrary subtraction — imported weights do not
-        // land on tenths — so 98,79 − 98,75 reaches this function. «↓ 0,0 кг»
-        // beside a true plateau's «→ 0,0 кг» would be two glyphs for one
-        // printed number.
+        // Imported weights do not land on tenths, so a window delta like 98,79 − 98,75 reaches
+        // this; «↓ 0,0 кг» beside a true plateau's «→ 0,0 кг» would be two glyphs for one number.
         assertEquals("→ 0,0 кг", formatSignedDelta(-0.04, "кг"))
         assertEquals("→ 0,0 кг", formatSignedDelta(0.04, "кг"))
         assertEquals("→ 0 мс", formatSignedDelta(0.4, "мс", digits = 0))
@@ -161,16 +146,15 @@ class CadenceFormatTest {
 
     @Test
     fun theDigitsSurviveTheHopFromOneFormatterToTheOther() {
-        // `formatDeltaSincePrevious` delegates, and a delegation that dropped
-        // its third argument would render an HRV move as «↓ 3,0 мс» while
-        // every other assertion here stayed green on the default.
+        // A delegation that dropped the third argument would render an HRV move as «↓ 3,0 мс»
+        // while every other assertion here stayed green on the default.
         assertEquals("↓ 3 мс", formatDeltaSincePrevious(listOf(60.0, 57.0), "мс", digits = 0))
     }
 
     @Test
     fun theTwoDeltasAnswerDifferentQuestionsAboutOneSetOfReadings() {
-        // The claim both KDocs make, joined here rather than asserted in halves:
-        // over these four readings «Сегодня» says −0,4 and a window says −2,8.
+        // Joined here rather than asserted in halves: over these four readings «Сегодня» says
+        // −0,4 and a window says −2,8.
         val values = listOf(101.2, 99.0, 98.8, 98.4)
         val days =
             listOf(LocalDate(2026, 5, 25), LocalDate(2026, 5, 27), LocalDate(2026, 5, 29), LocalDate(2026, 5, 31))
@@ -218,8 +202,7 @@ class CadenceFormatTest {
         assertEquals("мс", unitRu("ms"))
         assertEquals("уд/мин", unitRu("bpm"))
         assertEquals("см", unitRu("cm"))
-        // An unknown unit passes through: a number with no unit beside it is
-        // worse than one with an unfamiliar unit.
+        // An unknown unit passes through: a number with no unit is worse than an unfamiliar one.
         assertEquals("%", unitRu("%"))
     }
 }

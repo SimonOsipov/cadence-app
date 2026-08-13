@@ -7,13 +7,9 @@ import kotlin.time.Instant
 // dosing — «the core clinical fact stream» (§03).
 
 /**
- * §03: ten injection zones, which is what makes a rotation suggestion possible.
- *
- * §03 names only three and writes «(10 zones)», so the rest come from
- * `mobile/src/features/log-dose/data.ts` — `ZONES_FRONT` and `ZONES_BACK` — and
- * not from anywhere else. Two of them were invented here first («l-flank»,
- * «r-flank») and matched no zone the body map can draw; the codes are what
- * `dose_events.site_code` stores and what the rotation suggestion compares.
+ * §03 names only three and writes «(10 zones)»; the rest come from
+ * mobile/src/features/log-dose/data.ts. Two invented ones («l-flank», «r-flank») matched no
+ * zone the body map can draw and aren't here. Codes are what `dose_events.site_code` stores.
  */
 enum class InjectionSite(
     val code: String,
@@ -44,16 +40,11 @@ enum class SideEffect(
 }
 
 /**
- * §03's `dose_events` — the one clinical fact everything else is measured
- * against.
- *
- * `scheduledFor` is the occurrence this satisfies, as a date and a time, so a
- * generated occurrence can be matched to a logged event without a schedule
- * table existing. `vialId` is what makes a vial's remaining count a
- * subtraction rather than a column: §03's third correction.
- *
- * The wizard's mood and side-effects check-in also writes a `JournalEntry` with
- * `source = DOSE` — one action, two facts.
+ * §03's `dose_events` — the one clinical fact everything else is measured against.
+ * `scheduledFor` matches a generated occurrence to a logged event without a schedule table
+ * existing. `vialId` makes a vial's remaining count a subtraction, not a column (§03's third
+ * correction). The wizard's check-in also writes a `JournalEntry` with `source = DOSE` —
+ * one action, two facts.
  */
 data class DoseEvent(
     val id: DoseEventId,

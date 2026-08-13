@@ -3,12 +3,12 @@ package app.cadence.format
 import app.cadence.shared.domain.PartOfDay
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.isoDayNumber
 
-// Russian calendar names. Hand-written for the same reason the number
-// formatting is: Kotlin/Native carries no ICU, so there is no locale API that
-// answers on both platforms, and these are two closed lists.
+// Russian calendar names, hand-written for the same reason the number formatting
+// is: Kotlin/Native carries no ICU, so there is no cross-platform locale API.
 
 private val WEEKDAYS_NOMINATIVE =
     mapOf(
@@ -28,11 +28,9 @@ fun weekdayNominative(day: DayOfWeek): String = WEEKDAYS_NOMINATIVE.getValue(day
 fun cycleWeekLabel(week: Int): String = "$week-я неделя"
 
 /**
- * «Воскресенье, утро · 4-я неделя».
- *
- * The prototype writes this whole line as a literal. Every part of it is a
- * function of the clock and the protocol, and assembling it here keeps the
- * screen free of both.
+ * «Воскресенье, утро · 4-я неделя». The prototype writes this whole line as a
+ * literal; every part is a function of the clock and the protocol, so it is
+ * assembled here instead.
  */
 fun greeting(
     date: LocalDate,
@@ -62,11 +60,28 @@ private val MONTHS_GENITIVE =
 /** «7 июня» — the genitive the date reads in, not the nominative «Июнь». */
 fun dayAndMonth(date: LocalDate): String = "${date.day} ${MONTHS_GENITIVE[date.month.ordinal]}"
 
+private const val CLOCK_DIGIT_WIDTH = 2
+
+/**
+ * «08:05» — a zero-padded 24-hour clock reading, for the log-meal header chip.
+ * The prototype writes the whole chip as a literal «08:42 · вс 24 мая»
+ * (`LogMealScreen.tsx:133`); assembled here instead since every part is a
+ * function of [CadenceClock][app.cadence.shared.domain.CadenceClock] and the calendar.
+ */
+fun clockTime(time: LocalDateTime): String {
+    val hour = time.hour.toString().padStart(CLOCK_DIGIT_WIDTH, '0')
+    val minute = time.minute.toString().padStart(CLOCK_DIGIT_WIDTH, '0')
+    return "$hour:$minute"
+}
+
 private val WEEKDAYS_SHORT =
     listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
 /** The calendar's column headings, Monday first as the prototype draws them. */
 fun weekdayHeadings(): List<String> = WEEKDAYS_SHORT
+
+/** «Ср» — one day's short label, for a column derived from a real date rather than a literal. */
+fun weekdayShort(day: DayOfWeek): String = WEEKDAYS_SHORT[day.isoDayNumber - 1]
 
 /** How many blanks precede the first of the month in a Monday-first grid. */
 fun leadingBlanks(firstOfMonth: LocalDate): Int = firstOfMonth.dayOfWeek.isoDayNumber - 1

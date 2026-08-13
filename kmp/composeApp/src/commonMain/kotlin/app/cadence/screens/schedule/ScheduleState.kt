@@ -5,11 +5,9 @@ import app.cadence.shared.repository.ScheduleDay
 import kotlinx.datetime.LocalDate
 
 /**
- * Everything «График» draws, in one value.
- *
- * The screen takes this rather than a repository for the same reason every
- * other screen does: a test has to be able to hand it a month it chose, and the
- * Ktor client has to be able to replace the mock without this file changing.
+ * Everything «График» draws, in one value. Taken rather than a repository for the
+ * same reason every other screen does: a test has to hand it a month it chose, and
+ * the Ktor client has to replace the mock without this file changing.
  */
 data class ScheduleState(
     val today: LocalDate,

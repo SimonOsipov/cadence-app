@@ -34,26 +34,17 @@ class TrendSeriesTest {
         assertEquals(listOf(98.8), weight.points.map { it.value })
         assertEquals(Metric.CHEST, chest.metric, "an empty series still says which metric it is about")
         assertTrue(chest.points.isEmpty())
-        // The window travels with the result: the chart's axis and the dose
-        // bands under it are both drawn from these two dates, and a series that
-        // dropped them would have them derived a second time.
+        // The window travels with the result: the axis and the dose bands under it are both
+        // drawn from these two dates.
         assertEquals(week(), chest.range)
     }
 
     @Test
     fun theSeriesIsOrderedOldestFirstEvenWhenTheReadingsAreNot() {
-        // The seed puts one of its weights out of list order on purpose. A
-        // chart is drawn left to right, and a base taken off an unsorted list
-        // is whichever row the server happened to send first.
-        //
-        // The middle reading is the lowest of the three, so ordering by date
-        // and ordering by value disagree — a sort on the wrong key would still
-        // pass against a series that only ever fell.
-        //
-        // The ids run backwards against the dates for the same reason. Every id
-        // this codebase generates carries an ISO date, so id order and time
-        // order normally agree, and a tie-break promoted to the primary key
-        // would sort correctly by accident on every other fixture here.
+        // Middle reading is the lowest of the three, so ordering by date and by value
+        // disagree — a sort on the wrong key would still pass against a series that only
+        // fell. Ids run backwards against dates for the same reason: a tie-break promoted to
+        // the primary key would sort correctly by accident on every other fixture.
         val readings =
             listOf(
                 reading(Metric.WEIGHT, LocalDate(2026, 5, 29), 98.4, id = "m-m"),
@@ -68,9 +59,7 @@ class TrendSeriesTest {
 
     @Test
     fun twoReadingsOnOneDayAreOrderedWithinIt() {
-        // §03: «latest reading wins, whatever the source». A patient who
-        // weighed in before breakfast and whose watch synced that evening has
-        // two readings on one day, and the evening one is the later one.
+        // §03: «latest reading wins, whatever the source».
         val readings =
             listOf(
                 reading(Metric.WEIGHT, LocalDate(2026, 5, 31), 98.9, at = LocalTime(20, 30)),
@@ -85,9 +74,8 @@ class TrendSeriesTest {
 
     @Test
     fun readingsSharingAnInstantAreBrokenApartByIdRatherThanByArrivalOrder() {
-        // Two sources can stamp the same minute. Left to a stable sort, «the
-        // last one» would be whichever row the server listed second, and the
-        // same data would answer differently on the next fetch.
+        // Left to a stable sort, «the last one» would be whichever row the server listed
+        // second, and the same data would answer differently on the next fetch.
         val at = LocalTime(6, 0)
         val forwards =
             listOf(
@@ -119,13 +107,10 @@ class TrendSeriesTest {
 
     @Test
     fun aReadingIsPlacedByThePatientsCalendarRatherThanByUtc() {
-        // Both directions, because a zone bug that only over-includes at one
-        // edge is invisible to a test that watches the other.
-        //
-        // 22:30 UTC on 24 May is 01:30 on the 25th in Moscow — inside a window
-        // that opens on the 25th, and dropped by a comparison done in UTC.
-        // 21:30 UTC on 31 May is 00:30 on 1 June — past a window that closes
-        // today, and admitted by that same comparison.
+        // Both directions: a zone bug over-including at one edge is invisible to a test that
+        // only watches the other. 22:30 UTC on 24 May is 01:30 on the 25th in Moscow (inside
+        // a window opening the 25th, dropped in UTC); 21:30 UTC on 31 May is 00:30 on 1 June
+        // (past a window closing today, admitted in UTC).
         val earlyMorning = utcReading(LocalDate(2026, 5, 24), LocalTime(22, 30), 99.4, "m-in")
         val pastMidnight = utcReading(LocalDate(2026, 5, 31), LocalTime(21, 30), 98.2, "m-out")
 
@@ -133,18 +118,15 @@ class TrendSeriesTest {
 
         assertEquals(listOf(99.4), series.points.map { it.value })
 
-        // And the day the series reports for it is the patient's day, not the
-        // UTC one. This is the whole reason the zone travels in the result: a
-        // chart places its readings on the axis the window describes, and read
-        // in a second zone the reading admitted at the edge is drawn beyond it.
+        // The whole reason the zone travels in the result: read in a second zone, the
+        // reading admitted at the edge would be drawn beyond it.
         assertEquals(LocalDate(2026, 5, 25), series.dayOf(series.points.single()))
     }
 
     @Test
     fun theDeltaIsMeasuredFromTheBaseOfTheWindowNotFromThePreviousReading() {
-        // The distinction the whole step exists for. «Сегодня» asks how far
-        // the last reading moved — here that is +0,4 — while a window asks how
-        // far the patient has come since it opened, which is −1,2.
+        // «Сегодня» asks how far the last reading moved (+0,4); a window asks how far the
+        // patient has come since it opened (−1,2).
         val readings =
             listOf(
                 reading(Metric.WEIGHT, LocalDate(2026, 5, 26), 100.0),
@@ -184,8 +166,7 @@ class TrendSeriesTest {
                 ZONE,
             )
 
-        // Zero would read as a plateau, and a patient with one reading has not
-        // plateaued — they have started.
+        // Zero would read as a plateau; a patient with one reading has started, not plateaued.
         assertNull(series.delta)
         assertEquals(98.4, series.base)
         assertEquals(98.4, series.average)
@@ -212,15 +193,13 @@ class TrendSeriesTest {
 
     @Test
     fun theAggregatesAreTakenOverTheWindowAndNotOverEverythingKnown() {
-        // The four in-window values are chosen so that the mean is none of the
-        // things a wrong implementation would return: it is not the median
-        // (98,7), not the midpoint of min and max (98,5), not the first reading
-        // and not the last. The extremes sit in the middle rather than at the
-        // ends, so `minimum`/`maximum` cannot pass as `first`/`last` either.
+        // The four in-window values are chosen so the mean is none of the things a wrong
+        // implementation would return: not the median (98,7), not the min/max midpoint
+        // (98,5), not first or last. Extremes sit in the middle, so min/max can't pass as first/last.
         val readings =
             listOf(
-                // Well outside the week, and both an extreme: aggregates read
-                // off the whole history would show them.
+                // Well outside the week and both extremes: aggregates over the whole history
+                // would show them.
                 reading(Metric.WEIGHT, LocalDate(2026, 4, 20), 104.0),
                 reading(Metric.WEIGHT, LocalDate(2026, 4, 27), 90.0),
                 reading(Metric.WEIGHT, LocalDate(2026, 5, 26), 99.0),
@@ -238,8 +217,7 @@ class TrendSeriesTest {
 
     @Test
     fun theFourWindowsOfTheSeedAreFourDifferentSpansAndFourDifferentSeries() {
-        // What step-1 seeded six weeks for. If any two of these agreed, the
-        // window switcher would have nothing to switch.
+        // If any two of these agreed, the window switcher would have nothing to switch.
         val spans = TrendWindow.entries.associateWith { requireNotNull(it.rangeOn(MockSeed.plan, TODAY)).days }
         assertEquals(
             mapOf(
@@ -256,10 +234,8 @@ class TrendSeriesTest {
                 trendSeries(MockSeed.measurements, Metric.HRV, requireNotNull(it.rangeOn(MockSeed.plan, TODAY)), ZONE)
             }
 
-        // A daily metric fills its window up to the history it has: «3 месяца»
-        // asks for 84 days and gets the 42 lived since the intake — so the
-        // spans and the point counts are different numbers, not one number told
-        // twice.
+        // A daily metric fills its window up to the history it has: «3 месяца» asks for 84
+        // days and gets the 42 lived since the intake.
         assertEquals(
             mapOf(
                 TrendWindow.WEEK to 7,
@@ -270,10 +246,8 @@ class TrendSeriesTest {
             series.mapValues { (_, it) -> it.points.size },
         )
 
-        // And they are four different *series*, not four lengths of one: each
-        // opens on a different reading. Compared by day rather than by value —
-        // a ramp rounded onto whole milliseconds may well repeat a number, and
-        // then this would be asserting arithmetic instead of windowing.
+        // Four different *series*, not four lengths of one: each opens on a different
+        // reading. Compared by day, not value — a rounded ramp may repeat a number.
         assertEquals(
             4,
             series.values
@@ -282,8 +256,7 @@ class TrendSeriesTest {
                 .size,
             "every window opens on its own reading",
         )
-        // They close on the same one, which is what leaves the base as the
-        // thing that differs.
+        // They close on the same one, leaving the base as the thing that differs.
         assertEquals(
             1,
             series.values
@@ -295,8 +268,6 @@ class TrendSeriesTest {
 
     @Test
     fun theMetricLeftUnmeasuredSaysSoInEveryWindow() {
-        // `CHEST` is unmeasured on purpose, and this is the criterion that
-        // keeps it that way.
         TrendWindow.entries.forEach { window ->
             val range = requireNotNull(window.rangeOn(MockSeed.plan, TODAY))
             val series = trendSeries(MockSeed.measurements, Metric.CHEST, range, ZONE)
