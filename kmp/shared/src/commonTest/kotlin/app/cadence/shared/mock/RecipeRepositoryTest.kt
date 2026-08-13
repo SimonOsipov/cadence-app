@@ -23,10 +23,8 @@ class RecipeRepositoryTest {
 
             val found = cadence.recipes.ingredients("тво")
 
-            // The set, not the count: a search that returned any single
-            // ingredient would still report size 1. «Творог 5%» is the only
-            // one of the 25 whose name contains «тво» — asserted here as the
-            // whole set, so a match on the wrong entry cannot pass silently.
+            // The set, not the count: a search returning any single ingredient would still
+            // report size 1.
             assertEquals(listOf(IngredientId("cottage")), found.map { it.id })
             assertEquals("Творог 5%", found.single().nameRu)
         }
@@ -57,9 +55,8 @@ class RecipeRepositoryTest {
     @Test
     fun searchTrimsWhitespaceBeforeMatching() =
         runTest {
-            // `RecipeBuilderScreen.tsx:127` trims before matching
-            // (`q.trim().toLowerCase()`) — a trailing space off a mobile
-            // keyboard must not turn a real match into an empty result.
+            // Matches RecipeBuilderScreen.tsx: a trailing space off a mobile keyboard must
+            // not turn a real match into an empty result.
             val cadence = CadenceMocks()
 
             val untrimmed = cadence.recipes.ingredients("тво")
@@ -87,16 +84,12 @@ class RecipeRepositoryTest {
 
             val library = cadence.recipes.library(RecipeFilter())
             val saved = library.recipes.first { it.id == result.id }
-            // Not just non-null: the seeded patient, specifically — a mock
-            // world with one patient makes `!= null` and `== MockSeed.patientId`
-            // agree today, but only the latter is the claim step-9's «Мои
-            // рецепты» actually depends on.
+            // Not just non-null: the seeded patient specifically, which is the claim
+            // step-9's «Мои рецепты» depends on.
             assertEquals(MockSeed.patientId, saved.ownerId, "a saved recipe must be owned by the seeded patient")
 
-            // The set, not just membership: every own recipe ahead of every
-            // library one, not merely the new recipe somewhere before the
-            // library's first entry — a mutation that inserted it second
-            // among six library recipes would still satisfy "somewhere before".
+            // Every own recipe ahead of every library one, not merely "somewhere before" —
+            // a mutation inserting it second among six library recipes would satisfy that too.
             val ownCount = library.recipes.count { it.ownerId == MockSeed.patientId }
             assertEquals(1, ownCount)
             assertEquals(result.id, library.recipes.first().id, "the own recipe must be the very first entry")
@@ -196,8 +189,7 @@ class RecipeRepositoryTest {
             val dinnerAndGentle =
                 cadence.recipes.library(RecipeFilter(mealType = MealType.DINNER, tag = RecipeTag.GENTLE)).recipes
 
-            // Both `salmon-quinoa` and `lentil-turkey` are dinners; only
-            // `lentil-turkey` also carries `gentle` — a filter that applied
+            // Both are dinners; only lentil-turkey also carries gentle — a filter applying
             // only one of the two fields would let the other one through.
             assertEquals(listOf(RecipeId("lentil-turkey")), dinnerAndGentle.map { it.id })
         }

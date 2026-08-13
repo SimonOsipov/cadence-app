@@ -90,9 +90,8 @@ class CadenceShellDataTest {
             onNodeWithContentDescription("Записать").performClick()
             waitForIdle()
 
-            // Two seeded meals of 320 and 520 kcal. Both numbers come from the
-            // repository and are formatted by app.cadence.format on the way to
-            // the screen — «840» is not a string anything upstream holds.
+            // Two seeded meals of 320 and 520 kcal, formatted on the way to the screen — «840»
+            // is not a string anything upstream holds.
             onNodeWithText("2 приёма сегодня · 840 ккал").assertIsDisplayed()
             onNodeWithText("Семаглутид · 0,25 мг ждёт").assertIsDisplayed()
         }
@@ -100,15 +99,12 @@ class CadenceShellDataTest {
     @Test
     fun theRecentMealsListOnTheRealTodayScreenReadsTheRepositoryAndTheMocksZone() =
         runComposeUiTest {
-            // `TodayScreenTest` and `CadenceFormatTest` both drive `TodayScreen`
-            // directly with hand-built `meals`/`zone` arguments — neither one
-            // exercises `CadenceApp`'s own `todayMeals =
-            // mocks.nutrition.day(today.date).meals` and `zone = mocks.zone`
-            // lines. Mutating either to a constant (`emptyList()`, `TimeZone.UTC`)
-            // left every other gate green; this is the one path that reads them.
+            // `TodayScreenTest`/`CadenceFormatTest` drive `TodayScreen` directly with hand-built
+            // args, so neither exercises `CadenceApp`'s own todayMeals/zone lines — mutating
+            // either to a constant left every other gate green.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
-            // The seeded breakfast, 06:30 UTC — 09:30 in Moscow, `mocks().zone`.
+            // Seeded breakfast, 06:30 UTC — 09:30 in Moscow via mocks().zone.
             onNodeWithText("09:30 · 1 позиция").performScrollTo().assertIsDisplayed()
         }
 
@@ -117,8 +113,7 @@ class CadenceShellDataTest {
         runComposeUiTest {
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
-            // Not «Экран «Сегодня»» any more: the placeholder is gone and the
-            // ported screen is what the tab bar lands on.
+            // Placeholder is gone; the ported screen is what the tab bar lands on.
             onNodeWithText("Воскресенье, день · 4-я неделя").assertIsDisplayed()
             assertTrue(onAllNodesWithText("Экран «Сегодня»").fetchSemanticsNodes().isEmpty())
         }
@@ -143,9 +138,8 @@ class CadenceShellDataTest {
     @Test
     fun theWizardIsOfferedTheProtocolsLoggableItemsAndNothingElse() =
         runTest {
-            // The mapping on its own, because the seed has no loggable item
-            // that is not an injection — so through the screen a wizard that
-            // stamped INJECTION on everything is invisible.
+            // Tests the mapping directly: the seed has no loggable non-injection item, so
+            // through the screen a wizard that stamped INJECTION on everything is invisible.
             val options = mocks().today.today().doseOptions()
 
             assertEquals(
@@ -153,10 +147,8 @@ class CadenceShellDataTest {
                 options.map { it.nameRu },
                 "the wizard offers something the protocol does not mark loggable",
             )
-            // No kind assertion here: both seeded loggable items are
-            // injections, so one would guard nothing. `DoseWizardTest
-            // .anItemThatIsNotAnInjectionNeedsNoZoneToGetPast` covers the
-            // non-injection path where it is observable.
+            // No kind assertion: both seeded items are injections, so it'd guard nothing —
+            // see DoseWizardTest.anItemThatIsNotAnInjectionNeedsNoZoneToGetPast.
             assertEquals(listOf(true, true), options.map { it.dueToday })
             assertEquals("п/к · еженедельно", options.first().modeRu)
             assertEquals("п/к · 2× в день", options.last().modeRu)
@@ -165,10 +157,8 @@ class CadenceShellDataTest {
     @Test
     fun onlyTheItemsDueTodayCarryTheBadge() =
         runTest {
-            // A Tuesday: the daily injection is due, the weekly one is not.
-            // Every earlier assertion ran on the seeded Sunday, where both are
-            // — so a `dueToday` hardcoded to true was invisible, and a patient
-            // on a Tuesday would be told their Sunday injection is due now.
+            // A Tuesday: daily injection due, weekly not. Earlier assertions ran on the seeded
+            // Sunday, where both are due, so a `dueToday` hardcoded true was invisible.
             val options = mocks("2026-06-02T09:00:00Z").today.today().doseOptions()
 
             assertEquals(listOf("Семаглутид", "BPC-157"), options.map { it.nameRu })
@@ -178,8 +168,8 @@ class CadenceShellDataTest {
     @Test
     fun theModeNamesEveryCadenceTheProtocolCanHave() =
         runTest {
-            // Two of the three branches are unreachable from the seed: its only
-            // daily item has two times, and nothing is N-per-week at all.
+            // Two of three branches are unreachable from the seed (its only daily item has two
+            // times, nothing is N-per-week), hence testing them directly.
             assertEquals("внутрь · ежедневно", modeRu(row(ProtocolCadence.DAILY, times = 1)))
             assertEquals("внутрь · 3× в день", modeRu(row(ProtocolCadence.DAILY, times = 3)))
             assertEquals("внутрь · 2× в неделю", modeRu(row(ProtocolCadence.N_PER_WEEK, times = 2)))
@@ -188,10 +178,8 @@ class CadenceShellDataTest {
     @Test
     fun theWizardOpensOnAZoneTheRotationHasNotJustUsed() =
         runComposeUiTest {
-            // The suggestion has to *reach* the site step. Read from the screen
-            // rather than computed, because computing it here would only be the
-            // production rule asked twice — and injecting into the zone the
-            // caption names is the one case where the answer must move.
+            // Read from the screen rather than computed: computing here would only be the
+            // production rule asked twice.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithText("Записать →").performClick()
@@ -204,8 +192,7 @@ class CadenceShellDataTest {
             }
             val suggested = suggestedZone()
 
-            // The suggestion may be on the back of the body — with a real
-            // history the rotation has moved off the front.
+            // May be on the back of the body: with real history the rotation moved off the front.
             if (onAllNodesWithContentDescription(suggested).fetchSemanticsNodes().isEmpty()) {
                 onNodeWithText("Сзади").performClick()
                 waitForIdle()
@@ -245,13 +232,10 @@ class CadenceShellDataTest {
             onNodeWithText("4 флакона в холодильнике").assertExists()
         }
 
-    // The three below walk the bar *on the ported screens*, which is the axis
-    // `CadenceNavigationTest.onlyTheFourBarDestinationsCarryTheBar` never
-    // measured: it starts a shell with no data, so all four tabs are
-    // placeholders and `PlaceholderScreen` draws a bar of its own. With live
-    // data the cabinet and trends replace the placeholder — and shipped
-    // without one, which on iOS (no system back) is a tab a patient cannot
-    // leave. The mutation each must fail against is named on the test.
+    // The three below walk the bar on the *ported* screens: `CadenceNavigationTest
+    // .onlyTheFourBarDestinationsCarryTheBar` starts a shell with no data, so all four tabs
+    // are placeholders drawing their own bar — live screens shipped without one once, a tab
+    // a patient can't leave on iOS.
 
     @Test
     fun theCabinetTabKeepsTheBarThatReachesTheOtherTabs() =
@@ -261,7 +245,6 @@ class CadenceShellDataTest {
 
             onNodeWithContentDescription("Аптечка").performClick()
             waitForIdle()
-            // The live cabinet, not the placeholder that carries a bar anyway.
             onNodeWithText("Ваша аптечка").assertExists()
 
             onNodeWithContentDescription("Тренды").performClick()
@@ -278,7 +261,6 @@ class CadenceShellDataTest {
 
             onNodeWithContentDescription("Тренды").performClick()
             waitForIdle()
-            // The live trends screen, not the placeholder.
             onNodeWithTag(CADENCE_TRENDS_HERO_TAG).assertExists()
 
             onNodeWithContentDescription("Сегодня").performClick()
@@ -290,8 +272,7 @@ class CadenceShellDataTest {
     @Test
     fun theBarOnAPortedScreenMarksTheTabThatScreenIs() =
         runComposeUiTest {
-            // Mutation: pass a constant — `active = CadenceDestination.TODAY` —
-            // to either screen's bar. Reachability alone would not notice.
+            // Mutation: pass a constant (`active = CadenceDestination.TODAY`) to either bar.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithContentDescription("Аптечка").performClick()
@@ -308,27 +289,18 @@ class CadenceShellDataTest {
     @Test
     fun theWizardOpensOnTheVialTheSheetWasAbout() =
         runComposeUiTest {
-            // `VialDetailSheet` has always reported which vial its «Записать
-            // дозу» belongs to; the shell dropped the id — `onLogDose = {
-            // onLogDose() }` — so the wizard opened with an empty draft and the
-            // picker defaulted to the *fullest* open vial of the compound. A
-            // patient who opened B-2510 and stepped through without noticing
-            // the picker wrote the dose against B-2601, leaving one count a
-            // dose short and the other a dose long with nothing to reconcile
-            // them against.
-            //
-            // B-2510 deliberately: it is the emptier of the two open BPC vials,
-            // so it is the one the default would *not* pick. Opening the
-            // fullest would pass either way.
+            // The shell once dropped the vial id (`onLogDose = { onLogDose() }`), so the
+            // picker defaulted to the fullest open vial and a dose got recorded against
+            // the wrong one. B-2510 deliberately: it's the emptier of the two, so the
+            // default would *not* pick it — opening the fullest would pass either way.
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
                 CadenceTheme { CadenceApp(navController = nav, mocks = mocks()) }
             }
 
-            // Driven by the route rather than by walking the cabinet: the route
-            // is what carries the id, and what the vial sheet hands it is a
-            // one-line wiring the sheet's own suite already covers.
+            // Driven by the route, not by walking the cabinet: the sheet's own suite already
+            // covers the one-line wiring that hands the id to the route.
             runOnIdle { nav.navigate(CadenceRoute.LogDose("vial-bpc-2")) }
             waitForIdle()
 
@@ -337,9 +309,8 @@ class CadenceShellDataTest {
             onNodeWithText("Дальше").performClick()
             waitForIdle()
 
-            // B-2510 is `vial-bpc-2`, the *emptier* of the two open BPC vials —
-            // so it is the one the picker's «fullest open vial» default would
-            // not choose. Opening on the fullest would pass either way.
+            // vial-bpc-2 is B-2510, the emptier of the two open BPC vials, so the picker's
+            // "fullest open vial" default wouldn't pick it — opening the fullest would pass either way.
             onNodeWithText("B-2510", substring = true).performScrollTo().assertIsSelected()
             onNodeWithText("B-2601", substring = true).performScrollTo().assertIsNotSelected()
         }
@@ -347,10 +318,9 @@ class CadenceShellDataTest {
     @Test
     fun theVialSheetHandsItsOwnIdToTheWizardRoute() =
         runComposeUiTest {
-            // The other half of the seam. `theWizardOpensOnTheVialTheSheetWasAbout`
-            // drives the route directly, so it cannot see the shell dropping the
-            // id on the way *to* the route — which is precisely what it did:
-            // `onLogDose = { onLogDose() }`, the argument discarded.
+            // The other half of the seam: `theWizardOpensOnTheVialTheSheetWasAbout` drives the
+            // route directly, so it can't see the shell dropping the id on the way *to* the
+            // route — which it once did: `onLogDose = { onLogDose() }`, argument discarded.
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
@@ -369,8 +339,7 @@ class CadenceShellDataTest {
             onNodeWithText("Записать дозу").performScrollTo().performClick()
             waitForIdle()
 
-            // The route's own argument, read off the entry rather than inferred
-            // from the screen: «which vial» is not drawn anywhere on step 1.
+            // Read off the entry, not inferred from the screen: "which vial" isn't drawn on step 1.
             val entry = nav.currentBackStackEntry
             assertEquals(
                 "LogDose",
@@ -387,13 +356,9 @@ class CadenceShellDataTest {
     @Test
     fun theActionSheetNamesTheDoseThatIsActuallyDue() =
         runComposeUiTest {
-            // Week 5, where the course titrates to 0,5 мг. This row carried
-            // «Семаглутид · 0,25 мг ждёт» as a literal for three blocks after
-            // the repositories landed, with the live summary already in the
-            // caller's scope — and every test that touched it ran on the seeded
-            // Sunday of week 4, the one week where the literal and the truth
-            // agree. A patient past the first band was told the wrong dose on
-            // the sheet they open to record one.
+            // Week 5, where the course titrates to 0,5 мг. This row regressed to a literal
+            // 0,25 мг for three blocks — every earlier test ran on the seeded week-4 Sunday,
+            // the one week the literal happened to agree with the truth.
             setContent { CadenceTheme { CadenceApp(mocks = mocks("2026-06-07T09:00:00Z")) } }
 
             onNodeWithContentDescription("Записать").performClick()
@@ -425,17 +390,15 @@ class CadenceShellDataTest {
             onNodeWithTag(ADD_VIAL_SAVE_TAG, useUnmergedTree = true).performClick()
             waitForIdle()
 
-            // Back in the cabinet, and the count moved — the write went through
-            // the repository and the next read reflected it.
+            // Count moved: the write went through the repository and the next read reflected it.
             onNodeWithText("5 флаконов в холодильнике").assertExists()
         }
 
     @Test
     fun theWizardIsOfferedTheCabinetsOwnOpenVials() =
         runComposeUiTest {
-            // Through the shell, not against a hand-built option list: the
-            // wiring from the cabinet to the picker is what six mutants lived
-            // in, and a wizard test that builds its own vials cannot see it.
+            // Through the shell, not a hand-built option list: the cabinet-to-picker wiring
+            // is where six mutants lived, invisible to a wizard test with its own vials.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithContentDescription("Записать").performClick()
@@ -451,16 +414,14 @@ class CadenceShellDataTest {
             onNodeWithText("B-2601").performScrollTo().assertExists()
             onNodeWithText("B-2510").performScrollTo().assertExists()
             assertEquals(0, onAllNodesWithText("B-2610").fetchSemanticsNodes().size, "sealed stock is offered")
-            // And no semaglutide vial: the picker is for the chosen compound.
             assertEquals(
                 0,
                 onAllNodesWithText("A-2261").fetchSemanticsNodes().size,
                 "another compound's vial is offered",
             )
 
-            // Fullest first: B-2601 has four doses left, B-2510 has two. Read
-            // off the rows' own lots, because each row merges its lot and its
-            // count into one node and the lot is what it leads with.
+            // Fullest first: B-2601 has four doses left, B-2510 has two. Read off the rows'
+            // lots, since each row merges lot and count into one node led by the lot.
             val order =
                 onAllNodesWithText("доз", substring = true)
                     .fetchSemanticsNodes()
@@ -476,8 +437,7 @@ class CadenceShellDataTest {
     @Test
     fun aSingleOpenVialIsNotAChoiceAndIsNotDrawn() =
         runComposeUiTest {
-            // Semaglutide has one. A picker with one option is not a picker,
-            // and the write makes the same choice anyway.
+            // Semaglutide has one open vial: a picker with one option is not a picker.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithText("Записать →").performClick()
@@ -502,7 +462,6 @@ class CadenceShellDataTest {
             onNodeWithText("Записать →").performClick()
             waitForIdle()
 
-            // The wizard itself now, not the placeholder that stood in for it.
             onNodeWithText("Шаг 1 · Препарат", ignoreCase = true).assertIsDisplayed()
             onNodeWithText("Шаг 1 из 5").assertIsDisplayed()
         }
@@ -515,10 +474,8 @@ class CadenceShellDataTest {
             onNodeWithText("Записать →").performClick()
             waitForIdle()
 
-            // The seeded protocol's two injections, and the daily one is not
-            // due «сегодня» in the badge sense on this Sunday — the weekly one
-            // is. A wizard built from a literal list would name whatever the
-            // prototype's `COMPOUNDS` held.
+            // A wizard built from a literal list would name whatever the prototype's
+            // `COMPOUNDS` held instead of the seeded protocol's two injections.
             onNodeWithText("Семаглутид").assertIsDisplayed()
             onNodeWithText("BPC-157").assertIsDisplayed()
             onNodeWithText("0,25 мг", substring = true).assertIsDisplayed()
@@ -527,15 +484,10 @@ class CadenceShellDataTest {
     @Test
     fun theWizardOpensOnTheDoseTheDayIsWaitingFor() =
         runComposeUiTest {
-            // Mutation: build the draft without an item — `DoseDraft(vialId =
-            // openedVial)`, which is what shipped. Step 1 says «Сегодняшняя
-            // доза уже выбрана» unconditionally, so a wizard that preselects
-            // nothing leaves the patient reading that sentence above two empty
-            // radios and a «Дальше» that does nothing, with no reason given.
-            //
-            // Asserted through step 2's subtitle rather than a checked radio:
-            // the radio is a picture of the draft, the subtitle is built from
-            // the option the draft actually holds.
+            // Mutation: build the draft without an item (`DoseDraft(vialId = openedVial)`,
+            // which shipped once) — step 1's "already selected" copy then sits above two
+            // empty radios. Asserted through step 2's subtitle, built from the draft's
+            // actual option, rather than a checked radio.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithText("Записать →").performClick()
@@ -551,24 +503,16 @@ class CadenceShellDataTest {
     @Test
     fun onADayTheHeroHasNoDoseTheWizardStillPreselectsNothing() =
         runComposeUiTest {
-            // Not the behaviour anyone wants — it is the behaviour there is,
-            // pinned so the gap is measured rather than assumed away.
-            //
-            // `TodaySummary.nextDose` is not «the dose that is due»: the mock
-            // builds it as `todays.firstOrNull { it.itemId == semaItemId }`
-            // (CadenceMocks.kt:133), so it is the weekly injection's occurrence
-            // and nothing else. On this Tuesday BPC-157 is due twice and
-            // semaglutide is not due at all, so there is no occurrence to open
-            // on — and step 1 goes on claiming the choice was made.
-            //
-            // Deciding what should be preselected on such a day is a product
-            // rule this port does not have; it is recorded in
-            // docs/prototype-divergences.md instead of invented here.
+            // Not the wanted behaviour, just the actual one, pinned so the gap is measured
+            // rather than assumed away. `TodaySummary.nextDose` is only the weekly injection's
+            // occurrence (CadenceMocks.kt:133); on this Tuesday BPC-157 is due twice and
+            // semaglutide not at all, so there's nothing to open on. Deciding what *should*
+            // preselect here is a product rule this port doesn't have — see
+            // docs/prototype-divergences.md.
             setContent { CadenceTheme { CadenceApp(mocks = mocks("2026-06-02T09:00:00Z")) } }
 
-            // Through the sheet, not the hero: the hero card is about the
-            // weekly injection and draws no «Записать →» on a day it is not
-            // due, which is the same fact this test turns on.
+            // Through the sheet, not the hero: the hero draws no «Записать →» when the
+            // weekly injection isn't due, which is the same fact this test turns on.
             onNodeWithContentDescription("Записать").performClick()
             waitForIdle()
             onNodeWithText("Записать дозу").performClick()
@@ -589,8 +533,8 @@ class CadenceShellDataTest {
     @Test
     fun finishingTheWizardLogsTheDoseAndReturnsToToday() =
         runComposeUiTest {
-            // Task 6's whole assertion: the hero opens the wizard, the wizard
-            // writes through the repository, and Today reads the write back.
+            // The hero opens the wizard, the wizard writes through the repository, and
+            // Today reads the write back.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithText("Записать →").performClick()
@@ -610,10 +554,8 @@ class CadenceShellDataTest {
             onNodeWithText("Сохранить дозу").performClick()
             waitForIdle()
 
-            // Both places the day reads as logged. The strip's word is
-            // lowercase and the hero's is not, and `onAllNodesWithText` is
-            // case-sensitive — one query looked like it covered both and
-            // matched only the hero.
+            // `onAllNodesWithText` is case-sensitive and the strip's word is lowercase where
+            // the hero's isn't — one query looked like it covered both and matched only the hero.
             assertTrue(
                 onAllNodesWithText("Записано", substring = true).fetchSemanticsNodes().isNotEmpty(),
                 "the hero does not say the dose was recorded",
@@ -626,19 +568,16 @@ class CadenceShellDataTest {
                 onAllNodesWithText("Записать →").fetchSemanticsNodes().isEmpty(),
                 "the hero still offers a dose it already has",
             )
-            // The vial's decrement is asserted through the repository, in
-            // `MockRepositoryTest.aLoggedDoseComesOutOfTheVialItWasDrawnFrom`.
-            // Asserting the rendered count here would pin a copy string that
-            // says nothing more about the wiring.
+            // Vial decrement is asserted through the repository in
+            // MockRepositoryTest.aLoggedDoseComesOutOfTheVialItWasDrawnFrom.
         }
 
     @Test
     fun anotherDayGivesTheSheetAnotherAnswer() =
         runComposeUiTest {
-            // Week 5 of the seeded protocol, and a day with no meals on it.
-            // Without this the shell could hold the seeded day's numbers as
-            // literals and every assertion above would still pass — a mutation
-            // doing exactly that survived until this test was added.
+            // Without this, the shell could hold the seeded day's numbers as literals and
+            // every assertion above would still pass — a mutation doing exactly that survived
+            // until this test was added.
             setContent { CadenceTheme { CadenceApp(mocks = mocks("2026-06-07T09:00:00Z")) } }
 
             onNodeWithContentDescription("Записать").performClick()
@@ -650,10 +589,6 @@ class CadenceShellDataTest {
     @Test
     fun loggingADoseChangesWhatTheSheetSaysNextTime() =
         runComposeUiTest {
-            // The acceptance criterion of the whole block, on screen: a write
-            // goes through the repository and the next read reflects it, with
-            // ActionChooserSheet unchanged — it already took its four values as
-            // parameters, which is the point.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithContentDescription("Записать").performClick()
@@ -690,10 +625,8 @@ class CadenceShellDataTest {
     @Test
     fun theTrendsTabDrawsTheListItReadRatherThanAPlaceholder() =
         runComposeUiTest {
-            // The step's headline acceptance, and the only place it is
-            // measured against the *shipped* wiring: `CadenceNavigationTest`
-            // hands `CadenceShell` an overview of its own, so it proves the
-            // test's replica rather than `CadenceApp`'s read.
+            // The only place this is measured against the *shipped* wiring: `CadenceNavigationTest`
+            // hands `CadenceShell` its own overview, proving the test's replica, not `CadenceApp`'s read.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithText("Тренды").performClick()
@@ -706,17 +639,14 @@ class CadenceShellDataTest {
     @Test
     fun aChipOnTheTrendsTabChangesWhatTheListReads() =
         runComposeUiTest {
-            // The window is shell state and the read is keyed on it. An effect
-            // keyed on the reload counter alone leaves the chips changing
-            // nothing — the comment beside that effect says so, and until this
-            // test nothing measured it.
+            // An effect keyed on the reload counter alone would leave the chips changing
+            // nothing — until this test nothing measured that.
             setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
 
             onNodeWithText("Тренды").performClick()
             waitForIdle()
 
-            // «3 месяца» is the default, and on it the weight has eight
-            // readings and therefore a delta. A week has one and none.
+            // Default «3 месяца»: weight has eight readings and a delta; a week has one and none.
             val quarter = onAllNodesWithText("↓", substring = true).fetchSemanticsNodes().size
             assertTrue(quarter > 0, "the three-month list carries deltas")
 
@@ -733,8 +663,7 @@ class CadenceShellDataTest {
     @Test
     fun tappingAMetricOpensItWithTheDataTheAppRead() =
         runComposeUiTest {
-            // The other half of the shipped wiring: `onLoadMetric` reaching the
-            // repository rather than answering null forever.
+            // The other half of the shipped wiring: `onLoadMetric` reaching the repository.
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
@@ -753,8 +682,7 @@ class CadenceShellDataTest {
                     .mapNotNull { it.destination.route }
                     .map { it.substringBefore('/').substringBefore('?').substringAfterLast('.') },
             )
-            // The aggregates only exist once the read landed — a loader stuck
-            // on null leaves the placeholder here.
+            // Only exists once the read landed — a loader stuck on null leaves the placeholder here.
             onNodeWithTag(CADENCE_TREND_DETAIL_STATS_TAG, useUnmergedTree = true).assertExists()
         }
 }

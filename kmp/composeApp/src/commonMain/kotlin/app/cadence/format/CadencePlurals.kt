@@ -1,10 +1,9 @@
 package app.cadence.format
 
 /*
- * Russian noun declension by count — split out of `CadenceFormat.kt` once
- * step 14 of the nutrition block added a fourth noun and the file reached
- * detekt's `TooManyFunctions` ceiling. Same reasoning as that file's own
- * header: hand-rolled because Kotlin/Native carries no ICU plural rules.
+ * Russian noun declension by count — split out of `CadenceFormat.kt` once step 14
+ * added a fourth noun and tripped detekt's `TooManyFunctions`. Hand-rolled for the
+ * same reason as that file: no ICU plural rules on Kotlin/Native.
  */
 
 private const val TEEN_FLOOR = 11
@@ -15,13 +14,10 @@ private const val TENS = 100
 private const val UNITS = 10
 
 /**
- * «приём» / «приёма» / «приёмов».
- *
- * The prototype writes `count === 1 ? 'приём' : count < 5 ? 'приёма' :
- * 'приёмов'`, which is right through 20 and wrong from 21 up. Every count the
- * sheet can actually reach today is inside the range where the two agree, so
- * this changes nothing on screen — what it changes is that the next screen
- * counting something copies a rule that holds rather than one that happens to.
+ * «приём» / «приёма» / «приёмов». The prototype's `count === 1 ? 'приём' : count < 5
+ * ? 'приёма' : 'приёмов'` is right through 20 and wrong from 21 up; every count the
+ * sheet reaches today falls where the two agree, so this changes nothing on screen —
+ * only that the next counting screen copies a rule that holds, not one that happens to.
  */
 fun pluralMeals(count: Int): String = russianPlural(count, "приём", "приёма", "приёмов")
 
@@ -29,31 +25,23 @@ fun pluralMeals(count: Int): String = russianPlural(count, "приём", "при
 fun pluralVials(count: Int): String = russianPlural(count, "флакон", "флакона", "флаконов")
 
 /**
- * «неделю» / «недели» / «недель».
- *
- * The reorder card repeats the meal card's approximation in the prototype
- * (`weeksLeft < 5 ? 'недели' : 'недель'`) and is wrong from 21 up in the same
- * way. One rule serves both nouns.
+ * «неделю» / «недели» / «недель». The reorder card repeats the meal card's
+ * approximation in the prototype (`weeksLeft < 5 ? 'недели' : 'недель'`), wrong
+ * from 21 up the same way — one rule serves both nouns.
  */
 fun pluralWeeks(count: Int): String = russianPlural(count, "неделю", "недели", "недель")
 
 /**
  * «позиция» / «позиции» / «позиций» — a logged meal's item count.
- *
  * `NutritionMealFeed.kt`'s meal row, `LogMealItemsList.kt`'s header and
- * `TodayMeals`' recent-meal row all read this rather than each calling
- * `russianPlural(…, "позиция", "позиции", "позиций")` inline — three
- * unlinked copies of the same triple is the defect [russianPlural] itself
- * exists to rule out one level up.
+ * `TodayMeals`' recent-meal row all read this rather than three unlinked inline
+ * copies of `russianPlural(…, "позиция", "позиции", "позиций")`.
  */
 fun pluralItems(count: Int): String = russianPlural(count, "позиция", "позиции", "позиций")
 
 /**
- * The rule itself, so the next noun does not copy a `when` block.
- *
- * The whole reason for fixing the prototype's version was «the next screen
- * counting something copies a rule that holds instead of one that happens to» —
- * which only works if the rule is callable.
+ * The rule itself, so the next noun does not copy a `when` block — the whole point
+ * of fixing the prototype's version was a rule callers could call rather than copy.
  */
 fun russianPlural(
     count: Int,

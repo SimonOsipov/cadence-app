@@ -10,12 +10,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Every seeded ingredient and recipe, pinned against
- * `mobile/src/features/recipe/data.ts:57-187` — verified by running that
- * file's own table through a script that multiplies each field by ten and
- * comparing the output to the literals below, not by re-typing 25 rows and
- * trusting the second typing. The set, not the count: a seed that dropped an
- * entry or duplicated one would still report the right size.
+ * Pinned against mobile/src/features/recipe/data.ts:57-187 — verified by running that
+ * table through a script multiplying each field by ten, not by re-typing 25 rows. The set,
+ * not the count: a seed that dropped or duplicated an entry would still report the right size.
  */
 class MockSeedRecipesTest {
     @Test
@@ -33,10 +30,8 @@ class MockSeedRecipesTest {
 
     @Test
     fun everyIngredientCarriesThePrototypesMacrosAtTenthsPrecision() {
-        // id -> nameRu, kcalTenths, proteinGTenths, carbsGTenths, fatGTenths.
-        // kcalTenths is ten times the prototype's whole-kcal column — chicken's
-        // 165 kcal/100g is 1650, not 165, which is the exact trap the step-2
-        // deviation records this seed against.
+        // kcalTenths is ten times the prototype's whole-kcal column: chicken's 165 kcal/100g
+        // is 1650, not 165 — the exact trap the step-2 deviation warns against.
         val expected =
             listOf(
                 Triple("chicken", "Куриная грудка", MacrosTenths(1650, 310, 0, 36)),

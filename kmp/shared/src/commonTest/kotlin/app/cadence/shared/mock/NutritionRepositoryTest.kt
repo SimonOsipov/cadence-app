@@ -23,11 +23,9 @@ private val DEMO_DATE = LocalDate(2026, 5, 31)
 private fun mocks(zone: TimeZone = MOSCOW) = CadenceMocks(clock = FixedCadenceClock.at(DEMO_NOW), zone = zone)
 
 /**
- * Returns [instants] in order, one per call, and repeats the last one once
- * exhausted — a [FixedCadenceClock] cannot tell a single-read implementation
- * from a two-read one, since every call answers the same instant either way.
- * This is the only way to make `log`'s own two former reads of `clock.now()`
- * observably disagree.
+ * Returns [instants] in order, repeating the last once exhausted — a [FixedCadenceClock]
+ * can't tell a single-read implementation from a two-read one, since every call answers the
+ * same instant either way.
  */
 private class SteppingClock(
     private vararg val instants: Instant,
@@ -44,12 +42,9 @@ class NutritionRepositoryTest {
     @Test
     fun aMealLoggedJustBeforeMidnightReturnsTotalsForTheDayItWasLoggedOn() =
         runTest {
-            // `log` used to read clock.now() twice: once for the stored meal's
-            // eatenAt, once more (via currentDate()) for the totals it hands
-            // back. A clock that ticks from 23:59:59 to 00:00:01 MSK between
-            // those two reads used to file the meal under 31 May and confirm
-            // 1 June instead — a day with nothing seeded, so the write would
-            // report zero rather than the item just logged.
+            // `log` used to read clock.now() twice: once for eatenAt, once more for the
+            // totals. A clock ticking past midnight MSK between those two reads used to file
+            // the meal under 31 May and confirm 1 June — an empty day, reporting zero.
             val justBeforeMidnightMoscow = Instant.parse("2026-05-31T20:59:59Z")
             val justAfterMidnightMoscow = Instant.parse("2026-05-31T21:00:01Z")
             val clock = SteppingClock(justBeforeMidnightMoscow, justAfterMidnightMoscow)
@@ -78,11 +73,8 @@ class NutritionRepositoryTest {
             val result = cadence.nutrition.log(draft)
             assertIs<MealLogResult.Written>(result)
 
-            // 840 seeded for 31 May in Moscow (same seed the other tests in
-            // this file pin), plus 80 from the drafted item. A version that
-            // reads the second, post-midnight instant for the totals would
-            // report 1 June's own kcal instead — 0, since nothing is seeded
-            // for that date.
+            // 840 seeded plus 80 drafted; a version reading the post-midnight instant for
+            // the totals would report 1 June's kcal instead — 0, nothing seeded there.
             assertEquals(
                 920,
                 result.dayTotals.kcal,
@@ -120,14 +112,9 @@ class NutritionRepositoryTest {
             val result = cadence.nutrition.log(draft)
             assertIs<MealLogResult.Written>(result)
 
-            // 840 seeded, plus 80 from the drafted item — `kcalTenths = 800`
-            // is already a whole number of kcal, so no rounding is involved
-            // here, only the exact fold. Absolute values, not `before + 80`:
-            // the field this pins is `MealLogResult.Written.dayTotals`, which
-            // has to carry the sum taken *after* the write, not a snapshot
-            // hoisted above it — a pre-write snapshot would report the same
-            // 840 and this assertion would catch it where `before`/`after` on
-            // `Today` cannot, because those are read fresh either way.
+            // Absolute values, not `before + 80`: dayTotals must carry the sum taken *after*
+            // the write, not a snapshot hoisted above it — before/after on Today can't catch
+            // that since those are read fresh either way.
             assertEquals(920, result.dayTotals.kcal)
             assertEquals(120, result.dayTotals.carbsG)
 
@@ -163,9 +150,8 @@ class NutritionRepositoryTest {
 
             assertEquals(LocalDate(2026, 5, 27), week.days[2].date)
             assertEquals(1400, week.days[2].kcal)
-            // Protein, not just kcal — a mutation that zeroes `proteinG` while
-            // leaving `kcal` alone would return seven empty protein columns
-            // and this is the only pair of assertions that would notice.
+            // Protein too: a mutation zeroing proteinG while leaving kcal alone would return
+            // seven empty protein columns unnoticed otherwise.
             assertEquals(88, week.days[2].proteinG)
 
             assertEquals(LocalDate(2026, 5, 28), week.days[3].date)
@@ -191,14 +177,9 @@ class NutritionRepositoryTest {
     @Test
     fun dailyTotalsAgreeInUtcAndMoscow() =
         runTest {
-            // All seven seeded dates, not just DEMO_DATE — that one day is
-            // untouched from before this step, and passing on it alone would
-            // not exercise the six days this step added. At UTC+3 it is the
-            // upper bound that bites: a meal at or after 21:00Z is already the
-            // next day in Moscow while still today in UTC, so only a date that
-            // actually carries such a meal shows the disagreement. The band's
-            // lower bound guards zones west of UTC, which this test does not
-            // exercise — it is a seed rule, not something measured here.
+            // All seven seeded dates, not just DEMO_DATE, which alone wouldn't exercise the
+            // six days this step added. At UTC+3 the upper bound bites: a meal at or after
+            // 21:00Z is already the next day in Moscow while still today in UTC.
             val expectedKcal =
                 listOf(
                     LocalDate(2026, 5, 25) to 415,

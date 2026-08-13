@@ -37,12 +37,10 @@ private val TILE_RADIUS = 12.dp
 private val ROW_INSET = 68.dp
 
 /**
- * «Протокол этой недели».
- *
- * The rows come from [ProtocolRow], which is a projection of the same
- * occurrences the Schedule screen renders — §03's seventh correction. In the
- * prototype this is a literal array of three whose doses never titrate and
- * whose state is a hand-wired boolean.
+ * «Протокол этой недели». The rows come from [ProtocolRow], a projection of the
+ * same occurrences the Schedule screen renders — §03's seventh correction. In the
+ * prototype this is a literal array of three whose doses never titrate and whose
+ * state is a hand-wired boolean.
  */
 @Composable
 fun ProtocolStrip(

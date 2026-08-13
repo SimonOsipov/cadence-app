@@ -61,14 +61,11 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.isoDayNumber
 
-// «Что вы ели?» — the meal-log modal, ported from LogMealScreen.tsx.
-//
-// This file is the screen's shell, its parse states (idle / parsing / parsed
-// / failed) and the state that keeps a grams edit rescaling from what was
-// actually parsed. The item list, the macro totals strip and the
-// «Сохранить» footer draw from [LogMealItemsList.kt] — split out once this
-// file's own component (shell + state) approached detekt's `LargeClass`
-// threshold, the same way `commonTest/design/` splits one test per primitive.
+// «Что вы ели?» — the meal-log modal, ported from LogMealScreen.tsx. This file is
+// the screen's shell, its parse states (idle / parsing / parsed / failed), and the
+// state that keeps a grams edit rescaling from what was actually parsed. The item
+// list, totals strip and «Сохранить» footer draw from [LogMealItemsList.kt] — split
+// out once this file's shell + state approached detekt's `LargeClass` threshold.
 
 private const val CLOSE_DESCRIPTION = "Закрыть"
 private const val EYEBROW = "Запись приёма"
@@ -91,9 +88,9 @@ private const val HEARD_LABEL = "Услышали"
 
 /**
  * Not from the prototype: `PhotoInput`/`VoiceInput` (`LogMealScreen.tsx:517-733`)
- * mime a working capture and hand back a canned parse, which nutrition
- * invariant 5 forbids porting. This copy is the step-5 spec's own wording
- * verbatim, `docs/specs/kmp-nutrition-and-recipes.md`'s step-5 section.
+ * mime a working capture and hand back a canned parse, which nutrition invariant 5
+ * forbids porting. This copy is step-5 spec's own wording verbatim
+ * (`docs/specs/kmp-nutrition-and-recipes.md`).
  */
 private const val PHOTO_UNAVAILABLE = "Распознавание снимка пока не работает — опишите еду текстом"
 private const val VOICE_UNAVAILABLE = "Распознавание голоса пока не работает — опишите еду текстом"
@@ -122,12 +119,10 @@ enum class LogMealMode(
 }
 
 /**
- * What one parse attempt has settled on.
- *
- * Independent of [LogMealMode]: switching modes replaces this outright with a
- * fresh instance (`LogMealScreen.tsx:62-69`), but a *failed* parse does not —
- * [items], [mealName] and [transcript] are what step-5's own acceptance line
- * means in code: "не получилось… уже разобранные позиции остаются
+ * What one parse attempt has settled on. Independent of [LogMealMode]: switching
+ * modes replaces this outright with a fresh instance (`LogMealScreen.tsx:62-69`),
+ * but a *failed* parse does not — [items], [mealName] and [transcript] are step-5's
+ * acceptance line in code: "не получилось… уже разобранные позиции остаются
  * правимыми". [failed] and a previous success coexist on purpose.
  */
 private data class MealParseUiState(
@@ -138,13 +133,12 @@ private data class MealParseUiState(
     val items: List<MealItem> = emptyList(),
     /**
      * Bumped on every *successful* parse, never on a failed retry — see
-     * [afterParseResult]. [LogMealScreen] keys its editable-position state on
-     * this, not on [items]: [MealItem] is a data class, so re-parsing the
-     * same text returns a structurally equal list, and a key on content alone
-     * would not fire — a second «курица с рисом» after deleting every row
-     * would leave the list empty and the footer stuck on «Добавьте
-     * что-нибудь» forever, mode-switching the only escape. This field states
-     * "a new attempt happened" as a fact independent of what it produced.
+     * [afterParseResult]. [LogMealScreen] keys its editable-position state on this,
+     * not [items]: [MealItem] is a data class, so re-parsing identical text returns
+     * a structurally equal list, and a key on content alone would not fire — a
+     * second «курица с рисом» after deleting every row would leave the list empty
+     * and the footer stuck on «Добавьте что-нибудь» forever. States "a new attempt
+     * happened" independent of what it produced.
      */
     val generation: Int = 0,
 ) {
@@ -153,14 +147,12 @@ private data class MealParseUiState(
 }
 
 /**
- * How one parse attempt's outcome updates the state — pulled out of
- * [LogMealScreen] itself so the two-way branch on [MealParseResult] is not
- * also the composable's own cyclomatic complexity. A fresh
- * [MealParseUiState] on success, not [MealParseUiState.copy]: a stale
- * [MealParseUiState.failed] from a *previous* attempt must not survive into a
- * new success. [MealParseUiState.generation] carries forward from `this`
- * (the pre-parse state) precisely because a fresh instance would otherwise
- * reset it to its default and defeat the one thing it exists for.
+ * How one parse attempt's outcome updates the state — pulled out of [LogMealScreen]
+ * so the branch on [MealParseResult] is not also the composable's own cyclomatic
+ * complexity. A fresh [MealParseUiState] on success, not `.copy`: a stale
+ * [MealParseUiState.failed] from a *previous* attempt must not survive into a new
+ * success. [MealParseUiState.generation] is carried forward explicitly, since a
+ * fresh instance would otherwise reset it to default and defeat its own purpose.
  */
 private fun MealParseUiState.afterParseResult(result: MealParseResult): MealParseUiState =
     when (result) {
@@ -179,16 +171,13 @@ private fun MealParseUiState.afterParseResult(result: MealParseResult): MealPars
     }
 
 /**
- * One parsed position paired with the values it was parsed at.
- *
- * [original] never changes once a parse lands — every grams edit rescales
- * from it via [rescaleMealItem], not from [current], which is what makes
- * «−10 г, then +10 г» return exactly the numbers the parse produced instead
- * of compounding each edit's own rounding on top of the last. The prototype
- * gets this wrong (`meal/data.ts:140-151` rescales from whatever the item
- * currently holds); this pairing is the port's fix, kept as UI state because
- * [MealParseUiState.items] is overwritten wholesale by the next parse, not
- * edited in place.
+ * One parsed position paired with the values it was parsed at. [original] never
+ * changes once a parse lands — every grams edit rescales from it via
+ * [rescaleMealItem], not [current], so «−10 г, then +10 г» returns exactly the
+ * parsed numbers instead of compounding rounding edit over edit. The prototype
+ * gets this wrong (`meal/data.ts:140-151` rescales from whatever the item currently
+ * holds); kept as UI state since [MealParseUiState.items] is replaced wholesale by
+ * the next parse, not edited in place.
  */
 private data class LoggedMealItem(
     val original: MealItem,
@@ -199,15 +188,13 @@ private data class LoggedMealItem(
  * «Что вы ели?» — the meal-log modal (`CadenceRoute.LogMeal`).
  *
  * [parse] arrives as a `suspend` lambda, the same shape `onLoadMetric` takes
- * (`CadenceShell.kt:250`): the screen never reaches into a repository or a
- * parser instance of its own, only into whatever the shell hands it. It is
- * called from here — not wrapped a level up the way `LogDoseModal` wraps
- * `DoseWizard` in `CadenceShell.kt:531-610` — because this screen has no such
- * wrapper: the route names this file directly.
+ * (`CadenceShell.kt:250`): the screen reaches into no repository or parser of its
+ * own, only into whatever the shell hands it. Called from here, not wrapped a level
+ * up the way `LogDoseModal` wraps `DoseWizard` (`CadenceShell.kt:531-610`), because
+ * this screen has no such wrapper — the route names this file directly.
  *
- * [targets] is a DTO, the same shape `MealHero.kt:46-47` takes it in as —
- * this screen reaches into no repository of its own, matching the spec's
- * "экраны берут DTO и лямбды" rule.
+ * [targets] is a DTO, the same shape `MealHero.kt:46-47` takes it in as, matching
+ * the spec's "экраны берут DTO и лямбды" rule.
  */
 @Composable
 fun LogMealScreen(
@@ -225,17 +212,15 @@ fun LogMealScreen(
     val samples = remember { mealSamplePrompts() }
     val scope = rememberCoroutineScope()
 
-    // Keyed on `parseState.generation`, not on `parseState.items`: a fresh
-    // successful parse (or a mode switch, which resets `parseState` to a
-    // fresh instance with `generation = 0`) must reset both the editable
-    // positions and which one is mid-edit, and `generation` is what makes
-    // that true even when the new parse's items are a content-equal list —
-    // `MealItem` is a data class, so re-parsing identical text would
-    // otherwise not change the key at all. A failed retry leaves
-    // `generation` untouched — see `afterParseResult` — so this key does not
-    // fire and the previous parse's edits survive it, which is the same
-    // "уже разобранные позиции остаются правимыми" guarantee
-    // [MealParseUiState] itself documents.
+    // Keyed on `parseState.generation`, not `parseState.items`: a fresh successful
+    // parse (or a mode switch, which resets to a fresh instance with
+    // `generation = 0`) must reset the editable positions, and `generation` makes
+    // that fire even when the new parse's items are a content-equal list —
+    // `MealItem` is a data class, so re-parsing identical text would not otherwise
+    // change the key. A failed retry leaves `generation` untouched (see
+    // `afterParseResult`), so this key does not fire and edits survive it — the
+    // same "уже разобранные позиции остаются правимыми" guarantee [MealParseUiState]
+    // documents.
     var loggedItems by
         remember(parseState.generation) { mutableStateOf(parseState.items.map { LoggedMealItem(it, it) }) }
     var editingIndex by remember(parseState.generation) { mutableStateOf<Int?>(null) }
@@ -313,11 +298,11 @@ fun LogMealScreen(
 }
 
 /**
- * Everything below the title: the mode picker, each mode's own content, the
- * parse-state notices, the item list and the footer. Pulled out of
- * [LogMealScreen] itself so that function's own job — owning the state a
- * grams edit rescales from — is not also its cyclomatic complexity; this
- * composable owns none of that state, only what it takes to render it.
+ * Everything below the title: mode picker, each mode's content, parse-state
+ * notices, item list and footer. Pulled out of [LogMealScreen] so that function's
+ * job — owning the state a grams edit rescales from — is not also its cyclomatic
+ * complexity; this composable owns none of that state, only what it takes to
+ * render it.
  */
 @Suppress("LongParameterList")
 @Composable
@@ -427,9 +412,8 @@ private fun LogMealHeader(
 
 /**
  * «14:05 · Ср 13 августа» — every part read from [now], never a literal. The
- * prototype's «08:42 · вс 24 мая» is fake in both halves
- * (`LogMealScreen.tsx:133`); [weekdayHeadings] already carries the short
- * weekday form this needs, so nothing new was added for that half.
+ * prototype's «08:42 · вс 24 мая» is fake in both halves (`LogMealScreen.tsx:133`);
+ * [weekdayHeadings] already carries the short weekday form this needs.
  */
 private fun headerChipText(now: LocalDateTime): String {
     val date = now.date
@@ -447,10 +431,9 @@ private fun LogMealTitleBlock() {
 
 /**
  * The Текст mode's field, «Пример» and «Разобрать →» — `ChatInput` in
- * `LogMealScreen.tsx:404-511`. [CadenceTextField] already draws the bordered
- * card the prototype wraps `ChatInput` in (`paper` background, `hairline`
- * border, `md` radius); nesting a second such box around it here would double
- * that chrome rather than reproduce it.
+ * `LogMealScreen.tsx:404-511`. [CadenceTextField] already draws the bordered card
+ * the prototype wraps `ChatInput` in (`paper` background, `hairline` border, `md`
+ * radius); nesting a second box here would double that chrome, not reproduce it.
  */
 @Composable
 private fun TextModeInput(
@@ -480,17 +463,12 @@ private fun TextModeInput(
                 onClick = onParse,
                 kind = CadenceButtonKind.SECONDARY,
                 size = CadenceButtonSize.SMALL,
-                // One half of "an empty field does not start a parse" — the
-                // other is `runParse`'s own `chatText.isBlank()` early return.
-                // This half is the one a test can reach: it dims the button
-                // and marks it `disabled()` in semantics
-                // (`CadenceControls.kt:136`), and dropping it reddens
-                // `anEmptyFieldDoesNotStartAParse`. The early return in
-                // `runParse` is defence in depth and has **no** witness —
-                // while this `enabled` holds, no click can carry blank text
-                // that far, so removing that guard alone leaves the suite
-                // green. It earns its place by making `runParse` correct for
-                // a caller that is not this button; it does not earn a test.
+                // One half of "an empty field does not start a parse" — the other
+                // is `runParse`'s own `chatText.isBlank()` early return. This half
+                // is the one a test can reach: dropping it reddens
+                // `anEmptyFieldDoesNotStartAParse`. `runParse`'s own guard is
+                // defence in depth with **no** witness — removing it alone leaves
+                // the suite green, since this `enabled` already stops every click.
                 enabled = text.isNotBlank() && !parsing,
             )
         }
@@ -498,12 +476,11 @@ private fun TextModeInput(
 }
 
 /**
- * «Распознавание снимка / голоса пока не работает — опишите еду текстом» —
- * one line instead of a control, in place of `PhotoInput` /
- * `VoiceInput` (`LogMealScreen.tsx:517-733`), which mime a working capture and
- * hand back a canned parse. Nothing here is pressable: nutrition invariant 5
- * forbids substituting a prepared result for a real one, and the surest way
- * an unimplemented control produces no items is to not be a control.
+ * «Распознавание снимка / голоса пока не работает — опишите еду текстом» — one line
+ * instead of a control, in place of `PhotoInput`/`VoiceInput` (`LogMealScreen.tsx:517-733`),
+ * which mime a working capture and hand back a canned parse. Nothing here is
+ * pressable: nutrition invariant 5 forbids substituting a prepared result for a real
+ * one, and the surest way an unimplemented control produces no items is to not be one.
  */
 @Composable
 private fun UnavailableModeNotice(text: String) {

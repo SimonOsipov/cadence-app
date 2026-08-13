@@ -4,12 +4,10 @@ import app.cadence.shared.domain.Occurrence
 import kotlinx.datetime.LocalDate
 
 /**
- * One cell of the 12-week grid.
- *
- * The dots, not the events: the calendar draws a month at a glance and opens a
- * day for the detail. Both come from the same generator, which is §03's
- * seventh correction — the prototype's Today strip and Schedule screen each
- * carry their own copy and disagree.
+ * One cell of the 12-week grid — the dots, not the events. The calendar draws a month at a
+ * glance and opens a day for the detail; both come from the same generator, which is §03's
+ * seventh correction — the prototype's Today strip and Schedule screen each carry their own
+ * copy and disagree.
  */
 data class ScheduleDay(
     val date: LocalDate,

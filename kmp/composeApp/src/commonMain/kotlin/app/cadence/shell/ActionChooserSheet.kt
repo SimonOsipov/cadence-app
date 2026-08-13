@@ -35,13 +35,8 @@ import app.cadence.format.formatInteger
 import app.cadence.format.pluralMeals
 
 /**
- * The sheet the `+` in the bottom bar opens, ported from
- * mobile/src/navigation/ActionChooserSheet.tsx.
- *
- * The prototype reads `doseLogged`, `meals` and `mealTotals` straight off the
- * app state. Here they are parameters: the repositories arrive with the next
- * subtask, and a component that fetches its own data cannot be told to render
- * a day other than today, which is what a test needs to do.
+ * Ported from mobile/src/navigation/ActionChooserSheet.tsx. Data arrives as parameters rather
+ * than read off app state, as the prototype does, so a test can render a day other than today.
  */
 @Composable
 fun ActionChooserSheet(
@@ -77,14 +72,9 @@ fun ActionChooserSheet(
                     if (doseLogged) {
                         "Уже записано сегодня · открыть или поправить"
                     } else {
-                        // The protocol's own words. This read «Семаглутид ·
-                        // 0,25 мг ждёт» as a literal — the prototype's fixed
-                        // copy — for three blocks after the repositories
-                        // landed, with the live summary already in the
-                        // caller's scope. A patient on a different compound,
-                        // or past the first titration band, was told the wrong
-                        // drug and the wrong dose on the sheet they open to
-                        // record one.
+                        // Must read the live doseDue, not the prototype's fixed copy — this
+                        // regressed to the literal for three blocks after repositories landed,
+                        // telling a patient on a different compound the wrong drug and dose.
                         doseDue ?: "На сегодня доза не назначена"
                     },
                 onClick = onPickDose,
@@ -178,12 +168,8 @@ private fun RowScope.OptionCopy(
 }
 
 /**
- * Kept local rather than added to `CadenceButton`.
- *
- * No `CadenceButtonKind` matches it — transparent ground, `border` outline,
- * muted label — and `borderRadius: 999` appears 153 times across the prototype
- * in shapes that are mostly not this one. One call site is not a pattern; the
- * second one moves it into the design system.
+ * Kept local rather than added to `CadenceButton`: no existing `CadenceButtonKind` matches
+ * it, and one call site is not yet a pattern worth promoting.
  */
 @Composable
 private fun CancelPill(onDismiss: () -> Unit) {

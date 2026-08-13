@@ -31,11 +31,10 @@ private const val READING_DIGITS = 1
 
 /**
  * The sheet behind the headline glance, ported from
- * mobile/src/features/today/BiomarkerSheet.tsx.
- *
- * Takes plain values rather than a repository or a `MetricSeries`: the glance
- * above it already holds the same numbers, and two components rendering one
- * series from two shapes is where they start to disagree.
+ * mobile/src/features/today/BiomarkerSheet.tsx. Takes plain values rather than a
+ * repository or a `MetricSeries`: the glance above it already holds the same
+ * numbers, and two components rendering one series from two shapes is where they
+ * start to disagree.
  */
 @Composable
 fun BiomarkerSheet(

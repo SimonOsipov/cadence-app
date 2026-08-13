@@ -69,9 +69,6 @@ private fun doseFrom(v: Vial) =
 class InventoryMathTest {
     @Test
     fun loggingADoseDecrementsTheVialItCameFrom() {
-        // The prototype's central inventory bug: logging never touched stock.
-        // There is no stored counter to go wrong here — the count *is* the
-        // subtraction, every time it is asked for.
         val v = vial(totalDoses = 4)
 
         assertEquals(4, remainingDoses(v, events = emptyList()))
@@ -81,8 +78,7 @@ class InventoryMathTest {
 
     @Test
     fun eventsFromOtherVialsDoNotCount() {
-        // Two vials of one compound is the ordinary case, and a subtraction
-        // that ignored `vialId` would drain both at once.
+        // A subtraction ignoring `vialId` would drain both at once.
         val mine = vial(totalDoses = 4)
         val other = vial(totalDoses = 4)
 
@@ -91,7 +87,6 @@ class InventoryMathTest {
 
     @Test
     fun remainingNeverGoesNegative() {
-        // More events than doses is data corruption, not a number to render.
         val v = vial(totalDoses = 2)
 
         assertEquals(0, remainingDoses(v, events = List(5) { doseFrom(v) }))
@@ -115,11 +110,8 @@ class InventoryMathTest {
 
     @Test
     fun aVialBelowAQuarterIsLow() {
-        // §03's «low <25%», read strictly: a quarter left is not low, less
-        // than a quarter is. Eight doses rather than four because four cannot
-        // express the boundary — its remainders land on 25% and 0% with
-        // nothing in between, which is what the first draft of this test got
-        // wrong.
+        // §03's «low <25%», strict: exactly a quarter is not low. Eight doses, not four:
+        // four's remainders land on 25% and 0% with nothing in between.
         val v = vial(totalDoses = 8, openedAt = LocalDate(2026, 5, 1))
 
         assertEquals(VialStatus.ACTIVE, vialStatus(v, List(5) { doseFrom(v) }, TODAY), "three of eight")
@@ -129,8 +121,6 @@ class InventoryMathTest {
 
     @Test
     fun expiryOutranksLowStock() {
-        // «expiring ≤14 d». A vial that is both low and expiring reads as
-        // expiring, because that is the one with a deadline attached.
         val soon = vial(totalDoses = 8, openedAt = LocalDate(2026, 5, 1), expiresOn = LocalDate(2026, 6, 10))
         val later = vial(totalDoses = 8, openedAt = LocalDate(2026, 5, 1), expiresOn = LocalDate(2026, 7, 20))
 
@@ -140,10 +130,8 @@ class InventoryMathTest {
 
     @Test
     fun aSealedVialAboutToExpireSaysSo() {
-        // Measured: it read SEALED. Unopened stock with days left on it is
-        // exactly the vial worth warning about — it is about to be wasted —
-        // and the precedence comment already claimed expiry outranked
-        // everything but disposal.
+        // Measured: it read SEALED. Unopened stock about to be wasted is exactly the vial
+        // worth warning about.
         val v = vial(openedAt = null, expiresOn = LocalDate(2026, 6, 3))
 
         assertEquals(VialStatus.EXPIRING, vialStatus(v, emptyList(), TODAY))
@@ -151,9 +139,7 @@ class InventoryMathTest {
 
     @Test
     fun aHintIsAboutOneCompoundAndCountsOnlyItsVials() {
-        // Measured: an unopened BPC vial suppressed the semaglutide hint, and
-        // BPC doses counted as semaglutide supply divided by semaglutide's
-        // weekly rate. A patient about to run out was told nothing.
+        // Measured: an unopened BPC vial once suppressed the semaglutide hint entirely.
         val sema = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
         val bpcSpare =
             vial(totalDoses = 30).copy(id = VialId("v-bpc"), compoundId = CompoundId("bpc"))
@@ -170,11 +156,8 @@ class InventoryMathTest {
         // §03: «0 sealed spares & ≤4 weeks supply». Either alone is not a
         // reason to tell a patient to order more.
         val open = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
-        // A *small* spare, deliberately. With a full one the total supply is
-        // over four weeks anyway and the assertion passes without the spare
-        // check ever running — which is how the first version of this test let
-        // a mutation through: it asserted the right answer for the wrong
-        // reason.
+        // A *small* spare, deliberately: a full one would put total supply over four weeks
+        // anyway, passing without the spare check ever running.
         val spare = vial(totalDoses = 1)
 
         assertNull(
@@ -194,11 +177,8 @@ class InventoryMathTest {
 
     @Test
     fun anExpiredVialIsNeitherASpareNorSupply() {
-        // Measured: a sealed vial that expired last month made `hasSealedSpare`
-        // true and `reorderHint` returned null outright — so a patient two
-        // doses from nothing, on a weekly protocol, saw no reorder card and no
-        // weeks-left figure. `vialStatus` flagged the dead vial as EXPIRING,
-        // but that is a chip in «Аптечка», not the call to action.
+        // Measured: an expired sealed vial made `hasSealedSpare` true, so a patient two
+        // doses from nothing saw no reorder card at all.
         val open = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
         val dead = vial(totalDoses = 4, expiresOn = TODAY.minus(DatePeriod(days = 1)))
 
@@ -206,8 +186,7 @@ class InventoryMathTest {
 
         assertEquals(2, hint?.weeksLeft, "the expired vial is not two more weeks of supply")
 
-        // And the boundary: a vial expiring *today* is still usable, so it is
-        // still the spare that suppresses the hint.
+        // Boundary: a vial expiring *today* is still usable and still suppresses the hint.
         assertNull(
             reorderHint(
                 weeklyItem(),
@@ -224,8 +203,6 @@ class InventoryMathTest {
         val open = vial(totalDoses = 4, openedAt = LocalDate(2026, 5, 1))
         val binned = vial(totalDoses = 4).copy(disposedAt = LocalDate(2026, 5, 2))
 
-        // The binned vial must not count as the sealed spare that suppresses
-        // the hint, and its doses must not count as supply.
         val hint = reorderHint(weeklyItem(), listOf(open, binned), List(1) { doseFrom(open) }, TODAY)
 
         assertEquals(3, hint?.weeksLeft)

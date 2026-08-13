@@ -9,18 +9,14 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * What the bundled font *files* contain.
- *
- * Everything else about the typography is asserted through the scale — which
- * face is bound to which role, which weights a family offers. None of that
- * reads a byte of the fonts, so all of it stays green if a file is replaced by
- * a Latin-only subset. That is not a hypothetical: Google Fonts serves subsets
- * on request, and "re-download the font" is an ordinary step when a design
- * updates.
- *
- * Since the entire reason the body face changed from DM Sans to Golos Text is
- * Cyrillic coverage, this is the test of the claim rather than of its
- * neighbour.
+ * What the bundled font *files* contain. Everything else about the typography
+ * is asserted through the scale — which face binds to which role, which
+ * weights a family offers — and none of that reads a byte of the fonts, so it
+ * all stays green if a file is replaced by a Latin-only subset. Not a
+ * hypothetical: Google Fonts serves subsets on request, and "re-download the
+ * font" is an ordinary step when a design updates. Since the body face
+ * changed from DM Sans to Golos Text entirely for Cyrillic coverage, this
+ * tests that claim, not its neighbour.
  */
 @OptIn(ExperimentalTestApi::class, ExperimentalResourceApi::class)
 class BundledFontTest {

@@ -7,11 +7,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 
 /**
- * What both trend test classes build their days out of.
- *
- * An object rather than top-level declarations: the sibling tests in this
- * package each keep a file-private `PLAN`, `START` and `reading`, and a second
- * set of those names at package level makes every one of them ambiguous.
+ * An object, not top-level declarations: sibling tests keep file-private `PLAN`/`START`/
+ * `reading`, and a second set at package level makes every one ambiguous.
  */
 internal object TrendFixture {
     /** A real zone rather than UTC, so that «which day is this» is a question. */
@@ -26,11 +23,8 @@ internal object TrendFixture {
     private val PID = ProtocolId("pr")
 
     /**
-     * A protocol and nothing else.
-     *
-     * `items` and `phases` are empty because no assertion in either trend test
-     * reads them: a window is a function of `startDate` and `weeks`, and a
-     * fixture carrying a cadence and a dose would suggest otherwise.
+     * `items`/`phases` empty: no assertion in either trend test reads them, and a window is
+     * a function of `startDate` and `weeks` alone.
      */
     fun planStartingOn(
         start: LocalDate,

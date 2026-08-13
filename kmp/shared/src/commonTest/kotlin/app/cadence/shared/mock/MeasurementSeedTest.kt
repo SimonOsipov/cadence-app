@@ -38,20 +38,16 @@ private suspend fun all(metric: Metric): List<Measurement> =
 private fun Measurement.date(): LocalDate = measuredAt.toLocalDateTime(ZONE).date
 
 /**
- * What the trends screens need out of the seed before they can be built.
- *
- * A chart with two points has nothing to say about a window, and four windows
- * over the same seven readings would leave the switcher inert. These are the
- * properties the rest of the feature reads off, asserted here once rather than
- * re-derived on every screen.
+ * A chart with two points has nothing to say about a window, and four windows over the same
+ * seven readings would leave the switcher inert — these properties are asserted once here
+ * rather than re-derived on every screen.
  */
 class MeasurementSeedTest {
     @Test
     fun everyMetricButChestHasBeenMeasured() =
         runTest {
-            // Chest stays unmeasured on purpose: «a metric with no readings
-            // says so» is an acceptance criterion, and it needs a metric in the
-            // mock that actually has none.
+            // Chest stays unmeasured on purpose: «a metric with no readings says so» needs a
+            // metric that actually has none.
             val unmeasured = Metric.entries.filter { all(it).isEmpty() }
 
             assertEquals(listOf(Metric.CHEST), unmeasured)
@@ -60,16 +56,10 @@ class MeasurementSeedTest {
     @Test
     fun theHistoryStartsOnTheDayThePatientJoinedTheClinic() =
         runTest {
-            // Deeper than the intake would describe a patient the clinic had
-            // not met yet. Every measured metric starts there — the tape ones
-            // because that is when the tape came out.
-            //
-            // Weight is the exception, and not a tidy one: its eight readings
-            // begin on 12 April, eight days before the patient joined. That
-            // predates the clinic, but the literals carry two mutation traps
-            // (an unsorted seed, more points than `DEFAULT_POINTS`) that
-            // regenerating them would destroy, so the inconsistency is recorded
-            // rather than fixed here.
+            // Weight is the exception, and not a tidy one: its eight readings begin 8 days
+            // before the intake, predating the clinic — but the literals carry two mutation
+            // traps (an unsorted seed, more points than DEFAULT_POINTS) regenerating them
+            // would destroy, so the inconsistency is recorded rather than fixed here.
             val joined = assertNotNull(MockSeed.profile.joinedAt)
 
             for (metric in Metric.entries - Metric.CHEST - Metric.WEIGHT) {
@@ -85,21 +75,16 @@ class MeasurementSeedTest {
     @Test
     fun theImportedMetricsAreDailyAndTheManualOnesAreWeekly() =
         runTest {
-            // Six weeks. A watch reports every morning; the manual metrics are
-            // taken on the protocol's weigh-in Sunday.
             for (metric in IMPORTED) {
                 assertEquals(42, all(metric).size, "${metric.code}: one reading a day, intake to today")
             }
 
-            // The intake, then six Sundays.
             for (metric in BY_HAND) {
                 val days = all(metric).map { it.date() }
 
                 assertEquals(7, days.size, "${metric.code}: the intake plus six weigh-ins")
                 assertEquals(MockSeed.profile.joinedAt, days.first())
-                // The count alone would survive the whole series sliding to
-                // Saturday — and the reason these days were chosen is that they
-                // are the days the protocol already weighs in on.
+                // The count alone would survive the whole series sliding to Saturday.
                 assertTrue(
                     days.drop(1).all { it.dayOfWeek == DayOfWeek.SUNDAY },
                     "${metric.code} is not measured on the weigh-in: $days",
@@ -110,10 +95,8 @@ class MeasurementSeedTest {
     @Test
     fun aWeekOfHistoryIsNotTheFirstWeekOfIt() =
         runTest {
-            // The point of seeding this deep: the window switcher has to have
-            // something to switch, and it has to switch to the *recent* end.
-            // `take` where `takeLast` was meant would draw the patient's first
-            // week forever, and both are seven points long.
+            // The window switcher has to switch to the *recent* end: `take` where `takeLast`
+            // was meant would draw the patient's first week forever, and both are seven points long.
             val week = mocks().measurements.series(Metric.HRV, points = 7).points
 
             assertEquals(7, week.size)
@@ -127,10 +110,8 @@ class MeasurementSeedTest {
     @Test
     fun aMetricIsReadTheOneWayItCanBe() =
         runTest {
-            // The unit is the whole contract with the formatter — numbers are
-            // data, formatting is presentation — and the source is what §11
-            // allows for that metric. A tape reading imported from a watch, or
-            // an HRV in beats per minute, would be a plausible-looking lie.
+            // Numbers are data, formatting is presentation: a tape reading imported from a
+            // watch, or an HRV in bpm, would be a plausible-looking lie.
             val units =
                 mapOf(
                     Metric.HRV to "ms",
@@ -164,9 +145,8 @@ class MeasurementSeedTest {
     @Test
     fun noTwoReadingsShareAnId() =
         runTest {
-            // Ids are generated from the metric and the day. Anything that
-            // indexes by id — a chart's keys, an edit, a delete — would hit the
-            // wrong reading the moment two collide.
+            // Anything indexing by id (a chart's keys, an edit, a delete) hits the wrong
+            // reading the moment two collide.
             val ids = MockSeed.measurements.map { it.id }
 
             assertEquals(ids.size, ids.toSet().size, "the seed holds duplicate measurement ids")
@@ -175,20 +155,10 @@ class MeasurementSeedTest {
     @Test
     fun aWatchedMetricHasBadDaysOnTheWayUp() =
         runTest {
-            // A chart of a perfect line reads as a mock, and a slope with no
-            // noise cannot show a window doing anything a shorter window would
-            // not. What the ripple actually buys is that the series turns back
-            // on itself — a bad night inside a good six weeks.
-            //
-            // «The steps are not all equal» would not have said this: rounding
-            // a straight ramp onto whole numbers already produces steps of 0
-            // and 1. A reversal is the thing only the ripple can produce, and
-            // switching it off gives exactly zero of them.
-            //
-            // Only the daily metrics carry this. On the weekly ones the ripple
-            // is deliberately smaller than a week's progress, so they descend
-            // cleanly — a tape that read backwards every other week would be a
-            // measuring error, not a mood.
+            // The ripple's job is a reversal — a bad night inside a good six weeks — which
+            // "steps aren't all equal" wouldn't test (rounding a straight ramp already
+            // produces steps of 0 and 1). Only daily metrics carry this: on the weekly ones
+            // the ripple is deliberately smaller than a week's progress, so they descend cleanly.
             for (metric in IMPORTED) {
                 val rising = all(metric).last().value > all(metric).first().value
                 val reversals =
@@ -203,9 +173,8 @@ class MeasurementSeedTest {
     @Test
     fun theTapeIsInCentimetresAndOnARealBody() =
         runTest {
-            // The prototype's waist runs 37,5 → 35,0 under a «см» label beside
-            // a thigh of 64,5 см: that series is in inches. Ported as written
-            // it would draw a 188 cm patient with a 37 cm waist.
+            // The prototype's waist series is in inches; ported as written it would draw a
+            // 188cm patient with a 37cm waist.
             for (metric in listOf(Metric.WAIST, Metric.HIP)) {
                 val points = all(metric)
 
@@ -215,10 +184,7 @@ class MeasurementSeedTest {
                     points.all { it.value > 60.0 },
                     "${metric.code} carries the prototype's inches: ${points.map { it.value }}",
                 )
-                // A tape is read to the millimetre, and the prototype prints
-                // one decimal. This guards the rounding grid, not the ripple —
-                // the interpolation alone lands off the whole number, so
-                // `aWatchedMetricHasBadDaysOnTheWayUp` is what holds the ripple.
+                // Guards the rounding grid, not the ripple — `aWatchedMetricHasBadDaysOnTheWayUp` holds that.
                 assertTrue(
                     points.any { it.value % 1.0 != 0.0 },
                     "${metric.code} is measured to a whole centimetre: ${points.map { it.value }}",
@@ -229,9 +195,6 @@ class MeasurementSeedTest {
     @Test
     fun eachMetricMovesTheWayProgressMovesForIt() =
         runTest {
-            // Six weeks on the protocol have to be visible, and visible in the
-            // right direction — otherwise every trend reads «no progress» and
-            // the screens are drawing a flat line.
             val rising = listOf(Metric.HRV, Metric.SLEEP)
             val falling = listOf(Metric.RHR, Metric.BODY_FAT, Metric.WAIST, Metric.HIP)
 
@@ -248,10 +211,8 @@ class MeasurementSeedTest {
     @Test
     fun theEndpointsAreTheNumbersTheSeedNames() =
         runTest {
-            // The ripple is zeroed on the first and last day on purpose, so a
-            // metric starts and ends where the seed says rather than wherever
-            // the wave happened to land. Every «latest reading» on every screen
-            // is that last point.
+            // Ripple is zeroed on the first and last day, so a metric starts and ends where
+            // the seed says rather than wherever the wave happened to land.
             assertEquals(50.0, all(Metric.HRV).first().value)
             assertEquals(58.0, all(Metric.HRV).last().value)
             assertEquals(104.0, all(Metric.WAIST).first().value)
@@ -261,10 +222,9 @@ class MeasurementSeedTest {
     @Test
     fun theNewestReadingIsStillNotAWeight() =
         runTest {
-            // The trap `theLatestWeightIsTheLatestWeightAndNotTheLatestReading`
-            // is built on: a lookup that takes the last row instead of the last
-            // row *of that metric* puts an HRV on the Today screen. Six more
-            // metrics could quietly hand the last row back to weight.
+            // The trap `theLatestWeightIsTheLatestWeightAndNotTheLatestReading` is built on:
+            // a lookup taking the last row instead of the last row *of that metric* puts an
+            // HRV on the Today screen.
             val newest = MockSeed.measurements.maxBy { it.measuredAt }
 
             assertEquals(Metric.HRV, newest.metric)

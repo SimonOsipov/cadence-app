@@ -8,11 +8,9 @@ import app.cadence.shared.domain.NutritionTargets
 import kotlinx.datetime.LocalDate
 
 /**
- * One day on «Питание»: what was eaten, its exact fold, and the day's targets.
- *
- * [totals] is rounded once — the same boundary `TodaySummary.mealMacros` is,
- * both going through `List<Meal>.dayTotals()` in `domain/Nutrition.kt` rather
- * than each rounding its own sum.
+ * One day on «Питание»: what was eaten, its exact fold, and the day's targets. [totals] is
+ * rounded once — the same boundary `TodaySummary.mealMacros` is, both going through
+ * `List<Meal>.dayTotals()` in `domain/Nutrition.kt` rather than each rounding its own sum.
  */
 data class NutritionDay(
     val date: LocalDate,
@@ -30,24 +28,20 @@ data class NutritionWeekDay(
 
 /**
  * How many days [NutritionWeek.days] carries — one column per day of `CadenceWeekBars`.
- *
- * `internal`, not `private`: `CadenceMocks`' own `MockNutritionRepository.week()` builds
- * the seven-day walk this constant bounds, and used to carry its own same-named,
- * same-valued copy rather than reading this one — two unlinked literals both claiming
- * "seven days" is the defect [NutritionWeek]'s `init` guard exists to rule out, moved one
- * level up rather than fixed. This module owns the number; `CadenceMocks` reads it.
+ * `internal`, not `private`: `CadenceMocks`' own `MockNutritionRepository.week()` builds the
+ * seven-day walk this constant bounds, and used to carry its own same-named, same-valued
+ * copy rather than reading this one — two unlinked literals both claiming "seven days" is
+ * the defect [NutritionWeek]'s `init` guard rules out, moved one level up. This module owns
+ * the number; `CadenceMocks` reads it.
  */
 internal const val NUTRITION_WEEK_DAYS = 7
 
 /**
  * Seven days ending on the date [NutritionRepository.week] was asked for, oldest first.
- *
- * Enforced, not assumed: `NutritionScreen.kt`'s `weekProteinAverage` divides by
- * `days.size` with no zero guard of its own, on the strength of this constructor
- * ruling the empty (or short) list out. Before this `init` existed, that
- * assumption was prose only — nothing stopped a caller from building a
- * malformed [NutritionWeek] and turning that division into a crash rather
- * than a wrong number.
+ * Enforced, not assumed: `NutritionScreen.kt`'s `weekProteinAverage` divides by `days.size`
+ * with no zero guard of its own, on the strength of this constructor ruling the empty (or
+ * short) list out — before this `init` existed, that was prose only, and nothing stopped a
+ * malformed [NutritionWeek] turning that division into a crash rather than a wrong number.
  */
 data class NutritionWeek(
     val days: List<NutritionWeekDay>,
@@ -59,14 +53,12 @@ data class NutritionWeek(
     }
 }
 
-/** What logging a meal did. */
 sealed interface MealLogResult {
     /**
-     * The written meal's id and the day's totals **after** the write.
-     *
-     * Taken from a fresh read, not from a `NutritionDay` fetched before the
-     * write: a toast built off the snapshot from before logging would name
-     * the sum without the meal it just confirmed (step-13's ripple).
+     * The written meal's id and the day's totals **after** the write. Taken from a fresh
+     * read, not from a `NutritionDay` fetched before the write: a toast built off the
+     * snapshot from before logging would name the sum without the meal it just confirmed
+     * (step-13's ripple).
      */
     data class Written(
         val id: MealId,
@@ -78,12 +70,10 @@ sealed interface MealLogResult {
 }
 
 /**
- * §11's «Питание»: a day's meals against target, the week's bar chart, and
- * the write both feed off.
- *
- * Meals live on `CadenceMocks`, not inside this repository's mock — its KDoc
- * explains why: `TodayRepository` reads the same list, and a private copy
- * here would be the two-open-tabs defect the architecture note already names.
+ * §11's «Питание»: a day's meals against target, the week's bar chart, and the write both
+ * feed off. Meals live on `CadenceMocks`, not inside this repository's mock — its KDoc
+ * explains why: `TodayRepository` reads the same list, and a private copy here would be the
+ * two-open-tabs defect the architecture note already names.
  */
 interface NutritionRepository {
     /** Meals, totals and targets for [date]. */

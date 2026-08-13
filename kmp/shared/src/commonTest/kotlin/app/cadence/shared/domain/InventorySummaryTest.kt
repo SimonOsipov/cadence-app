@@ -19,10 +19,8 @@ private fun ids(rows: List<VialRow>) = rows.map { it.id.raw }.toSet()
 class InventorySummaryTest {
     @Test
     fun theGroupsAreTheProtototypesAndTheyOverlap() {
-        // Named, not counted, and deliberately not disjoint: the prototype puts
-        // an opened expiring vial in both «Активные» and «Истекают», because a
-        // patient wants to see it under either question. Groups made disjoint
-        // would drop it out of the list they actually browse.
+        // Named, deliberately not disjoint: the prototype puts an opened expiring vial in
+        // both «Активные» and «Истекают».
         val sum = summary()
 
         assertEquals(setOf("vial-bpc-2", "vial-bpc-3", "vial-sema-1"), ids(sum.active))
@@ -35,9 +33,6 @@ class InventorySummaryTest {
 
     @Test
     fun aDisposedVialIsInNoGroupAtAll() {
-        // Our addition: the prototype has no disposed state, so it never had to
-        // decide. A vial the patient threw away is history, not stock, and
-        // counting it would tell them they have doses they do not have.
         val sum = summary()
 
         assertTrue(
@@ -48,9 +43,6 @@ class InventorySummaryTest {
 
     @Test
     fun anUnopenedVialAboutToExpireIsSealedAndExpiringAtOnce() {
-        // The other overlap the prototype writes out: `sealed` includes
-        // `expiring && !opened`. Stock about to be wasted is the case worth
-        // warning about, and it is still stock.
         val soon = MockSeed.vials.first { it.id == VialId("vial-bpc-4") }.copy(expiresOn = LocalDate(2026, 6, 5))
         val sum = summary(vials = MockSeed.vials.map { if (it.id == soon.id) soon else it })
 
@@ -60,11 +52,8 @@ class InventorySummaryTest {
 
     @Test
     fun theReorderHintFiresForTheCompoundWithNoSpareAndForNoOther() {
-        // Semaglutide: one dose left, one a week, no sealed spare. BPC-157 has
-        // thirty-six doses across three live vials and would read two weeks —
-        // but it has a spare, and §03 requires both conditions. A summary that
-        // dropped the spare condition would warn about a compound the patient
-        // has a full sealed vial of.
+        // BPC-157 would also read low on stock, but it has a spare and §03 requires both
+        // conditions.
         val sum = summary()
 
         assertEquals(listOf(MockSeed.semaglutide.id), sum.reorder.map { it.compoundId })
@@ -73,9 +62,6 @@ class InventorySummaryTest {
 
     @Test
     fun aCompoundTheProtocolDoesNotPrescribeIsNotCounted() {
-        // A vial of something the patient is not on has no doses-per-week, so
-        // «weeks left» is not a number. Counting it would divide stock by a
-        // rate that does not exist.
         val stray =
             MockSeed.vials.first().copy(
                 id = VialId("vial-stray"),
@@ -91,10 +77,9 @@ class InventorySummaryTest {
 
     @Test
     fun theReorderHintIsSilentAboveFourWeeksAndSpeaksAtFour() {
-        // The seed's semaglutide is one week out, which fires at any threshold
-        // — so the boundary needs stock the seed does not have. Nine doses less
-        // three taken is six weeks: quiet. Seven less three is four: the
-        // condition is «≤ 4», so four speaks.
+        // The seed's semaglutide fires at any threshold, so the boundary needs stock the
+        // seed doesn't have: nine less three taken is six weeks (quiet); seven less three is
+        // four, and the condition is "≤ 4".
         fun weeksOf(total: Int) =
             summary(
                 vials = MockSeed.vials.map { if (it.id == VialId("vial-sema-1")) it.copy(totalDoses = total) else it },
@@ -107,9 +92,7 @@ class InventorySummaryTest {
 
     @Test
     fun aVialIsExpiringInsideAFortnightAndNotBefore() {
-        // Twenty days out is stock; a fortnight out is a warning. The seed's
-        // two dates are ten days and five months, so neither sits near the
-        // line the rule actually draws.
+        // The seed's two dates (ten days, five months) sit nowhere near this boundary.
         fun expiringOn(day: Int) =
             summary(
                 vials =
@@ -124,9 +107,8 @@ class InventorySummaryTest {
 
     @Test
     fun oneCompoundGetsOneHintEvenWhenTheProtocolPrescribesItTwice() {
-        // §03 keys an item by its schedule, so a compound taken morning and
-        // evening is two items. Asking per item without collapsing them tells
-        // the patient to reorder the same compound twice, in the same list.
+        // A compound taken morning and evening is two items; asking per item without
+        // collapsing them tells the patient to reorder the same compound twice.
         val twice =
             MockSeed.plan.items
                 .first { it.id == MockSeed.semaItemId }
@@ -156,9 +138,8 @@ class InventorySummaryTest {
 
     @Test
     fun theGroupsFollowTheDayTheyAreAskedAbout() {
-        // Two months on, the sealed spare is past its date: what was «Запас»
-        // is «Истекают», and the answer moves because the question carries a
-        // day rather than because anything was re-stored.
+        // Two months on, the sealed spare is past its date: the answer moves because the
+        // question carries a day, not because anything was re-stored.
         val sum = summary(today = LocalDate(2026, 10, 10))
 
         assertTrue("vial-bpc-4" in ids(sum.expiring), "the October vial is not flagged in October")

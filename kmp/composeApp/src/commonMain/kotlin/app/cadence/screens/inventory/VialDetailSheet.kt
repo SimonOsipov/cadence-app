@@ -36,11 +36,9 @@ import kotlinx.datetime.LocalDate
 private val HAIRLINE = 1.dp
 
 /**
- * One vial, opened.
- *
- * Everything is already resolved — the same [VialRow] the card drew, this
- * vial's own records, and its weekly usage. The sheet computes nothing, so it
- * cannot disagree with the card the patient tapped to reach it.
+ * One vial, opened. Everything is already resolved — the same [VialRow] the card
+ * drew, this vial's own records, its weekly usage — so the sheet computes nothing
+ * and cannot disagree with the card the patient tapped to reach it.
  */
 @Composable
 fun VialDetailSheet(

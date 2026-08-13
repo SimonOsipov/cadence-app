@@ -57,11 +57,10 @@ fun cabinetStatTag(group: String) = "cabinet-stat-$group"
 private val ADD_BUTTON = 44.dp
 
 /**
- * «Ваша аптечка» — the cabinet.
- *
- * Takes a resolved [InventorySummary] and nothing else: no events, no plan,
- * nothing it could compute a remaining count from. A screen that could compute
- * one could disagree with the Today screen about the same vial.
+ * «Ваша аптечка» — the cabinet. Takes a resolved [InventorySummary] and nothing
+ * else: no events, no plan, nothing it could compute a remaining count from — a
+ * screen that could compute one could disagree with the Today screen about the
+ * same vial.
  */
 @Composable
 fun VialsScreen(

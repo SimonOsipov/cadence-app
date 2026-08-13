@@ -14,14 +14,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The geometry is asserted directly, not through a Canvas.
- *
- * A NaN coordinate does not crash a draw, it paints nothing, so a test that
- * measured only the box would stay green over a chart that renders empty —
- * which is exactly how the two divide-by-zero guards went unverified in the
- * first version of this file.
- *
- * The degenerate series are not invented edge cases: a patient in their first
+ * The geometry is asserted directly, not through a Canvas: a NaN coordinate
+ * doesn't crash a draw, it paints nothing, so a test that measured only the
+ * box would stay green over a chart that renders empty — exactly how the two
+ * divide-by-zero guards went unverified in the first version of this file.
+ * The degenerate series aren't invented edge cases: a patient in their first
  * week has one measurement, and three identical readings are an ordinary week.
  */
 @OptIn(ExperimentalTestApi::class)

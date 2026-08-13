@@ -19,10 +19,10 @@ import androidx.compose.ui.unit.dp
 import app.cadence.format.formatDecimal
 
 /**
- * One bar's track, keyed by a stable id — three bars coexist on one screen. Not [label]:
- * that is Russian display copy, and a copy edit would silently break every lookup keyed on
- * it (`splitSegmentTag` in `CadenceSplitBar.kt` keys on the same kind of stable, English id
- * for the same reason).
+ * One bar's track, keyed by a stable id — three bars coexist on one screen. Not
+ * [label]: that's Russian display copy, and a copy edit would silently break
+ * every lookup keyed on it (`splitSegmentTag` in `CadenceSplitBar.kt` keys on
+ * the same kind of stable, English id for the same reason).
  */
 fun macroTrackTag(id: String) = "cadence-macro-track-$id"
 
@@ -33,18 +33,13 @@ fun macroFillTag(id: String) = "cadence-macro-fill-$id"
 private val MACRO_BAR_HEIGHT = 5.dp
 
 /**
- * Value against goal, as a fraction.
- *
- * Clamped at the top, the same shape as the prototype's own clamp —
- * `Math.min(1, v / Math.max(1, goal))` (`NutritionScreen.tsx:115`) — so a
- * patient over their protein goal reads a full bar, not a bar past its track.
- * But not the same function: the prototype's `Math.max(1, goal)` guards its
- * own division, and at `goal = 0` that guard makes *it* read a **full** bar
- * (`v / 1`, clamped to 1). This port disagrees on purpose — `goal <= 0.0`
- * returns `0f`, an **empty** bar — because in this domain a zero goal means a
- * patient without a target set, not a target of exactly zero grams, and an
- * empty bar reads truer than a full one for "nothing to measure against".
- * Kept as a deliberate divergence, not fixed to match the prototype.
+ * Value against goal, as a fraction. Clamped at the top like the prototype's
+ * own `Math.min(1, v / Math.max(1, goal))` (`NutritionScreen.tsx:115`), so a
+ * patient over goal reads a full bar, not one past its track — but not the
+ * same function: at `goal = 0` the prototype's guard reads a **full** bar
+ * (`v / 1`), while this deliberately returns an **empty** one, since a zero
+ * goal means no target set, not a target of zero grams. Kept as a deliberate
+ * divergence, not fixed to match the prototype.
  */
 fun macroFraction(
     value: Double,
@@ -54,17 +49,14 @@ fun macroFraction(
 /**
  * «белок · 35 / 140 г» — one macronutrient's bar on the nutrition screen.
  *
- * Not [gaugeFraction]: that function takes `Int` doses and carries the
- * cabinet's vial semantics. A shared function here would couple this screen
- * to that one — one edit to a dosing rule would move a macro bar too.
+ * Not [gaugeFraction]: that takes `Int` doses with the cabinet's vial
+ * semantics — sharing it would couple this screen to dosing rules. `color` is
+ * a parameter since the screen draws three of these, each its own colour.
  *
- * `color` is a parameter, not a constant, because the screen draws three of
- * these — protein, carbs, fat — each in its own colour.
- *
- * [id] is a stable, English identifier (`"protein"`, `"carbs"`, `"fat"`) — separate from
- * [label], which is the Russian copy actually drawn. The two were the same parameter once;
- * keying [macroTrackTag]/[macroFillTag] on display copy meant a copy change would silently
- * break every lookup, and put user-facing text inside a code identifier.
+ * [id] is a stable English identifier (`"protein"`, `"carbs"`, `"fat"`),
+ * separate from [label]'s Russian display copy: the two were one parameter
+ * once, and keying [macroTrackTag]/[macroFillTag] on display copy meant a copy
+ * edit could silently break every lookup.
  */
 @Composable
 fun CadenceMacroBar(

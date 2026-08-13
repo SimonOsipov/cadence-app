@@ -8,16 +8,9 @@ data class MetricTrend(
     val series: TrendSeries,
 ) {
     /**
-     * How far the metric moved, as a share of where the window opened.
-     *
-     * Null when there is nothing to compare — fewer than two readings — or when
-     * the base is zero, which no metric §03 has can honestly be but a division
-     * would not care.
-     *
-     * Relative rather than absolute, because the point of it is to rank metrics
-     * against each other: eight milliseconds of HRV on a base of fifty is a
-     * bigger change than two kilograms on a base of a hundred, and comparing
-     * the raw numbers would sort by unit.
+     * Relative, not absolute: the point is ranking metrics against each other, and 8ms of
+     * HRV on a base of 50 is a bigger change than 2kg on a base of 100 — raw numbers would
+     * sort by unit. Null below two readings or a zero base.
      */
     val movement: Double?
         get() {
@@ -28,12 +21,8 @@ data class MetricTrend(
 }
 
 /**
- * Every metric of §03, for one window.
- *
- * The whole set, in `Metric.entries` order, including the ones with nothing to
- * show: a list that dropped an unmeasured metric would leave a patient unable
- * to find out that it *is* unmeasured, and «метрика без измерений говорит об
- * этом» is one of the screen's criteria.
+ * The whole set, in `Metric.entries` order, including unmeasured ones: dropping one would
+ * leave a patient unable to find out it *is* unmeasured.
  */
 data class TrendsOverview(
     val window: TrendWindow,
@@ -41,13 +30,8 @@ data class TrendsOverview(
     val metrics: List<MetricTrend>,
 ) {
     /**
-     * The card at the top of the screen.
-     *
-     * The first metric of the set — weight — rather than the last one opened.
-     * «What I looked at last time» is a second kind of memory for the app to
-     * keep, and there is nowhere to keep it until the profile block; the screen
-     * stays a function of its data. Recorded as a divergence: the prototype
-     * features whichever biomarker was opened last.
+     * The first metric — weight — not the last one opened: no memory to keep that in yet.
+     * Divergence: the prototype features whichever was opened last.
      */
     val hero: MetricTrend? get() = metrics.firstOrNull()
 
@@ -59,22 +43,14 @@ data class TrendsOverview(
 const val NOTABLE_SHIFTS: Int = 3
 
 /**
- * The metrics that moved most across the window, largest first.
- *
- * Derived, which is the whole difference from the prototype. Its «Заметные
- * сдвиги» are three hand-written cards — «HRV вырос на 17 мс · С момента старта
- * BPC-157», «Глубокий сон +24 мин», «Метаболизм стабилен» — and two of the
- * three name things §03 has no metric for at all. Only the shape of the first
- * survives the port: a metric, and how far it moved.
- *
- * Metrics with nothing to compare are left out rather than ranked last. A
- * section called «заметные сдвиги» listing a metric that has not been measured
- * twice is naming a shift that did not happen.
+ * Derived, unlike the prototype's three hand-written «Заметные сдвиги» cards, two of which
+ * name things §03 has no metric for. Only the shape of the first survives: a metric and how
+ * far it moved. Metrics with nothing to compare are left out, not ranked last.
  */
 fun TrendsOverview.notableShifts(limit: Int = NOTABLE_SHIFTS): List<MetricTrend> =
     metrics
         .filter { it.movement != null }
-        // By id after the movement, so two metrics that moved by the same share
-        // do not swap places between two reads of the same data.
+        // By id after movement, so two metrics that moved by the same share don't swap
+        // places between two reads of the same data.
         .sortedWith(compareByDescending<MetricTrend> { it.movement }.thenBy { it.meta.metric.code })
         .take(limit)

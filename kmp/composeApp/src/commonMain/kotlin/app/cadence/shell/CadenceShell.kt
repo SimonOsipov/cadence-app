@@ -54,13 +54,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 
-/**
- * The one stand-in left, until the meal wizard lands in step 8 of the block.
- *
- * The day's totals and target are no longer constants — they come from the
- * repository. What the wizard still owes is which meal was logged, and that
- * needs the wizard.
- */
+/** Stand-in until the meal wizard lands (step 8); totals already come from the repository. */
 private const val PLACEHOLDER_MEAL_NAME = "Обед"
 
 /** Until sign-in says whose app this is — block 7. */
@@ -71,25 +65,15 @@ private const val PRIMARY_THREAD = "ksenia"
 private const val CYCLE_WEEKS = 12
 
 /**
- * The trends tab's own window and its latest read, bundled so `CadenceApp`
- * holds one declaration rather than two — the pairing is what
- * [rememberTrendsState] needs to re-read on a window change.
- *
- * Held above the trends screen rather than inside it, same as before this was
- * split out: the list and the detail both read it, and a window remembered
- * inside one would reset every time the patient came back from the other.
+ * Held above the trends screen, not inside it: list and detail both read it, so a window
+ * remembered in one would reset on return from the other.
  */
 private class TrendsUiState {
     var window by mutableStateOf(TrendWindow.THREE_MONTHS)
     var overview by mutableStateOf<TrendsOverview?>(null)
 }
 
-/**
- * «3 месяца», the prototype's own initial timeframe, and a fresh read whenever
- * the window or [reloads] changes — keyed on both, the same reason
- * `CadenceApp`'s own effect used to be: a window switch has to re-read, and
- * keying on [reloads] alone would leave the chips changing nothing.
- */
+/** Keyed on both [reloads] and the window: keying on [reloads] alone would leave the chips changing nothing. */
 @Composable
 private fun rememberTrendsState(
     mocks: CadenceMocks,
@@ -113,40 +97,22 @@ private suspend fun CadenceMocks.scheduleFor(today: TodaySummary): ScheduleState
     )
 
 /**
- * The whole after-sign-in surface: the graph, the sheet the `+` opens, and the
- * card a logged meal raises.
- *
- * Two pieces of state, both about what is on screen right now and neither
- * derived from anything: whether the sheet is open, and what the toast is
- * showing. Both are the prototype's — `actionSheetOpen` in the navigator,
- * `confirmSheet` in the app state.
- *
- * The timer lives here rather than in [ConfirmToast] because how long something
- * stays on screen is a property of the screen. `showConfirm` in the prototype
- * puts it in the same place, for the same reason.
- *
- * **There is no failure path yet, and this is where it will go.** Neither the
- * read nor the write handles an exception, because the mock cannot throw on any
- * reachable path. The Ktor client can, so «swapping the mock is a change to one
- * file» is true of the repositories and not of this composable: a *screen* will
- * still not change, but this will.
+ * No failure path yet: the mock cannot throw on any reachable path, but the Ktor
+ * client can, and this composable — not just the repositories — will need one.
  */
 @Composable
 fun CadenceApp(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier,
-    // Wound to the seed's own day, not to the system clock. `MockSeed.DEMO_NOW`
-    // carries why: the fixture is a course with an end date, and reading the
-    // real clock empties every screen the moment that date passes.
+    // Wound to the seed's own day (MockSeed.DEMO_NOW), not the system clock: the fixture is
+    // a course with an end date, and the real clock would empty every screen once it passes.
     mocks: CadenceMocks = remember { CadenceMocks(FixedCadenceClock.at(MockSeed.DEMO_NOW)) },
 ) {
     val scope = rememberCoroutineScope()
     var summary by remember { mutableStateOf<TodaySummary?>(null) }
-    // `TodaySummary` carries only the count and the fold — `TodayMeals`' own list.
+    // TodaySummary carries only the count and the fold — this is TodayMeals' own list.
     var todayMeals by remember { mutableStateOf<List<Meal>>(emptyList()) }
-    // Bumped by every write, so the next read goes back to the repository
-    // rather than to a snapshot taken before it. The real client will invalidate
-    // the same way; nothing about this line knows it is talking to a mock.
+    // Bumped by every write so the next read goes back to the repository, not a stale snapshot.
     var reloads by remember { mutableStateOf(0) }
 
     val trendsState = rememberTrendsState(mocks, reloads)
@@ -165,20 +131,12 @@ fun CadenceApp(
 
     var actionsOpen by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<ConfirmToastState?>(null) }
-    // Keyed on a counter rather than on the toast itself. ConfirmToastState is a
-    // data class and mutableStateOf compares structurally, so raising an equal
-    // toast inside the window would be no assignment at all: no state change,
-    // no restart, and the second confirmation would inherit the remainder of
-    // the first one's life. The prototype clears its timeout before re-arming,
-    // for the same reason.
-    //
-    // No UI test reaches this, and that is not an oversight: the overlay
-    // swallows touches for the whole window, so a second meal cannot be logged
-    // by tapping until the first toast is gone — see
-    // ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp. The counter stays
-    // because the moment anything raises a toast without a tap behind it — a
-    // repository push, a recipe added to the day — the equality trap is live
-    // again, and it costs one Int.
+    // Keyed on a counter, not the toast itself: ConfirmToastState is a data class and
+    // mutableStateOf compares structurally, so an equal toast inside the window would be no
+    // assignment at all — no restart, and the new confirmation inherits the old timer.
+    // No UI test reaches the identical-toast case directly (the overlay blocks a second tap
+    // until the first toast clears — ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp),
+    // but the counter stays for any future non-tap trigger (repository push, recipe add).
     var raisedAt by remember { mutableStateOf(0) }
 
     ToastLifetime(raisedAt, toast) { toast = null }
@@ -209,8 +167,7 @@ fun CadenceApp(
             onTrendWindow = { trendsState.window = it },
             onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
             onMealLogged = { name ->
-                // The day's running total, from the repository — §03 puts
-                // exactly that in the toast, not the meal's own figure.
+                // §03: the toast shows the day's running total, not the meal's own figure.
                 toast = ConfirmToastState(name, summary?.mealMacros?.kcal ?: 0)
                 raisedAt++
             },
@@ -220,13 +177,8 @@ fun CadenceApp(
 
         VialSheet(openVial, today = summary?.date, onDismiss = { openVial = null }, onLogDose = { vialId ->
             openVial = null
-            // Named, not dropped. `VialDetailSheet` has always reported which
-            // vial the button belongs to; the shell threw it away, so the
-            // wizard opened with a null draft and the picker defaulted to the
-            // *fullest* open vial of that compound. A patient who opened the
-            // half-empty one and stepped through without noticing the picker
-            // wrote the dose against the other, leaving both counts wrong and
-            // nothing to reconcile them against.
+            // Named, not dropped: a null draft here let the picker silently default to the
+            // fullest open vial, so a half-empty vial's dose got recorded against the wrong one.
             navController.openRoute(CadenceRoute.LogDose(vialId.raw))
         })
 
@@ -250,16 +202,9 @@ private fun ToastLifetime(
 }
 
 /**
- * The after-sign-in host: the screen graph and the overlays above it.
- *
- * Screens get named lambdas and never the controller, which is how the
- * prototype wires its `Stack.Screen` children and what keeps a screen testable
- * without a navigator. `onOpenActions` is the one callback that is not
- * navigation: the `+` in the bar opens a sheet, and a sheet is not a place.
- *
- * Takes its controller as a parameter so a test can assert on the back stack —
- * «did that tap navigate» is not answerable from what is on screen when two
- * routes render the same word.
+ * Screens get named lambdas and never the controller, so each stays testable without a
+ * navigator; `onOpenActions` is the one callback that isn't navigation — the `+` opens a sheet.
+ * The controller is a parameter so a test can assert on the back stack.
  */
 @Composable
 fun CadenceShell(
@@ -275,10 +220,8 @@ fun CadenceShell(
     trendWindow: TrendWindow = TrendWindow.THREE_MONTHS,
     onTrendWindow: (TrendWindow) -> Unit = { },
     onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail? = { _, _ -> null },
-    // The sections that are ported. The rest of the graph still draws
-    // placeholders, and a null summary means the first read has not landed —
-    // the screen is not composed until it has, rather than being shown a day
-    // made of zeroes.
+    // A null summary means the first read hasn't landed; the screen stays unshown rather
+    // than composing a day made of zeroes.
     summary: TodaySummary? = null,
     todayMeals: List<Meal> = emptyList(),
     zone: TimeZone = TimeZone.currentSystemDefault(),
@@ -288,12 +231,8 @@ fun CadenceShell(
         navController = navController,
         startDestination = CADENCE_ROOT,
         modifier = modifier.fillMaxSize(),
-        // The transitions live here, on the NavHost, because Compose reads
-        // each side from the destination it belongs to: a screen's exit is
-        // taken from the screen being *left*, not from the one arriving. Two
-        // overrides on the modal itself therefore could not hold the screen
-        // beneath it still — they fired when leaving the modal forward, which
-        // is not the same event and not the one that drifts.
+        // Transitions live on the NavHost, not the modal: Compose reads each side from the
+        // destination it belongs to, so overrides on the modal itself fire on the wrong event.
         enterTransition = { if (targetState.destination.isModal()) modalEnter() else pushEnter() },
         exitTransition = { if (targetState.destination.isModal()) modalUnderlayExit() else pushExit() },
         popEnterTransition = { if (initialState.destination.isModal()) modalUnderlayEnter() else popEnter() },
@@ -306,11 +245,8 @@ fun CadenceShell(
 }
 
 /**
- * The four the bottom bar reaches. Only these carry the bar.
- *
- * Written as a `when` over the enum rather than four literal `composable<…>`
- * calls so that adding a fifth destination fails to compile here too, not only
- * in [CadenceDestination.route].
+ * Written as a `when` over the enum so a fifth destination fails to compile here too, not
+ * only in [CadenceDestination.route].
  */
 @Suppress("LongParameterList")
 private fun NavGraphBuilder.tabRoutes(
@@ -329,11 +265,8 @@ private fun NavGraphBuilder.tabRoutes(
             PlaceholderScreen(
                 title = destination.label,
                 destination = destination,
-                // Today is the root: there is nothing behind it to go back to.
-                // The other three use goBack, as the prototype does — identical
-                // to popToTop only while a tab always sits at depth 1, which
-                // stops being true the moment a real screen reaches one from
-                // deeper (RecipeDetail → Nutrition).
+                // Today is the root, nothing to go back to; the other three use goBack, which
+                // stops being equivalent to popToTop once a screen reaches a tab from depth > 1.
                 onBack = if (destination == CadenceDestination.TODAY) null else back(nav),
                 onSelectTab = nav::selectDestination,
                 onLog = onOpenActions,
@@ -348,9 +281,8 @@ private fun NavGraphBuilder.tabRoutes(
 
             CadenceDestination.INVENTORY -> {
                 composable<CadenceRoute.Vials> {
-                    // Gated on the read like Today and the schedule: a cabinet
-                    // composed against no data draws «0 флаконов», which is a
-                    // sentence about the patient rather than about the fetch.
+                    // Gated on the read: composed against no data this would draw «0 флаконов», a
+                    // false statement about the patient rather than an honest one about the fetch.
                     if (cabinet == null) {
                         body()
                     } else {
@@ -367,10 +299,7 @@ private fun NavGraphBuilder.tabRoutes(
 
             CadenceDestination.TRENDS -> {
                 composable<CadenceRoute.Trends> {
-                    // Gated on the read like Today and the cabinet: a list
-                    // composed against no data draws «нет данных» on all eight
-                    // cards, which is a sentence about the patient rather than
-                    // about the fetch.
+                    // Gated on the read, same reason as Vials above.
                     if (trends == null) {
                         body()
                     } else {
@@ -395,15 +324,11 @@ private fun NavGraphBuilder.tabRoutes(
 }
 
 /**
- * The way out of every screen that is not the root.
- *
- * One definition rather than one per graph section: `popBackStack()` spelled
- * inline in three places is three chances for one of them to become `{ }` and
- * strand a screen, which is what the tests could not see until they clicked it.
+ * One definition rather than one per graph section: `popBackStack()` inline in three places
+ * is three chances for one to become `{ }` and strand a screen.
  */
 private fun back(nav: NavHostController): () -> Unit = { nav.popBackStack() }
 
-/** Everything reached by a push: slides in from the right, backed out of. */
 @Suppress("LongParameterList")
 private fun NavGraphBuilder.pushedRoutes(
     nav: NavHostController,
@@ -415,33 +340,23 @@ private fun NavGraphBuilder.pushedRoutes(
     val back = back(nav)
 
     composable<CadenceRoute.TrendDetail> { entry ->
-        // The route carries a `String`, so this is where it becomes a metric or
-        // fails to. `null` reaches the screen as «такой метрики нет» — the
-        // prototype has a `thigh` and a `bmi` the data model does not, and a
-        // deep link can carry anything at all.
+        // The route carries a String; null reaches the screen as «такой метрики нет» —
+        // the prototype has a `thigh` and a `bmi` the data model doesn't, and a deep
+        // link can carry anything.
         val code = entry.toRoute<CadenceRoute.TrendDetail>().biomarkerId
         val metric = Metric.fromCode(code)
-        // Keyed on the code alone, not on the window. A window change re-reads
-        // — the effect below is keyed on both — but the previous chart and the
-        // chip row stay on screen until the new answer lands, which is the same
-        // stale-while-revalidate the list does: `CadenceApp` never nulls
-        // `trends` when the window changes. Nulling here took the control the
-        // patient had just used away from them mid-tap.
+        // Keyed on the code alone, not the window: stale-while-revalidate, so a window
+        // change doesn't wipe the chart and chip row while the new read is in flight.
         var detail by remember(code) { mutableStateOf<MetricDetail?>(null) }
-        // Reset with the metric and the window, so a position scrubbed on one
-        // chart never lands on another's readings.
+        // Reset with metric and window so a scrub position never lands on another's readings.
         var scrubIndex by remember(code, trendWindow) { mutableStateOf<Int?>(null) }
 
         LaunchedEffect(code, trendWindow) {
             detail = metric?.let { onLoadMetric(it, trendWindow) }
         }
 
-        // «Ещё не пришло» is not «такой метрики нет». They are one value on
-        // the screen — a null `detail` — and two different facts here, so the
-        // graph tells them apart the way the schedule route does. Without this,
-        // tapping a window chip on the detail wipes the chart *and* the chip
-        // row and answers «Такой метрики нет» until the read lands: the patient
-        // loses the data and the control they just used.
+        // A null `detail` here means «ещё не пришло», not «такой метрики нет» (metric == null) —
+        // conflating them would answer «no such metric» to a load that's just in flight.
         if (metric != null && detail == null) {
             PlaceholderScreen("Метрика", onBack = back)
         } else {
@@ -479,10 +394,7 @@ private fun NavGraphBuilder.pushedRoutes(
     }
 }
 
-/**
- * The prototype's `Stack.Group` with `presentation: 'fullScreenModal'`: these
- * slide up rather than in, and every one of them ends by dismissing itself.
- */
+/** The prototype's `Stack.Group` with `presentation: 'fullScreenModal'`: slides up, not in. */
 @Suppress("LongParameterList")
 private fun NavGraphBuilder.modalRoutes(
     nav: NavHostController,
@@ -508,9 +420,7 @@ private fun NavGraphBuilder.modalRoutes(
         PlaceholderScreen(
             title = "Записать приём пищи",
             onBack = back,
-            // The prototype's LogMeal hands the meal to the app, which raises
-            // the toast and dismisses. The placeholder hands over a fixed one
-            // so the toast is reachable before the wizard is ported.
+            // Fixed meal name so the toast is reachable before the wizard is ported.
             action =
                 "Записать" to {
                     onMealLogged(PLACEHOLDER_MEAL_NAME)
@@ -519,14 +429,9 @@ private fun NavGraphBuilder.modalRoutes(
         )
     }
     modal<CadenceRoute.AddVial> {
-        // Gated on the read like its three siblings, which this one was not.
-        // `today` is the only thing standing between the form and expired
-        // stock — `VialDraft.canSave` guards on `expiresOn >= today`, and the
-        // screen shows «Срок уже истёк» from the same value — so substituting
-        // `MockSeed.cycleStart` for a summary that had not landed let a vial
-        // expiring three months ago save with no warning. The repository
-        // re-checked against the real date and returned `Rejected`, which the
-        // caller discarded, so the screen popped as though it had saved.
+        // Gated on the read like its siblings: substituting MockSeed.cycleStart for a
+        // summary that hadn't landed let a vial expiring months ago save with no warning
+        // (VialDraft.canSave guards on expiresOn >= today, using that fallback date).
         val day = today?.date
 
         if (day == null) {
@@ -547,16 +452,9 @@ private fun NavGraphBuilder.modalRoutes(
 }
 
 /**
- * The dose wizard, and the two things the shell owes it.
- *
- * Gated on the read, like the other ported routes. Composed against a null
- * summary the wizard draws no compounds, so «Дальше» is dead on step 1 and the
- * only way out is «Отмена» — a full-screen dead end, one frame wide against the
- * mock and a network round trip against the client this file anticipates.
- *
- * [openedVial] is the vial the patient had open when they tapped, or null when
- * they came from the tab bar or the Today hero. It seeds the draft; the picker
- * on step 2 can still override it.
+ * Gated on the read like the other ported routes: composed against a null summary the
+ * wizard draws no compounds, and «Дальше» is dead on step 1.
+ * [openedVial] seeds the draft; the picker on step 2 can still override it.
  */
 @Composable
 private fun LogDoseModal(
@@ -571,22 +469,11 @@ private fun LogDoseModal(
         return
     }
 
-    // The wizard holds its own draft and step for as long as it is on screen:
-    // neither is a fact about the patient until «Сохранить дозу», and a draft
-    // hoisted into the shell would outlive a cancel.
-    //
-    // It opens on the dose the day is waiting for, which is what step 1 already
-    // claims — «Сегодняшняя доза уже выбрана» is copy ported from the
-    // prototype, whose INITIAL_LOG_STATE ships `compound: 'sema'` preselected.
-    // `nextDose` rather than a rule of our own: it is the single field the Today
-    // hero and the action sheet already build «Семаглутид · 0,25 мг ждёт» from,
-    // so three surfaces cannot disagree about what is due — and on a day two
-    // items are due it is the one thing that already picks between them.
-    // `nextDose` carries exactly the three fields `selectItem` would set —
-    // itemId, kind and the dose in force for the day, from the same phase
-    // function the calendar reads — so the occurrence is taken whole rather
-    // than the plan being threaded down here to re-derive it. Null when the day
-    // prescribes nothing, and then the draft opens empty, as it must.
+    // Draft and step live here, not hoisted into the shell: neither is a fact about the
+    // patient until «Сохранить дозу», and a hoisted draft would outlive a cancel.
+    // Opens on `nextDose` — the same field the Today hero and action sheet build their
+    // "waiting" line from, so three surfaces can't disagree about what's due, and on a
+    // two-items-due day it's the one thing that already picks between them.
     var draft by remember {
         mutableStateOf(
             summary.nextDose?.let {
@@ -596,13 +483,9 @@ private fun LogDoseModal(
     }
     var step by remember { mutableStateOf(DoseStep.COMPOUND) }
     var refusal by remember { mutableStateOf<String?>(null) }
-    // One write per wizard. `canSubmit()` is a pure function of the draft, so
-    // it does not change while the write is in flight: two taps in the same
-    // frame queued two coroutines, the first closed the 08:00 slot and popped,
-    // and the second — running before the pop tore the scope down — found the
-    // *20:00* occurrence still open and recorded that too. An evening injection
-    // marked done that the patient never took, and a vial short by one. The
-    // mock makes the window a frame wide; the Ktor client makes it seconds.
+    // Guards one write per wizard: two taps in the same frame both pass canSubmit() (a pure
+    // function of the draft) and queue two coroutines, so without this the second submit ran
+    // before the pop tore the scope down and logged a second, unreal occurrence.
     var submitting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -622,10 +505,8 @@ private fun LogDoseModal(
                 submitting = true
                 scope.launch {
                     try {
-                        // Pop only on a write. A repository that refuses — the
-                        // day rolled over, the occurrence is already logged —
-                        // and a wizard that closed anyway would throw away five
-                        // steps of the patient's answers and say nothing at all.
+                        // Pop only on a write: a wizard that closed on a refusal would throw
+                        // away five steps of the patient's answers and say nothing at all.
                         when (val result = onDoseLogged(draft)) {
                             is DoseLogResult.Written -> back()
                             else -> refusal = result.reasonRu()
@@ -641,33 +522,19 @@ private fun LogDoseModal(
 }
 
 /**
- * A route in the modal group: up rather than in, and back down again.
- *
- * Named so the four entries carry the transition by membership, the way the
- * prototype's `Stack.Group` does, instead of each repeating the same two
- * overrides — where one omission would be a screen that slides the wrong way
- * and no test would say so.
+ * Named so the four modal entries carry the transition by membership, not by each repeating
+ * the same overrides — where one omission slides the wrong way with no test to catch it.
  */
 private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(
     noinline content: @Composable (NavBackStackEntry) -> Unit,
 ) {
-    // No transition overrides: they belong on the NavHost, which is the only
-    // place that can see both sides of a transition at once. What this builder
-    // still buys is the type constraint — registering an ordinary route as a
-    // modal, or a modal as an ordinary push, does not compile.
-    //
-    // The entry is handed on because `LogDose` carries an argument: which vial
-    // the patient opened before tapping «Записать дозу».
+    // No transition overrides here — those live on the NavHost, the only place that sees
+    // both sides of a transition. This buys the type constraint: a modal registered as an
+    // ordinary push (or vice versa) doesn't compile.
     composable<T> { entry -> content(entry) }
 }
 
-/**
- * What the wizard says when the repository refuses.
- *
- * Exhaustive with no `else`: a fifth answer added to `DoseLogResult` has to be
- * given words here or it will not compile, which is the whole reason the result
- * is a sealed type rather than a nullable id.
- */
+/** Exhaustive with no `else`: a fifth `DoseLogResult` answer must be given words here or it won't compile. */
 private fun DoseLogResult.reasonRu(): String? =
     when (this) {
         is DoseLogResult.Written -> null
@@ -677,15 +544,9 @@ private fun DoseLogResult.reasonRu(): String? =
     }
 
 /**
- * What «Что вы приняли?» offers, from the week's protocol.
- *
- * `weekProtocol` already resolves the compound, the dose in force and today's
- * status, so the wizard needs no repository of its own — and cannot disagree
- * with the strip about what today's dose is. Only loggable items: a weigh-in is
- * on the protocol and is not a dose.
- *
- * `syringeUnits` is null until a vial says what the concentration is — see
- * `docs/prototype-divergences.md`.
+ * `weekProtocol` already resolves compound, dose and today's status, so the wizard can't
+ * disagree with the strip. Only loggable items: a weigh-in is on the protocol but isn't a dose.
+ * `syringeUnits` is null until a vial says the concentration — see docs/prototype-divergences.md.
  */
 internal fun TodaySummary?.doseOptions(cabinet: InventorySummary? = null): List<DoseOption> =
     this
@@ -701,9 +562,8 @@ internal fun TodaySummary?.doseOptions(cabinet: InventorySummary? = null): List<
                 syringeUnits = null,
                 modeRu = modeRu(row),
                 dueToday = row.todayStatus != null,
-                // The open vials of this compound, fullest first. The picker
-                // draws nothing when there is one; two is the case §03 allows
-                // and only the patient can settle.
+                // Fullest first: the picker draws nothing for one vial; two is the case §03
+                // allows and only the patient can settle.
                 vials =
                     cabinet
                         ?.active
@@ -714,12 +574,8 @@ internal fun TodaySummary?.doseOptions(cabinet: InventorySummary? = null): List<
         }
 
 /**
- * «Семаглутид · 0,25 мг ждёт» — the next dose, in the protocol's own words.
- *
- * Null when the day prescribes nothing: the sheet says so rather than naming a
- * compound that is not due. Built from `nextDose` and `nextDoseCompound`, the
- * same two fields the Today hero draws, so the sheet and the card behind it
- * cannot disagree about what is waiting.
+ * Built from the same `nextDose`/`nextDoseCompound` fields the Today hero draws, so the
+ * sheet and card can't disagree about what's waiting. Null when nothing is due.
  */
 private fun TodaySummary.doseDueLine(): String? {
     val name = nextDoseCompound?.nameRu ?: return null

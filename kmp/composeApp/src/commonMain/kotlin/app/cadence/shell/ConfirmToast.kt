@@ -39,14 +39,9 @@ import app.cadence.format.formatInteger
 const val CADENCE_CONFIRM_TOAST_MS: Long = 1700
 
 /**
- * What a logged meal has to say for itself.
- *
- * `dayKcal` is **the day's running total including this meal**, not the meal's
- * own — `showConfirm({ kcal: nextTotals.kcal, … })` in
- * mobile/src/state/AppState.tsx, where `nextTotals = dayTotals(nextMeals)`. The
- * field was called `kcal` first, which invited step 8 to wire the meal's own
- * figure and render «300 / 2 100 ккал сегодня» after a 300-kcal breakfast: a
- * plausible wrong number, in a health product, that nothing would have caught.
+ * `dayKcal` is the day's running total including this meal, not the meal's own — matches
+ * `showConfirm({ kcal: nextTotals.kcal, … })` in mobile/src/state/AppState.tsx. Renamed from
+ * `kcal`, which invited wiring the meal's own figure and rendering a plausible wrong number.
  */
 @Immutable
 data class ConfirmToastState(
@@ -65,12 +60,8 @@ private val TOAST_TITLE_SIZE = 18.sp
 private val TOAST_META_SIZE = 12.sp
 
 /**
- * The card that confirms a logged meal, ported from
- * mobile/src/navigation/ConfirmToast.tsx.
- *
- * Presentational and stateless: it does not know that it disappears. The shell
- * owns the timer, because how long something stays on screen is a property of
- * the screen and not of the card.
+ * Ported from mobile/src/navigation/ConfirmToast.tsx. Presentational and stateless — it
+ * doesn't know it disappears; the shell owns the timer.
  */
 @Composable
 fun ConfirmToast(
@@ -88,23 +79,15 @@ fun ConfirmToast(
             modifier
                 .fillMaxSize()
                 .background(palette.glassSoft)
-                // The prototype's overlay is `pointerEvents="auto"`: for the
-                // 1 700 ms it is up it is the topmost hit target and swallows
-                // every touch. Without this the screen is dimmed but fully
-                // live — a tap on «+» underneath opens the action sheet, which
-                // composes *below* this layer and would be read through it.
+                // Matches the prototype's pointerEvents="auto": swallows every touch while up,
+                // or a tap on "+" underneath would open the action sheet through this layer.
                 .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } }
                 .padding(
                     start = CadenceSpacing.lg,
                     end = CadenceSpacing.lg,
                     top = CadenceSpacing.sm,
-                    // `Math.max(insets.bottom, 16) + 8` in the prototype, which
-                    // is CadenceTabBar's shape and not windowInsetsPadding's:
-                    // the inset alone puts the card 8dp from the edge on a
-                    // device with no gesture bar, where the prototype puts it
-                    // 24. The tab bar carries a comment about exactly this trap
-                    // and an earlier version of this line cited it as precedent
-                    // while not using it.
+                    // `Math.max(insets.bottom, 16) + 8` in the prototype — CadenceTabBar's
+                    // shape, not windowInsetsPadding's; the inset alone gives 8dp not 24dp.
                     bottom = max(bottomInset, MIN_BOTTOM_INSET) + CadenceSpacing.sm,
                 ),
         contentAlignment = Alignment.BottomCenter,
@@ -143,11 +126,8 @@ fun ConfirmToast(
 }
 
 /**
- * «1 240 / 2 100 ккал сегодня» — two runs of one line.
- *
- * One BasicText with spans rather than two siblings in a Row, because in the
- * prototype the second is a `Text` nested in the first: it flows and wraps as
- * one sentence, and a screen reader reads it as one.
+ * One BasicText with spans, not two Row siblings, so it wraps and reads as one sentence —
+ * matching the prototype's nested Text.
  */
 @Composable
 private fun ToastTally(

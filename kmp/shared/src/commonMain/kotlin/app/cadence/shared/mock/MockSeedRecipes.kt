@@ -9,43 +9,24 @@ import app.cadence.shared.domain.RecipeId
 import app.cadence.shared.domain.RecipeIngredient
 import app.cadence.shared.domain.RecipeTag
 
-// The recipe library's seed: the prototype's 25-ingredient reference table
-// and its six starter recipes, ported whole (`mobile/src/features/recipe/data.ts`).
-//
-// A separate file rather than members of `MockSeed` itself, matching
-// `parsing/CannedMealParses.kt`'s precedent for the same reason: `MockSeed.kt`'s
-// object body is already close to detekt's `LargeClass` threshold, and this
-// table plus the six recipes below (with their steps in full) would push it
-// over. `MockSeed.kt` stays untouched by this step; [ingredients] and
-// [recipes] are extension properties, not members, so `MockSeed.kt`'s class
-// body — the thing `LargeClass` measures — does not grow by a single line.
-// `detekt.yml`'s `MagicNumber` excludes this file for the same reason it
-// excludes `MockSeed.kt` and `CannedMealParses.kt`: the numbers here (grams,
-// tenths of a macro, minutes) are the ported specification, not thresholds a
-// name would clarify.
+// The prototype's 25-ingredient reference table and six starter recipes, ported whole
+// (mobile/src/features/recipe/data.ts). Kept as extension properties in a separate file, not
+// members of `MockSeed`, so its class body — what detekt's LargeClass measures — doesn't grow.
+// `detekt.yml`'s MagicNumber excludes this file, like MockSeed.kt and CannedMealParses.kt:
+// the numbers here are the ported specification, not thresholds a name would clarify.
 
 /**
- * §03's `ingredients`: the prototype's 25-entry reference table
- * (`mobile/src/features/recipe/data.ts:57-81`), ported at 0,1 g precision —
- * [MacrosTenths], not whole grams. kcal is tenths too, per the step-2
- * deviation: chicken's `kcalTenths` is 1650, not 165 — the trap that
- * deviation was written to warn this seed away from.
+ * Ported at 0,1g precision — [MacrosTenths], not whole grams. kcal is tenths too: chicken's
+ * `kcalTenths` is 1650, not 165, per the step-2 deviation this seed was warned away from.
  */
 val MockSeed.ingredients: List<Ingredient> get() = SEED_INGREDIENTS
 
-/**
- * §03's `recipes`: the prototype's six starter recipes
- * (`mobile/src/features/recipe/data.ts:105-187`), `ownerId = null` — the
- * clinic's library, not a patient's own. Steps and descriptions (`dek`) are
- * carried in full, word for word.
- */
+/** `ownerId = null`: the clinic's library, not a patient's own. Steps and `dek` carried word for word. */
 val MockSeed.recipes: List<Recipe> get() = SEED_RECIPES
 
 /**
- * Six parameters for the six fields `IngredientMeta` (`recipe/data.ts:17-20`)
- * carries — the same trade `CannedMealParses.kt`'s `item()` already makes for
- * the same reason: a one-off tuple type around a table that exists nowhere
- * else would name nothing this helper's own parameter names do not.
+ * Same trade `CannedMealParses.kt`'s `item()` makes: a one-off tuple type here would name
+ * nothing this helper's own parameter names don't.
  */
 @Suppress("LongParameterList")
 private fun ingredient(

@@ -8,9 +8,7 @@ import kotlin.test.assertTrue
 class DomainTest {
     @Test
     fun aDoseKeepsItsValueAndUnitApart() {
-        // §03: «Mobile's structured {value, unit} wins over the dashboard's
-        // display string». The whole correction is that nothing downstream can
-        // be handed «0,25 мг» and have to parse it back out.
+        // §03: mobile's structured {value, unit} wins over the dashboard's display string.
         val dose = Dose(value = 0.25, unit = DoseUnit.MG)
 
         assertEquals(0.25, dose.value)
@@ -19,11 +17,8 @@ class DomainTest {
 
     @Test
     fun theTenInjectionSitesAreThePrototypesOwn() {
-        // Codes, not a count. This test asserted `entries.size == 10` and was
-        // green while two of the ten were invented — «l-flank» and «r-flank»,
-        // which match no zone the body map draws. The same file was already
-        // comparing code sets for SideEffect and Metric; the pattern was
-        // applied selectively and the gap is exactly where the drift landed.
+        // Codes, not a count: `entries.size == 10` was green while two of the ten were
+        // invented ("l-flank", "r-flank"), matching no zone the body map draws.
         assertEquals(
             setOf(
                 "r-delt",
@@ -51,9 +46,6 @@ class DomainTest {
 
     @Test
     fun theEightMetricsCoverBothSurfaces() {
-        // Mobile shows all eight, the dashboard a subset — §03's «same rows,
-        // different projections». A missing metric is a screen that cannot be
-        // built.
         assertEquals(
             setOf("weight", "hrv", "rhr", "sleep", "bodyfat", "waist", "hip", "chest"),
             Metric.entries.map { it.code }.toSet(),
@@ -62,8 +54,7 @@ class DomainTest {
 
     @Test
     fun aPatientHasOneTargetWeight() {
-        // §03's first correction: the prototype carries 100 kg in trends and
-        // 102 kg in body. There is one field, so there is one answer.
+        // §03's first correction: the prototype carries 100kg in trends and 102kg in body.
         val profile =
             PatientProfile(
                 userId = UserId("p-1"),
@@ -89,11 +80,8 @@ class DomainTest {
 
     @Test
     fun theJournalTagsAreTheSideEffectsUnderAnotherName() {
-        // §03: one dose-wizard check-in writes both a dose event and a journal
-        // entry — «one action, two facts». That is only possible if the two
-        // vocabularies are the same one, and the prototype's own comment says
-        // so: «tags — side-effect ids». Counting to seven did not notice that
-        // this enum had been invented from scratch.
+        // §03's "one action, two facts" needs the two vocabularies to be the same one;
+        // counting to seven wouldn't notice an enum invented from scratch.
         assertEquals(
             SideEffect.entries.map { it.code }.toSet(),
             JournalTag.entries.map { it.code }.toSet(),

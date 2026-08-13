@@ -29,10 +29,8 @@ private fun overview(
 class MetricTrendTest {
     @Test
     fun movementIsMeasuredAgainstWhereTheWindowOpenedAndNotInTheMetricsOwnUnit() {
-        // The point of it is to rank metrics against each other. Eight
-        // milliseconds of HRV on a base of fifty is a bigger change than two
-        // kilograms on a base of a hundred, and comparing the raw numbers would
-        // sort by unit.
+        // 8ms of HRV on a base of 50 is a bigger change than 2kg on a base of 100; raw
+        // numbers would sort by unit.
         val hrv =
             MetricTrend(
                 Metric.HRV.meta,
@@ -84,8 +82,6 @@ class MetricTrendTest {
 class TrendsOverviewTest {
     @Test
     fun theListHoldsEveryMetricIncludingTheOnesWithNothingToShow() {
-        // The set, not the count — and the unmeasured one has to be in it, or a
-        // patient cannot find out that it is unmeasured.
         assertEquals(Metric.entries.toSet(), overview().metrics.map { it.meta.metric }.toSet())
         assertTrue(
             overview()
@@ -99,10 +95,8 @@ class TrendsOverviewTest {
 
     @Test
     fun theHeroIsTheFirstMetricOfTheSetAndTheRestFollowIt() {
-        // «What I looked at last time» is a second kind of memory, and there is
-        // nowhere to keep it until the profile block. The prototype features
-        // whichever biomarker was opened last; this screen stays a function of
-        // its data.
+        // The prototype features whichever biomarker was opened last; this screen stays a
+        // function of its data.
         val all = overview()
 
         assertEquals(Metric.WEIGHT, all.hero?.meta?.metric)
@@ -117,20 +111,14 @@ class TrendsOverviewTest {
         assertEquals(NOTABLE_SHIFTS, shifts.size)
         val movements = shifts.map { requireNotNull(it.movement) }
         assertEquals(movements.sortedDescending(), movements, "largest first")
-        // And they really are the largest three of the whole set, not the
-        // first three that happened to have a delta.
         val everyMovement = overview().metrics.mapNotNull { it.movement }.sortedDescending()
         assertEquals(everyMovement.take(NOTABLE_SHIFTS), movements)
-        // Named, so a reader can see what the seed actually ranks — and so a
-        // change to the seed shows up here rather than passing as «still three».
+        // Named, so a change to the seed shows up here rather than passing as "still three".
         assertEquals(listOf(Metric.SLEEP, Metric.HRV, Metric.RHR), shifts.map { it.meta.metric })
     }
 
     @Test
     fun aMetricThatHasNotMovedTwiceIsNotAShift() {
-        // A section called «заметные сдвиги» listing a metric that has not been
-        // measured twice is naming a shift that did not happen. Chest is
-        // unmeasured in the seed on purpose, so it is the one to check.
         val shifts = overview().notableShifts(limit = Metric.entries.size)
 
         assertTrue(shifts.none { it.meta.metric == Metric.CHEST })
@@ -139,9 +127,7 @@ class TrendsOverviewTest {
 
     @Test
     fun aMetricThatOpenedOnZeroHasNoMovementRatherThanAnInfiniteOne() {
-        // A flaky import can produce it, and without the guard the share is
-        // `Infinity` — which sorts above every real metric and makes that
-        // reading the headline shift for as long as it is in the window.
+        // Without the guard the share is `Infinity`, sorting above every real metric.
         val fromNothing =
             MetricTrend(
                 Metric.SLEEP.meta,
@@ -161,10 +147,8 @@ class TrendsOverviewTest {
 
     @Test
     fun twoMetricsThatMovedTheSameShareKeepAFixedOrder() {
-        // The tie-break, not order-independence: `trendSeries` sorts and the
-        // overview is built in `Metric.entries` order, so reversing the input
-        // is the same computation. What this measures is that a stable sort
-        // with no `thenBy` would put WAIST first.
+        // The tie-break, not order-independence: a stable sort with no `thenBy` would put
+        // WAIST first.
         val tied =
             listOf(
                 reading(Metric.WAIST, LocalDate(2026, 5, 10), 100.0),
@@ -185,8 +169,7 @@ class TrendsOverviewTest {
         val silent = overview(emptyList())
 
         assertEquals(emptyList(), silent.notableShifts())
-        // The metrics are still all there, so the grid still says «нет данных»
-        // for each of them.
+        // The metrics are still all there, so the grid still says «нет данных» for each.
         assertEquals(Metric.entries.size, silent.metrics.size)
     }
 }

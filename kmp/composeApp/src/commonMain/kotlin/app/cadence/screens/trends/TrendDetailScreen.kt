@@ -64,16 +64,13 @@ private val CHART_HEIGHT = 200.dp
 private const val RECENT_ROWS = 7
 
 /**
- * One metric, with the protocol drawn beside it.
+ * One metric, with the protocol drawn beside it. [detail] is null when the route's
+ * code named no metric of §03 — the prototype has a `thigh` and a `bmi` the data
+ * model does not, and a deep link can carry anything at all, so «нет такой метрики»
+ * is a state this screen renders rather than a crash it avoids by hoping.
  *
- * [detail] is null when the route's code named no metric of §03. The prototype
- * has a `thigh` and a `bmi` that the data model does not, and a deep link can
- * carry anything at all — so «нет такой метрики» is a state this screen renders
- * rather than a crash it avoids by hoping.
- *
- * [scrubIndex] and [window] are hoisted: the window is shared with the list
- * screen, and the scrub position belongs to whoever can also reset it when the
- * metric changes.
+ * [scrubIndex] and [window] are hoisted: the window is shared with the list screen,
+ * and the scrub position belongs to whoever can also reset it when the metric changes.
  */
 @Composable
 fun TrendDetailScreen(
@@ -106,12 +103,10 @@ fun TrendDetailScreen(
 }
 
 /**
- * Everything below the header, once there is a metric to show.
- *
- * Split out rather than guarded with `return@Column`: an early exit inside a
- * `Column` means anything appended below it later silently does not render in
- * the states that took the exit, and `BiomarkerSheet` expresses the same choice
- * as a branch.
+ * Everything below the header, once there is a metric to show. Split out rather
+ * than guarded with `return@Column`: an early exit inside a `Column` means anything
+ * appended below it later silently does not render in the states that took the
+ * exit, and `BiomarkerSheet` expresses the same choice as a branch.
  */
 @Composable
 private fun ColumnScope.MetricBody(
@@ -194,12 +189,10 @@ private fun DetailHeader(
 }
 
 /**
- * The four aggregates.
- *
- * All of them come off the same window as the chart above. The prototype's
- * `seriesStats` does too — its bug is on the *list* screen's hero, not here —
- * but they are recomputed there from the series rather than stored, which is
- * why nothing on this screen holds a baseline of its own.
+ * The four aggregates, all off the same window as the chart above. The
+ * prototype's `seriesStats` does too — its bug is on the *list* screen's hero, not
+ * here — but recomputed from the series rather than stored, which is why nothing
+ * on this screen holds a baseline of its own.
  */
 @Composable
 private fun StatStrip(trend: MetricTrend) {
@@ -244,12 +237,10 @@ private fun RowScope.Stat(
 }
 
 /**
- * «Последние записи» — the tail of the window, newest first.
- *
- * Newest first because that is the order a patient reads a log in, and the
- * chart above already runs the other way. The prototype's rows carry a note
- * («Утром · натощак»); `Measurement.note` is empty in the seed, so nothing is
- * drawn for it rather than a blank line being reserved — recorded as a
+ * «Последние записи» — the tail of the window, newest first: the order a patient
+ * reads a log in, while the chart above runs the other way. The prototype's rows
+ * carry a note («Утром · натощак»); `Measurement.note` is empty in the seed, so
+ * nothing is drawn for it rather than a blank line reserved — recorded as a
  * divergence.
  */
 @Composable

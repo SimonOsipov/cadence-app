@@ -3,8 +3,5 @@ package app.cadence
 import androidx.compose.ui.window.ComposeUIViewController
 import platform.UIKit.UIViewController
 
-/**
- * mainViewController is the bridge the Swift host calls: it wraps the shared
- * Compose tree in a UIViewController that iosApp presents as its root.
- */
+/** The bridge iosApp's Swift host calls to get its root view controller. */
 fun mainViewController(): UIViewController = ComposeUIViewController { App() }

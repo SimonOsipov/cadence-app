@@ -74,15 +74,13 @@ class CadenceMacroBarTest {
     @Test
     fun threeCoexistingMacroBarsOwnThreeDistinctTrackTags() =
         runComposeUiTest {
-            // The nutrition screen renders protein, carbs and fat side by side, which
-            // is exactly what no other test in this file does — every other fixture
-            // above renders a single bar, so `macroTrackTag(id) = "cadence-macro-track-$id"`
-            // collapsing back to the single constant `"cadence-macro-track"` it replaced
-            // would leave them all green: onNodeWithTag only throws once more than one
-            // bar is on screen and two of them share a tag. Three ids are queried by
-            // their own tag and their semantics node ids are collected into a Set —
-            // under the collapse, the first of the three onNodeWithTag calls below
-            // already fails, because it now matches all three tracks instead of one.
+            // The nutrition screen renders protein, carbs and fat side by side —
+            // no other test in this file does, every other fixture renders a
+            // single bar — so `macroTrackTag(id)` collapsing back to the single
+            // constant it replaced would stay green there: onNodeWithTag only
+            // throws once more than one bar shares a tag. Here, the first of
+            // the three onNodeWithTag calls below would already fail, matching
+            // all three tracks instead of one.
             setContent {
                 CadenceTheme {
                     Column {

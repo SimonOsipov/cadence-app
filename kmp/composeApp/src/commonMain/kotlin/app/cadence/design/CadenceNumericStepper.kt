@@ -23,16 +23,14 @@ import kotlin.math.pow
 import kotlin.math.round
 
 /**
- * The next value, clamped and rounded.
+ * The next value, clamped and rounded. A function beside the composable
+ * because the clamping is the whole contract and a drawing asserts nothing.
+ * Scaled integer arithmetic, not raw `Double` addition — binary error
+ * accumulates the way `CadenceDoseStepper` documents at `DOSE_SCALE`, and the
+ * number the patient reads must be the number that is stored.
  *
- * A function beside the composable because the clamping is the whole contract
- * and a drawing asserts nothing. Scaled integer arithmetic rather than raw
- * `Double` addition: a tenth of a gram accumulates binary error the way
- * `CadenceDoseStepper` documents at `DOSE_SCALE`, and the number the patient
- * reads must be the number that is stored.
- *
- * `max = null` is «no ceiling», not «no limit worth writing»: the grams of a
- * parsed meal item have a floor and no top (`LogMealScreen.tsx:880`), while the
+ * `max = null` is «no ceiling», not «no limit worth writing»: a parsed meal
+ * item's grams have a floor and no top (`LogMealScreen.tsx:880`), while the
  * ingredient sheet caps at 600.
  */
 fun steppedValue(
@@ -65,12 +63,10 @@ private val MINUS_BAR = 2.dp
 
 /**
  * A numeric field with a fractional step, a floor and an optional ceiling.
- *
  * Reports a value, never a delta: the caller stores what it is shown. `unit`
- * is forwarded to [CadenceNumber] unchanged — a caller with nothing to show
- * (a plain count: servings, steps, minutes) passes `null`, and `CadenceNumber`
- * composes no unit run at all rather than an empty one with its own trailing
- * `spacedBy` gap.
+ * forwards to [CadenceNumber] unchanged — a caller with nothing to show (a
+ * plain count: servings, steps, minutes) passes `null`, so `CadenceNumber`
+ * composes no unit run rather than an empty one with its own trailing gap.
  */
 @Composable
 fun CadenceStepper(
@@ -109,8 +105,8 @@ fun CadenceStepper(
 
 /**
  * A private copy of `CadenceStepper.kt`'s button, with a `testTag` and no tie
- * to a [app.cadence.shared.domain.Dose]: the dose stepper stays as it is, and
- * the two coexist rather than share one parametrised button.
+ * to [app.cadence.shared.domain.Dose] — the two coexist rather than share one
+ * parametrised button.
  */
 @Composable
 private fun StepperButton(
@@ -130,9 +126,8 @@ private fun StepperButton(
         contentAlignment = Alignment.Center,
     ) {
         if (icon == null) {
-            // A bar rather than an icon: there is no «минус» in `CadenceIcons`,
-            // and `CadenceIcon` draws nothing for a name it does not know — the
-            // same bug the dose stepper documents at `CadenceStepper.kt`.
+            // A bar, not an icon: no «минус» exists in `CadenceIcons` (same
+            // gap the dose stepper documents at `CadenceStepper.kt`).
             Box(
                 Modifier
                     .size(width = CadenceSpacing.xxl, height = MINUS_BAR)
