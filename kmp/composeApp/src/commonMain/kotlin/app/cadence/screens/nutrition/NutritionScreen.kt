@@ -326,7 +326,7 @@ private val RECIPES_ICON_SIZE = 22.dp
 /** The trailing chevron, the prototype's `size={18}`. */
 private val CHEVRON_SIZE = 18.dp
 
-/** «{N} г / день», `fontSize: 18` on the prototype's protein-average readout (`NutritionScreen.tsx:625`). */
+/** «{N} г / день», `fontSize: 18` on the prototype's protein-average readout (`NutritionScreen.tsx:629`). */
 private val PROTEIN_AVERAGE_SIZE = 18.sp
 
 /** The «Рецепты» card, so a test can press it without matching on its copy. */
@@ -347,16 +347,16 @@ private fun weekDayLabels(week: NutritionWeek): List<String> =
 
 /**
  * «Белок · средн.» — the week's average daily protein, rounded half up like the
- * prototype's own `Math.round(sum / length)` (`NutritionScreen.tsx:410-411`). [NutritionWeek]
- * always carries seven days (`NutritionRepository.week`'s own contract), so an empty list
- * is not a shape this function's caller can produce — the guard exists only so a malformed
- * fixture divides by a size it does not have rather than by zero.
+ * prototype's own `Math.round(sum / length)` (`NutritionScreen.tsx:410-411`). No
+ * empty-list guard: unlike `weekBarFraction`/`weekGoalFraction`'s zero-scale guards,
+ * which pin a state a real week can actually reach (nothing logged, no goal set),
+ * [NutritionWeek] always carries seven days (`NutritionRepository.week`'s own
+ * contract) — an empty list is not a shape this function's caller can produce, so a
+ * guard against it would be dead code no test could reach honestly, and the
+ * contract stands instead of being defended twice.
  */
-private fun weekProteinAverage(week: NutritionWeek): Int {
-    val days = week.days
-    if (days.isEmpty()) return 0
-    return (days.sumOf { it.proteinG }.toDouble() / days.size).roundToInt()
-}
+private fun weekProteinAverage(week: NutritionWeek): Int =
+    (week.days.sumOf { it.proteinG }.toDouble() / week.days.size).roundToInt()
 
 /**
  * «Прошлая неделя» — [CadenceWeekBars], weekday labels read from real dates, the dashed

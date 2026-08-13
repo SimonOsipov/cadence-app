@@ -214,7 +214,12 @@ private fun MealFeedCard(
     }
 }
 
-/** The letter-avatar box — `.charAt(0).toUpperCase()` (`NutritionScreen.tsx:204`). */
+/**
+ * The letter-avatar box — `.charAt(0).toUpperCase()` (`NutritionScreen.tsx:204`). Falls
+ * back to «П», not the prototype's own `'M'` at that line: RU is the product language, so
+ * a Latin fallback letter has no place here even though the fallback itself is unreachable
+ * in practice — every seeded and logged meal carries a non-empty name.
+ */
 @Composable
 private fun MealAvatar(name: String) {
     val letter = (name.firstOrNull() ?: 'П').uppercaseChar().toString()

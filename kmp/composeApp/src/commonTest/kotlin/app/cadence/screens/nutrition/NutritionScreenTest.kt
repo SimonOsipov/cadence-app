@@ -1,8 +1,12 @@
 package app.cadence.screens.nutrition
 
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -10,11 +14,21 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CADENCE_RINGS_TAG
 import app.cadence.design.CADENCE_WEEK_ROW_TAG
+import app.cadence.design.CadenceColors
 import app.cadence.design.CadenceTheme
+import app.cadence.design.macroFillTag
+import app.cadence.design.macroFraction
+import app.cadence.design.macroTrackTag
 import app.cadence.design.weekBarFraction
 import app.cadence.design.weekBarTag
 import app.cadence.design.weekScale
+import app.cadence.format.formatInteger
 import app.cadence.shared.domain.Macros
+import app.cadence.shared.domain.MacrosTenths
+import app.cadence.shared.domain.Meal
+import app.cadence.shared.domain.MealId
+import app.cadence.shared.domain.MealItem
+import app.cadence.shared.domain.MealSource
 import app.cadence.shared.domain.NutritionTargets
 import app.cadence.shared.domain.UserId
 import app.cadence.shared.repository.NutritionDay
@@ -22,11 +36,13 @@ import app.cadence.shared.repository.NutritionWeek
 import app.cadence.shared.repository.NutritionWeekDay
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /** `MockSeed.targets` — the same 1800/140/200/60 the spec puts in exactly one place. */
 private val TARGETS =
@@ -36,7 +52,32 @@ private val TODAY = LocalDate(2026, 5, 31)
 private fun dayOf(
     totals: Macros,
     date: LocalDate = TODAY,
-) = NutritionDay(date = date, meals = emptyList(), totals = totals, targets = TARGETS)
+    meals: List<Meal> = emptyList(),
+) = NutritionDay(date = date, meals = meals, totals = totals, targets = TARGETS)
+
+/**
+ * Two logged positions, one on a `.5` tenths value in both its kcal and its protein —
+ * the shape a stubbed or half-to-even `tenthsLabel` rounds differently from this
+ * codebase's half-up rule. The chicken item's own numbers are the same
+ * `chicken-bowl`-at-150-g fixture `NutritionTest.kt` already carries in the shared
+ * module (`Nutrition.kt`'s own test), not invented fresh here.
+ */
+private fun twoItemMeal(): Meal =
+    Meal(
+        id = MealId("meal-1"),
+        patientId = UserId("patient-1"),
+        eatenAt = Instant.parse("2026-05-31T09:15:00Z"),
+        name = "Обед",
+        source = MealSource.MANUAL,
+        recipeId = null,
+        items =
+            listOf(
+                // 150 g chicken: 247,5 kcal and 46,5 g protein — both round up
+                // (248, 47) under half-up, not half-to-even's 246/46.
+                MealItem("Куриная грудка", 150, MacrosTenths(2475, 465, 0, 54)),
+                MealItem("Бурый рис", 120, MacrosTenths(1476, 32, 300, 12)),
+            ),
+    )
 
 /** Seven days, oldest first, ending on [endDate] — the same walk `NutritionRepository.week()` does. */
 private fun weekEnding(
@@ -92,6 +133,47 @@ class NutritionScreenTest {
         }
 
     /**
+     * "Позиции показываются округлёнными — точность живёт в модели, не на
+     * экране" (spec step-6) — part 1's own central design decision, unasserted
+     * by every other test here because [dayOf] hardcoded `meals = emptyList()`,
+     * making `MealFeedCard`, `MealAvatar`, `MealFeedItemRow`, the expand/collapse
+     * state, the meal counter and `pluralMeals` unreachable. [twoItemMeal]'s
+     * chicken item lands both its kcal and its protein on a `.5` tenths value,
+     * so a stubbed `tenthsLabel` (always "0") or a half-to-even one (46, not 47)
+     * both read wrong here.
+     */
+    @Test
+    fun aLoggedMealCardShowsItsHeaderThenItsRoundedItemsOnExpand() =
+        runComposeUiTest {
+            val meal = twoItemMeal()
+            setContent {
+                CadenceTheme {
+                    NutritionScreen(
+                        day = dayOf(Macros(kcal = 900, proteinG = 65, carbsG = 80, fatG = 15), meals = listOf(meal)),
+                        week = weekEnding(TODAY),
+                        zone = TimeZone.UTC,
+                    )
+                }
+            }
+
+            // Collapsed: the card's own header line — time, position count and the
+            // meal's own total protein, tenths rounded once, not each item's own.
+            onNodeWithText("09:15 · 2 позиции · 50 г белка").assertExists()
+            onNodeWithText("Обед").assertExists()
+            onNodeWithText("395").assertExists("the meal card's own kcal readout")
+
+            onNodeWithText("Обед").performClick()
+            waitForIdle()
+
+            // Expanded: the chicken item's own rounded macros, grams and calories —
+            // 247,5 kcal and 46,5 g protein both round up under half-up (248, 47),
+            // not half-to-even's 246/46, and not a stub's constant 0.
+            onNodeWithText("Белок 47г · Углеводы 0г · Жиры 5г").assertExists()
+            onNodeWithText("150 г").assertExists()
+            onNodeWithText("248").assertExists("the chicken item's own kcal readout")
+        }
+
+    /**
      * The wiring test for [NutritionRingsCard]'s call into `CadenceRings`:
      * against the same lopsided fixture `CadenceRingsTest.kt` uses at the
      * primitive level (900/1800 kcal = 50%, 35/140 g protein = 25%), this
@@ -123,10 +205,57 @@ class NutritionScreenTest {
         }
 
     /**
+     * Closes the step-1 `[!question]`'s id/label transposition risk now that
+     * `NutritionRingsMacros` gives `CadenceMacroBar` its first three real call
+     * sites (`architecture/proposals` note aside, the spec text is «Закрыть,
+     * когда экран питания даст этим компонентам реальные места вызова»).
+     * Protein/carbs/fat are pairwise-distinct fractions of their own goals, so
+     * a mutation that swaps any two bars' `value`/`goal` between each other
+     * shows up as a wrong fraction on that bar's own tag rather than a
+     * coincidentally matching one; the carbs fill is additionally probed for
+     * `sand600` — the token this branch added for exactly that bar — so a
+     * colour-only swap (fractions left alone) still reddens.
+     */
+    @Test
+    fun theThreeMacroBarsEachDrawTheirOwnMacroNotAnotherOnes() =
+        runComposeUiTest {
+            val eaten = Macros(kcal = 900, proteinG = 35, carbsG = 90, fatG = 20)
+            setContent {
+                CadenceTheme {
+                    NutritionScreen(day = dayOf(eaten), week = weekEnding(TODAY))
+                }
+            }
+
+            fun fractionOf(id: String): Float {
+                val track = onNodeWithTag(macroTrackTag(id), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                val fill = onNodeWithTag(macroFillTag(id), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                return fill.width / track.width
+            }
+
+            val expectedFractions =
+                mapOf(
+                    "protein" to macroFraction(eaten.proteinG.toDouble(), TARGETS.macros.proteinG.toDouble()),
+                    "carbs" to macroFraction(eaten.carbsG.toDouble(), TARGETS.macros.carbsG.toDouble()),
+                    "fat" to macroFraction(eaten.fatG.toDouble(), TARGETS.macros.fatG.toDouble()),
+                )
+            expectedFractions.forEach { (id, expected) ->
+                val actual = fractionOf(id)
+                assertTrue(
+                    abs(actual - expected) < BAR_FRACTION_TOLERANCE,
+                    "\"$id\" bar filled to $actual, not $expected",
+                )
+            }
+
+            val carbsFill = onNodeWithTag(macroFillTag("carbs"), useUnmergedTree = true).captureToImage()
+            val carbsPixel = carbsFill.toPixelMap()[carbsFill.width / 2, carbsFill.height / 2]
+            assertEquals(CadenceColors.sand600, carbsPixel, "the carbs fill is not painted sand600")
+        }
+
+    /**
      * The step's own most important test. `MockSeed.DEMO_NOW` — the day every
      * other fixture in this suite is dated on — is a Sunday, and on a Sunday
      * the derived weekday order (Пн…Сб, oldest to youngest) happens to read
-     * identically to the prototype's own literal `['Пн','Вт','Ср','Чт','Пт','Сб']`.
+     * identically to the prototype's own literal `['Пн','Вт','Ср','Чт','Пт','Сб','Сег']`.
      * A mutation that swaps [weekDayLabels] for that literal list would pass
      * silently against any Sunday-ending fixture — so this fixture ends on a
      * Wednesday instead, where the two orders disagree: the derived labels
@@ -182,6 +311,13 @@ class NutritionScreenTest {
      * from [NutritionWeek] at all: the fixture's seven kcal totals
      * (`MockSeed`'s own week, §11) are pairwise distinct, so only the exact
      * value at the last index produces this fraction of the row's height.
+     *
+     * Also the only witness for `todayIndex` and `goalLabel` themselves: the
+     * height check alone cannot tell `todayIndex = week.days.lastIndex` apart
+     * from a mutated `0` (both land on *a* bar; only `selected` says which
+     * one), and this fixture's max (2100) beats the 1800 goal so even
+     * `goal = 0.0` would not move the scale the height assertion reads —
+     * `goalLabel` needs its own, separate text assertion.
      */
     @Test
     fun theTodayColumnOfTheWeekChartEqualsTheDaysTotal() =
@@ -210,6 +346,14 @@ class NutritionScreenTest {
                 abs(actual - expected) < BAR_FRACTION_TOLERANCE,
                 "today's column filled to $actual, not $expected — the day's own total",
             )
+
+            onNodeWithTag(weekBarTag(NUTRITION_WEEK_DAYS - 1), useUnmergedTree = true).assertIsSelected()
+            onNodeWithTag(weekBarTag(NUTRITION_WEEK_DAYS - 2), useUnmergedTree = true).assertIsNotSelected()
+
+            onNodeWithText(
+                "цель ${formatInteger(TARGETS.macros.kcal)}",
+                useUnmergedTree = true,
+            ).assertExists("the goal caption did not read the day's own kcal goal")
         }
 
     /**
