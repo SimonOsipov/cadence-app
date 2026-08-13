@@ -116,11 +116,11 @@ class CadenceWeekBarsTest {
         runComposeUiTest {
             // Day 0's value equals the goal on purpose: its bar top and the
             // dashed goal line must land at the same y. Against the mutation
-            // that centred the line inside the caption's own Row instead of
-            // the full chart height: the caption's ~13dp intrinsic text height
-            // ate space the two weighted spacers should have divided between
-            // them, and the line landed rowHeight × (goalFraction − 0.5) below
-            // where it belonged — here, ~6dp off, on an 84dp chart.
+            // that centred the line inside the caption's Row instead of the
+            // full chart height: the caption's ~13dp intrinsic text height ate
+            // space the two weighted spacers should have divided, and the
+            // line landed rowHeight × (goalFraction − 0.5) off — ~6dp, on an
+            // 84dp chart.
             setContent { CadenceTheme { GoalAtMaxFixture() } }
 
             val row = onNodeWithTag(CADENCE_WEEK_ROW_TAG, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot

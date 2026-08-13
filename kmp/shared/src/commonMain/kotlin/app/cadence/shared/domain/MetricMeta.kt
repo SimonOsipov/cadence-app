@@ -4,64 +4,32 @@ package app.cadence.shared.domain
 enum class MetricDirection { UP, DOWN }
 
 /**
- * Whether a screen may offer «Добавить замер» for this metric.
- *
- * Named for the decision it makes rather than for where readings come from —
- * that is [MeasurementSource]'s job, and the two are not the same axis. A
- * weight arrives from a smart scale *and* from the patient's own hand, and
- * `measurements.md` invariant 6 says manual entry stays first-class everywhere:
- * the import is a reinforcement, never a replacement. So [BY_HAND] does not
- * claim a metric is never imported, only that a hand can write it.
- *
- * The [BY_HAND] half is the prototype's own `editable` flag
- * (`mobile/src/features/body/data.ts:37-41`): weight, body fat and the three
- * tape measurements. The other half is an inference from absence — HRV,
- * resting pulse and sleep carry no such flag because they are not on that
- * screen at all, and the prototype offers no control anywhere that types one
- * in. `SLEEP` is [DEVICE_ONLY] even though the API scores it: the sessions
- * behind the score are the watch's, and no hand enters them.
+ * Whether a screen may offer «Добавить замер», not where readings come from (that's
+ * [MeasurementSource]'s axis) — a weight arrives from a scale *and* the patient's hand, and
+ * import never replaces manual entry (measurements.md invariant 6). [BY_HAND] is the
+ * prototype's `editable` flag; the rest is inferred from absence. `SLEEP` is [DEVICE_ONLY]
+ * even though the API scores it: the sessions behind the score are the watch's.
  */
 enum class MetricEntry { BY_HAND, DEVICE_ONLY }
 
 /**
- * The colour family a metric is drawn in.
- *
- * Data rather than a `when` on the screen, for the same reason §03 puts an
- * `icon` on a compound: which family a metric belongs to is a product decision.
- * The enum names a family, not a colour — the palette stays on the surface.
+ * Data, not a `when` on the screen — a product decision, same reason §03 puts an `icon` on
+ * a compound. Names a family, not a colour; the palette stays on the surface.
  */
 enum class MetricAccent { FOREST, SAND }
 
 /**
- * A sanity cap, not a limit `formatDecimal` imposes.
- *
- * That function indexes a `Long` power-of-ten sequence, so it copes with far
- * more than this; what it cannot cope with is a negative count, which walks off
- * the front. Four is «no clinical measurement is finer than this», and a table
- * asking for more has a typo rather than a requirement.
+ * A sanity cap, not `formatDecimal`'s own limit — a negative count walks off the front of
+ * its scale sequence; four is "no clinical measurement is finer than this".
  */
 private const val MAX_DECIMALS = 4
 
 /**
- * Everything about a metric that is not a reading.
- *
- * The prototype keeps these fields on the same object as the numbers
- * (`TREND_DATA` in `mobile/src/features/trends/data.ts`), which is what makes
- * its baselines and its series two copies of one truth. Here the readings are
- * §03's rows and this is the table beside them.
- *
- * [unit] is the wire unit, because that is what the readings carry and what the
- * project's «numbers are data, formatting is presentation» rule leaves to the
- * surface; `unitRu` turns «kg» into «кг». The prototype stores the Russian
- * directly, so four of these eight — «kg», «ms», «bpm», «cm» — are deliberately
- * *not* its strings. The other four («%», «/100») are the same either way.
- *
- * [decimals] is a rendering hint held as data, which is the one field here that
- * sits awkwardly in the domain. It is kept because §03 already moves the
- * neighbouring per-metric constants server-side — «Thresholds (HRV ≥58 · RHR
- * ≤60 · Sleep ≥75) move from client code to one constants module in the API so
- * both surfaces agree» — and this table is standing in for that module until it
- * exists.
+ * The prototype keeps these fields on the same object as the numbers, making baselines and
+ * series two copies of one truth; here the readings are §03's rows and this is the table
+ * beside them. [unit] is the wire unit — `unitRu` turns «kg» into «кг» — deliberately not
+ * the prototype's own Russian strings for four of the eight. [decimals] sits awkwardly in
+ * the domain as a rendering hint, standing in for the constants module §03 eventually moves these to.
  */
 data class MetricMeta(
     val metric: Metric,
@@ -74,9 +42,8 @@ data class MetricMeta(
     val accent: MetricAccent,
 ) {
     init {
-        // The same guard `TrendRange` carries, for the same reason: a row with
-        // a blank label draws a nameless card, and a negative `decimals`
-        // indexes off the front of `formatDecimal`'s scale sequence.
+        // Same guard as `TrendRange`: a blank label draws a nameless card, a negative
+        // `decimals` indexes off the front of `formatDecimal`'s scale sequence.
         require(label.isNotBlank() && eyebrow.isNotBlank() && unit.isNotBlank()) {
             "${metric.code} needs a label, an eyebrow and a unit"
         }
@@ -87,13 +54,9 @@ data class MetricMeta(
 }
 
 /**
- * The row for this metric.
- *
- * A `when` rather than a map lookup: the compiler then owns «every metric has a
- * row», so a ninth metric fails to build instead of failing a test — or, worse,
- * throwing out of a composable that asked for the row it forgot. The rows are
- * declared once below rather than constructed here, so reading this in a list
- * does not allocate eight objects per frame.
+ * A `when`, not a map lookup: the compiler then owns «every metric has a row», so a ninth
+ * metric fails to build rather than throwing out of a composable. Rows declared once below,
+ * not constructed here, so reading this in a list doesn't allocate eight objects per frame.
  */
 val Metric.meta: MetricMeta
     get() =
@@ -108,26 +71,12 @@ val Metric.meta: MetricMeta
             Metric.CHEST -> CHEST_META
         }
 
-// Six rows are the trends prototype's own copy, taken as written.
-//
-// `HIP` and `CHEST` are not in that module — but they are not invented either.
-// The prototype's *body* screen carries them
-// (`mobile/src/features/body/data.ts:40-41`, drawn by `BodyScreen.tsx:723`)
-// with the labels «Бёдра» and «Грудь» and with `editable: true`, so [label] and
-// [MetricEntry] are ported like the rest. What that screen has no field for is
-// an eyebrow, a direction or an accent — those three are inferred from `WAIST`,
-// the tape measurement both modules describe.
-//
-// `decimals` for the tape is the one place the two prototype modules disagree:
-// the body screen says `dec: 0` for waist, hip and chest, the trends module
-// says `decimals: 1` for waist. This table follows trends, because the seeded
-// tape series are in tenths (`MockSeed`'s `TENTHS` grid) and rounding them to
-// whole centimetres flattens the chart: the hip's seven weekly readings step
-// six times at one decimal place and three times at none — half its history
-// becomes a plateau it never had. The waist loses one step of six.
-//
-// `THIGH` is in neither table here: the prototype has it, §03 does not, and the
-// data model is canon.
+// Six rows are the trends prototype's own copy. `HIP` and `CHEST` aren't in that module, but
+// come from the body screen (label + `editable: true`); eyebrow/direction/accent are
+// inferred from `WAIST`. `decimals` follows trends' `1` for the tape, not the body screen's
+// `0`: the seeded tape series are in tenths, and rounding to whole cm flattens the chart —
+// the hip's seven readings would step six times at one decimal and three times at none.
+// `THIGH` is in neither table: the prototype has it, §03 doesn't.
 
 private val WEIGHT_META =
     MetricMeta(
@@ -170,9 +119,7 @@ private val SLEEP_META =
         metric = Metric.SLEEP,
         label = "Сон",
         eyebrow = "Качество сна",
-        // A score with no unit of its own. Without the «/100» the card reads
-        // «Сон 86» — a number whose scale the patient has to guess, next to a
-        // pulse and a weight that carry theirs.
+        // Without «/100» the card reads «Сон 86» — a number with no scale to guess against.
         unit = "/100",
         decimals = 0,
         direction = MetricDirection.UP,
@@ -208,9 +155,8 @@ private val HIP_META =
     MetricMeta(
         metric = Metric.HIP,
         label = "Бёдра",
-        // Invented: the body screen has no eyebrow. It follows «Талия» /
-        // «Обхват талии» rather than the trends module's thigh, whose label and
-        // eyebrow are the same string.
+        // Invented: the body screen has no eyebrow. Follows «Талия»/«Обхват талии», not the
+        // trends module's thigh (whose label and eyebrow are the same string).
         eyebrow = "Обхват бёдер",
         unit = "cm",
         decimals = 1,
@@ -226,10 +172,8 @@ private val CHEST_META =
         eyebrow = "Обхват груди",
         unit = "cm",
         decimals = 1,
-        // Down with the rest of the tape, and the body screen's own seeded
-        // history agrees (`SEED_HIST.chest` runs 112 → 105). A course built to
-        // add mass would want the other answer, and this is one of the fields
-        // the constants module will eventually own.
+        // Down with the rest of the tape; the body screen's own seeded history agrees
+        // (SEED_HIST.chest runs 112 → 105). One of the fields the constants module will own.
         direction = MetricDirection.DOWN,
         entry = MetricEntry.BY_HAND,
         accent = MetricAccent.FOREST,

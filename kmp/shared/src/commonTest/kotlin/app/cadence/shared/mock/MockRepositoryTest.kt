@@ -36,11 +36,7 @@ private val SEEDED_SUNDAY = LocalDate(2026, 5, 31)
 /** The mock wound to a moment, so «today» is the test's choice and not the machine's. */
 private fun mocks(iso: String = "2026-05-31T09:00:00Z") = CadenceMocks(clock = FixedCadenceClock.at(iso), zone = ZONE)
 
-/**
- * A draft a patient could actually have finished: item chosen from the plan, so
- * the dose comes from the phase in force, and a zone, because an injection
- * needs one.
- */
+/** Item chosen from the plan (dose from the phase in force) plus a zone, since an injection needs one. */
 private fun injectionDraft(
     itemId: ProtocolItemId,
     on: LocalDate = SEEDED_SUNDAY,
@@ -60,9 +56,7 @@ class MockRepositoryTest {
     @Test
     fun theSummaryCarriesTheDayItIsAboutAndTheHourOfIt() =
         runTest {
-            // The greeting is «Воскресенье, утро · 4-я неделя» in the prototype,
-            // frozen. Both halves are facts about the clock, and the zone is
-            // the patient's: 09:00 UTC is noon in Moscow, which is «день».
+            // The zone is the patient's: 09:00 UTC is noon in Moscow, i.e. «день».
             val morning = mocks("2026-05-31T04:00:00Z").today.today()
             val afternoon = mocks("2026-05-31T09:00:00Z").today.today()
 
@@ -74,8 +68,7 @@ class MockRepositoryTest {
     @Test
     fun theCycleWeekMovesWhenTheClockDoes() =
         runTest {
-            // The whole point of the clock seam: nothing here is pinned to
-            // 31 May the way the prototype's three «todays» are.
+            // Nothing here is pinned to 31 May the way the prototype's three «todays» are.
             assertEquals(4, mocks("2026-05-31T09:00:00Z").today.today().cycleWeek)
             assertEquals(5, mocks("2026-06-07T09:00:00Z").today.today().cycleWeek)
         }
@@ -83,9 +76,6 @@ class MockRepositoryTest {
     @Test
     fun loggingADoseThroughTheInterfaceIsVisibleThroughTheInterface() =
         runTest {
-            // The block's acceptance criterion in one test: a write goes in
-            // through the repository and comes back out of it, with no screen
-            // involved and nothing shared but the interface.
             val m = mocks()
             val before = m.today.today()
             assertFalse(before.doseLoggedToday, "the seeded day starts unlogged")
@@ -98,8 +88,7 @@ class MockRepositoryTest {
     @Test
     fun aLoggedDoseComesOutOfTheVialItWasDrawnFrom() =
         runTest {
-            // §03's third correction, end to end through the seam rather than
-            // in the arithmetic alone.
+            // §03's third correction, end to end through the seam, not just in the arithmetic.
             val m = mocks()
             val before = m.today.today().vialDosesLeft
 
@@ -111,9 +100,7 @@ class MockRepositoryTest {
     @Test
     fun oneCheckInWritesADoseEventAndAJournalEntryForTheSameDay() =
         runTest {
-            // §03's «one action, two facts». Two calls from a screen can
-            // half-fail, and a dose recorded without the side effect the
-            // patient reported is worse than a check-in that failed outright.
+            // §03's «one action, two facts»: two separate calls could half-fail.
             val m = mocks()
             val draft =
                 injectionDraft(assertNotNull(m.today.today().nextDose).itemId)
@@ -144,8 +131,7 @@ class MockRepositoryTest {
             assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(itemId)))
             val second = m.dosing.submit(injectionDraft(itemId))
 
-            // Named, not merely refused: the screen has to be able to say «эта
-            // доза уже записана» rather than «что-то пошло не так».
+            // Named, not merely refused: the screen must say «эта доза уже записана», not «что-то пошло не так».
             assertEquals(DoseLogResult.AlreadyLogged, second)
             assertEquals(before - 1, m.today.today().vialDosesLeft, "the vial paid once")
         }
@@ -153,11 +139,8 @@ class MockRepositoryTest {
     @Test
     fun anItemDosedTwiceADayCanBeLoggedTwiceAndThenNoMore() =
         runTest {
-            // §03 gives BPC-157 `times = [08:00, 20:00]`. Resolving «the first
-            // occurrence» rather than «the first one still open» would let the
-            // patient log the morning dose and then be told the evening one was
-            // already recorded — the defect `statusOf` was fixed for, one layer
-            // up.
+            // §03 gives BPC-157 two daily times: "first occurrence" rather than "first still
+            // open" would tell the patient the evening dose was already recorded.
             val m = mocks()
 
             val morning = assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.bpcItemId)))
@@ -171,24 +154,12 @@ class MockRepositoryTest {
     @Test
     fun theEventCarriesTheZoneThePatientChoseAndNotTheOneItSuggested() =
         runTest {
-            // The one path on which `DoseEvent.site` is observable today, and
-            // the reason to have it: the rotation reads the events back.
-            //
-            // The chosen zone is deliberately *not* the suggested one. A write
-            // that stamped `suggestNextSite(events)` instead of the draft's
-            // zone would pass a test that injected into the suggestion, and it
-            // is the same defect as recording the planned dose instead of the
-            // taken one.
-            // Two check-ins, in two mocks, because one does not separate the
-            // two ways this can be wrong — and neither assertion computes the
-            // rotation's answer, which would only be the production rule asked
-            // twice.
-            //
-            // Injecting into the *suggested* zone must move the suggestion: its
-            // recency is what made it the answer. Injecting into any *other*
-            // zone must leave the suggestion exactly where it was, because the
-            // suggested zone was not touched — which is false for a write that
-            // stamps its own suggestion instead of the patient's choice.
+            // A write that stamped `suggestNextSite(events)` instead of the draft's own zone
+            // would pass a test that happened to inject into the suggestion — the same defect
+            // as recording the planned dose instead of the taken one. Two mocks, because one
+            // test can't separate "injecting into the suggestion moves it" from "injecting
+            // elsewhere leaves it untouched", and neither assertion recomputes the rotation
+            // (that would only be the production rule asked twice).
             val intoTheSuggestion = mocks()
             val suggested = intoTheSuggestion.today.today().suggestedSite
 
@@ -216,11 +187,9 @@ class MockRepositoryTest {
     @Test
     fun aDoseIsDrawnFromTheFullestOpenVialOfItsCompound() =
         runTest {
-            // BPC-157 has four vials: one thrown out with six doses still in
-            // it, two open, one sealed. Every wrong answer is a different vial,
-            // which is the point of seeding it this way — with one vial per
-            // compound «the fullest open one» and «the first in the list» are
-            // the same vial and neither can be wrong.
+            // BPC-157 has four vials in different states, so every wrong answer is a
+            // different vial — with one vial per compound, "fullest" and "first" coincide
+            // and neither can be wrong.
             val m = mocks()
 
             val written = assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.bpcItemId)))
@@ -231,10 +200,8 @@ class MockRepositoryTest {
     @Test
     fun theWriteDrawsFromTheVialTheDraftNamesRatherThanItsOwnChoice() =
         runTest {
-            // The picker's whole purpose. Its default and the write's default
-            // are the same rule — «the fullest open vial» — so a write that
-            // ignored the draft would agree with the screen right up until the
-            // patient chose the other one.
+            // Picker's default and the write's default are the same rule, so a write ignoring
+            // the draft would agree with the screen right up until the patient chose otherwise.
             val m = mocks()
             val chosen = VialId("vial-bpc-2")
 
@@ -249,10 +216,8 @@ class MockRepositoryTest {
     @Test
     fun theEventCarriesTheDoseTheDraftHeldAndNotThePlansOwnNumber() =
         runTest {
-            // A patient who steps the dose down records what they took. A write
-            // that read `phaseDose` again would stamp the prescription over the
-            // fact, which is the prototype's «re-apply comp.default» bug moved
-            // one layer down.
+            // A write re-reading `phaseDose` would stamp the prescription over the fact —
+            // the prototype's «re-apply comp.default» bug moved one layer down.
             val m = mocks()
             val stepped = Dose(0.2, DoseUnit.MG)
             val draft = injectionDraft(assertNotNull(m.today.today().nextDose).itemId).copy(dose = stepped)
@@ -265,9 +230,8 @@ class MockRepositoryTest {
     @Test
     fun anItemTheProtocolDoesNotMarkLoggableIsRefusedByTheWriteItself() =
         runTest {
-            // The rule lives in `selectItem` too, but a caller that built its
-            // draft with the constructor never went through the chooser — and
-            // the app's own placeholder does exactly that.
+            // The rule lives in `selectItem` too, but a caller building its draft with the
+            // constructor never went through the chooser.
             val m = mocks()
             val draft =
                 DoseDraft(
@@ -303,8 +267,8 @@ class MockRepositoryTest {
     @Test
     fun theJournalAnswersForTheDayItWasAskedAbout() =
         runTest {
-            // §03 keys the entry by date. A read that returned whatever entry
-            // existed would look right for as long as there was only one.
+            // §03 keys the entry by date; a read of "whatever exists" looks right until
+            // there's more than one.
             val m = mocks()
             val written =
                 assertIs<DoseLogResult.Written>(
@@ -319,9 +283,8 @@ class MockRepositoryTest {
     @Test
     fun aSecondCheckInOnTheSameDayUpdatesTheOneJournalEntry() =
         runTest {
-            // §03 keys the journal `UNIQUE(patient, date)`. The seeded Sunday
-            // carries both the weekly injection and the twice-daily one, so two
-            // check-ins on one day is the ordinary case and not an edge.
+            // The seeded Sunday carries both the weekly and twice-daily items, so two
+            // check-ins on one day is the ordinary case, not an edge.
             val m = mocks()
             val morning = injectionDraft(MockSeed.bpcItemId).copy(mood = 2, sideEffects = listOf(SideEffect.NAUSEA))
             val later =
@@ -344,8 +307,7 @@ class MockRepositoryTest {
     @Test
     fun aCheckInThatSkipsTheContextDoesNotEraseWhatAnEarlierOneSaid() =
         runTest {
-            // Step 4 is «всё по желанию», so an unanswered field means
-            // «пропущено» and not «сотрите то, что я сказал утром».
+            // Step 4 is «всё по желанию»: an unanswered field means «пропущено», not "erase what an earlier one said".
             val m = mocks()
             m.dosing.submit(injectionDraft(MockSeed.bpcItemId).copy(mood = 2, note = "тяжело"))
 
@@ -373,7 +335,7 @@ class MockRepositoryTest {
     @Test
     fun anItemWithNoOccurrenceTodayWritesNeitherFact() =
         runTest {
-            // The weekly injection falls on Sunday; this is the Monday after.
+            // The Monday after the weekly injection's Sunday.
             val m = mocks("2026-06-01T09:00:00Z")
 
             assertEquals(DoseLogResult.NotScheduledToday, m.dosing.submit(injectionDraft(MockSeed.semaItemId)))
@@ -383,10 +345,8 @@ class MockRepositoryTest {
     @Test
     fun aCompoundWithNoVialIsStillLoggedAndTakesNothingFromAnotherCompoundsVial() =
         runTest {
-            // The seed stocks semaglutide and nothing else. A dose event whose
-            // `vialId` is null is honest; one that decremented whatever vial
-            // came first in the list is the prototype's disconnected inventory
-            // wearing a different shape.
+            // The seed stocks semaglutide only: a null `vialId` is honest, decrementing
+            // whatever came first in the list is the prototype's disconnected inventory again.
             val m = mocks()
             val before = m.today.today().vialDosesLeft
 
@@ -398,9 +358,8 @@ class MockRepositoryTest {
     @Test
     fun theScheduleAndTodayAgreeAboutTheSameDay() =
         runTest {
-            // §03's seventh correction: the Today strip and the Schedule screen
-            // render the same generated occurrences. The prototype's two
-            // disagree because each has its own hardcoded copy.
+            // §03's seventh correction: Today and Schedule render the same generated
+            // occurrences; the prototype's two disagree because each has its own hardcoded copy.
             val m = mocks()
 
             val fromSchedule = m.schedule.day(LocalDate(2026, 5, 31))
@@ -425,9 +384,8 @@ class MockRepositoryTest {
     @Test
     fun theDayDotsSayWhichDayIsWhich() =
         runTest {
-            // Three of ScheduleDay's five fields had no assertion anywhere, and
-            // dropping the emptiness guard from `allDone` painted «всё
-            // выполнено» over the nine days before the protocol began.
+            // Dropping the emptiness guard from `allDone` painted «всё выполнено» over the
+            // nine days before the protocol began, and nothing caught it.
             val m = mocks()
             val days = m.schedule.month(LocalDate(2026, 5, 1))
             val beforeTheCycle = days.first { it.date == LocalDate(2026, 5, 1) }
@@ -444,8 +402,7 @@ class MockRepositoryTest {
     @Test
     fun aSeriesIsOldestFirstAndKeepsTheMostRecentPoints() =
         runTest {
-            // Ordered because a chart is drawn left to right, and truncated
-            // from the *end*: `take` instead of `takeLast` would draw the
+            // Truncated from the *end*: `take` instead of `takeLast` would draw the
             // patient's first seven weeks forever.
             val series = mocks().measurements.series(Metric.WEIGHT, points = 3)
 
@@ -458,9 +415,8 @@ class MockRepositoryTest {
     @Test
     fun aMetricWithNoReadingsIsEmptyRatherThanAbsent() =
         runTest {
-            // A blank chart beside a caption reads as «failed to load», so the
-            // caller has to be able to tell «nothing measured» apart from an
-            // error — which means not throwing.
+            // A blank chart reads as «failed to load»: the caller must tell «nothing
+            // measured» apart from an error, which means not throwing.
             val series = mocks().measurements.series(Metric.CHEST)
 
             assertTrue(series.points.isEmpty())
@@ -479,9 +435,8 @@ class MockRepositoryTest {
                     .map { it.value },
                 m.today.today().weightSeries,
             )
-            // And it is seven, not «whatever the default happens to be»: the
-            // seed holds eight readings, so the constant is load-bearing, and
-            // comparing two calls that both use it proved nothing about it.
+            // Seven, not «whatever the default happens to be»: the seed holds eight readings,
+            // so the constant is load-bearing here.
             assertEquals(
                 MeasurementsRepository.DEFAULT_POINTS,
                 m.today
@@ -493,31 +448,26 @@ class MockRepositoryTest {
     @Test
     fun theReorderHintReachesTheScreenPayload() =
         runTest {
-            // The only thing wiring `dosesPerWeek()` to what a patient sees.
-            // Nothing asserted `reorder` at all, so the hint could disappear
-            // for every patient with the gate green.
+            // Nothing asserted `reorder` at all before this, so the hint could disappear for
+            // every patient with the gate green.
             val hint = mocks().today.today().reorder
 
             assertEquals(MockSeed.semaglutide.id, hint?.compoundId)
-            // One dose left of four, at one a week. The patient has taken
-            // three Sundays; the hint fires because they are nearly out.
             assertEquals(1, hint?.weeksLeft, "one dose left at one a week")
         }
 
     @Test
     fun theLatestWeightIsTheLatestWeightAndNotTheLatestReading() =
         runTest {
-            // The seed's most recent measurement is an HRV of 58. «Latest
-            // reading wins» is per metric, and a lookup that took the last row
-            // would put 58 kg on the Today screen.
+            // The seed's most recent measurement is HRV 58; «latest reading wins» is per
+            // metric, and a lookup taking the last row would put 58 kg on the Today screen.
             assertEquals(98.4, mocks().today.today().weightKg)
         }
 
     @Test
     fun daysBeforeTheProtocolBeganCarryNothing() =
         runTest {
-            // The calendar is drawn for whole months, and the cycle starts on
-            // the 10th — the first nine days must come back empty rather than
+            // Cycle starts on the 10th: the first nine days must come back empty rather than
             // inheriting the protocol.
             val days = mocks().schedule.month(LocalDate(2026, 5, 1))
 
@@ -530,8 +480,7 @@ class MockRepositoryTest {
         runTest {
             val summary = mocks().today.today()
 
-            // Numbers, not «1 240 ккал» — the formatting lives on the UI side
-            // and this is what it is handed.
+            // Numbers, not «1 240 ккал»: formatting lives on the UI side.
             assertTrue(summary.mealCount > 0)
             assertTrue(summary.mealMacros.kcal > 0)
             assertTrue(summary.targets.kcal > summary.mealMacros.kcal)
@@ -540,9 +489,8 @@ class MockRepositoryTest {
     @Test
     fun anotherDayHasItsOwnMealsAndNotTheSeededDays() =
         runTest {
-            // A day the seed has no meals for. Without a date filter the app
-            // reports a breakfast eaten three weeks earlier as eaten today,
-            // and «сегодня» stops meaning anything.
+            // A day the seed has no meals for: without a date filter, a breakfast eaten
+            // three weeks earlier shows as eaten today.
             val summary = mocks("2026-06-07T09:00:00Z").today.today()
 
             assertEquals(0, summary.mealCount)

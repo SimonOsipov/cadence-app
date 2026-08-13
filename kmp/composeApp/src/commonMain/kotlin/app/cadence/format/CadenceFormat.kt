@@ -3,15 +3,13 @@ package app.cadence.format
 import app.cadence.shared.domain.Dose
 
 /*
- * The one place this surface turns numbers into Russian text.
+ * The one place this surface turns numbers into Russian text. Numbers are data,
+ * formatting is presentation — the project rule — so nothing upstream holds
+ * «1 240» as a string and nothing downstream builds one of its own.
  *
- * Numbers are data and formatting is presentation — the project rule — so
- * nothing upstream of here ever holds «1 240» as a string, and nothing
- * downstream builds one of its own.
- *
- * Hand-rolled rather than taken from a locale API: Kotlin/Native carries no
- * ICU, so there is no `toLocaleString` to call on both platforms, and the two
- * rules the product needs fit in thirty lines that a test can pin exactly.
+ * Hand-rolled, not a locale API: Kotlin/Native carries no ICU, so there is no
+ * `toLocaleString` on both platforms, and the two rules the product needs fit in
+ * thirty lines a test can pin exactly.
  */
 
 /** Russian groups thousands with U+00A0, so a value never wraps mid-number. */
@@ -54,20 +52,17 @@ fun formatGrams(value: Int): String = "${formatInteger(value)} г"
 
 /**
  * A [app.cadence.shared.domain.MacrosTenths] kcal field, rounded for display without a
- * second `toMacros()` — that conversion stays the single production path to a whole
- * [app.cadence.shared.domain.Macros], at the `TodaySummary`/`NutritionDay.totals`
- * boundary (`Nutrition.kt:62-77,197`). `TodayMeals`' recent-meal row reads a meal's own
- * tenths straight through here instead, the same idiom `NutritionMealFeed.kt`'s and
- * `LogMealItemsList.kt`'s own file-private `tenthsLabel` already use.
+ * second `toMacros()` — that conversion stays the single path to a whole
+ * [app.cadence.shared.domain.Macros] at the `TodaySummary`/`NutritionDay.totals`
+ * boundary (`Nutrition.kt:62-77,197`); mirrors the file-private `tenthsLabel` idiom in
+ * `NutritionMealFeed.kt` and `LogMealItemsList.kt`.
  */
 fun formatKcalTenths(kcalTenths: Int): String = "${formatDecimal(kcalTenths / TENTHS_PER_UNIT, digits = 0)} ккал"
 
 /**
- * A decimal with the Russian comma and a fixed number of digits.
- *
- * Fixed, not trimmed: a weight that dropped its trailing zero would jump
- * between «110,0» and «110» as the patient loses a kilogram, and a column of
- * numbers that changes width is a column that jitters.
+ * A decimal with the Russian comma and a fixed digit count — not trimmed, since a
+ * weight that dropped its trailing zero would jump between «110,0» and «110», and a
+ * column that changes width is a column that jitters.
  */
 fun formatDecimal(
     value: Double,
@@ -87,12 +82,10 @@ fun formatDecimal(
 }
 
 /**
- * A dose as its two runs: «0,25» and «мг».
- *
- * Trailing zeroes are dropped here and nowhere else, because a dose is spoken
- * the way it is written on the box — «1 мг», not «1,0 мг» — while a weight is
- * not. Returned as a pair because `CadenceNumber` takes them apart: the value
- * is tabular mono, the unit is not.
+ * A dose as its two runs: «0,25» and «мг». Trailing zeroes are dropped here only,
+ * since a dose reads the way it's written on the box — «1 мг», not «1,0 мг» — while
+ * a weight is not. Returned as a pair because `CadenceNumber` renders the value in
+ * tabular mono and the unit in a different face.
  */
 fun formatDose(dose: Dose): Pair<String, String> {
     val whole = dose.value == kotlin.math.floor(dose.value)
@@ -108,19 +101,11 @@ fun formatDose(dose: Dose): Pair<String, String> {
 }
 
 /**
- * «↓ 0,4 кг» — how far the *last* reading moved, or null if there is nothing to
- * compare it to.
- *
- * The name carries the question, because there are two of them. This one is
- * «Сегодня»'s: what changed since the reading before. A window's delta —
- * `TrendSeries.delta` in `shared` — is «how far has the patient come since the
- * window opened», measured from the first reading rather than the previous one,
- * and on 101,2 → 99,0 → 98,8 → 98,4 the two answer −0,4 and −2,8. One name over
- * both was an invitation to reach for whichever was in scope.
- *
- * One reading is where every patient starts, and `points[size - 2]` on a
- * one-point series throws; the guard is the reason this is a function rather
- * than an expression repeated at two call sites, which is what it was.
+ * «↓ 0,4 кг» — how far the *last* reading moved, vs. `TrendSeries.delta`'s «since the
+ * window opened»: on 101,2 → 99,0 → 98,8 → 98,4 the two answer −0,4 and −2,8, so one
+ * name over both invited reaching for whichever was in scope. Null with nothing to
+ * compare — `points[size - 2]` on a one-point series throws, which is why this is a
+ * function rather than an expression repeated at two call sites.
  */
 fun formatDeltaSincePrevious(
     points: List<Double>,
@@ -132,21 +117,15 @@ fun formatDeltaSincePrevious(
 }
 
 /**
- * A delta someone else already computed, as «↓ 2,8 кг».
+ * A delta someone else already computed, as «↓ 2,8 кг» — the sole `when` deciding
+ * the arrow, so a trends screen handing over a `TrendSeries.delta` with no points
+ * left to subtract never grows a second copy of this rule.
  *
- * The arrow rule lives here and only here: the trends screens will hand over a
- * number taken across a window — `TrendSeries.delta` — with no pair of points
- * left to subtract, and a second copy of this `when` beside them is how «↓»
- * comes to mean two things.
- *
- * Zero is «→», not «↑». Two identical readings are a plateau, and rendering one
- * as a gain is a claim the data does not make.
- *
- * The arrow follows what is *printed*, not what was computed. A window delta is
- * an arbitrary subtraction of two readings — imported weights are not rounded
- * onto tenths — so −0,04 kg exists, and «↓ 0,0» standing beside a true
- * plateau's «→ 0,0» would be two glyphs for one number. Read off the rendered
- * string rather than re-derived, so the two cannot round differently.
+ * Zero reads «→», not «↑»: two identical readings are a plateau, not a gain. The
+ * arrow follows what is *printed*, not what was computed — a window delta can be
+ * −0,04 kg (imported weights are not rounded onto tenths), so «↓ 0,0» must read off
+ * the rendered string rather than be re-derived, or it could disagree with a true
+ * plateau's «→ 0,0».
  */
 fun formatSignedDelta(
     delta: Double,

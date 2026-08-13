@@ -23,10 +23,8 @@ private fun status(id: String) = vialStatus(MockSeed.vials.first { it.id == Vial
 class MockSeedInventoryTest {
     @Test
     fun noSeededVialCarriesARemainingCountThatWasTyped() {
-        // The subtask's prohibition, asserted against the seed rather than
-        // against the arithmetic: `Vial` has no field to store a remaining
-        // count in, so the only way one can be wrong is for the history behind
-        // it to be missing. Every number here is `totalDoses` minus events.
+        // Asserted against the seed, not the arithmetic: `Vial` has no field to store a
+        // remaining count, so the only way one can be wrong is for the history to be missing.
         assertEquals(1, remaining("vial-sema-1"), "three Sundays taken of four doses")
         assertEquals(6, remaining("vial-bpc-1"), "thrown out with six still in it")
         assertEquals(2, remaining("vial-bpc-2"), "twelve of fourteen taken")
@@ -36,9 +34,8 @@ class MockSeedInventoryTest {
 
     @Test
     fun everyVialStatusIsReachableFromTheSeed() {
-        // Named, not counted. A cabinet that could only ever show one state is
-        // a cabinet whose statuses nothing exercises — and `vialFor`'s disposal
-        // filter had no case to filter until this seed existed.
+        // Named, not counted: `vialFor`'s disposal filter had no case to filter until this
+        // seed existed.
         assertEquals(
             mapOf(
                 VialStatus.ACTIVE to "vial-sema-1",
@@ -53,10 +50,8 @@ class MockSeedInventoryTest {
 
     @Test
     fun theSemaglutideVialIsNearlyOutBecauseThePatientTookTheDoses() {
-        // Three of four, in week four of a weekly protocol. The reorder hint
-        // now fires because the patient is nearly out rather than because the
-        // seed was tuned to make it fire — the state this replaces was four
-        // doses left with nothing ever logged.
+        // The reorder hint fires because the patient is nearly out, not because the seed was
+        // tuned to fire it — the state this replaces was four doses left with nothing logged.
         val taken = MockSeed.history.count { it.vialId == VialId("vial-sema-1") }
 
         assertEquals(3, taken)
@@ -66,17 +61,14 @@ class MockSeedInventoryTest {
 
     @Test
     fun todaysDoseIsNotInTheHistory() {
-        // The whole app opens on an unlogged day: the hero offers «Записать →»
-        // and `doseLoggedToday` is false. A seeded history that reached today
-        // would take that state away.
+        // The app opens on an unlogged day; a seeded history reaching today would take that away.
         assertTrue(MockSeed.history.none { it.scheduledForDate == TODAY })
     }
 
     @Test
     fun theHistoryFillsThePastAndStopsAtYesterday() {
-        // Every BPC slot from the protocol's start to yesterday, both times a
-        // day. Asserted through the generator the calendar reads, so a history
-        // that missed a slot shows up as a day the patient did not finish.
+        // Asserted through the generator the calendar reads, so a missed slot shows up as a
+        // day the patient didn't finish.
         val past = generateSequence(MockSeed.cycleStart) { it.plusDay() }.takeWhile { it < TODAY }
 
         past.forEach { date ->
@@ -95,9 +87,7 @@ class MockSeedInventoryTest {
 
     @Test
     fun theSeededZonesFollowTheRotationRatherThanAList() {
-        // Forty-five hand-picked zones would be forty-five chances to
-        // contradict `suggestNextSite`. The seed walks it, so the history is an
-        // example of the rule the app follows rather than a second opinion.
+        // Forty-five hand-picked zones would be forty-five chances to contradict `suggestNextSite`.
         val sited = MockSeed.history.filter { it.site != null }
 
         assertEquals(MockSeed.history.size, sited.size, "an injection with no zone")
@@ -105,9 +95,8 @@ class MockSeedInventoryTest {
             MockSeed.history.zipWithNext().all { (a, b) -> a.injectedAt <= b.injectedAt },
             "the history is not in the order it happened",
         )
-        // Two properties of the rule rather than the rule restated: forty-five
-        // doses under a least-recently-used rotation reach every zone, and no
-        // two in a row land in the same one. A constant satisfies neither.
+        // Properties of the rule, not the rule restated: reaches every zone, no two in a row
+        // repeat. A constant satisfies neither.
         assertEquals(
             InjectionSite.entries.toSet(),
             MockSeed.history.mapNotNull { it.site }.toSet(),

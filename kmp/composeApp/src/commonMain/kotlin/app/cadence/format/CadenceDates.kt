@@ -7,9 +7,8 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.isoDayNumber
 
-// Russian calendar names. Hand-written for the same reason the number
-// formatting is: Kotlin/Native carries no ICU, so there is no locale API that
-// answers on both platforms, and these are two closed lists.
+// Russian calendar names, hand-written for the same reason the number formatting
+// is: Kotlin/Native carries no ICU, so there is no cross-platform locale API.
 
 private val WEEKDAYS_NOMINATIVE =
     mapOf(
@@ -29,11 +28,9 @@ fun weekdayNominative(day: DayOfWeek): String = WEEKDAYS_NOMINATIVE.getValue(day
 fun cycleWeekLabel(week: Int): String = "$week-я неделя"
 
 /**
- * «Воскресенье, утро · 4-я неделя».
- *
- * The prototype writes this whole line as a literal. Every part of it is a
- * function of the clock and the protocol, and assembling it here keeps the
- * screen free of both.
+ * «Воскресенье, утро · 4-я неделя». The prototype writes this whole line as a
+ * literal; every part is a function of the clock and the protocol, so it is
+ * assembled here instead.
  */
 fun greeting(
     date: LocalDate,
@@ -66,11 +63,10 @@ fun dayAndMonth(date: LocalDate): String = "${date.day} ${MONTHS_GENITIVE[date.m
 private const val CLOCK_DIGIT_WIDTH = 2
 
 /**
- * «08:05» — a zero-padded 24-hour clock reading, for the log-meal header
- * chip. The prototype writes this whole chip as the literal «08:42 · вс 24
- * мая» (`LogMealScreen.tsx:133`); every part of it, the clock reading
- * included, is a function of [CadenceClock][app.cadence.shared.domain.CadenceClock]
- * and the calendar, so it is assembled here rather than baked into the screen.
+ * «08:05» — a zero-padded 24-hour clock reading, for the log-meal header chip.
+ * The prototype writes the whole chip as a literal «08:42 · вс 24 мая»
+ * (`LogMealScreen.tsx:133`); assembled here instead since every part is a
+ * function of [CadenceClock][app.cadence.shared.domain.CadenceClock] and the calendar.
  */
 fun clockTime(time: LocalDateTime): String {
     val hour = time.hour.toString().padStart(CLOCK_DIGIT_WIDTH, '0')

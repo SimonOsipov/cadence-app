@@ -50,13 +50,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The back stack as screen names, root first.
- *
- * Names rather than a count: «two entries deep» is true of a great many wrong
- * stacks, and every assertion below is really about *which* screens are behind
- * the user, which is the thing a back button walks.
- *
- * A type-safe route reads `app.cadence.shell.CadenceRoute.TrendDetail/{id}`;
+ * The back stack as screen names, root first. Names rather than a count: «two entries deep»
+ * is true of many wrong stacks. A type-safe route reads `…CadenceRoute.TrendDetail/{id}`;
  * the argument pattern comes off first, then the package.
  */
 private fun NavHostController.stack(): List<String> =
@@ -66,10 +61,8 @@ private fun NavHostController.stack(): List<String> =
         .map { it.substringBefore('/').substringBefore('?').substringAfterLast('.') }
 
 /**
- * The shell under test, with its controller handed back.
- *
- * The controller is the point: «did that tap navigate» is not answerable from
- * what is on screen when two routes render the same word.
+ * The controller is the point: «did that tap navigate» isn't answerable from what's on
+ * screen when two routes render the same word.
  */
 @OptIn(ExperimentalTestApi::class)
 private fun ComposeUiTest.startShell(
@@ -85,10 +78,8 @@ private fun ComposeUiTest.startShell(
 }
 
 /**
- * The shell with the window held by the test, the way `CadenceApp` holds it.
- *
- * The default-argument version cannot see the sharing: both screens would read
- * the same default and agree without anything passing between them.
+ * The window held by the test, like `CadenceApp` holds it — the default-argument version
+ * can't see the sharing since both screens would read the same default.
  */
 @OptIn(ExperimentalTestApi::class)
 private fun ComposeUiTest.startShellSharingItsWindow(): NavHostController {
@@ -144,30 +135,22 @@ private fun ComposeUiTest.navigate(block: () -> Unit) {
 }
 
 /**
- * One instance of every route.
- *
- * Parameterised routes cannot be enumerated from the sealed hierarchy, so they
- * are listed by hand — and this list being incomplete is exactly what
- * [CadenceNavigationTest.everyRouteInTheGraphRenders] cannot catch, so it is
- * kept beside the hierarchy it mirrors.
+ * One instance of every route. Parameterised routes can't be enumerated from the sealed
+ * hierarchy, so they're listed by hand — kept beside the hierarchy it mirrors since an
+ * incomplete list is exactly what [CadenceNavigationTest.everyRouteInTheGraphRenders] can't catch.
  */
 private object CadenceRouteSamples {
     /**
-     * Every route with the title its screen must draw.
-     *
-     * The titles are the point. Asserting only that navigation did not throw
-     * proved nothing a `composable<Journal> { }` with an empty body would not
-     * also pass — and thirteen of the nineteen routes had no other test
-     * touching their content. The four carrying an argument spell it out, so a
-     * screen that drops its parameter fails here too.
+     * Titles are the point: asserting only that navigation didn't throw proved nothing a
+     * `composable<Journal> { }` with an empty body wouldn't also pass — thirteen of the
+     * nineteen routes had no other test touching their content.
      */
     val all: List<Pair<CadenceRoute, String>> =
         listOf(
             CadenceRoute.Today to "Сегодня",
             CadenceRoute.Trends to "Тренды",
-            // The title is dead weight now — nothing draws it — but the entry
-            // stays so the count check still crosses the samples against the
-            // graph.
+            // Title is dead weight (nothing draws it), kept only so the count check still
+            // crosses the samples against the graph.
             CadenceRoute.TrendDetail("hrv") to "Биомаркер · hrv",
             CadenceRoute.Nutrition to "Питание",
             CadenceRoute.Vials to "Аптечка",
@@ -189,18 +172,14 @@ private object CadenceRouteSamples {
 }
 
 /**
- * Routes that no longer draw «Экран «X»». They stay in the sample list, so the
- * count check still crosses it against the graph; only the placeholder-title
- * walk skips them.
+ * Routes no longer drawing «Экран «X»»; stay in the sample list so the count check still
+ * crosses it against the graph, but the placeholder-title walk skips them.
  */
 private val PORTED_ROUTES =
     setOf<CadenceRoute>(
         CadenceRoute.AddVial,
-        // The walk's title no longer matches in any state: the route draws the
-        // metric, «такой метрики нет», or — on the first read — a placeholder
-        // titled «Метрика» rather than «Биомаркер · hrv». `Trends` is *not*
-        // here: it falls back to the destination's own placeholder, which the
-        // walk does still match.
+        // Draws the metric, «такой метрики нет», or a «Метрика» placeholder, never «Биомаркер ·
+        // hrv». `Trends` isn't here — it falls back to its own placeholder, which still matches.
         CadenceRoute.TrendDetail("hrv"),
     )
 
@@ -231,11 +210,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // Today → Nutrition → Recipes → RecipeDetail, then the prototype's
-            // «добавить в день» hands back to Nutrition with `navigate`. React
-            // Navigation walks back to the existing Nutrition; a plain push
-            // would leave two of them and a back button that visits the recipe
-            // again.
+            // The prototype's «добавить в день» hands back to Nutrition with `navigate`; a
+            // plain push would leave two Nutrition entries and a back button revisiting the recipe.
             navigate { nav.selectDestination(CadenceDestination.NUTRITION) }
             navigate { nav.openRoute(CadenceRoute.Recipes) }
             navigate { nav.openRoute(CadenceRoute.RecipeDetail("r-1")) }
@@ -251,9 +227,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // An article linking to an article is the one place the prototype
-            // asks for `push` by name. Reusing the instance would leave the
-            // reader on the article they just left.
+            // The one place the prototype asks for push by name: reusing the instance would
+            // leave the reader on the article they just left.
             navigate { nav.openRoute(CadenceRoute.Article("a-1")) }
             navigate { nav.pushRoute(CadenceRoute.Article("a-2")) }
 
@@ -280,10 +255,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // `changeTab` pops to the root *before* it navigates, so the bar
-            // never builds a stack of tabs. Without the pop, four taps on the
-            // bar would leave four entries and a back button that walks the
-            // user's tab history.
+            // Pops to root before navigating: without it, four bar taps leave four entries
+            // and a back button that walks tab history.
             navigate { nav.openRoute(CadenceRoute.Trends) }
             navigate { nav.openRoute(CadenceRoute.TrendDetail("hrv")) }
             navigate { nav.selectDestination(CadenceDestination.INVENTORY) }
@@ -296,9 +269,7 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // The prototype's chat thread replaces itself with the list, and
-            // the builder replaces itself with the saved recipe: in both, going
-            // back must not return to the screen that just finished.
+            // Matches the prototype: going back must not return to the screen that just finished.
             navigate { nav.openRoute(CadenceRoute.ChatThread("ksenia")) }
             navigate { nav.replaceRoute(CadenceRoute.ChatList) }
 
@@ -310,14 +281,10 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // A route declared in CadenceRoute but never added to the NavHost
-            // throws only when something navigates to it — which, until the
-            // screens land, is never. This walks all of them so a missing
-            // `composable<…>` fails now rather than in step 9 of the block.
-            //
-            // The title assertion is what makes it a rendering test rather than
-            // a registration test: `hasRoute` after a navigate that did not
-            // throw is very nearly tautological.
+            // A route missing from the NavHost throws only when navigated to, which is never
+            // until the screens land — this walks all of them so a missing `composable<…>`
+            // fails now. The title assertion makes it a rendering test, not a registration
+            // test: `hasRoute` after a navigate that didn't throw is nearly tautological.
             CadenceRouteSamples.all.filterNot { it.first in PORTED_ROUTES }.forEach { (route, title) ->
                 navigate { nav.pushRoute(route) }
                 assertTrue(
@@ -333,10 +300,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // In the prototype the bar lives inside the four screens that have
-            // one, not in the navigator: Schedule and Journal have none. A port
-            // that hoists the bar into the shell puts one on every screen, and
-            // nothing on screen would say so.
+            // Schedule and Journal have no bar; hoisting it into the shell would put one
+            // everywhere with nothing on screen to say so.
             onNodeWithText("Аптечка").assertIsDisplayed()
 
             navigate { nav.openRoute(CadenceRoute.Schedule) }
@@ -349,10 +314,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // The sample list is hand-written — no `sealedSubclasses` on Native
-            // — so a route added to the graph without a sample would go
-            // unwalked and its own comment admits it. This crosses the list
-            // against the graph so at least that direction cannot drift.
+            // No `sealedSubclasses` on Native, so the hand-written sample list could drift
+            // from the graph unnoticed; this crosses them so at least that direction can't.
             val registered = nav.graph.count { it !is NavGraph }
 
             assertEquals(registered, CadenceRouteSamples.all.size, "a route in the graph has no sample")
@@ -363,12 +326,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell(onLoadMetric = { metric, window -> navDetail(metric, window) })
 
-            // A patient on one biomarker taps a neighbouring one. This used to
-            // hit an early return and do nothing at all — the tap died, the
-            // screen kept the old biomarker, and nothing anywhere said why.
-            //
-            // Two *real* metrics now, because the screen draws their names: a
-            // dead tap leaves «HRV» on screen where «Вес» is expected.
+            // A patient tapping a neighbouring biomarker used to hit an early return and do
+            // nothing — screen name assertion below catches the dead tap that a dumb-string one wouldn't.
             navigate { nav.openRoute(CadenceRoute.TrendDetail("hrv")) }
             navigate { nav.openRoute(CadenceRoute.TrendDetail("weight")) }
 
@@ -380,16 +339,11 @@ class CadenceNavigationTest {
     @Test
     fun theTrendsTabDrawsTheListOnceItsDataHasLanded() =
         runComposeUiTest {
-            // Gated like the cabinet: the placeholder stands in while the first
-            // read is in flight, and a list composed against nothing would say
-            // «нет данных» on all eight cards — a sentence about the patient
-            // rather than about the fetch.
             val nav = startShell(trends = navOverview())
 
             navigate { nav.openRoute(CadenceRoute.Trends) }
 
-            // The hero: the one card reliably above the fold, so the stronger
-            // «is on screen» rather than «is in the tree» applies.
+            // The hero card is reliably above the fold, so "is on screen" applies.
             onNodeWithTag(CADENCE_TRENDS_HERO_TAG, useUnmergedTree = true).assertIsDisplayed()
             assertEquals(0, onAllNodesWithText("Экран «Тренды»").fetchSemanticsNodes().size)
         }
@@ -397,9 +351,8 @@ class CadenceNavigationTest {
     @Test
     fun aWindowChosenOnTheListIsTheWindowTheMetricOpensWith() =
         runComposeUiTest {
-            // The choice has to *travel*. Reading the default on both screens
-            // proves nothing — two screens each remembering their own would
-            // agree too. So the window is changed on the list first.
+            // Reading the default on both screens proves nothing — two screens each
+            // remembering their own would agree too — so the window is changed on the list first.
             val nav = startShellSharingItsWindow()
 
             navigate { nav.openRoute(CadenceRoute.Trends) }
@@ -417,9 +370,8 @@ class CadenceNavigationTest {
     @Test
     fun theListReadsTheWindowItWasSwitchedTo() =
         runComposeUiTest {
-            // And the *data* follows, not only the chip: «7 дней» leaves weight
-            // with one reading, «3 месяца» with eight, so the hero's delta is
-            // present in one and absent in the other.
+            // «7 дней» leaves weight with one reading (no delta), «3 месяца» with eight —
+            // so the hero's delta being present or absent proves the data followed, not just the chip.
             val nav = startShellSharingItsWindow()
             val hero = requireNotNull(navOverview(TrendWindow.THREE_MONTHS).hero)
             val quarterDelta =
@@ -428,9 +380,6 @@ class CadenceNavigationTest {
                     unitRu(hero.meta.unit),
                     hero.meta.decimals,
                 )
-            // Derived, not guessed: «7 дней» leaves weight with one reading and
-            // therefore no delta at all, so the string can only come from the
-            // wider window.
             assertNull(navOverview(TrendWindow.WEEK).hero?.series?.delta, "one reading in a week")
 
             navigate { nav.openRoute(CadenceRoute.Trends) }
@@ -443,18 +392,15 @@ class CadenceNavigationTest {
             waitForIdle()
 
             assertEquals(0, onAllNodesWithText(quarterDelta, substring = true).fetchSemanticsNodes().size)
-            // Positive as well as negative: «the list re-read» and «the list is
-            // no longer composed» both satisfy an absence, and the click
-            // mutates state the graph builder closed over.
+            // Positive check too: an absence alone wouldn't distinguish "re-read" from
+            // "no longer composed".
             onNodeWithTag(CADENCE_TRENDS_HERO_TAG, useUnmergedTree = true).assertExists()
         }
 
     @Test
     fun tappingAMetricOnTheListOpensThatMetric() =
         runComposeUiTest {
-            // The screen's main tap, and nothing else exercises it: an
-            // `onOpenMetric = { }` leaves the whole suite green otherwise. The
-            // hero is the card reliably above the fold.
+            // Nothing else exercises this tap: an `onOpenMetric = { }` leaves the whole suite green otherwise.
             val nav = startShellSharingItsWindow()
 
             navigate { nav.openRoute(CadenceRoute.Trends) }
@@ -468,9 +414,7 @@ class CadenceNavigationTest {
     @Test
     fun aMetricStillLoadingIsNotAMetricThatDoesNotExist() =
         runComposeUiTest {
-            // One value on the screen, two different facts. A read that has not
-            // landed must not answer «Такой метрики нет» — the graph tells them
-            // apart, the way the schedule route does.
+            // A read still in flight must not answer «Такой метрики нет» — same distinction the schedule route makes.
             val nav = startShell(onLoadMetric = { _, _ -> awaitCancellation() })
 
             navigate { nav.openRoute(CadenceRoute.TrendDetail("weight")) }
@@ -482,9 +426,7 @@ class CadenceNavigationTest {
     @Test
     fun aRouteCarryingACodeNoMetricAnswersToSaysSoRatherThanCrashing() =
         runComposeUiTest {
-            // A deep link can carry anything, and the prototype has a `thigh`
-            // and a `bmi` §03 does not. The route resolves the code; the screen
-            // renders the answer.
+            // The prototype has a `thigh` and a `bmi` §03 doesn't; a deep link can carry anything.
             val nav = startShell(onLoadMetric = { m, w -> navDetail(m, w) })
 
             navigate { nav.openRoute(CadenceRoute.TrendDetail("thigh")) }
@@ -509,9 +451,7 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // The way out of fifteen of the nineteen routes, and nothing
-            // clicked it until a mutation showed `back = { }` passing the whole
-            // suite.
+            // Nothing clicked this until a mutation showed `back = { }` passing the whole suite.
             navigate { nav.openRoute(CadenceRoute.Schedule) }
             assertEquals(listOf("Today", "Schedule"), nav.stack())
 
@@ -526,8 +466,6 @@ class CadenceNavigationTest {
         runComposeUiTest {
             startShell()
 
-            // Today is the start destination; a back chevron there would be an
-            // affordance for something that cannot happen.
             assertTrue(onAllNodesWithContentDescription("Назад").fetchSemanticsNodes().isEmpty())
         }
 
@@ -536,9 +474,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // TabBarTest proves the bar highlights what it is told to. This
-            // proves the shell tells it the right thing — passing TODAY for
-            // every screen left the whole suite green.
+            // TabBarTest proves the bar highlights what it's told; this proves the shell
+            // tells it the right thing — passing TODAY for every screen left the suite green.
             navigate { nav.selectDestination(CadenceDestination.INVENTORY) }
             onNodeWithText("Аптечка").assertIsSelected()
 
@@ -554,10 +491,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell(onLoadMetric = { metric, window -> navDetail(metric, window) })
 
-            // The other half of the dead tap. Popping back to an existing entry
-            // lands on the arguments it was *created* with, so asking for
-            // «weight» put the patient on «hrv» — measured, and worse than the
-            // version that merely pushed a duplicate.
+            // Measured: popping back to an existing entry lands on the arguments it was
+            // *created* with, so asking for «weight» put the patient on «hrv».
             navigate { nav.openRoute(CadenceRoute.Trends) }
             navigate { nav.openRoute(CadenceRoute.TrendDetail("hrv")) }
             navigate { nav.openRoute(CadenceRoute.Journal) }
@@ -573,9 +508,8 @@ class CadenceNavigationTest {
         runComposeUiTest {
             val nav = startShell()
 
-            // The common case, and the one the argument fix must not break: a
-            // bottom-bar destination carries nothing to update, so it is
-            // returned to rather than rebuilt, and its entry survives.
+            // The common case the argument fix must not break: no arguments to update, so the
+            // entry is returned to rather than rebuilt.
             navigate { nav.selectDestination(CadenceDestination.NUTRITION) }
             val entryId = nav.currentBackStackEntry?.id
             navigate { nav.openRoute(CadenceRoute.Recipes) }
@@ -597,11 +531,8 @@ class CadenceNavigationTest {
 
             val atRest = onNodeWithText("Экран «Сегодня»").getBoundsInRoot()
 
-            // A native fullScreenModal leaves the screen under it where it was.
-            // Compose reads a screen's exit transition from the screen being
-            // left, so overrides placed on the modal could not affect this —
-            // they fired on a different event entirely, and the KDoc claimed
-            // otherwise for a whole review round.
+            // Compose reads a screen's exit transition from the screen being left, so overrides
+            // on the modal itself can't affect this — the KDoc claimed otherwise for a whole review round.
             runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
             mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS / 2L)
             waitForIdle()
@@ -619,9 +550,8 @@ class CadenceNavigationTest {
                 CadenceTheme { CadenceShell(navController = nav) }
             }
 
-            // Every screen here is a PlaceholderScreen with the same padding,
-            // so a settled title's left edge is the reference: a screen sliding
-            // up is already at it, one sliding in from the right is not.
+            // Every screen here is a PlaceholderScreen with the same padding, so a settled
+            // title's left edge is the reference: sliding up is already at it, sliding in isn't.
             val settledLeft = onNodeWithText("Экран «Сегодня»").getBoundsInRoot().left
 
             runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
@@ -659,9 +589,8 @@ class CadenceNavigationTest {
 
             val atRest = onNodeWithText("Экран «Сегодня»").getBoundsInRoot()
 
-            // The negative of the test above: without it, «the underlay does
-            // not move» would also pass against a NavHost that animates nothing
-            // at all.
+            // Negative of the test above: without it, "the underlay doesn't move" would also
+            // pass against a NavHost that animates nothing at all.
             runOnUiThread { nav.openRoute(CadenceRoute.Schedule) }
             mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS / 2L)
             waitForIdle()

@@ -54,11 +54,10 @@ const val INJECTION_DOT_TAG: String = "schedule-injection-dot"
 private const val WEEK_COLUMNS = 7
 
 /**
- * «График», ported from mobile/src/features/schedule/ScheduleScreen.tsx.
- *
- * Every mark on the grid comes from `ScheduleDay`, which the repository builds
- * from the same `occurrencesFor` the Today strip reads — so the two screens
- * cannot disagree about a day, which is what §03's seventh correction asks for.
+ * «График», ported from mobile/src/features/schedule/ScheduleScreen.tsx. Every
+ * mark on the grid comes from `ScheduleDay`, which the repository builds from the
+ * same `occurrencesFor` the Today strip reads, so the two screens cannot disagree
+ * about a day — what §03's seventh correction asks for.
  */
 @Composable
 fun ScheduleScreen(
@@ -145,11 +144,9 @@ private fun TitrationCallout(step: app.cadence.shared.domain.TitrationStep) {
 }
 
 /**
- * One month, Monday first.
- *
- * The leading blanks are what align the first of the month to its weekday. Skip
- * them and every dot in the month shifts — 1 May 2026 is a Friday, so four
- * cells of nothing come first.
+ * One month, Monday first. The leading blanks align the first of the month to its
+ * weekday — skip them and every dot shifts: 1 May 2026 is a Friday, so four cells
+ * of nothing come first.
  */
 @Composable
 private fun MonthGrid(

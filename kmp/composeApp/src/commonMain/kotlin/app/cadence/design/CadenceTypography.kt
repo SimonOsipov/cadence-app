@@ -1,23 +1,22 @@
 // The product's type scale, over the three bundled typefaces.
 //
-// DECIDED 2026-07-28 — the body face is **Golos Text**, not the prototype's DM
-// Sans. DM Sans publishes `latin` and `latin-ext` only, and every string this
-// product shows a user is Russian, so DM Sans would hand all of it to a system
-// fallback. The prototype had already hit this on the display face (Instrument
-// Serif has no Cyrillic) and fell back to Cormorant Garamond; nobody re-ran the
-// check on the body face. Golos Text was designed for Cyrillic rather than
-// extended into it, and sits close to DM Sans in width and tone, so the
-// prototype's layouts do not shift.
+// DECIDED 2026-07-28 — body face is **Golos Text**, not the prototype's DM
+// Sans: DM Sans publishes `latin`/`latin-ext` only, and every string this
+// product shows a user is Russian, so it would fall back to a system font.
+// The prototype had already hit this on the display face (Instrument Serif
+// has no Cyrillic, hence Cormorant Garamond); nobody re-ran the check on the
+// body face. Golos Text was designed for Cyrillic and sits close to DM Sans
+// in width and tone, so the prototype's layouts don't shift.
 //
-// Three families, four files: the display italic is a file of its own because
-// the bundled files carry a `wght` axis only. Licences and copyright notices
-// live in kmp/composeApp/licenses/ — the OFL requires them to travel with the
-// fonts, and they sit outside composeResources/ because the resource generator
-// would turn a licence into a resource accessor.
+// Three families, four files: the display italic is its own file because the
+// bundled files carry a `wght` axis only. Licences live in
+// kmp/composeApp/licenses/ (OFL requires them to travel with the fonts) and
+// sit outside composeResources/, which would turn a licence into a resource
+// accessor.
 //
-// Axis ranges, read from each file's `fvar`: Golos Text 400–900, Cormorant
-// Garamond 300–700, JetBrains Mono 100–800. A weight outside its range is
-// clamped silently, so asking Golos Text for Light gets Regular.
+// Axis ranges, from each file's `fvar`: Golos Text 400-900, Cormorant
+// Garamond 300-700, JetBrains Mono 100-800. A weight outside its range
+// clamps silently, so asking Golos Text for Light gets Regular.
 
 package app.cadence.design
 
@@ -40,14 +39,13 @@ import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.FontResource
 
 /**
- * One face of one family at one weight.
- *
- * `variationSettings` is deliberately not passed: the library's default for it
- * is derived from [weight] and [style] and covers both the `wght` and the
- * `ital` axes, whereas naming only `wght` here would quietly drop the second.
- * Measured on the simulator — a string set at Medium is the same width with the
- * explicit setting and without it (248px either way), and genuinely different
- * at Light (246px) and Bold (252px), so the axis is applied by the default.
+ * One face of one family at one weight. `variationSettings` is deliberately
+ * not passed: the library's default derives from [weight] and [style] and
+ * covers both `wght` and `ital`, whereas naming only `wght` here would
+ * quietly drop the second. Measured on the simulator: a string at Medium is
+ * the same width with or without the explicit setting (248px either way), and
+ * genuinely different at Light (246px) and Bold (252px) — the axis is applied
+ * by the default.
  */
 @Composable
 private fun face(
@@ -88,21 +86,18 @@ private fun monoFace(): FontFamily =
     )
 
 /**
- * Type styles, ported from the primitives in mobile/src/components.
+ * Type styles, ported from the primitives in mobile/src/components. The
+ * prototype derives line height and tracking from font size rather than
+ * fixing them — every Title call site passes an explicit size — so the
+ * ratios are stored here in `em`: overriding `fontSize` rescales leading and
+ * tracking with it, which an absolute `sp` line height wouldn't (a 34sp title
+ * would keep 30sp leading and overlap). This applies to styles that set a
+ * `lineHeight` — title, titleEmphasis, body, number; the single-line styles
+ * (eyebrow, meta, label, numberUnit) take leading from the font's own metrics.
  *
- * The prototype derives line height and tracking from the font size rather than
- * fixing them — every one of its Title call sites passes an explicit size — so
- * the ratios are what is stored here, in `em`. Overriding `fontSize` on any of
- * these styles rescales the leading and the tracking with it, which an absolute
- * `sp` line height would not: a 34sp title would keep 30sp leading and overlap.
- *
- * That applies to the styles that set a `lineHeight` — title, titleEmphasis,
- * body and number. The single-line styles (eyebrow, meta, label, numberUnit)
- * take their leading from the font's own metrics, which already scale.
- *
- * The constructor is internal, and ConsistentCopyVisibility carries that to the
- * generated `copy()`: a scale assembled anywhere but [cadenceTypography] can
- * hold a platform family, which is the fallback this design system exists to
+ * The constructor is internal, and ConsistentCopyVisibility carries that to
+ * the generated `copy()`: a scale assembled anywhere but [cadenceTypography]
+ * can hold a platform family, the fallback this design system exists to
  * prevent.
  */
 @Immutable
@@ -127,12 +122,10 @@ val CadenceNumberSize = 44.sp
 const val CADENCE_NUMBER_UNIT_RATIO = 0.36f
 
 /**
- * The metrics both display styles share.
- *
- * Held as one style copied twice rather than a helper taking a face and a slant:
- * a helper with those two as separate arguments makes the upright face plus a
- * slant flag representable, which asks for a synthetic oblique over the file
- * that has a drawn italic.
+ * The metrics both display styles share. Held as one style copied twice, not
+ * a helper taking a face and a slant: separate arguments would make the
+ * upright face plus a slant flag representable, asking for a synthetic
+ * oblique over the file that has a drawn italic.
  */
 private val displayMetrics =
     TextStyle(

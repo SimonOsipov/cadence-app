@@ -11,17 +11,13 @@ import app.cadence.shared.domain.TitrationStep
 import kotlinx.datetime.LocalDate
 
 /**
- * What the Today screen needs, in one object.
- *
- * §11's screen → data map makes this one call — «GET /me/today — next dose +
- * logged state, meals summary & targets, weight glance, reorder hint,
- * greeting/cycle week» — because the server computes the derived parts and
- * sends them ready to render (L10). Splitting it into getters here would be
- * designing a client for an API that does not exist.
- *
- * Everything is a number or a domain type. «0,25 мг» and «1 240 ккал» are
- * assembled by `app.cadence.format` on the UI side; nothing in this object has
- * been through a formatter.
+ * What the Today screen needs, in one object. §11's screen → data map makes this one call —
+ * «GET /me/today — next dose + logged state, meals summary & targets, weight glance, reorder
+ * hint, greeting/cycle week» — because the server computes the derived parts and sends them
+ * ready to render (L10); splitting it into getters here would be designing a client for an
+ * API that does not exist. Everything is a number or a domain type — «0,25 мг» and
+ * «1 240 ккал» are assembled by `app.cadence.format` on the UI side, nothing here has been
+ * through a formatter.
  */
 data class TodaySummary(
     /** The day this summary is about, in the patient's zone. */
@@ -55,12 +51,9 @@ data class TodaySummary(
 )
 
 /**
- * The Today screen's data source.
- *
- * Declared here rather than by the screen because `shared` is where the Ktor
- * client will implement it — but it is the screen's shape, not the server's:
- * the mock and the client both answer to this, and swapping one for the other
- * is a constructor argument.
+ * Declared here rather than by the screen because `shared` is where the Ktor client will
+ * implement it — but it is the screen's shape, not the server's: the mock and the client
+ * both answer to this, and swapping one for the other is a constructor argument.
  */
 interface TodayRepository {
     /** §11: `GET /me/today`. */

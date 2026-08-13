@@ -43,10 +43,9 @@ import app.cadence.shared.domain.MealItem
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
-// «Приёмы сегодня» — the meal feed for `NutritionScreen.kt`
-// (`NutritionScreen.tsx:524-583`). Split into its own file the same reason
-// `LogMealItemsList.kt` was split from `LogMealScreen.kt`: the shell plus
-// this component would have crossed detekt's `LargeClass` threshold.
+// «Приёмы сегодня» — the meal feed for `NutritionScreen.kt` (`NutritionScreen.tsx:524-583`).
+// Split out the same reason `LogMealItemsList.kt` was split from `LogMealScreen.kt`: the
+// shell plus this component would have crossed detekt's `LargeClass` threshold.
 
 private val CARD_SHAPE = RoundedCornerShape(CadenceRadius.lg)
 private val HAIRLINE = 1.dp
@@ -55,23 +54,19 @@ private val AVATAR_SHAPE = RoundedCornerShape(CadenceRadius.md)
 private const val TENTHS_PER_UNIT = 10.0
 
 /**
- * A tenths field as a whole unit, for display only — never
- * `MacrosTenths.toMacros()`. That conversion stays the single production
- * path to a `Macros` value, at the `TodaySummary`/`NutritionDay.totals`
- * boundary (`Nutrition.kt:62-77,197`); a meal card or a position row rounds
- * straight from its own tenths through this helper instead of minting a
- * second, competing `Macros` value nothing else would read. Mirrors
- * `LogMealItemsList.kt`'s own `tenthsLabel` — same idiom, kept file-private
- * there and here rather than shared, matching that file's own reasoning.
+ * A tenths field as a whole unit, for display only — never `MacrosTenths.toMacros()`.
+ * That conversion stays the single path to a `Macros` value, at the
+ * `TodaySummary`/`NutritionDay.totals` boundary (`Nutrition.kt:62-77,197`); a meal
+ * card or position row rounds straight from its own tenths through this helper
+ * instead of minting a second, unread `Macros` value. Mirrors `LogMealItemsList.kt`'s
+ * own `tenthsLabel`, kept file-private in both for the same reason.
  */
 private fun tenthsLabel(tenths: Int): String = formatDecimal(tenths / TENTHS_PER_UNIT, digits = 0)
 
 /**
- * «Приёмы сегодня», the meal counter, and either the empty invitation or the
- * list of today's meals.
- *
- * The counter drops the prototype's denominator: «N из 4» carries a constant
- * with no source (`NutritionScreen.tsx:544`) and is not ported — only the
+ * «Приёмы сегодня», the meal counter, and either the empty invitation or the list
+ * of today's meals. The counter drops the prototype's denominator: «N из 4» carries
+ * a constant with no source (`NutritionScreen.tsx:544`) and is not ported — only the
  * count remains.
  */
 @Composable
@@ -108,14 +103,11 @@ internal fun NutritionMealFeed(
 
 /**
  * «Сегодня пока ничего. **Запишите первый приём**, чтобы начать ритм.»
- * (`NutritionScreen.tsx:548-575`) — the emphasised run is its own pressable
- * node rather than a link span inside one flowing `AnnotatedString`: this
- * codebase's house rule is that a tappable run has to be a real, addressable
- * node (the same reason every other inline action here — `MealHero.kt:78-92`'s
- * «Записать приём» / «Рецепты» — is its own `BasicText` with its own
- * `pressable` modifier, not a clickable span). Two lines rather than one
- * flowing paragraph, which is what the two sentences the prototype itself
- * writes read as at this card's width and font size.
+ * (`NutritionScreen.tsx:548-575`) — the emphasised run is its own pressable node
+ * rather than a link span inside one `AnnotatedString`: this codebase's house rule
+ * is that a tappable run has to be a real, addressable node (the same reason
+ * `MealHero.kt:78-92`'s «Записать приём» / «Рецепты» are their own `BasicText`
+ * with their own `pressable` modifier, not clickable spans).
  */
 @Composable
 private fun EmptyFeedCard(onLogMeal: () -> Unit) {
@@ -143,13 +135,11 @@ private fun EmptyFeedCard(onLogMeal: () -> Unit) {
 }
 
 /**
- * One logged meal: a letter avatar, the name, «{время} · N позиций · {белок}
- * г белка», calories on the right, and — expanded — its items with their
- * macros, grams and calories (`MealCard`, `NutritionScreen.tsx:170-312`).
- *
- * [Meal.totals] is the exact tenths fold (`Nutrition.kt:183-184`); this card
- * rounds it for display through [tenthsLabel] rather than calling
- * `toMacros()` a second time — see that function's own KDoc.
+ * One logged meal: a letter avatar, the name, «{время} · N позиций · {белок} г
+ * белка», calories on the right, and — expanded — its items with their macros,
+ * grams and calories (`MealCard`, `NutritionScreen.tsx:170-312`). [Meal.totals] is
+ * the exact tenths fold (`Nutrition.kt:183-184`); rounds it through [tenthsLabel]
+ * rather than calling `toMacros()` a second time — see that function's own KDoc.
  */
 @Composable
 private fun MealFeedCard(
@@ -216,9 +206,9 @@ private fun MealFeedCard(
 
 /**
  * The letter-avatar box — `.charAt(0).toUpperCase()` (`NutritionScreen.tsx:204`). Falls
- * back to «П», not the prototype's own `'M'` at that line: RU is the product language, so
- * a Latin fallback letter has no place here even though the fallback itself is unreachable
- * in practice — every seeded and logged meal carries a non-empty name.
+ * back to «П», not the prototype's own `'M'`: RU is the product language, so a Latin
+ * fallback has no place here even though it is unreachable in practice — every seeded
+ * and logged meal carries a non-empty name.
  */
 @Composable
 private fun MealAvatar(name: String) {
@@ -236,9 +226,9 @@ private fun MealAvatar(name: String) {
 }
 
 /**
- * One expanded position: name, «Белок Xг · Углеводы Yг · Жиры Zг», grams and
- * its own calories (`NutritionScreen.tsx:250-306`) — every number rounded
- * for display through [tenthsLabel], never through a second `toMacros()`.
+ * One expanded position: name, «Белок Xг · Углеводы Yг · Жиры Zг», grams and its
+ * own calories (`NutritionScreen.tsx:250-306`) — every number rounded through
+ * [tenthsLabel], never a second `toMacros()`.
  */
 @Composable
 private fun MealFeedItemRow(item: MealItem) {

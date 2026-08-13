@@ -22,9 +22,8 @@ private val HALF = Dose(0.5, DoseUnit.MG)
 private val WHOLE = Dose(1.0, DoseUnit.MG)
 
 /**
- * The seed's three bands, out of order on purpose: §03 does not promise the
- * server sorts them, and a fixture already sorted lets a missing `sortedBy`
- * through.
+ * Out of order on purpose: §03 doesn't promise the server sorts them, and a sorted fixture
+ * lets a missing `sortedBy` through.
  */
 private val SHUFFLED_PHASES =
     listOf(
@@ -71,12 +70,8 @@ private fun bandsOf(
 class DoseBandsTest {
     @Test
     fun eachPhaseIsOneBandRunningFromItsFirstDayToItsLast() {
-        // Week N begins (N-1)×7 days after the start, so weeks 1–4 are days
-        // 0–27 and week 5 opens on day 28 — §03's titration table read against
-        // `protocol.startDate`, and the same convention
-        // `mobile/src/features/schedule/data.ts:113-115` uses. (The trends
-        // module's `DOSE_SPANS` disagrees; see
-        // `theSeedTitratesOnTheDaysThePrototypesScheduleDoesAndNotItsChart`.)
+        // Week N begins (N-1)×7 days after start, matching schedule/data.ts. The trends
+        // module's DOSE_SPANS disagrees — see theSeedTitratesOnTheDaysThePrototypesScheduleDoesAndNotItsChart.
         assertEquals(
             listOf(
                 Triple(QUARTER, LocalDate(2026, 5, 10), LocalDate(2026, 6, 6)),
@@ -92,8 +87,7 @@ class DoseBandsTest {
         val bands = doseBands(PLAN, SEMA, WHOLE_COURSE)
 
         assertEquals(START, bands.first().range.from)
-        // Day 83 — the last prescribed day of a twelve-week course.
-        assertEquals(LocalDate(2026, 8, 1), bands.last().range.through)
+        assertEquals(LocalDate(2026, 8, 1), bands.last().range.through, "day 83, the last prescribed day")
         bands.zipWithNext().forEach { (earlier, later) ->
             assertEquals(
                 1,
@@ -106,16 +100,9 @@ class DoseBandsTest {
 
     @Test
     fun theBandCoveringADayCarriesTheDoseThatDayWasPrescribed() {
-        // The contract between the strip and the dots, asserted day by day
-        // rather than at the four dates a literal test happens to name:
-        // `phaseDose` is what the calendar stamps on an occurrence, and a strip
-        // that disagreed with it would draw a dose the patient was never asked
-        // to take.
-        //
-        // Run over the gapped course as well as the contiguous one, and that is
-        // where the invariant bites: on a contiguous course `phaseDose` is
-        // never null, so the «no band over an unprescribed day» half is not
-        // exercised by `PLAN` alone.
+        // Asserted day by day, not at four dates a literal test happens to name. Run over
+        // the gapped course too: on a contiguous course `phaseDose` is never null, so the
+        // "no band over an unprescribed day" half isn't exercised by PLAN alone.
         listOf(PLAN, plan(phases = BROKEN_PHASES)).forEach { p ->
             val start = p.protocol.startDate
             val bands = doseBands(p, SEMA, WHOLE_COURSE)
@@ -132,15 +119,9 @@ class DoseBandsTest {
 
     @Test
     fun aGapBetweenTwoPhasesIsAGapBetweenTwoBands() {
-        // A deliberate break — four weeks on, four weeks off, four weeks on.
-        // §03 constrains nothing about phases being contiguous, and a strip
-        // that ran straight through would tell a patient they were on drug
-        // during a wash-out.
-        //
-        // This is the fixture that makes `phase.toWeek` observable: a band that
-        // closed where the *next* phase opens instead of where its own ends
-        // draws the same three spans for a contiguous course, and only a gap
-        // separates the two implementations. Do not let it become contiguous.
+        // Makes `phase.toWeek` observable: a band closing where the *next* phase opens,
+        // instead of where its own ends, draws the same spans for a contiguous course — only
+        // a gap separates the two implementations. Do not let it become contiguous.
         val broken = plan(phases = BROKEN_PHASES)
 
         assertEquals(
@@ -156,10 +137,8 @@ class DoseBandsTest {
 
     @Test
     fun aBandIsWhatWasPrescribedAndNotWhatWasTaken() {
-        // No `DoseEvent` reaches this function, and the seed is where that
-        // shows: its history stops at `seededThrough` (30 May) and holds one
-        // dose, 0,25 мг, because that is all the patient has reached. The bands
-        // run two months further and carry three different doses.
+        // No `DoseEvent` reaches this function: the seed's history stops at seededThrough
+        // holding one dose, but the bands run two months further with three different doses.
         val bands = doseBands(MockSeed.plan, MockSeed.semaItemId, WHOLE_COURSE)
 
         assertEquals(listOf(QUARTER, HALF, WHOLE), bands.map { it.dose }, "three prescribed doses")
@@ -179,7 +158,6 @@ class DoseBandsTest {
 
     @Test
     fun aWindowInsideOnePhaseSeesThatPhaseClippedToIt() {
-        // What «7 дней» asks for on almost any day of a course.
         assertEquals(
             listOf(Triple(QUARTER, LocalDate(2026, 5, 25), LocalDate(2026, 5, 31))),
             bandsOf(TrendRange(LocalDate(2026, 5, 25), LocalDate(2026, 5, 31))),
@@ -201,19 +179,16 @@ class DoseBandsTest {
 
     @Test
     fun aWindowThatMissesTheCourseEntirelyHasNoBands() {
-        // Before it, and after it. «3 месяца» on a patient in week two reaches
-        // back past the start; a finished course sits behind a later window.
+        // Before it, and after it.
         assertEquals(emptyList(), bandsOf(TrendRange(LocalDate(2026, 3, 1), LocalDate(2026, 5, 9))))
         assertEquals(emptyList(), bandsOf(TrendRange(LocalDate(2026, 8, 2), LocalDate(2026, 9, 1))))
     }
 
     @Test
     fun aWindowTouchingTheCourseByOneDaySeesOneDayOfIt() {
-        // The failing side above is one day either way from these. A one-day
-        // band is what «весь цикл» asks for on the day a course begins — the
-        // range `TrendWindow.CYCLE` returns is exactly `(start, start)` — so an
-        // overlap test written `from >= through` would leave a patient's first
-        // day with an axis and no prescription under it.
+        // A one-day band is what «весь цикл» asks for on the day a course begins
+        // (TrendWindow.CYCLE returns exactly (start, start)); an overlap test written
+        // `from >= through` would leave a patient's first day with no prescription under it.
         assertEquals(
             listOf(Triple(QUARTER, START, START)),
             bandsOf(TrendRange(LocalDate(2026, 3, 1), START)),
@@ -226,10 +201,8 @@ class DoseBandsTest {
 
     @Test
     fun theWeeksAreCountedFromWhicheverDayTheCourseBeganOn() {
-        // Every other fixture here and in `TitrationTest` starts on 10 May
-        // 2026, so an implementation that had baked that date in would pass
-        // them all. This one crosses a new year and a leap February — the
-        // arithmetic is measured rather than assumed.
+        // Every other fixture here starts on 10 May 2026, so a baked-in date would pass them
+        // all. This one crosses a new year and a leap February — measured, not assumed.
         val leapYear =
             ProtocolPlan(
                 protocol = Protocol(PID, UserId("p"), LocalDate(2027, 12, 20), 12, ProtocolStatus.ACTIVE, null, null),
@@ -243,9 +216,8 @@ class DoseBandsTest {
                 Triple(QUARTER, LocalDate(2027, 12, 20), LocalDate(2028, 1, 16)),
                 // Day 28 → 55.
                 Triple(HALF, LocalDate(2028, 1, 17), LocalDate(2028, 2, 13)),
-                // Day 56 → 83, across 29 February — 2028 is a leap year, so
-                // this band is the one whose arithmetic a 365-day assumption
-                // would move.
+                // Day 56 → 83, across 29 February: 2028 is a leap year, so this band moves
+                // under a 365-day assumption.
                 Triple(WHOLE, LocalDate(2028, 2, 14), LocalDate(2028, 3, 12)),
             ),
             doseBands(leapYear, SEMA, TrendRange(LocalDate(2027, 1, 1), LocalDate(2029, 1, 1)))
@@ -255,9 +227,7 @@ class DoseBandsTest {
 
     @Test
     fun aCancelledCourseDrawsNoBandsAtAll() {
-        // The same answer `phaseDose` gives, and for its reason: a cancelled
-        // course has no defensible prescription to draw, and §03 gives
-        // `protocols` no `cancelled_at` to bound one with.
+        // Same answer `phaseDose` gives, for the same reason.
         assertEquals(emptyList(), bandsOf(WHOLE_COURSE, plan(status = ProtocolStatus.CANCELLED)))
         assertEquals(
             emptyList(),
@@ -267,9 +237,8 @@ class DoseBandsTest {
 
     @Test
     fun anItemWithNoPhasesHasNoBands() {
-        // Two different absences, and they take different branches. An item
-        // the phase map has never heard of — a weigh-in, which is prescribed
-        // but not dosed — and an item present with an empty list.
+        // Two different absences, different branches: unheard-of in the phase map (weigh-in)
+        // vs. present with an empty list.
         assertEquals(emptyList(), doseBands(PLAN, WEIGH_IN, WHOLE_COURSE))
         assertEquals(emptyList(), protocolMarks(PLAN, WEIGH_IN, WHOLE_COURSE))
 
@@ -280,10 +249,8 @@ class DoseBandsTest {
 
     @Test
     fun aPhaseReachingPastTheCourseIsCutAtItsLastDay() {
-        // Malformed rather than impossible: §03 stores `to_week` per phase and
-        // `weeks` per protocol, and nothing joins them. Drawing to week 20 of a
-        // twelve-week course would put bands under an axis `cycleWeek` calls
-        // outside the protocol.
+        // Malformed, not impossible: §03 leaves `to_week`/`weeks` unjoined, so week 20 of a
+        // twelve-week course is representable.
         val overrun = plan(phases = listOf(ProtocolPhase(1, 20, QUARTER)))
 
         assertEquals(
@@ -310,8 +277,6 @@ class ProtocolMarksTest {
 
     @Test
     fun aMarkSitsOnTheFirstDayOfTheBandItOpens() {
-        // The join the chart draws its dashed line on: every titration mark
-        // lands on a band's opening day, and never between two.
         val bands = doseBands(PLAN, SEMA, WHOLE_COURSE)
         val titrations = protocolMarks(PLAN, SEMA, WHOLE_COURSE).filter { it.kind == ProtocolMarkKind.TITRATION }
 
@@ -321,8 +286,8 @@ class ProtocolMarksTest {
 
     @Test
     fun marksOutsideTheWindowAreLeftOut() {
-        // The seeded «весь цикл» window on the day the app opens: three weeks
-        // lived, so the start is in and both titrations are still ahead.
+        // The seeded «весь цикл» window: three weeks lived, so the start is in and both
+        // titrations are still ahead.
         val cycle = requireNotNull(TrendWindow.CYCLE.rangeOn(MockSeed.plan, LocalDate(2026, 5, 31)))
         val marks = protocolMarks(MockSeed.plan, MockSeed.semaItemId, cycle)
 
@@ -332,9 +297,8 @@ class ProtocolMarksTest {
 
     @Test
     fun bothEdgesOfTheWindowKeepTheirMarks() {
-        // A «7 дней» window can close exactly on the day a dose went up, and
-        // that is the day the mark exists to show. The left edge is measured by
-        // the test above, where the start sits on `range.from`.
+        // A «7 дней» window can close exactly on the day a dose went up. Left edge is
+        // measured by the test above, where the start sits on `range.from`.
         val marks = protocolMarks(PLAN, SEMA, TrendRange(LocalDate(2026, 6, 1), LocalDate(2026, 6, 7)))
 
         assertEquals(listOf(LocalDate(2026, 6, 7)), marks.map { it.date })
@@ -342,11 +306,8 @@ class ProtocolMarksTest {
 
     @Test
     fun aMarkPastTheEndOfTheCourseIsDroppedLikeTheBandUnderIt() {
-        // Two phases where the second is entirely outside a twelve-week course.
-        // Its band is cut away; a dashed «доза выросла» line left behind would
-        // stand over nothing, on a date `cycleWeek` calls outside the protocol.
-        // Reachable: the three length windows close on `today`, not on the
-        // course's last day.
+        // Second phase entirely outside a twelve-week course: its band is cut away, so a
+        // dashed line left behind would stand over nothing.
         val overrun = plan(phases = listOf(ProtocolPhase(1, 12, QUARTER), ProtocolPhase(13, 20, HALF)))
 
         assertEquals(
@@ -357,22 +318,18 @@ class ProtocolMarksTest {
             listOf(ProtocolMarkKind.START),
             protocolMarks(overrun, SEMA, WHOLE_COURSE).map { it.kind },
         )
-        // And the third reader of the same phases agrees. `titrationStepAfter`
-        // is what `CadenceMocks` hands the schedule screen as `nextTitration`:
-        // a step on 2 August, one day past a course that ends on the 1st, would
-        // have the chart drop the dashed line while the schedule still promised
-        // «Доза растёт». The clip lives in `titrationSteps` so that all three
-        // inherit it.
+        // The third reader agrees: `titrationStepAfter` is what `CadenceMocks` hands the
+        // schedule screen, and a step past the course's end would have the schedule promise
+        // «Доза растёт» after the chart drops the line. The clip lives in `titrationSteps`
+        // so all three inherit it.
         assertEquals(emptyList(), titrationSteps(overrun, SEMA))
         assertNull(titrationStepAfter(overrun, SEMA, LocalDate(2026, 5, 31)))
     }
 
     @Test
     fun twoPhasesHoldingTheSameDoseAreNotATitration() {
-        // §03 lets a course split its phase table without changing the dose —
-        // «hold 0,5 for another four weeks». Two bands, one dose, and no
-        // dashed line, because «0,5 мг → 0,5 мг» is a change that did not
-        // happen.
+        // §03 lets a course split its phase table without changing the dose. Two bands, one
+        // dose, no dashed line: «0,5 мг → 0,5 мг» is a change that didn't happen.
         val held = plan(phases = listOf(ProtocolPhase(1, 4, HALF), ProtocolPhase(5, 8, HALF)))
 
         assertEquals(2, doseBands(held, SEMA, WHOLE_COURSE).size)
@@ -382,11 +339,8 @@ class ProtocolMarksTest {
 
     @Test
     fun aCancelledCourseHasNoNextStepEither() {
-        // `doseBands` and `protocolMarks` already answer nothing for a
-        // cancelled course. `titrationStepAfter` is the third reader of the same
-        // phases — it is what `CadenceMocks` hands the schedule screen as
-        // `nextTitration` — and a withdrawn prescription must not still promise
-        // «Доза растёт: 0,25 мг → 0,5 мг».
+        // The third reader of the same phases: a withdrawn prescription must not still
+        // promise «Доза растёт».
         val cancelled = plan(status = ProtocolStatus.CANCELLED)
 
         assertEquals(emptyList(), titrationSteps(cancelled, SEMA))
@@ -406,10 +360,8 @@ class ProtocolMarksTest {
 
     @Test
     fun anItemDosedFromTheSecondWeekIsMarkedWhereItsFirstBandOpens() {
-        // §03 lets a phase begin after week 1, which is how a course writes a
-        // wash-in. The start belongs on the day the item was first prescribed —
-        // not on the protocol's own start date, where nothing had been given
-        // yet, and not nowhere, which would leave the band unexplained.
+        // §03 lets a phase begin after week 1 (a wash-in). The start belongs on the day the
+        // item was first prescribed, not the protocol's own start date.
         val washIn = plan(phases = listOf(ProtocolPhase(2, 4, QUARTER), ProtocolPhase(5, 8, HALF)))
         val marks = protocolMarks(washIn, SEMA, WHOLE_COURSE)
 
@@ -421,9 +373,8 @@ class ProtocolMarksTest {
             ),
             marks,
         )
-        // And the bands under it: the first opens on the same day the mark
-        // does, and the last closes where its own phase ends — week 8, day 55 —
-        // rather than running on to the end of a course it does not cover.
+        // Bands under it: first opens the same day as the mark, last closes at its own
+        // phase's end, not running on to the end of a course it doesn't cover.
         val bands = doseBands(washIn, SEMA, WHOLE_COURSE)
         assertEquals(LocalDate(2026, 5, 17), bands.first().range.from)
         assertEquals(LocalDate(2026, 7, 4), bands.last().range.through)
@@ -431,7 +382,6 @@ class ProtocolMarksTest {
 
     @Test
     fun anItemWithOneBandStartsAndNeverTitrates() {
-        // BPC-157 in the seed: one phase across all twelve weeks.
         val marks = protocolMarks(MockSeed.plan, MockSeed.bpcItemId, WHOLE_COURSE)
 
         assertEquals(listOf(ProtocolMarkKind.START), marks.map { it.kind })
@@ -440,11 +390,9 @@ class ProtocolMarksTest {
 
     @Test
     fun theSeedTitratesOnTheDaysThePrototypesScheduleDoesAndNotItsChart() {
-        // The prototype disagrees with itself. `schedule/data.ts:114-115` puts
-        // the two steps at `CYCLE_START + 4×7` and `+ 8×7` — days 28 and 56 —
-        // while `trends/data.ts:21` draws the second at day 70. §03's phases
-        // give 28 and 56, so the chart is the one that is wrong, and porting it
-        // would draw a titration two weeks after the dose actually changed.
+        // The prototype disagrees with itself: schedule/data.ts puts the steps at days 28
+        // and 56, trends/data.ts draws the second at day 70. §03's phases give 28 and 56, so
+        // the chart is wrong — porting it would draw a titration two weeks late.
         val marks =
             protocolMarks(MockSeed.plan, MockSeed.semaItemId, WHOLE_COURSE)
                 .filter { it.kind == ProtocolMarkKind.TITRATION }

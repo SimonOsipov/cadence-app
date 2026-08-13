@@ -44,17 +44,13 @@ class ScheduleScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { ScheduleScreen(state = mayState()) } }
 
-            // 1 May 2026 is a Friday, so the first row carries four blanks
-            // before it — a grid that ignored the weekday would put it under
-            // «Пн» and shift every dot in the month by four days.
+            // 1 May 2026 is a Friday, so the row carries four blanks before it — ignoring the
+            // weekday would put it under «Пн» and shift every dot by four days.
             listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach {
                 onNodeWithText(it).assertIsDisplayed()
             }
-            // Position, not presence. 1 May is a Friday and 4 May a Monday,
-            // so the first of the month must sit to the *right* of the fourth.
-            // Drop the leading blanks and the order inverts — which a test
-            // asserting only that «1» and «31» exist cannot see, and a mutation
-            // proved it.
+            // Position, not presence: 1 May must sit to the *right* of 4 May. Drop the leading
+            // blanks and the order inverts — invisible to a test that only checks existence.
             val first = onNodeWithContentDescription("1 мая · вне курса").getBoundsInRoot().left
             val fourth = onNodeWithContentDescription("4 мая · вне курса").getBoundsInRoot().left
 
@@ -87,9 +83,8 @@ class ScheduleScreenTest {
             var opened: LocalDate? = null
             setContent { CadenceTheme { ScheduleScreen(state = mayState(), onOpenDay = { opened = it }) } }
 
-            // 31 May is a Sunday inside the course, so its cell announces the
-            // injection too — the description is what a screen reader says and
-            // what a test can grab, since a dot has no text.
+            // 31 May is a Sunday inside the course, so its cell announces the injection too —
+            // the content description is what a screen reader says, since a dot has no text.
             onNodeWithContentDescription("31 мая · сегодня · инъекция").performScrollTo().performClick()
 
             assertEquals(LocalDate(2026, 5, 31), opened)
@@ -100,8 +95,7 @@ class ScheduleScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { ScheduleScreen(state = mayState()) } }
 
-            // The 1st through the 9th are outside the protocol; the 10th is its
-            // first day. A grid that marked them would be inventing a course.
+            // The 1st through the 9th are outside the protocol; the 10th is its first day.
             onNodeWithContentDescription("1 мая · вне курса").assertExists()
             onNodeWithContentDescription("10 мая · инъекция").assertExists()
         }
@@ -111,11 +105,9 @@ class ScheduleScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { ScheduleScreen(state = mayState()) } }
 
-            // Four Sundays inside the cycle in May 2026 — the 10th, 17th, 24th
-            // and 31st. `describe` is built from the same field, so it cannot
-            // witness the dot: deleting the Box left every assertion green.
-            // useUnmergedTree: the cell is clickable, and a clickable merges its
-            // descendants, so the dot's tag is invisible in the merged tree.
+            // Four Sundays in May 2026's cycle. `describe` is built from the same field, so it
+            // cannot witness the dot: deleting the Box left every assertion green. useUnmergedTree
+            // because a clickable cell merges its descendants, hiding the dot's tag otherwise.
             assertEquals(
                 4,
                 onAllNodesWithTag(INJECTION_DOT_TAG, useUnmergedTree = true).fetchSemanticsNodes().size,
@@ -127,8 +119,7 @@ class ScheduleScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { ScheduleScreen(state = mayState()) } }
 
-            // The ring around today draws nothing a test can read, so the day
-            // announces itself instead — which the screen reader needed anyway.
+            // The ring around today draws nothing a test can read, so the day announces itself.
             onNodeWithContentDescription("31 мая · сегодня · инъекция").assertExists()
             assertEquals(1, onAllNodesWithContentDescription("30 мая").fetchSemanticsNodes().size)
         }

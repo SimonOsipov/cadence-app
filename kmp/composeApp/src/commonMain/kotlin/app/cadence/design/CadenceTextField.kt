@@ -18,43 +18,34 @@ private val TEXT_FIELD_BORDER = 1.dp
 /**
  * A bordered text input: `paper` background, `border` outline, [CadenceRadius.md]
  * corners — the shape `DoseSteps.kt` drew before this task folded it in here
- * (`aaf74de:DoseSteps.kt:380-382`, the commit immediately before this task):
- * ```
- * .background(Cadence.palette.paper)
- * .border(HAIRLINE, Cadence.palette.border, RoundedCornerShape(CadenceRadius.md))
- * .padding(CadenceSpacing.md),
- * ```
- * folded into one primitive so the two raw `BasicTextField` call sites this task
- * converts — that note field, and `AddVialScreen.kt`'s five form fields — stop
- * each repeating it.
+ * (`aaf74de:DoseSteps.kt:380-382`), so the two raw `BasicTextField` call sites
+ * this task converts (the note field, `AddVialScreen.kt`'s five form fields)
+ * stop each repeating it.
  *
- * Controlled, not stateful: the field always renders [value], never a character
- * it was typed but the parent has not echoed back through [onValueChange] — a
- * parent that rejects an edit is not silently overridden by the field's own
- * buffer.
+ * Controlled, not stateful: the field always renders [value], never a
+ * character it was typed but the parent hasn't echoed back through
+ * [onValueChange] — a parent that rejects an edit isn't silently overridden
+ * by the field's own buffer.
  *
- * **Two modifiers, deliberately.** [modifier] lands on the outer box — the whole
- * field, background and border included — matching every other primitive in
- * this package (`CadenceMacroBar.kt`, `CadenceWeekBars.kt`, `CadenceControls.kt`,
- * `CadenceSegmented.kt` all apply `modifier.then(ownChain)` to their outer node).
- * [fieldModifier] lands on the editable [BasicTextField] beneath it, for the
- * handful of things that have to target that exact node rather than the box
- * around it — a `testTag` a test then calls `performTextReplacement` on, chiefly.
+ * **Two modifiers, deliberately.** [modifier] lands on the outer box, matching
+ * every other primitive in this package (`CadenceMacroBar.kt`,
+ * `CadenceWeekBars.kt`, `CadenceControls.kt`, `CadenceSegmented.kt` all apply
+ * `modifier.then(ownChain)` to their outer node). [fieldModifier] lands on the
+ * editable [BasicTextField] beneath it, for the few things that must target
+ * that exact node — chiefly a `testTag` a test calls `performTextReplacement` on.
  *
- * This is a deliberate widening of the brief's four-parameter modifier surface,
- * not an oversight: routing the *whole* `modifier` to the inner field (this
- * component's first shape) meant a caller's `Modifier.weight(1f)` landed on the
- * `BasicTextField`, not the box — and the box always calls `fillMaxWidth()`
- * unconditionally, so it still ate the entire row and left a sibling at width
- * zero, the same absorption this component's own `singleLine` test already hit
- * once with a `.width(...)` modifier. That breaks the two shapes this component
- * exists for: the chat composer sits `flex: 1` beside a send button
- * (`mobile/src/features/chat/ChatThreadScreen.tsx:290-312`) and the ingredient
- * search sits `flex: 1` beside an icon
- * (`mobile/src/features/recipe/RecipeBuilderScreen.tsx:187-199`). Overridden by
- * the plan owner on the same grounds as the stepper's signature in Task 1: the
- * package convention wins, and both prototype shapes above need `weight` to
- * actually reach the box.
+ * This widens the brief's four-parameter modifier surface deliberately, not by
+ * oversight: routing the *whole* `modifier` to the inner field (this
+ * component's first shape) put a caller's `Modifier.weight(1f)` on the
+ * `BasicTextField`, not the box — and the box's unconditional `fillMaxWidth()`
+ * still ate the entire row, leaving a sibling at width zero (the same
+ * absorption this component's `singleLine` test already hit once with a
+ * `.width(...)` modifier). That breaks the two shapes this component exists
+ * for — the chat composer's `flex: 1` beside a send button
+ * (`ChatThreadScreen.tsx:290-312`) and the ingredient search's `flex: 1`
+ * beside an icon (`RecipeBuilderScreen.tsx:187-199`) — both needing `weight`
+ * to reach the box. Overridden by the plan owner on the same grounds as the
+ * stepper's signature in Task 1: the package convention wins.
  */
 @Composable
 fun CadenceTextField(

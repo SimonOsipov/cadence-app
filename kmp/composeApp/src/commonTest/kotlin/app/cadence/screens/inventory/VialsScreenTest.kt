@@ -47,9 +47,8 @@ class VialsScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { VialsScreen(cabinet = cabinet()) } }
 
-            // Four live vials — the disposed one is not in the fridge any more.
-            // «флакона», not «флаконов»: the rule, not the prototype's ternary,
-            // which gets 21 wrong.
+            // Four live vials — the disposed one is not in the fridge any more. «флакона», not
+            // «флаконов»: the rule, not the prototype's ternary, which gets 21 wrong.
             onNodeWithText("4 флакона в холодильнике").assertExists()
             onNodeWithText("Ваша аптечка").assertExists()
         }
@@ -59,9 +58,8 @@ class VialsScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { VialsScreen(cabinet = cabinet()) } }
 
-            // Three open, one sealed, one expiring, one low — the seeded
-            // shape, and each read off its own stat rather than by a word that
-            // is also a chip's label and a pill's.
+            // The seeded shape, each read off its own stat rather than a word that is also a
+            // chip's label and a pill's.
             assertEquals("3", statFor("ACTIVE"))
             assertEquals("1", statFor("EXPIRING"))
             assertEquals("1", statFor("SEALED"))
@@ -71,8 +69,8 @@ class VialsScreenTest {
     @Test
     fun eachChipFiltersTheListToItsOwnGroup() =
         runComposeUiTest {
-            // Asserted by which vials are on screen, not by which chip looks
-            // selected: a filter wired to the wrong group still highlights.
+            // By which vials are on screen, not by which chip looks selected: a filter wired to
+            // the wrong group still highlights.
             setContent { CadenceTheme { VialsScreen(cabinet = cabinet()) } }
 
             onNodeWithText("Истекают · 1").performScrollTo().performClick()
@@ -118,20 +116,18 @@ class VialsScreenTest {
             setContent { CadenceTheme { VialsScreen(cabinet = cabinet()) } }
 
             onNodeWithText("Семаглутид").assertExists()
-            // Through the formatter: «0,25 мг», with the comma the RU rule puts
-            // there, beside the lot that tells two vials of one compound apart.
+            // Through the formatter — the RU comma — beside the lot that tells two vials of one
+            // compound apart.
             onNodeWithText("0,25 мг · A-2261").assertExists()
-            // One of four left, and the number is a subtraction rather than a
-            // field: the seed stores no remaining count anywhere.
+            // The remaining count is a subtraction, not a field: the seed stores none.
             onNodeWithText("1 / 4").assertExists()
         }
 
     @Test
     fun everyCardReportsItsOwnVialAndNotItsNeighbours() =
         runComposeUiTest {
-            // One tap per card, each asserted separately. A list built in a
-            // loop that captured the wrong variable reports the last vial for
-            // every tap, and a single-card test would not see it.
+            // One tap per card: a loop that captured the wrong variable would report the last
+            // vial for every tap, invisible to a single-card test.
             var opened: VialId? = null
             setContent { CadenceTheme { VialsScreen(cabinet = cabinet(), onOpenVial = { opened = it }) } }
 
@@ -149,8 +145,8 @@ class VialsScreenTest {
         runComposeUiTest {
             setContent { CadenceTheme { VialsScreen(cabinet = cabinet()) } }
 
-            // Three different words for three different vials, one each. A
-            // pill fixed to one label renders on every card and says nothing.
+            // Three different words for three different vials: a pill fixed to one label
+            // renders on every card and says nothing.
             assertEquals(1, onAllNodesWithText("Активный").fetchSemanticsNodes().size)
             assertEquals(1, onAllNodesWithText("Истекает").fetchSemanticsNodes().size)
             // Twice: the pill on the low card, and the summary card's own

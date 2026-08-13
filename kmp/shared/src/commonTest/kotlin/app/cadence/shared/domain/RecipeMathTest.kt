@@ -5,9 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-// step-8: pure recipe arithmetic, no repository and no MockSeed — every
-// fixture below is built by hand so a test's expectation is never derived
-// from the same table the code under test also reads.
+// Pure arithmetic, no repository and no MockSeed — every fixture is hand-built so a test's
+// expectation is never derived from the same table the code under test reads.
 
 private fun ingredient(
     id: String,
@@ -50,8 +49,6 @@ class RecipeMathTest {
 
         val forThreeHundredGrams = chicken.macrosFor(300)
 
-        // 300 g is an exact ×3 of the 100 g row — every field multiplies
-        // cleanly, so a correct scale and a broken one cannot agree here.
         assertEquals(MacrosTenths(4950, 930, 0, 108), forThreeHundredGrams)
     }
 
@@ -81,7 +78,7 @@ class RecipeMathTest {
 
         val totals = bowl.totals(listOf(chicken, rice))
 
-        // chicken 300g: kcal 4950, protein 930. rice 200g: kcal 2460, protein 54.
+        // chicken 300g (kcal 4950, protein 930) + rice 200g (kcal 2460, protein 54).
         assertEquals(MacrosTenths(7410, 984, 0, 0), totals)
     }
 
@@ -97,21 +94,15 @@ class RecipeMathTest {
 
         val perServing = bowl.perServing(listOf(chicken))
 
-        // Totals at 400g: kcal 6600, protein 1240. Halved: kcal 3300, protein 620.
+        // Totals at 400g (kcal 6600, protein 1240), halved.
         assertEquals(MacrosTenths(3300, 620, 0, 0), perServing)
     }
 
     @Test
     fun perServingRoundsHalfUpAtATenthsTie() {
-        // 100 g of a single ingredient is `macrosFor`'s reference grams, so
-        // `total` here is this row's own tenths, untouched by any rescale
-        // rounding — every field below is exactly what division by 2
-        // servings sees. Every field is odd, so each division lands on an
-        // exact `.5`: the one shape a plain integer divide (`1651 / 2 ==
-        // 825`) resolves differently from round-half-up (`-> 826`). Every
-        // other `perServing` fixture in this file divides exactly (6600/2,
-        // 1240/2), so none of them can tell `scaleRounded` apart from plain
-        // division at this call site — this one can.
+        // Every field here is odd, so dividing by 2 lands on an exact .5 — the shape a plain
+        // integer divide (1651/2 == 825) resolves differently from round-half-up (-> 826).
+        // Every other perServing fixture divides exactly, so none of them catch this.
         val tie = ingredient("tie", kcalTenths = 1651, proteinGTenths = 311, carbsGTenths = 201, fatGTenths = 91)
         val bowl = recipe("tie-bowl", servings = 2, ingredients = listOf(RecipeIngredient(tie.id, 100)))
 
@@ -160,12 +151,9 @@ class RecipeMathTest {
 
     // ── pick ───────────────────────────────────────────────────────────
     //
-    // Both fixtures share the same goals/consumed, giving a soft kcal
-    // ceiling of remaining.kcal (1000) + 250 = 1250 kcal per serving. Every
-    // recipe here is one ingredient at exactly 100 g, so its per-serving
-    // macros equal the ingredient's per-100g row untouched by rounding —
-    // the score difference in each case comes only from the arithmetic
-    // under test, never from a rescale artifact.
+    // Both fixtures share the same goals/consumed: soft kcal ceiling of remaining.kcal (1000)
+    // + 250 = 1250 per serving. Every recipe is one ingredient at exactly 100g, so per-serving
+    // macros equal the per-100g row untouched by rounding.
 
     private val pickGoals = Macros(kcal = 2000, proteinG = 999, carbsG = 0, fatG = 0)
     private val pickConsumed = Macros(kcal = 1000, proteinG = 0, carbsG = 0, fatG = 0)
@@ -222,19 +210,13 @@ class RecipeMathTest {
 
     @Test
     fun pickScoresPerServingRatherThanTheWholeRecipesTotals() {
-        // A: 1 serving, 100 g ingredient -> 500 kcal / 100 g protein, both
-        // per serving and in total (one serving makes the two agree).
+        // A: 1 serving, 100g -> 500 kcal / 100g protein, per-serving and total agree.
         val ingredientA = ingredient("a", kcalTenths = 5000, proteinGTenths = 1000)
         val recipeA = recipe("a", servings = 1, ingredients = listOf(RecipeIngredient(IngredientId("a"), 100)))
 
-        // B: 2 servings, one 200 g ingredient at 300 kcal / 80 g protein per
-        // 100 g -> totals of 600 kcal / 160 g, but per serving (halved) only
-        // 300 kcal / 80 g. Both bases keep B under the 1250 kcal ceiling, so
-        // the only thing that can move the winner is which basis scores the
-        // protein: per serving, B's 80 g loses to A's 100 g; scored on whole
-        // totals, B's 160 g would beat A's 100 g instead. That is exactly
-        // the mutation this test exists to catch — `perServing` swapped for
-        // `totals` at the scoring call site.
+        // B: 2 servings, 200g at 300 kcal/80g protein per 100g -> per-serving 80g loses to
+        // A's 100g, but scored on whole totals B's 160g would beat A instead — the mutation
+        // this test catches (`perServing` swapped for `totals` at the scoring call site).
         val ingredientB = ingredient("b", kcalTenths = 3000, proteinGTenths = 800)
         val recipeB = recipe("b", servings = 2, ingredients = listOf(RecipeIngredient(IngredientId("b"), 200)))
 
@@ -249,10 +231,8 @@ class RecipeMathTest {
 
     @Test
     fun aRecipeStrictlyUnderTheSoftCeilingBufferStaysUnpenalized() {
-        // remaining.kcal is 1000; the soft ceiling is remaining.kcal + 250 =
-        // 1250. 1200 kcal sits strictly between the two, so it must count as
-        // "fits" — this is what pins the 250 buffer itself: shrinking it to
-        // 0 (ceiling 1000) would push 1200 kcal over and flip the winner.
+        // Pins the 250 buffer: 1200 kcal sits under the 1250 ceiling, but shrinking the
+        // buffer to 0 (ceiling 1000) would push it over and flip the winner.
         val (fits, fitsIngredient) = onePortionRecipe("fits", kcal = 1200, proteinG = 100)
         val (never, neverIngredient) = onePortionRecipe("never", kcal = 500, proteinG = 90)
 
@@ -267,10 +247,8 @@ class RecipeMathTest {
 
     @Test
     fun aRecipeExactlyAtTheSoftCeilingStaysUnpenalized() {
-        // Exactly at the ceiling (1250 kcal) must still "fit" — the
-        // prototype's own `ps.kcal <= rem.kcal + 250` is inclusive. Pins the
-        // `>` in the over-ceiling comparison against a `>=` mutant, which
-        // would penalize this recipe and flip the winner to `never`.
+        // The prototype's `ps.kcal <= rem.kcal + 250` is inclusive; pins `>` against a `>=`
+        // mutant, which would penalize this recipe and flip the winner.
         val (atCeiling, atCeilingIngredient) = onePortionRecipe("at-ceiling", kcal = 1250, proteinG = 100)
         val (never, neverIngredient) = onePortionRecipe("never", kcal = 500, proteinG = 90)
 
@@ -282,10 +260,8 @@ class RecipeMathTest {
 
     // ── filteredByTypeAndTag ─────────────────────────────────────────
     //
-    // A hand-built fixture, not MockSeed: every one of MockSeed's six seed
-    // recipes carries RecipeTag.PROTEIN, so filtering that seed by PROTEIN
-    // is indistinguishable from no filter at all. Here each of the four
-    // meal types and three tags separates a different, known subset.
+    // Hand-built, not MockSeed: every MockSeed recipe carries RecipeTag.PROTEIN, so filtering
+    // by it there is indistinguishable from no filter.
 
     private val breakfast = recipe("breakfast", mealType = MealType.BREAKFAST, tags = listOf(RecipeTag.PROTEIN))
     private val lunch = recipe("lunch", mealType = MealType.LUNCH, tags = listOf(RecipeTag.GENTLE))
@@ -336,8 +312,7 @@ class RecipeMathTest {
 
     @Test
     fun combiningMealTypeAndTagRequiresBothToMatch() {
-        // `lunch` carries GENTLE, not QUICK — an OR-filter would let it
-        // through on the meal type alone.
+        // `lunch` carries GENTLE, not QUICK — an OR-filter would let it through on meal type alone.
         val found = fourRecipes.filteredByTypeAndTag(MealType.LUNCH, RecipeTag.QUICK)
 
         assertTrue(found.isEmpty(), "lunch does not carry QUICK, so the AND-filter must drop it")
@@ -355,13 +330,11 @@ class RecipeMathTest {
                 ingredients = listOf(RecipeIngredient(chicken.id, 300)),
             )
 
-        // 2 servings requested on a 2-serving recipe -> factor 1 -> grams unchanged.
+        // 2 requested on a 2-serving recipe -> factor 1 -> unchanged.
         val oneRecipeWorth = twoServingBowl.toMealDraft(listOf(chicken), requestedServings = 2)
-        // 4 servings requested -> factor 2 -> grams doubled. This is the case a
-        // "servings divisor lost" mutant (factor = requestedServings, ignoring
-        // recipe.servings) cannot distinguish from ×4: it would also double at
-        // requestedServings = 2 already, so this second point is required, not
-        // merely confirmatory.
+        // 4 requested -> factor 2 -> doubled. A "servings divisor lost" mutant (factor =
+        // requestedServings, ignoring recipe.servings) would also double at 2, so this
+        // second point is required, not confirmatory.
         val doublePortions = twoServingBowl.toMealDraft(listOf(chicken), requestedServings = 4)
         // 1 serving requested -> factor 0.5 -> grams halved.
         val halfPortions = twoServingBowl.toMealDraft(listOf(chicken), requestedServings = 1)
@@ -373,13 +346,9 @@ class RecipeMathTest {
 
     @Test
     fun toMealDraftRoundsTheGramsScaleHalfUpAtATenthsTie() {
-        // 150 g at requestedServings = 1 over a 4-serving recipe scales by
-        // 1/4: `150 * 1 / 4 == 37.5`, an exact tie — the one shape a plain
-        // integer divide (`37`) resolves differently from round-half-up
-        // (`-> 38`). [toMealDraftOnATwoServingRecipeScalesGramsByPortionsOverServings]'s
-        // own factors (1, 2, 1/2) all divide exactly, so it cannot tell
-        // `scaleRounded` apart from plain division at this call site — this
-        // one can.
+        // 150g / 4 == 37.5, an exact tie: plain integer divide gives 37, round-half-up
+        // gives 38. The sibling test's factors (1, 2, 1/2) all divide exactly, so only this
+        // one can tell `scaleRounded` apart from plain division.
         val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
         val fourServingBowl =
             recipe(

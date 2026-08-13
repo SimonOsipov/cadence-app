@@ -67,9 +67,8 @@ class MockInventoryTest {
     @Test
     fun anAddedVialComesBackFullBecauseNothingHasBeenDrawnFromIt() =
         runTest {
-            // §03's third correction, on the way in: a vial arrives with a
-            // total and no remaining count, and the count is a subtraction from
-            // the moment it exists.
+            // A vial arrives with a total and no remaining count: the count is a
+            // subtraction from the moment it exists.
             val m = mocks()
             val before =
                 m.inventory
@@ -125,8 +124,7 @@ class MockInventoryTest {
     @Test
     fun aVialThatHasAlreadyExpiredIsRefused() =
         runTest {
-            // Stock that cannot be used is not stock, and a cabinet that
-            // accepted it would count doses the patient must not take.
+            // A cabinet accepting it would count doses the patient must not take.
             val m = mocks()
 
             assertEquals(AddVialResult.Rejected, m.inventory.addVial(draft(expires = LocalDate(2026, 5, 30))))
@@ -136,8 +134,7 @@ class MockInventoryTest {
     @Test
     fun theNewVialIsOfferedToTheDoseWriteAsSoonAsItIsOpened() =
         runTest {
-            // The cabinet and the dose write read one set of vials. A vial
-            // added here and invisible there would be the prototype's two
+            // A vial added here and invisible to the dose write would be the prototype's two
             // disconnected datasets, rebuilt.
             val m = mocks()
             val added = assertIs<AddVialResult.Added>(m.inventory.addVial(draft(total = 40)))

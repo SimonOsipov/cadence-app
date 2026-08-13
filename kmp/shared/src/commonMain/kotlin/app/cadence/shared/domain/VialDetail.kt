@@ -11,16 +11,9 @@ data class VialDose(
 )
 
 /**
- * Everything the detail sheet shows about one vial.
- *
- * The row is the same one the cabinet's card drew, not a second resolution: a
- * sheet that worked out its own compound and remaining count could disagree
- * with the card the patient tapped to open it.
- *
- * The prototype seeds `recent` and `usage` per vial, so its lists cannot be
- * wrong and cannot move. Here both are filters over the one fact stream, which
- * is what makes «what came out of this vial» a question with an answer rather
- * than a decoration.
+ * Row is the same one the cabinet's card drew, not a second resolution: a sheet working out
+ * its own compound and remaining count could disagree with the card the patient tapped.
+ * Prototype seeds `recent`/`usage` per vial; here both are filters over the one fact stream.
  */
 data class VialDetail(
     val row: VialRow,
@@ -52,11 +45,8 @@ fun vialDetail(
 }
 
 /**
- * How many doses came out of the vial in each week it has been open.
- *
- * Counted from the day it was opened rather than from the calendar's weeks: the
- * question the chart answers is «как я его расходую», and a vial opened on a
- * Wednesday has its own weeks. A vial that was never opened has none.
+ * Counted from the day the vial was opened, not the calendar's weeks: a vial opened on a
+ * Wednesday has its own weeks. Never opened means none.
  */
 private fun weeklyUsage(
     vial: Vial,

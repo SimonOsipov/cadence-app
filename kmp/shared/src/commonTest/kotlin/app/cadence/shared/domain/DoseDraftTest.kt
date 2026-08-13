@@ -61,18 +61,14 @@ private fun plan(status: ProtocolStatus = ProtocolStatus.ACTIVE) =
             ),
         phases =
             mapOf(
-                // The titration band, so «the current phase» is a different
-                // answer in week 1 than in week 5.
+                // The titration band: "the current phase" differs in week 1 vs week 5.
                 SEMA to
                     listOf(
                         ProtocolPhase(1, 4, Dose(0.25, DoseUnit.MG)),
                         ProtocolPhase(5, 8, Dose(0.5, DoseUnit.MG)),
                     ),
-                // Micrograms, so a draft that flattened a dose to a string
-                // would have to invent a unit somewhere.
                 BPC to listOf(ProtocolPhase(1, 12, Dose(250.0, DoseUnit.MCG))),
-                // VITAMIN and WEIGH_IN have no phases at all: items with
-                // nothing to dose.
+                // VITAMIN and WEIGH_IN have no phases: items with nothing to dose.
             ),
     )
 
@@ -91,8 +87,7 @@ private fun filledDraft() =
 class DoseDraftTest {
     @Test
     fun theWizardIsThePrototypesFiveStepsInItsOrder() {
-        // Named, in order, against `LogDoseScreen.tsx`'s `stepDefs`. Not a
-        // count: a step invented or dropped has to be visible here.
+        // Not a count: a step invented or dropped has to be visible here.
         assertEquals(
             listOf(
                 DoseStep.COMPOUND,
@@ -114,9 +109,7 @@ class DoseDraftTest {
     fun choosingAnItemOpensTheCompoundStepAndIsTheItemThatGetsLogged() {
         val draft = DoseDraft().selectItem(plan(), SEMA, IN_WEEK_1)
 
-        // The id itself, not merely «something was chosen». The write reads
-        // this field, so a selection that recorded a fixed item would put a
-        // correct-looking dose against the wrong compound.
+        // The id itself, not merely "something was chosen": the write reads this field.
         assertEquals(SEMA, draft.itemId)
         assertEquals(ProtocolItemKind.INJECTION, draft.kind)
         assertTrue(draft.canAdvance(DoseStep.COMPOUND))
@@ -124,8 +117,6 @@ class DoseDraftTest {
 
     @Test
     fun anItemTheProtocolDoesNotMarkLoggableIsNotAChoice() {
-        // The weigh-in. Tapping it leaves the draft exactly as it was, so the
-        // selection visibly does not move.
         val chosen = DoseDraft().selectItem(plan(), SEMA, IN_WEEK_1)
 
         assertEquals(DoseDraft(), DoseDraft().selectItem(plan(), WEIGH_IN, IN_WEEK_1))
@@ -139,9 +130,8 @@ class DoseDraftTest {
 
     @Test
     fun aDraftWithNoDoseCannotLeaveTheDoseStep() {
-        // A loggable item the protocol prescribes no band for, so the dose is
-        // unset — the case a wizard that assumed every item doses would walk
-        // straight past.
+        // A loggable item with no prescribed band: a wizard assuming every item doses would
+        // walk straight past.
         val draft = DoseDraft().selectItem(plan(), VITAMIN, IN_WEEK_1)
 
         assertEquals(VITAMIN, draft.itemId)
@@ -151,10 +141,8 @@ class DoseDraftTest {
 
     @Test
     fun aZeroDoseCannotLeaveTheDoseStep() {
-        // The stepper clamps at zero rather than refusing to go there, so this
-        // is a state the patient reaches by holding «−», not a hypothesis. A
-        // guard that only checked for null would let it through, and Task 3
-        // would decrement a vial for an injection of nothing.
+        // The stepper clamps at zero, so this is reachable, not a hypothesis: a null-only
+        // guard would let it decrement a vial for an injection of nothing.
         val draft = DoseDraft().selectItem(plan(), SEMA, IN_WEEK_1)
 
         assertFalse(draft.copy(dose = Dose(0.0, DoseUnit.MG)).canAdvance(DoseStep.DOSE))
@@ -176,8 +164,6 @@ class DoseDraftTest {
 
     @Test
     fun anItemThatIsNotAnInjectionNeedsNoSite() {
-        // `DoseEvent.site` is nullable because a supplement has no zone. A
-        // wizard that demanded one could not log the item at all.
         val draft = DoseDraft().selectItem(plan(), VITAMIN, IN_WEEK_1)
 
         assertNull(draft.site)
@@ -186,8 +172,6 @@ class DoseDraftTest {
 
     @Test
     fun theContextStepIsOptionalAndAdvancesWithNothingFilled() {
-        // «Короткая сверка — всё по желанию.» Mood, side effects, note and
-        // photo are all empty here, and the step still advances.
         val draft = DoseDraft().selectItem(plan(), SEMA, IN_WEEK_1).copy(site = InjectionSite.LEFT_GLUTE)
 
         assertNull(draft.mood)
@@ -199,16 +183,13 @@ class DoseDraftTest {
 
     @Test
     fun theReviewStepHasNoNext() {
-        // The last button reads «Сохранить дозу» and submits; it does not
-        // advance. A draft with everything filled still cannot leave.
         assertFalse(filledDraft().canAdvance(DoseStep.REVIEW))
     }
 
     @Test
     fun aCompleteDraftCanBeSubmittedEvenThoughItCannotAdvance() {
-        // The trap `canSubmit` exists to close: a screen that wired the last
-        // button to `canAdvance(REVIEW)` would render a wizard nobody can
-        // finish.
+        // The trap `canSubmit` closes: wiring the last button to `canAdvance(REVIEW)` would
+        // render a wizard nobody can finish.
         assertTrue(filledDraft().canSubmit())
         assertFalse(filledDraft().canAdvance(DoseStep.REVIEW))
     }
@@ -243,17 +224,15 @@ class DoseDraftTest {
 
     @Test
     fun choosingAnItemTakesTheDoseFromThePhaseInForceOnTheDay() {
-        // The same item, two weeks of the titration band apart. A reset that
-        // read a compound's fixed «default» — which is what the prototype
-        // stores — would answer 0,25 in both.
+        // A reset reading a compound's fixed "default" (what the prototype stores) would
+        // answer 0,25 in both.
         assertEquals(Dose(0.25, DoseUnit.MG), DoseDraft().selectItem(plan(), SEMA, IN_WEEK_1).dose)
         assertEquals(Dose(0.5, DoseUnit.MG), DoseDraft().selectItem(plan(), SEMA, IN_WEEK_5).dose)
     }
 
     @Test
     fun changingTheItemReplacesThePreviousItemsDose() {
-        // The defect this guards: the patient picks semaglutide, then switches
-        // to BPC-157, and the wizard carries 0,25 мг into a 250 мкг line.
+        // Guards against carrying 0,25 мг into a 250 мкг line when switching compounds.
         val switched = filledDraft().selectItem(plan(), BPC, IN_WEEK_1)
 
         assertEquals(BPC, switched.itemId)
@@ -262,9 +241,8 @@ class DoseDraftTest {
 
     @Test
     fun reTappingTheItemAlreadyChosenLeavesAnAdjustedDoseAlone() {
-        // The prototype's row is not idempotent: it re-applies `comp.default`
-        // on every press, so stepping down to 0,20 and tapping the same
-        // compound again silently restored 0,25. Its bugs are not to be ported.
+        // The prototype re-applies comp.default on every press, silently restoring 0,25
+        // after a step-down to 0,20 — a bug this doesn't port.
         val adjusted = filledDraft().copy(dose = Dose(0.2, DoseUnit.MG))
 
         assertEquals(adjusted, adjusted.selectItem(plan(), SEMA, IN_WEEK_1))
@@ -272,8 +250,6 @@ class DoseDraftTest {
 
     @Test
     fun theDoseIsANumberAndAUnitAndNeverARenderedString() {
-        // «250 мкг» is a formatter's output. What the draft holds is the pair,
-        // and the unit travels with the item rather than with the screen.
         val dose = DoseDraft().selectItem(plan(), BPC, IN_WEEK_1).dose
 
         assertEquals(250.0, dose?.value)
@@ -282,9 +258,7 @@ class DoseDraftTest {
 
     @Test
     fun changingTheItemKeepsTheRestOfTheCheckIn() {
-        // Only the dose is item-specific. Mood, side effects, the note and the
-        // photo are about the patient, and re-entering them because they
-        // corrected the compound would be the wizard losing their work.
+        // Only the dose is item-specific; the rest is about the patient, not the compound.
         val switched = filledDraft().selectItem(plan(), BPC, IN_WEEK_1)
 
         assertEquals(InjectionSite.LEFT_THIGH, switched.site)
@@ -296,9 +270,6 @@ class DoseDraftTest {
 
     @Test
     fun aCancelledProtocolDosesNothing() {
-        // The step-4 review's own defect, in the wizard: a course that is over
-        // still offered a dose. There is no phase in force on a cancelled
-        // protocol, so the dose step has nothing to advance with.
         val draft = DoseDraft().selectItem(plan(ProtocolStatus.CANCELLED), SEMA, IN_WEEK_1)
 
         assertNull(draft.dose)

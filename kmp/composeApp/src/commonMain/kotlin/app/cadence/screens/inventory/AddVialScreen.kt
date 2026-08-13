@@ -50,11 +50,11 @@ private val HAIRLINE = 1.dp
 /**
  * «Добавить флакон».
  *
- * **No dose field.** The prototype asks «Дозировка · 0,25 мг» and stores it on
- * the vial, which is the same number the protocol's phase already decides — a
- * derived value stored, and the two go out of step the first time a doctor
- * titrates. What the glass carries is a concentration, which is §03's
- * `concentration_label` and a fact about the vial rather than the prescription.
+ * **No dose field.** The prototype asks «Дозировка · 0,25 мг» and stores it on the
+ * vial — the same number the protocol's phase already decides, a derived value
+ * stored that goes out of step the first time a doctor titrates. What the glass
+ * carries is a concentration: §03's `concentration_label`, a fact about the vial
+ * rather than the prescription.
  */
 @Composable
 fun AddVialScreen(

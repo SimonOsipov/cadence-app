@@ -34,11 +34,10 @@ private val MOOD_BORDER = 1.5.dp
 
 /**
  * «Энергия · сегодня» — five points, and the word for the one chosen.
- *
- * [value] is nullable, and that is the one difference from the prototype:
- * `INITIAL_LOG_STATE` seeds `mood: 3`, so its slider always shows «Ровно» — a
- * word the patient did not say. Step 4 of the wizard is «всё по желанию», so
- * nothing chosen has to be a state this can be in.
+ * [value] is nullable, the one difference from the prototype: its
+ * `INITIAL_LOG_STATE` seeds `mood: 3`, so the slider always shows «Ровно» — a
+ * word the patient didn't say. Step 4 is «всё по желанию», so nothing chosen
+ * has to be a state this can be in.
  */
 @Composable
 fun CadenceMoodSlider(
@@ -64,10 +63,9 @@ fun CadenceMoodSlider(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             CadenceMeta(CADENCE_MOOD_LABELS.first())
-            // Nothing at all until a point is chosen, rather than a default word.
-            // `getOrNull`: the parameter admits any Int, and a wizard that
-            // passed 0 or 6 would crash the composition rather than show no
-            // word. The invariant is 1..5 and it is not the type's.
+            // `getOrNull`: the parameter admits any Int, and a wizard passing
+            // 0 or 6 would crash rather than show no word — 1..5 isn't the type's
+            // own invariant.
             value?.let { point ->
                 CADENCE_MOOD_LABELS.getOrNull(point - 1)?.let { CadenceMeta(it, color = Cadence.palette.ink2) }
             }

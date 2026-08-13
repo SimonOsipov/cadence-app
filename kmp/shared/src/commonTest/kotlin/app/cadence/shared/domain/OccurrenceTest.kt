@@ -97,9 +97,6 @@ private fun doseEventFor(
 class OccurrenceTest {
     @Test
     fun theCycleWeekCountsFromTheProtocolStartAndNotFromAConstant() {
-        // The prototype hardcodes «week 4» against a frozen 31 May. §03 derives
-        // it, which is why a protocol that started elsewhere gives a different
-        // answer for the same date.
         assertEquals(1, cycleWeek(PROTOCOL, LocalDate(2026, 5, 10)))
         assertEquals(1, cycleWeek(PROTOCOL, LocalDate(2026, 5, 16)))
         assertEquals(2, cycleWeek(PROTOCOL, LocalDate(2026, 5, 17)))
@@ -117,16 +114,12 @@ class OccurrenceTest {
 
     @Test
     fun aWeeklyItemFallsOnItsWeekdayAndNowhereElse() {
-        // Six of the seven days must be free of it, which an implementation
-        // emitting every day would fail.
         assertEquals(1, occurrencesOn(LocalDate(2026, 5, 17)).count { it.itemId == SEMA })
         assertTrue(occurrencesOn(LocalDate(2026, 5, 18)).none { it.itemId == SEMA })
     }
 
     @Test
     fun aDailyItemEmitsEveryTimeItIsScheduledFor() {
-        // §03's `times[]` — and the reason an occurrence is keyed by (item,
-        // date, time) rather than by (item, date).
         val bpc = occurrencesOn(LocalDate(2026, 5, 18)).filter { it.itemId == BPC }
 
         assertEquals(listOf(LocalTime(8, 0), LocalTime(20, 0)), bpc.map { it.time })
@@ -134,23 +127,19 @@ class OccurrenceTest {
 
     @Test
     fun theDoseFollowsTheTitrationPhaseForThatWeek() {
-        // 0,25 in weeks 1–4, 0,5 in 5–8, 1,0 in 9–12. The boundary weeks are
-        // what an off-by-one gets wrong, so all six are asserted.
+        // Boundary weeks are what an off-by-one gets wrong, so all six are asserted.
         assertEquals(Dose(0.25, DoseUnit.MG), semaDoseOn(LocalDate(2026, 5, 10)))
         assertEquals(Dose(0.25, DoseUnit.MG), semaDoseOn(LocalDate(2026, 5, 31)))
         assertEquals(Dose(0.5, DoseUnit.MG), semaDoseOn(LocalDate(2026, 6, 7)))
         assertEquals(Dose(0.5, DoseUnit.MG), semaDoseOn(LocalDate(2026, 6, 28)))
         assertEquals(Dose(1.0, DoseUnit.MG), semaDoseOn(LocalDate(2026, 7, 5)))
-        // 26 July, not 1 August: the latter is inside week 12 but is a
-        // Saturday, and Семаглутид falls on the cycle's start weekday.
+        // 26 July, not 1 August: the latter is a Saturday, and Семаглутид falls on the
+        // cycle's start weekday.
         assertEquals(Dose(1.0, DoseUnit.MG), semaDoseOn(LocalDate(2026, 7, 26)))
     }
 
     @Test
     fun aLoggedEventMarksItsOccurrenceDoneAndLeavesTheOthersAlone() {
-        // The status is computed by comparing generated occurrences against
-        // dose events — §03's missed-dose sweep, client-side. Storing it is
-        // what «nothing derived is stored» forbids.
         val date = LocalDate(2026, 5, 17)
 
         val occurrences = occurrencesOn(date, events = listOf(doseEventFor(SEMA, date, LocalTime(7, 0))))
@@ -161,8 +150,7 @@ class OccurrenceTest {
 
     @Test
     fun anEventOnAnotherDayDoesNotSatisfyTodaysOccurrence() {
-        // Matching on the item alone would mark every Sunday done for the rest
-        // of the cycle after the first injection.
+        // Matching on item alone would mark every Sunday done for the rest of the cycle.
         val logged = doseEventFor(SEMA, LocalDate(2026, 5, 17), LocalTime(7, 0))
 
         val later = occurrencesOn(LocalDate(2026, 5, 24), events = listOf(logged))
@@ -181,14 +169,8 @@ class OccurrenceTest {
 
     @Test
     fun anEventWithoutASlotSatisfiesNoOccurrence() {
-        // Measured before it was fixed: one BPC event with a null
-        // `scheduledForTime` marked both 08:00 and 20:00 DONE, so a patient who
-        // had taken the morning injection was told the evening one was already
-        // done. The same class of bug the date-matching comment warns about,
-        // one level down.
-        //
-        // §03 stores `scheduled_for (date + slot)`, so a dose logged outside the
-        // schedule did not fulfil a scheduled occurrence and must not claim to.
+        // Measured: one BPC event with a null scheduledForTime once marked both 08:00 and
+        // 20:00 DONE, telling a patient the evening injection was already done.
         val date = LocalDate(2026, 5, 18)
 
         val bpc =
@@ -212,10 +194,8 @@ class OccurrenceTest {
 
     @Test
     fun anItemScheduledSeveralDaysAWeekFallsOnEachOfThem() {
-        // N_PER_WEEK shares a branch with WEEKLY, which is right — §03 gives
-        // both `days_of_week[]` — but nothing exercised it, so deleting the
-        // case would have made «трижды в неделю» vanish from the calendar with
-        // the gate green.
+        // N_PER_WEEK shares a branch with WEEKLY correctly, but nothing exercised it, so
+        // deleting the case would have made «трижды в неделю» vanish with the gate green.
         val thrice =
             ProtocolItem(
                 id = ProtocolItemId("tb"),
@@ -239,9 +219,8 @@ class OccurrenceTest {
 
     @Test
     fun aCancelledProtocolGeneratesNothing() {
-        // Measured before it was fixed: a stopped course produced a full
-        // schedule and kept telling the patient to inject. §03 gives
-        // `protocols.status` three values and nothing was reading it.
+        // Measured: a stopped course once produced a full schedule and kept telling the
+        // patient to inject.
         val date = LocalDate(2026, 5, 18)
         val cancelled = ProtocolPlan(PROTOCOL.copy(status = ProtocolStatus.CANCELLED), ITEMS, PHASES)
 
@@ -250,12 +229,8 @@ class OccurrenceTest {
 
     @Test
     fun aCompletedProtocolKeepsItsHistory() {
-        // The first version of the guard blanked COMPLETED too, and every
-        // patient reaches COMPLETED after twelve weeks — their calendar would
-        // have emptied retroactively, losing the dots from days they actually
-        // injected. `cycleWeek` already bounds generation to the protocol
-        // window, so a finished course yields exactly the DONE/MISSED history
-        // §11's schedule endpoint is defined to render.
+        // An earlier guard blanked COMPLETED too, and every patient reaches it after twelve
+        // weeks — their calendar would empty retroactively.
         val date = LocalDate(2026, 5, 18)
         val done = ProtocolPlan(PROTOCOL.copy(status = ProtocolStatus.COMPLETED), ITEMS, PHASES)
 
@@ -267,9 +242,8 @@ class OccurrenceTest {
 
     @Test
     fun theWeeklyRateFollowsTheCadenceAndTheTimes() {
-        // `dosesPerWeek` is what the reorder hint divides stock by, and it had
-        // no test: replacing its body with 0.0 or with 1.0 — the seeded value —
-        // left the whole suite green and the hint would have quietly vanished.
+        // `dosesPerWeek` had no test: replacing its body with a constant left the whole
+        // suite green and the reorder hint would have quietly vanished.
         val weekly = ITEMS.first { it.id == SEMA }
         val daily = ITEMS.first { it.id == BPC }
         val thrice =
@@ -285,15 +259,9 @@ class OccurrenceTest {
 
     @Test
     fun aDoseLoggedForOneItemLeavesAnotherItemInTheSameSlotAlone() {
-        // The named mutation: delete `event.protocolItemId == item.id` from
-        // `statusOf` and the suite stayed green. It did — measured, twice — for
-        // one structural reason: no fixture here ever put two items in the same
-        // (date, slot), so the date and the time alone were enough to tell every
-        // pair apart, and the item check was never load-bearing.
-        //
-        // Two injections at 08:00 is an ordinary prescription, and without this
-        // the patient logs the first and both go grey — a missed injection
-        // reported as taken, on the screen they check to decide.
+        // Measured: deleting `event.protocolItemId == item.id` from `statusOf` left the
+        // suite green, because no fixture put two items in the same (date, slot) before this
+        // one. Without the check, logging one of two same-slot injections greys both.
         val sunday = LocalDate(2026, 5, 17)
         val slot = LocalTime(8, 0)
         val collide =

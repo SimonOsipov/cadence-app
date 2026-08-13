@@ -1,22 +1,15 @@
 package app.cadence.shared.domain
 
-// step-8: the recipe context's pure arithmetic — an ingredient's macros for N
-// grams, a recipe's totals and per-serving figures, its total time, the
-// remainder against a patient's goals, the pick score, the library filter,
-// and turning a recipe into a loggable meal draft. Nothing here does I/O or
-// reads a repository; every input arrives as a parameter.
+// The recipe context's pure arithmetic. Nothing here does I/O or reads a repository; every
+// input arrives as a parameter.
 
 private const val REFERENCE_GRAMS = 100
 private const val TENTHS_PER_UNIT = 10
 
 /**
- * [grams] worth of this ingredient's macros, scaled from its 100 g reference
- * row (`per100g`).
- *
- * Built on [rescaleMealItem] rather than a second copy of its round-half-up
- * ratio scale: a reference row and a logged item's own grams are the same
- * "start here, scale to there" arithmetic, just starting from
- * [Ingredient.per100g] instead of a previously-logged [MealItem.macros].
+ * Built on [rescaleMealItem], not a second copy of its round-half-up scale: same
+ * "start here, scale to there" arithmetic, starting from [Ingredient.per100g] instead of a
+ * logged [MealItem.macros].
  */
 fun Ingredient.macrosFor(grams: Int): MacrosTenths {
     val referenceRow = MealItem(name = nameRu, grams = REFERENCE_GRAMS, macros = per100g)
@@ -24,13 +17,9 @@ fun Ingredient.macrosFor(grams: Int): MacrosTenths {
 }
 
 /**
- * The exact, unrounded sum of every [Recipe.ingredients] row at its own
- * grams — recipe/data.ts's `recipeTotals`, kept at tenths precision like
- * every other fold in this context (`Meal.totals`, `List<Meal>.dayTotals`).
- *
- * [ingredients] is the caller's ingredient table — `MockSeed.ingredients` in
- * this port, but never named here: the arithmetic does not know or care
- * where its rows come from.
+ * Exact, unrounded sum of every [Recipe.ingredients] row, kept at tenths precision like
+ * every other fold in this context. [ingredients] is the caller's table; the arithmetic
+ * doesn't know where rows come from.
  */
 fun Recipe.totals(ingredients: List<Ingredient>): MacrosTenths {
     val byId = ingredients.associateBy { it.id }
@@ -42,10 +31,8 @@ fun Recipe.totals(ingredients: List<Ingredient>): MacrosTenths {
 }
 
 /**
- * [totals] divided evenly across [Recipe.servings], round-half-up per field —
- * recipe/data.ts's `perServing`. The division is [scaleRounded] at
- * `numerator = 1`, the same round-half-up rule [rescaleMealItem] uses for its
- * grams ratio, not a second copy of it.
+ * [totals] divided evenly across [Recipe.servings] via [scaleRounded] at `numerator = 1` —
+ * the same round-half-up rule [rescaleMealItem] uses, not a second copy of it.
  */
 fun Recipe.perServing(ingredients: List<Ingredient>): MacrosTenths {
     require(servings > 0) { "a recipe with zero servings has no per-serving rate to divide by" }
@@ -61,21 +48,15 @@ fun Recipe.perServing(ingredients: List<Ingredient>): MacrosTenths {
 /** Prep plus cook, treating either absent minute count as zero — recipe/data.ts's `totalTime`. */
 fun Recipe.totalTimeMin(): Int = (prepMin ?: 0) + (cookMin ?: 0)
 
-/**
- * What is left of a patient's daily goals after what they have already
- * eaten — [remaining]'s two fields, floored at zero, never negative.
- */
+/** [remaining]'s two fields, floored at zero, never negative. */
 data class Remaining(
     val kcal: Int,
     val proteinG: Int,
 )
 
 /**
- * [goals] minus [consumed], per field, floored at zero — recipe/data.ts's
- * `remaining`, ported to take the target as a parameter instead of reading
- * the prototype's `MEAL_TARGETS` constant: a constant read from inside the
- * purest function in this context would be the one place the project's
- * "constants live in exactly one place" rule broke.
+ * Ported to take the target as a parameter, not read the prototype's `MEAL_TARGETS`
+ * constant: that would be the one place "constants live in exactly one place" broke.
  */
 fun remaining(
     consumed: Macros,
@@ -96,15 +77,9 @@ private const val SOFT_CEILING_KCAL_BUFFER = 250
 private const val OVER_CEILING_PENALTY_G = 40
 
 /**
- * The recipe from [recipes] with the highest pick score, alongside the
- * [Remaining] it was scored against — `null` only when [recipes] is empty.
- *
- * Score is a recipe's per-serving protein, in tenths of a gram, minus a
- * [OVER_CEILING_PENALTY_G]-gram penalty when its per-serving kcal exceeds the
- * soft ceiling `remaining.kcal + `[SOFT_CEILING_KCAL_BUFFER] —
- * recipe/data.ts:224-233's `suggest`. The penalty is exactly that: a penalty,
- * not a filter — a recipe over the ceiling still competes and can still win
- * if its protein clears the gap the penalty opens.
+ * `null` only when [recipes] is empty. Score is per-serving protein minus a
+ * [OVER_CEILING_PENALTY_G]-gram penalty over the soft kcal ceiling — a penalty, not a
+ * filter: a recipe over the ceiling still competes and can win if its protein clears the gap.
  */
 fun pick(
     recipes: List<Recipe>,
@@ -125,12 +100,8 @@ fun pick(
 }
 
 /**
- * `RecipesScreen`'s (step-9) two independent, additive filters — `null` on
- * either field is «Все» / «Любые», matching
- * [app.cadence.shared.repository.RecipeFilter]'s own `null` convention. Kept
- * in `domain` rather than next to `RecipeFilter` itself so this arithmetic
- * stays independent of the repository layer that calls it, the same
- * direction every other domain function in this context keeps.
+ * Two independent, additive filters — `null` on either field is «Все»/«Любые». Kept in
+ * `domain`, not next to `RecipeFilter`, so this stays independent of the calling repository layer.
  */
 fun List<Recipe>.filteredByTypeAndTag(
     mealType: MealType?,
@@ -142,20 +113,11 @@ fun List<Recipe>.filteredByTypeAndTag(
     }
 
 /**
- * This [Recipe] scaled to [requestedServings] portions and turned into a
- * ready-to-log [MealDraft] — recipe/data.ts:241-253's `toMeal`, folded
- * directly into the draft `RecipeDetailScreen` (step-10) writes: [MealSource.RECIPE]
- * and [Recipe.id] are set here rather than left for the screen to fill in,
- * so «add to day» cannot forget either half of [MealDraft.canLog]'s
- * `RECIPE`-needs-`recipeId` case.
- *
- * The scale factor is `requestedServings / servings`, applied to each
- * ingredient's own grams before its macros are computed — never applied to
- * [totals] after the fact, so a two-serving recipe logged at one serving
- * rescales every ingredient row exactly the way a half-sized version of the
- * same recipe would. The grams scale is [scaleRounded] at
- * `numerator = requestedServings, denominator = servings` — the same
- * round-half-up rule [rescaleMealItem] uses for its own grams ratio.
+ * [MealSource.RECIPE] and [Recipe.id] are set here, not left for the screen, so «add to day»
+ * can't forget either half of [MealDraft.canLog]'s `RECIPE`-needs-`recipeId` case. Scale
+ * factor `requestedServings / servings` is applied to each ingredient's own grams before
+ * macros are computed, never to [totals] after the fact — so a two-serving recipe logged at
+ * one serving rescales exactly like a half-sized version of the same recipe would.
  */
 fun Recipe.toMealDraft(
     ingredients: List<Ingredient>,

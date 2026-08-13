@@ -54,12 +54,11 @@ private data class MealHeroHint(
 )
 
 /**
- * Ports `suggestNextMeal` (`mobile/src/features/meal/data.ts:244-253`).
- *
- * The prototype's function takes `meals` and an `now` string, parses an hour out of
- * `now`, and then never reads it — `void hour` on the line right after, so the branch
- * is `meals.length` alone. No dish and no clock feed the four captions; each is a
- * literal the prototype writes out, ported here verbatim.
+ * Ports `suggestNextMeal` (`mobile/src/features/meal/data.ts:244-253`). The
+ * prototype's function takes `meals` and a `now` string, parses an hour out of `now`,
+ * then never reads it — `void hour` right after, so the branch is `meals.length`
+ * alone. No dish and no clock feed the four captions; each is a literal the
+ * prototype writes out, ported here verbatim.
  */
 private fun suggestNextMeal(mealCount: Int): MealHeroHint =
     when (mealCount) {
@@ -70,13 +69,11 @@ private fun suggestNextMeal(mealCount: Int): MealHeroHint =
     }
 
 /**
- * The sand card calling for the next meal.
- *
- * [mealCount] drives [suggestNextMeal]'s four captions — an eyebrow and a title,
- * both above the remaining-line, plus a meta line below it. The remaining-line
- * itself («Осталось {ккал} ккал · {белок} г белка») is unchanged by the hint: no
- * recipe is picked and no meta is folded into it, the same way the prototype's
- * own function names no dish either (see [suggestNextMeal]'s own KDoc).
+ * The sand card calling for the next meal. [mealCount] drives [suggestNextMeal]'s
+ * four captions — an eyebrow and title above the remaining-line, plus a meta line
+ * below it. The remaining-line itself («Осталось {ккал} ккал · {белок} г белка») is
+ * unchanged by the hint: no recipe is picked, the same way the prototype's own
+ * function names no dish either (see [suggestNextMeal]'s KDoc).
  */
 @Composable
 fun MealHero(
@@ -144,15 +141,13 @@ fun MealHero(
 }
 
 /**
- * «Приёмы сегодня» — the day's energy against its target, the three macros
- * beneath it, and the last three logged meals (or the empty invitation).
- *
- * [meals] is the day's full list, not pre-trimmed: this composable slices to
- * [RECENT_MEALS_LIMIT] itself, the same shape as the prototype's own
- * `TodayMeals` taking every meal and calling `meals.slice(-3)`
- * (`TodayScreen.tsx:857`). [zone] turns each meal's `eatenAt` into the clock
- * reading shown beside it, the same reason `NutritionScreen.kt:94-98` takes
- * one rather than reading the platform zone inline.
+ * «Приёмы сегодня» — the day's energy against its target, the three macros beneath
+ * it, and the last three logged meals (or the empty invitation). [meals] is the
+ * day's full list, not pre-trimmed: this composable slices to [RECENT_MEALS_LIMIT]
+ * itself, the same shape as the prototype's `TodayMeals` calling `meals.slice(-3)`
+ * (`TodayScreen.tsx:857`). [zone] turns each meal's `eatenAt` into the clock reading
+ * shown beside it, the same reason `NutritionScreen.kt:94-98` takes one rather than
+ * reading the platform zone inline.
  */
 @Composable
 fun TodayMeals(

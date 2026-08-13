@@ -45,14 +45,9 @@ import kotlin.math.sin
 import kotlin.time.Instant
 
 /**
- * One patient, mid-protocol.
- *
- * The values are the prototype's where the prototype has them — Семаглутид
- * titrating 0,25 → 0,5 → 1,0 over twelve weeks, BPC-157 twice a day, a target
- * of 1800 kcal. The *shapes* are §03's, which is the whole difference: the
- * prototype's frozen «31 May» is gone, replaced by a start date the cycle week
- * is computed from, and its two disconnected vial datasets are one list that
- * dose events subtract from.
+ * Values are the prototype's where it has them; shapes are §03's — the prototype's frozen
+ * «31 May» is a computed start date here, and its two disconnected vial datasets are one
+ * list that dose events subtract from.
  */
 object MockSeed {
     val patientId = UserId("patient-1")
@@ -78,11 +73,8 @@ object MockSeed {
         )
 
     /**
-     * The prototype's third strip row, «Глицин + магний · на ночь».
-     *
-     * A SUPPLEMENT in §03's terms: no phases, so no dose on the row — which is
-     * what makes the strip's dose column meaningfully optional rather than
-     * always present.
+     * A SUPPLEMENT in §03's terms: no phases, so no dose on the row — the strip's dose
+     * column is meaningfully optional, not always present.
      */
     val glycine =
         Compound(
@@ -100,20 +92,11 @@ object MockSeed {
     val cycleStart = LocalDate(2026, 5, 10)
 
     /**
-     * The moment the demo runs at.
-     *
-     * Everything below is a literal hung off [cycleStart]: a twelve-week course,
-     * six weeks of measurements, a history that stops where the history stops.
-     * Read the system clock instead and all of it ages out at once — `cycleWeek`
-     * returns null past `lastPrescribedDay`, and that null is a hard gate in
-     * `occurrencesFor`, `weekProtocolRows` and `phaseDose`, so the patient
-     * surface does not degrade, it goes blank. It did: the course ended on
-     * 1 August 2026 and no screen said anything.
-     *
-     * Week 4, which is the day every test fixture already winds to — so the demo
-     * shows what the suite asserts rather than a state nothing covers. A clock
-     * that moves arrives with the Ktor client, and with it a course that is
-     * actually current.
+     * Everything below hangs off [cycleStart]; reading the system clock instead ages it all
+     * out at once — `cycleWeek` returns null past `lastPrescribedDay`, a hard gate in several
+     * functions, so the surface goes blank rather than degrading. It did: the course ended on
+     * 1 August 2026 and no screen said anything. Week 4 is the day every test fixture already
+     * winds to, so the demo shows what the suite asserts.
      */
     const val DEMO_NOW = "2026-05-31T09:00:00Z"
 
@@ -180,51 +163,26 @@ object MockSeed {
         )
 
     /**
-     * The last day the seeded *dose* history covers.
-     *
-     * The whole seed is written against Sunday 31 May 2026 — week four of the
-     * cycle — and the history stops the day before, because the app has to open
-     * on a day the patient has not logged yet: the hero offers «Записать →» and
-     * `doseLoggedToday` is false.
-     *
-     * Measurements run a day further, to [MEASURED_THROUGH]. The two are meant
-     * to disagree: this morning's readings have happened, this evening's dose
-     * has not.
+     * History stops the day before DEMO_NOW so the app opens on a day not yet logged (hero
+     * offers «Записать →»). Measurements run a day further, to [MEASURED_THROUGH] — the two
+     * are meant to disagree: this morning's readings have happened, this evening's dose hasn't.
      */
     val seededThrough = LocalDate(2026, 5, 30)
 
     /**
-     * When each BPC vial took over.
-     *
-     * Two of them are open at once from the 25th, which is not untidiness: §03
-     * allows it, the prototype's own `VIALS` contains it, and it is the only
-     * shape in which «which vial did this come out of» is a question with more
-     * than one answer — so it is the shape the picker exists for.
+     * Two BPC vials open at once from the 25th, deliberately: §03 allows it, and it's the
+     * only shape in which "which vial did this come out of" has more than one answer.
      */
     private val BPC_SPARE_OPENED = LocalDate(2026, 5, 22)
     private val BPC_LOW_OPENED = LocalDate(2026, 5, 25)
 
     /**
-     * Five vials, and every remaining count is a subtraction.
-     *
-     * §03's third correction says `remaining = total_doses − count(dose_events
-     * .vial_id)`, and [Vial] has no field to store one in — so the only way a
-     * count can be wrong here is for the history behind it to be missing. That
-     * is what [history] is: not decoration, but the other half of every number
-     * this cabinet shows.
-     *
-     * Semaglutide is one vial with no spare, three of its four doses taken. The
-     * reorder hint fires because the patient is nearly out — the state this
-     * replaced was four doses left in week four of a weekly protocol with
-     * nothing ever logged, which is the incoherent one.
-     *
-     * The semaglutide vial sits last on purpose: a reader that answers
-     * «the patient's vial» with `vials.first()` is right only by the order of
-     * a list, and a list's order is not a fact about a cabinet.
-     *
-     * BPC-157 carries the other four statuses: one disposed when it ran out,
-     * one low, one sealed and expiring, one sealed. No compound is invented for
-     * the sake of a status the patient's protocol does not prescribe.
+     * §03: `remaining = total_doses − count(dose_events.vial_id)`, and [Vial] has no field
+     * to store the remainder — so [history] is the other half of every number this cabinet
+     * shows, not decoration. Semaglutide: one vial, three of four doses taken, so the reorder
+     * hint fires. Sits last on purpose: a reader answering «the patient's vial» with
+     * `vials.first()` is right only by list order. BPC-157 carries the other four statuses:
+     * disposed, low, sealed-and-expiring, sealed.
      */
     val vials =
         listOf(
@@ -238,9 +196,7 @@ object MockSeed {
                 expiresOn = LocalDate(2026, 8, 1),
                 lot = "B-2204",
                 locationRu = "Холодильник, полка 1",
-                // Thrown out on the 22nd with six doses still in it — a vial is
-                // disposed of for reasons other than running dry, and one that
-                // still had doses is the only case in which drawing from a
+                // Disposed with six doses still in it: only case where drawing from a
                 // disposed vial is distinguishable from drawing correctly.
                 disposedAt = BPC_SPARE_OPENED,
                 labelPhotoPath = null,
@@ -301,15 +257,9 @@ object MockSeed {
         )
 
     /**
-     * What the patient has already done — every slot from the cycle's start to
-     * [seededThrough].
-     *
-     * Generated rather than typed, for two reasons. Forty-five hand-written
-     * rows is forty-five chances to disagree with the schedule they are
-     * supposed to satisfy; and the zones come from [suggestNextSite], so the
-     * history is an example of the rotation rule the app follows rather than a
-     * second opinion about it. A seeded zone list would drift from the rule the
-     * first time the rule changed.
+     * Generated, not typed: forty-five hand-written rows is forty-five chances to disagree
+     * with the schedule, and the zones come from [suggestNextSite] so the history follows
+     * the rotation rule rather than second-guessing it.
      */
     val history: List<DoseEvent> = buildHistory()
 
@@ -332,9 +282,7 @@ object MockSeed {
                             scheduledForTime = occurrence.time,
                             injectedAt = LocalDateTime(date, occurrence.time).toInstant(TimeZone.UTC),
                             dose = occurrence.dose ?: error("a loggable occurrence with no dose on $date"),
-                            // The rotation, walked. Each event asks the same
-                            // function the wizard will ask, against everything
-                            // logged before it.
+                            // Each event asks the wizard's own function, against everything logged before it.
                             site = suggestNextSite(written),
                             mood = null,
                             sideEffects = emptyList(),
@@ -371,10 +319,7 @@ object MockSeed {
             joinedAt = LocalDate(2026, 4, 20),
         )
 
-    /**
-     * §03's `nutrition_targets`: «kcal 1800 · protein 140 · carbs 200 · fat 60».
-     * The one place these four constants exist.
-     */
+    /** §03's `nutrition_targets` — the one place these four constants exist. */
     val targets =
         NutritionTargets(
             patientId = patientId,
@@ -383,70 +328,39 @@ object MockSeed {
         )
 
     /**
-     * The last day any metric was measured — the morning of «today», and a day
-     * later than [seededThrough] on purpose.
-     *
-     * It has to be a Sunday: the weekly metrics are measured on Sundays, and a
-     * horizon landing mid-week would quietly end their series early while the
-     * daily ones ran on.
+     * Must be a Sunday: weekly metrics are measured on Sundays, and a mid-week horizon would
+     * quietly end their series early while the daily ones ran on.
      */
     private val MEASURED_THROUGH = LocalDate(2026, 5, 31)
 
     /**
-     * Six weeks of readings for every generated metric.
-     *
-     * Two metrics are outside that sentence. Chest is left unmeasured on
-     * purpose — «a metric with no readings says so» needs a metric that has
-     * none. Weight is not generated at all: its eight literals below run from
-     * 12 April, eight days *before* the intake, and they are left untouched
-     * because two mutation traps stand on them.
-     *
-     * Everything generated starts at [profile]`.joinedAt`: the clinic measured
-     * the patient at intake, before the protocol. Deeper would describe a
-     * patient the clinic had not met; shallower would leave three of the four
-     * trend windows holding the same points, and the switcher with nothing to
-     * switch.
-     *
-     * At six weeks all four differ. Their spans are 7, 28, 84 and 22 days —
-     * the last because «цикл» is anchored on [cycleStart] rather than being a
-     * length — and a daily metric fills them with 7, 28, 42 and 22 readings.
-     * Two are partial, in two different ways: «3 месяца» asks for 84 days of
-     * history and gets the 42 lived since the intake, and «цикл» is 22 days
-     * lived out of the 84 prescribed — both counted inclusively, the way every
-     * window in this feature is. That partiality is described rather than
-     * hidden.
-     *
-     * A watch reports every morning; the manual metrics are taken at the intake
-     * and then on every Sunday after it — the same Sunday the protocol later
-     * weighs in on, though the intake itself is a Monday with no weight behind
-     * it, and the first two Sundays fall before the protocol starts.
+     * Six weeks of readings for every generated metric. Chest is left unmeasured on purpose —
+     * «a metric with no readings says so» needs one that has none. Weight isn't generated:
+     * its eight literals below run from 12 April, before the intake, and stay untouched
+     * because two mutation traps stand on them. Everything generated starts at
+     * [profile]`.joinedAt` (the intake) so all four trend windows (7/28/84/22 days) end up
+     * with different point counts, two of them partial — described rather than hidden.
      */
     val measurements: List<Measurement> = buildMeasurements()
 
     private fun buildMeasurements(): List<Measurement> {
-        // Not a fallback: six weeks of history is the whole point of this seed,
-        // and a profile that cannot say when the patient joined has no first
-        // day to count them from. Substituting one would put a single reading,
-        // dated today, at the *end* value of a course nobody had taken.
+        // Not a fallback: a profile with no joinedAt has no first day to measure from, and
+        // substituting one would put a single reading at the *end* value of a course never taken.
         val joined = profile.joinedAt ?: error("the seeded profile has no joinedAt to measure from")
         val daily =
             generateSequence(joined) { it.plus(DatePeriod(days = 1)) }
                 .takeWhile { it <= MEASURED_THROUGH }
                 .toList()
-        // The intake, then every weigh-in Sunday after it — filtered out of
-        // `daily` rather than prepended to it, so that a horizon earlier than
-        // the intake cannot leave a measurement dated in the future behind.
+        // Filtered out of `daily`, not prepended, so a horizon earlier than the intake can't
+        // leave a measurement dated in the future.
         val weekly = daily.filter { it == joined || it.dayOfWeek == DayOfWeek.SUNDAY }
-        // The distinction the whole seed turns on: what a device reported
-        // and what the patient wrote down.
         val watch = MeasurementSource.HEALTH_KIT
         val hand = MeasurementSource.MANUAL
 
         return listOf(
-            // Eight readings for a seven-point series, so `take` and `takeLast`
-            // cannot agree; and one of them out of list order, so the sort has
-            // something to do. Both mutations survived a seed that was already
-            // sorted and exactly seven long.
+            // Eight readings for a seven-point series (so take/takeLast disagree) and one out
+            // of list order (so the sort matters) — both mutations survived a seed that was
+            // already sorted and exactly seven long.
             weight("2026-04-26T06:00:00Z", 100.8),
             weight("2026-04-12T06:00:00Z", 101.9),
             weight("2026-04-19T06:00:00Z", 101.2),
@@ -456,28 +370,18 @@ object MockSeed {
             weight("2026-05-24T06:00:00Z", 98.8),
             weight("2026-05-31T06:00:00Z", 98.4),
         ) +
-            // The HRV is minutes later than the last weight on purpose, so
-            // «latest weight» cannot be «latest reading» and pass. Every other
-            // reading of the day is earlier than it, and has to stay that way.
+            // HRV is minutes later than the last weight on purpose, so «latest weight» can't
+            // be «latest reading» and pass — every other reading of the day stays earlier.
             ramp(Metric.HRV, daily, "ms", watch, Ramp(50.0, 58.0, WHOLE, 2.0, LocalTime(6, 5))) +
             ramp(Metric.RHR, daily, "bpm", watch, Ramp(66.0, 58.0, WHOLE, 1.0, LocalTime(6, 1))) +
-            // Cadence's «Сон /100» will be scored server-side out of the
-            // sessions the watch imported. It is seeded as HEALTH_KIT because
-            // `MeasurementSource` has no value for «derived», and that is the
-            // nearest true thing about where the number came from.
+            // Seeded as HEALTH_KIT because `MeasurementSource` has no "derived" value, the
+            // nearest true thing for a metric scored server-side from imported sessions.
             ramp(Metric.SLEEP, daily, "/100", watch, Ramp(72.0, 86.0, WHOLE, 3.0, LocalTime(6, 2))) +
             ramp(Metric.BODY_FAT, weekly, "%", hand, Ramp(26.5, 24.6, TENTHS, 0.1, LocalTime(6, 3))) +
-            // Centimetres, and on a 188 cm body. The prototype's waist runs
-            // 37,5 → 35,0 under a «см» label beside a thigh of 64,5 см, and its
-            // own copy gives it away: the thigh's «на четыре с половиной
-            // сантиметра» matches a fall of 4,5, while the waist's «на шесть с
-            // половиной» matches a fall of 2,5 — which is 6,35 cm. That series
-            // is in inches, and porting it as written would draw this patient
-            // with a 37 cm waist.
-            //
-            // `HIP` is not that thigh rebadged: §03 has no thigh metric at all.
-            // The thigh is named here only as the sanity check that gave the
-            // waist away.
+            // The prototype's waist series is in inches — its own copy gives it away (the
+            // fall the caption describes is 6,35cm, not the 2,5cm the numbers imply) — so
+            // porting it as written would draw a 37cm waist on a 188cm body. HIP isn't the
+            // prototype's thigh rebadged; §03 has no thigh metric.
             ramp(Metric.WAIST, weekly, "cm", hand, Ramp(104.0, 99.0, TENTHS, 0.3, LocalTime(6, 3))) +
             ramp(Metric.HIP, weekly, "cm", hand, Ramp(108.0, 105.0, TENTHS, 0.2, LocalTime(6, 3)))
     }
@@ -489,17 +393,8 @@ object MockSeed {
     private const val TENTHS = 10.0
 
     /**
-     * The shape of one metric's six weeks: where it started, where it is now,
-     * what it is rounded onto, how much it wobbles on the way, and the minute
-     * of the morning it is taken at.
-     *
-     * [ripple] is what stops a chart from being a straight line. It is fixed
-     * rather than random — a seed that changed between two reads would make
-     * every assertion about it a coin toss.
-     *
-     * [grid] is what the value is rounded onto. A count of decimal places would
-     * have to be turned into this anyway, and the conversion is where a «ten to
-     * the power of» helper that only ever handled two cases would sit.
+     * [ripple] stops a chart from being a straight line; fixed rather than random so an
+     * assertion doesn't become a coin toss. [grid] is what the value rounds onto.
      */
     private class Ramp(
         val from: Double,
@@ -510,13 +405,9 @@ object MockSeed {
     )
 
     /**
-     * One metric's history: [shape]`.from` on the first day, [shape]`.to` on
-     * the last, and the ripple in between.
-     *
-     * The endpoints are left exact so that «this metric moved in its own
-     * direction» is a statement about the protocol rather than about where the
-     * wave happened to land. A single day has no two endpoints to run between,
-     * so it is refused rather than resolved to one of them.
+     * Endpoints are left exact so «this metric moved in its own direction» is a statement
+     * about the protocol, not about where the wave landed. A single day has no two endpoints
+     * to run between, so it's refused rather than resolved to one.
      */
     private fun ramp(
         metric: Metric,
@@ -562,25 +453,14 @@ object MockSeed {
     )
 
     /**
-     * A week of history ending on [DEMO_NOW], the day the demo runs on.
-     *
-     * Today — 2026-05-31, `meal-1` and `meal-2` — is untouched: 840 kcal
-     * across two meals is what `ConfirmToastTest`, `CadenceShellDataTest` and
-     * `TodayScreenTest` already assert, and this seed does not move a number
-     * those tests pin. The other six days carry the variety instead: 2026-05-25
-     * is a single under-target meal, 2026-05-27 is a three-meal day, and
-     * 2026-05-28 runs over target — the rest are plain two-meal days, present
-     * so the week is seven pairwise-distinct totals rather than six empty ones
-     * around a single real day.
-     *
-     * Every `eatenAt` sits inside 03:00Z–20:00Z on purpose: `CadenceMocks`
-     * filters meals by their *local* date (`Europe/Moscow` in the test suite,
-     * UTC+3 with no DST), and a time outside that band would cross midnight in
-     * one zone but not the other, moving the meal to a different day than its
-     * literal date says.
-     *
-     * `MealSource.MANUAL` throughout is this seed's fixture value, not a path
-     * the port writes — see the note on the enum constant itself.
+     * Today (2026-05-31, `meal-1`/`meal-2`) is untouched: 840 kcal across two meals is what
+     * `ConfirmToastTest`, `CadenceShellDataTest` and `TodayScreenTest` already pin. The other
+     * six days carry the variety: an under-target day, a three-meal day, an over-target day,
+     * the rest plain two-meal days — seven pairwise-distinct totals rather than six empty
+     * days around one real one. Every `eatenAt` sits inside 03:00Z–20:00Z on purpose:
+     * `CadenceMocks` filters by *local* date (Europe/Moscow, UTC+3, no DST), and a time
+     * outside that band would cross midnight in one zone but not the other.
+     * `MealSource.MANUAL` throughout is this seed's fixture value, not a path the port writes.
      */
     val meals =
         listOf(

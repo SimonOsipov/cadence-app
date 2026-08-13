@@ -16,10 +16,8 @@ const val CADENCE_PUSH_DURATION_MS: Int = 380
 /** How far the outgoing screen trails the incoming one. iOS's own parallax. */
 private const val PARALLAX_DIVISOR = 3
 
-// The prototype's `animation: 'slide_from_right'` for pushes and
-// `'slide_from_bottom'` for the modal group. Compose has no native-stack
-// preset, so both are spelled out — the durations and directions are the
-// prototype's, the parallax is what a native iOS push does under them.
+// Compose has no native-stack preset, so the prototype's slide_from_right/slide_from_bottom
+// are spelled out below; the parallax is what a native iOS push does under them.
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.pushEnter(): EnterTransition =
     slideInHorizontally(tween(CADENCE_PUSH_DURATION_MS)) { it }
@@ -40,11 +38,8 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.modalExit(): Exit
     slideOutVertically(tween(CADENCE_PUSH_DURATION_MS)) { it }
 
 /**
- * The screen a modal rises over does not move.
- *
- * A native `fullScreenModal` leaves it exactly where it was; the NavHost's own
- * defaults would slide it a third of the width sideways, which is a horizontal
- * drift the prototype has on none of the four logging flows.
+ * A native `fullScreenModal` leaves the screen beneath exactly where it was; NavHost's
+ * defaults would slide it a third of the width sideways.
  */
 internal fun modalUnderlayEnter(): EnterTransition = EnterTransition.None
 

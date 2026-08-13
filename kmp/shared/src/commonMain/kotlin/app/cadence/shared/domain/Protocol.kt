@@ -6,9 +6,6 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.plus
 
-// protocol & scheduling — «the prescription: what, when, how much, titrating to
-// where» (§03).
-
 /** §03's `compounds`. */
 data class Compound(
     val id: CompoundId,
@@ -16,21 +13,16 @@ data class Compound(
     val nameRu: String,
     val defaultUnit: DoseUnit,
     val route: String,
-    // §03 carries an `icon` on the compound, and it is data rather than
-    // presentation: which glyph a compound gets is the clinic's choice and
-    // arrives from the server. `CadenceIcons.byName` is the adapter that turns
-    // this kebab string into path data, which is the reason that map exists.
+    // Data, not presentation: which glyph a compound gets is the clinic's choice.
+    // `CadenceIcons.byName` adapts this kebab string into path data.
     val icon: String,
 )
 
 enum class ProtocolStatus { ACTIVE, COMPLETED, CANCELLED }
 
 /**
- * §03's `protocols`.
- *
- * `startDate` is what the cycle week derives from. The prototype hardcodes
- * «week 4» against a frozen calendar; §03's second correction is that the
- * answer is a subtraction from this field.
+ * §03's `protocols`. `startDate` is what cycle week derives from — §03's second correction
+ * over the prototype's hardcoded «week 4».
  */
 data class Protocol(
     val id: ProtocolId,
@@ -49,10 +41,8 @@ enum class ProtocolItemKind { INJECTION, SUPPLEMENT, WEIGH_IN }
 enum class ProtocolCadence { WEEKLY, DAILY, N_PER_WEEK }
 
 /**
- * §03's `protocol_items`.
- *
- * `times` is a list because §03 makes it one: BPC-157 is 08:00 and 20:00, which
- * is why an occurrence is keyed by (item, date, time) and not by (item, date).
+ * §03's `protocol_items`. `times` is a list because §03 makes it one: BPC-157 is 08:00 and
+ * 20:00, why an occurrence is keyed (item, date, time), not (item, date).
  */
 data class ProtocolItem(
     val id: ProtocolItemId,
@@ -80,12 +70,8 @@ data class ProtocolPhase(
 private const val DAYS_IN_WEEK = 7
 
 /**
- * The first day of week [week], counting the start date as week 1 day 1.
- *
- * The one place this arithmetic lives. It was written out three times before —
- * in the titration dates, in the dose bands, and in the «весь цикл» window —
- * and three copies of «(N − 1) × 7» are three chances for the axis, the strip
- * under it and the schedule screen to disagree about the same Sunday.
+ * The one place this arithmetic lives: written out three times before (titration dates,
+ * dose bands, «весь цикл» window), three copies of «(N − 1) × 7» were three chances to disagree.
  */
 internal fun Protocol.weekStart(week: Int): LocalDate = startDate.plus(DatePeriod(days = (week - 1) * DAYS_IN_WEEK))
 

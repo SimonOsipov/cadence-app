@@ -6,9 +6,8 @@ import androidx.activity.compose.setContent
 import app.cadence.App
 
 /**
- * MainActivity is the whole Android host: it hands the window to the shared
- * Compose tree and owns nothing else. Everything a user sees lives in
- * :composeApp, so the two platforms cannot drift apart.
+ * Owns nothing beyond handing the window to the shared Compose tree — everything a user sees
+ * lives in :composeApp.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
