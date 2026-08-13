@@ -2,6 +2,7 @@ package app.cadence.format
 
 import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseUnit
+import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.Measurement
 import app.cadence.shared.domain.MeasurementId
 import app.cadence.shared.domain.MeasurementSource
@@ -13,6 +14,7 @@ import app.cadence.shared.domain.ProtocolStatus
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.domain.UserId
 import app.cadence.shared.domain.rangeOn
+import app.cadence.shared.domain.toMacros
 import app.cadence.shared.domain.trendSeries
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -98,8 +100,15 @@ class CadenceFormatTest {
 
     @Test
     fun aTenthsKcalFieldRoundsForDisplayLikeToMacrosDoes() {
-        // 295,2 kcal — the same round-half-up boundary `MacrosTenths.toMacros`
-        // uses, reached here without a second `Macros` conversion.
+        // The claim in the name, checked directly rather than against literals
+        // that merely happen to agree with it today: `formatKcalTenths` must
+        // round every value exactly the way the production `toMacros()`
+        // boundary does, so the two paths cannot drift apart unnoticed.
+        listOf(2952, 2405, 0, 9, 15).forEach { tenths ->
+            val viaToMacros = formatKcal(MacrosTenths(tenths, 0, 0, 0).toMacros().kcal)
+            assertEquals(viaToMacros, formatKcalTenths(tenths), "tenths=$tenths")
+        }
+        // Pinned literals too, so the table itself stays legible.
         assertEquals("295 ккал", formatKcalTenths(2952))
         // The half-up tie: 240,5 rounds up, not to even.
         assertEquals("241 ккал", formatKcalTenths(2405))

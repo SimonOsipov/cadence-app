@@ -74,6 +74,10 @@ private const val CYCLE_WEEKS = 12
  * The trends tab's own window and its latest read, bundled so `CadenceApp`
  * holds one declaration rather than two — the pairing is what
  * [rememberTrendsState] needs to re-read on a window change.
+ *
+ * Held above the trends screen rather than inside it, same as before this was
+ * split out: the list and the detail both read it, and a window remembered
+ * inside one would reset every time the patient came back from the other.
  */
 private class TrendsUiState {
     var window by mutableStateOf(TrendWindow.THREE_MONTHS)

@@ -12,8 +12,13 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.Meal
+import app.cadence.shared.domain.MealId
+import app.cadence.shared.domain.MealItem
+import app.cadence.shared.domain.MealSource
 import app.cadence.shared.domain.ProtocolItemKind
+import app.cadence.shared.domain.UserId
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.runBlocking
@@ -22,6 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 private val ZONE = TimeZone.of("Europe/Moscow")
 
@@ -347,6 +353,7 @@ class TodayScreenTest {
             // The eyebrow goes through `CadenceEyebrow`, which uppercases its text.
             onNodeWithText("Начнём день".uppercase()).assertExists()
             onNodeWithText("Завтрак?").assertExists()
+            onNodeWithText("Целимся в 35 г белка.").assertExists()
         }
 
     @Test
@@ -360,8 +367,44 @@ class TodayScreenTest {
 
             onNodeWithText("Следующий приём".uppercase()).assertExists()
             onNodeWithText("Перекус?").assertExists()
+            onNodeWithText("Немного белка, немного фруктов.").assertExists()
             assertTrue(onAllNodesWithText("Начнём день".uppercase()).fetchSemanticsNodes().isEmpty())
             assertTrue(onAllNodesWithText("Завтрак?").fetchSemanticsNodes().isEmpty())
+        }
+
+    @Test
+    fun theMealHintOnAOneMealDayIsTheSecondState() =
+        runComposeUiTest {
+            // 2026-05-25, Monday — the seed's own one-meal day
+            // (`MockSeed.kt:588`, «under target: one meal»).
+            // `suggestNextMeal`'s `meals.length == 1` branch has no other
+            // witness anywhere in `commonTest`.
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary("2026-05-25T09:00:00Z"), patientName = "Марина")
+                }
+            }
+
+            onNodeWithText("Следующий приём".uppercase()).assertExists()
+            onNodeWithText("Скоро обед").assertExists()
+            onNodeWithText("Подсказать, что собрать?").assertExists()
+        }
+
+    @Test
+    fun theMealHintOnAThreeMealDayIsTheLastState() =
+        runComposeUiTest {
+            // 2026-05-27, Wednesday — the seed's own three-meal day
+            // (`MockSeed.kt:617`, «three meals»). `suggestNextMeal`'s `else`
+            // branch has no other witness anywhere in `commonTest`.
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary("2026-05-27T09:00:00Z"), patientName = "Марина")
+                }
+            }
+
+            onNodeWithText("Последний шанс".uppercase()).assertExists()
+            onNodeWithText("Лёгкий ужин?").assertExists()
+            onNodeWithText("Запас есть — без излишеств.").assertExists()
         }
 
     @Test
@@ -375,8 +418,14 @@ class TodayScreenTest {
 
             onNodeWithText("Завтрак").assertExists()
             onNodeWithText("Обед").assertExists()
-            // 06:30 UTC is 09:30 in Moscow — the seeded meal's one item.
+            // 06:30 UTC is 09:30 in Moscow — the seeded breakfast's one item
+            // and its own 320 kcal, not the lunch's 520 or either's protein.
             onNodeWithText("09:30 · 1 позиция").assertExists()
+            onNodeWithText("320 ккал").assertExists()
+            // 10:00 UTC is 13:00 in Moscow — the seeded lunch, so the row
+            // reads its own meal's tenths rather than the breakfast's again.
+            onNodeWithText("13:00 · 1 позиция").assertExists()
+            onNodeWithText("520 ккал").assertExists()
         }
 
     @Test
@@ -390,6 +439,38 @@ class TodayScreenTest {
             }
 
             onNodeWithText("Сегодня пока ничего — первый приём приземлится здесь.").assertExists()
+        }
+
+    @Test
+    fun theRecentMealsListShowsOnlyTheLastThreeMeals() =
+        runComposeUiTest {
+            // The prototype's own cap: `meals.slice(-3)` (`TodayScreen.tsx:857`).
+            // No seeded day reaches four meals, so the cap itself needs a
+            // hand-built fixture — without this, `RECENT_MEALS_LIMIT = 3`
+            // could read `100` and nothing would notice.
+            val fourMeals =
+                listOf("Приём 1", "Приём 2", "Приём 3", "Приём 4").mapIndexed { index, name ->
+                    Meal(
+                        id = MealId("meal-cap-$index"),
+                        patientId = UserId("patient-cap"),
+                        eatenAt = Instant.parse("2026-05-31T0${6 + index}:00:00Z"),
+                        name = name,
+                        source = MealSource.MANUAL,
+                        recipeId = null,
+                        items = listOf(MealItem("Позиция", 100, MacrosTenths(1000, 100, 100, 100))),
+                    )
+                }
+
+            setContent {
+                CadenceTheme {
+                    TodayScreen(summary = summary(), patientName = "Марина", meals = fourMeals, zone = ZONE)
+                }
+            }
+
+            onNodeWithText("Приём 2").assertExists()
+            onNodeWithText("Приём 3").assertExists()
+            onNodeWithText("Приём 4").assertExists()
+            assertTrue(onAllNodesWithText("Приём 1").fetchSemanticsNodes().isEmpty())
         }
 
     @Test

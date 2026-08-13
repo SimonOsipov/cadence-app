@@ -40,10 +40,11 @@ fun pluralWeeks(count: Int): String = russianPlural(count, "неделю", "не
 /**
  * «позиция» / «позиции» / «позиций» — a logged meal's item count.
  *
- * `NutritionMealFeed.kt` and `LogMealItemsList.kt` already call
- * `russianPlural(…, "позиция", "позиции", "позиций")` inline at their own meal
- * and item rows; `TodayMeals`' recent-meal row is a third call site, named
- * here rather than repeated a third time.
+ * `NutritionMealFeed.kt`'s meal row, `LogMealItemsList.kt`'s header and
+ * `TodayMeals`' recent-meal row all read this rather than each calling
+ * `russianPlural(…, "позиция", "позиции", "позиций")` inline — three
+ * unlinked copies of the same triple is the defect [russianPlural] itself
+ * exists to rule out one level up.
  */
 fun pluralItems(count: Int): String = russianPlural(count, "позиция", "позиции", "позиций")
 
