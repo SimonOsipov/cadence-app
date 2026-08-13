@@ -479,10 +479,16 @@ private fun TextModeInput(
                 onClick = onParse,
                 kind = CadenceButtonKind.SECONDARY,
                 size = CadenceButtonSize.SMALL,
-                // Both halves of "an empty field does not start a parse":
-                // disabled dims the same way the prototype's own `hasText ?
-                // sand500 : sunk` does, and — unlike the prototype — a
-                // disabled CadenceButton also never calls onClick at all.
+                // One half of "an empty field does not start a parse" — the
+                // other is `runParse`'s own `chatText.isBlank()` early return.
+                // This half alone only dims the button and marks it
+                // `disabled()` in semantics (`CadenceControls.kt:136`); a tap
+                // that still reached `onParse` would be caught by the other
+                // half, not this one. Both are pinned because neither implies
+                // the other: dropping this `enabled` leaves the button
+                // clickable but the click a no-op; dropping the early return
+                // leaves `runParse` reachable by anything that calls it
+                // directly, disabled state notwithstanding.
                 enabled = text.isNotBlank() && !parsing,
             )
         }

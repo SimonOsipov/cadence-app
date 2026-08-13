@@ -3,6 +3,7 @@ package app.cadence.screens.nutrition
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -137,6 +138,19 @@ class LogMealScreenTest {
             onNodeWithText("Распознавание голоса пока не работает — опишите еду текстом").assertExists()
         }
 
+    /**
+     * "Уже разобранные позиции остаются правимыми" (spec line 295) means the
+     * *edits* survive a failed retry, not merely that the row count does —
+     * `parseState.items` itself never changes on `Unavailable`
+     * (`afterParseResult`), so a row count alone would read the same whether
+     * the screen kept this attempt's edit or silently re-seeded from the
+     * first parse's untouched originals. Deleting a row before the failed
+     * retry and asserting *which* row remains is what tells those two apart:
+     * this is `generation`'s only witness — `afterParseResult`'s
+     * `Unavailable` branch deliberately does not bump it, and
+     * `loggedItems`/`editingIndex` are keyed on `parseState.generation`
+     * precisely so a failed retry's unchanged generation leaves them alone.
+     */
     @Test
     fun unavailableLeavesTheScreenAliveAndWhatWasParsedStillEditable() =
         runComposeUiTest {
@@ -155,12 +169,22 @@ class LogMealScreenTest {
             parseAndAwait()
             itemRows().assertCountEquals(LUNCH_ITEMS.size)
 
+            // An edit made to this attempt's parsed items, before the retry.
+            deleteButtons()[0].performClick()
+            waitForIdle()
+            itemRows().assertCountEquals(1)
+
             // Second attempt on the same screen fails.
             parseAndAwait("другой текст")
 
             onNodeWithText("Не получилось разобрать — можно попробовать ещё раз.").assertExists()
-            // The failed attempt did not touch what the first attempt parsed.
-            itemRows().assertCountEquals(LUNCH_ITEMS.size)
+            // The failed attempt did not touch what the first attempt parsed
+            // — nor did it undo the deletion made to it. A `generation` bump
+            // on the `Unavailable` branch would re-seed `loggedItems` from
+            // `parseState.items` (still both original rows) and restore the
+            // deleted position; this stays at 1.
+            itemRows().assertCountEquals(1)
+            onNodeWithTag(logMealItemKcalTag(0), useUnmergedTree = true).assertTextEquals("145 ккал")
             // The field is still there to retry from, and the screen still
             // responds to its own controls rather than being torn down.
             chatField().assertExists()
@@ -231,9 +255,12 @@ class LogMealScreenTest {
      * before this round was arithmetic read by eye, and a transposed column
      * (protein rendering fat's number, say) would have shipped silently.
      * 385/48/30/7 are the two-item lunch fixture's exact folded kcal / protein
-     * / carbs / fat, each read off `logMealTotalTag`'s own merged node so a
-     * value and its caption are asserted together, not two separate lookups
-     * that could each pass against the wrong column.
+     * / carbs / fat, each read off `logMealTotalTag`'s own merged node —
+     * which now also carries the column's Russian label (uppercased by
+     * `CadenceEyebrow`) — so a label swap between two columns (e.g. «белок»
+     * and «жиры» trading places) reddens the same assertion that catches a
+     * transposed number, not just a lookup that could pass against the wrong
+     * column's value.
      */
     @Test
     fun totalsStripShowsFourColumnsAgainstTargets() =
@@ -244,12 +271,14 @@ class LogMealScreenTest {
 
             parseAndAwait()
 
-            onNodeWithTag(logMealTotalTag("kcal")).assertTextEquals("385", "/ ${formatInteger(TARGETS.kcal)}")
+            onNodeWithTag(logMealTotalTag("kcal")).assertTextEquals("ККАЛ", "385", "/ ${formatInteger(TARGETS.kcal)}")
             onNodeWithTag(
                 logMealTotalTag("protein"),
-            ).assertTextEquals("48", "/ ${formatInteger(TARGETS.proteinG)} г")
-            onNodeWithTag(logMealTotalTag("carbs")).assertTextEquals("30", "/ ${formatInteger(TARGETS.carbsG)} г")
-            onNodeWithTag(logMealTotalTag("fat")).assertTextEquals("7", "/ ${formatInteger(TARGETS.fatG)} г")
+            ).assertTextEquals("БЕЛОК", "48", "/ ${formatInteger(TARGETS.proteinG)} г")
+            onNodeWithTag(
+                logMealTotalTag("carbs"),
+            ).assertTextEquals("УГЛЕВ", "30", "/ ${formatInteger(TARGETS.carbsG)} г")
+            onNodeWithTag(logMealTotalTag("fat")).assertTextEquals("ЖИРЫ", "7", "/ ${formatInteger(TARGETS.fatG)} г")
         }
 
     /**
@@ -332,9 +361,16 @@ class LogMealScreenTest {
 
     /**
      * The recorded divergence from the prototype (`LogMealScreen.tsx:476-507`
-     * starts a parse on an empty field and substitutes breakfast): both
-     * halves of the guard — the button's own `enabled` and `runParse`'s own
-     * early return — had nothing pinning them before this round.
+     * starts a parse on an empty field and substitutes breakfast): the guard
+     * has two halves — the button's own `enabled` and `runParse`'s own early
+     * return — and only their conjunction was pinned before this round.
+     * `assertIsNotEnabled` is what pins `enabled` on its own: a disabled
+     * `CadenceButton` merges `disabled()` onto its own semantics node
+     * (`CadenceControls.kt:136`), so a mutation that drops `enabled` from the
+     * guard while leaving `runParse`'s own early return in place — a button a
+     * tap can no longer reach, but one that would still look identical to a
+     * working one if nothing read its enabled state — reddens here even
+     * though the click below never fires.
      */
     @Test
     fun anEmptyFieldDoesNotStartAParse() =
@@ -344,6 +380,7 @@ class LogMealScreenTest {
             }
 
             // No text typed — the field starts and stays empty.
+            onNodeWithText("Разобрать →").assertIsNotEnabled()
             onNodeWithText("Разобрать →").performClick()
             waitForIdle()
 

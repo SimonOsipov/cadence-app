@@ -295,18 +295,19 @@ private fun TotalsColumn(
     goal: String,
     modifier: Modifier,
 ) {
-    Column(modifier) {
+    // Tagged and merged on this outer Column, not just the value/caption pair
+    // below it: `label` is the column's *name* for the user — «белок» versus
+    // «жиры» — and a test reading only the value+caption node cannot catch
+    // the two labels being swapped between columns. Merging the whole column
+    // onto one tag makes `assertTextEquals(label, value, caption)` the single
+    // assertion that would catch that transposition.
+    Column(
+        modifier
+            .semantics(mergeDescendants = true) { }
+            .testTag(logMealTotalTag(id)),
+    ) {
         CadenceEyebrow(label)
-        // Merged onto `logMealTotalTag(id)` deliberately, not tagged at the
-        // strip's own outer Row: neither `CadenceNumber` nor `CadenceMeta`
-        // takes a modifier that lands on their own text node, and this Row
-        // is not clickable, so nothing merges its descendants' text upward
-        // without saying so explicitly.
-        Column(
-            Modifier
-                .semantics(mergeDescendants = true) { }
-                .testTag(logMealTotalTag(id)),
-        ) {
+        Column {
             CadenceNumber(value = value)
             CadenceMeta("/ $goal", color = Cadence.palette.subtle)
         }
