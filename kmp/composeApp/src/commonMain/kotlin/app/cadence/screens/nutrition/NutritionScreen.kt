@@ -2,7 +2,9 @@ package app.cadence.screens.nutrition
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,41 +20,53 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
+import app.cadence.design.CadenceBody
 import app.cadence.design.CadenceColors
+import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceElevation
 import app.cadence.design.CadenceEyebrow
+import app.cadence.design.CadenceHairline
+import app.cadence.design.CadenceIcon
 import app.cadence.design.CadenceIconButton
 import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceMacroBar
+import app.cadence.design.CadenceMeta
+import app.cadence.design.CadenceNumber
 import app.cadence.design.CadenceRadius
 import app.cadence.design.CadenceRings
 import app.cadence.design.CadenceSpacing
+import app.cadence.design.CadenceTabBar
 import app.cadence.design.CadenceTitle
+import app.cadence.design.CadenceWeekBars
 import app.cadence.design.cadenceEmphasisedTitle
+import app.cadence.design.pressable
 import app.cadence.format.formatInteger
 import app.cadence.format.pluralMeals
+import app.cadence.format.weekdayShort
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.repository.NutritionDay
+import app.cadence.shared.repository.NutritionWeek
 import kotlinx.datetime.TimeZone
+import kotlin.math.roundToInt
 
 // «Питание» — the nutrition tab (`CadenceRoute.Nutrition`), ported from
 // mobile/src/features/meal/NutritionScreen.tsx.
 //
-// Step-6 of docs/specs/kmp-nutrition-and-recipes.md is split across two
-// agents. This file and its sibling [NutritionMealFeed.kt] (split out the
-// same way `LogMealItemsList.kt` was, once the shell plus the feed would
-// have crossed detekt's `LargeClass` threshold) draw the header, the hero,
-// the rings-plus-macros card and the meal feed. The week section, the
-// «Рецепты» transition card and the tab bar are the second half's own scope
-// — see [NutritionWeekSectionSeam], [NutritionRecipesLinkSeam] and
-// [NutritionTabBarSeam] below for the shape each one still needs.
+// Step-6 of docs/specs/kmp-nutrition-and-recipes.md was split across two
+// agents. This file draws the header, the hero, the rings-plus-macros card,
+// the week section, the «Рецепты» transition card and the tab bar; its
+// sibling [NutritionMealFeed.kt] draws the meal feed — split out the same way
+// `LogMealItemsList.kt` was, once this file plus the feed would have crossed
+// detekt's `LargeClass` threshold.
 
 /** The scrolling body, so a test can reach the screen without knowing its shape. */
 const val CADENCE_NUTRITION_TAG = "cadence-nutrition"
@@ -86,10 +100,14 @@ private val HAIRLINE = 1.dp
 @Composable
 fun NutritionScreen(
     day: NutritionDay,
+    week: NutritionWeek,
     modifier: Modifier = Modifier,
     zone: TimeZone = TimeZone.currentSystemDefault(),
     onBack: () -> Unit = { },
     onLogMeal: () -> Unit = { },
+    onOpenRecipes: () -> Unit = { },
+    onSelectTab: (CadenceDestination) -> Unit = { },
+    onOpenActions: () -> Unit = { },
 ) {
     val palette = Cadence.palette
 
@@ -118,11 +136,22 @@ fun NutritionScreen(
                 onLogMeal = onLogMeal,
                 modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
             )
-            NutritionWeekSectionSeam()
-            NutritionRecipesLinkSeam()
+            NutritionWeekSection(
+                week = week,
+                kcalGoal = day.targets.macros.kcal,
+                modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+            )
+            NutritionRecipesLink(
+                onOpenRecipes = onOpenRecipes,
+                modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+            )
         }
 
-        NutritionTabBarSeam()
+        CadenceTabBar(
+            active = CadenceDestination.NUTRITION,
+            onSelect = onSelectTab,
+            onLog = onOpenActions,
+        )
     }
 }
 
@@ -288,53 +317,140 @@ private fun NutritionRingsMacros(
     }
 }
 
-/**
- * «Прошлая неделя» — [CadenceWeekBars][app.cadence.design.CadenceWeekBars],
- * weekday labels read from real dates (not literals — the step's own test
- * cranks the clock off `DEMO_NOW`'s Sunday to prove it), the dashed «цель
- * {N}» line and the «Белок · средн.» footer (`NutritionScreen.tsx:585-645`).
- *
- * Left as a stub: this half of step-6 stops at the meal feed above it. The
- * real composable this position expects, per the spec's step-6 section and
- * `NutritionRepository.week()`:
- *
- * ```
- * NutritionWeekSection(week: NutritionWeek, kcalGoal: Int, modifier: Modifier = Modifier)
- * ```
- *
- * The prototype's «↑ 6 г к прошлой» pill (`NutritionScreen.tsx:642`) is a
- * static string with no source and is **not** ported.
- */
-@Composable
-private fun NutritionWeekSectionSeam() = Unit
+/** The icon-box beside «Рецепты и конструктор», the prototype's `width: 44, height: 44`. */
+private val RECIPES_ICON_BOX_SIZE = 44.dp
+
+/** The «Рецепты» card's own icon, the prototype's `size={22}`. */
+private val RECIPES_ICON_SIZE = 22.dp
+
+/** The trailing chevron, the prototype's `size={18}`. */
+private val CHEVRON_SIZE = 18.dp
+
+/** «{N} г / день», `fontSize: 18` on the prototype's protein-average readout (`NutritionScreen.tsx:625`). */
+private val PROTEIN_AVERAGE_SIZE = 18.sp
+
+/** The «Рецепты» card, so a test can press it without matching on its copy. */
+const val CADENCE_NUTRITION_RECIPES_LINK_TAG = "cadence-nutrition-recipes-link"
 
 /**
- * «Рецепты» — the transition card into the recipe library
- * (`NutritionScreen.tsx:647-698`).
- *
- * Left as a stub for the same reason as [NutritionWeekSectionSeam]. Real
- * shape:
- *
- * ```
- * NutritionRecipesLink(onOpenRecipes: () -> Unit, modifier: Modifier = Modifier)
- * ```
+ * Day labels for [CadenceWeekBars], read from each column's own `date`
+ * rather than a fixed `listOf("Пн", "Вт", ...)` — the prototype's own literal
+ * (`NutritionScreen.tsx:317`). The step's test winds the week off a Wednesday precisely
+ * because `DEMO_NOW` is a Sunday: on that day the derived order coincides with the
+ * prototype's literal Monday-first list, so a mutation that hardcodes the labels back to
+ * that literal would pass silently on the demo fixture alone.
  */
-@Composable
-private fun NutritionRecipesLinkSeam() = Unit
+private fun weekDayLabels(week: NutritionWeek): List<String> =
+    week.days.mapIndexed { index, day ->
+        if (index == week.days.lastIndex) "Сег" else weekdayShort(day.date.dayOfWeek)
+    }
 
 /**
- * The bottom tab bar (`NutritionScreen.tsx:702`).
+ * «Белок · средн.» — the week's average daily protein, rounded half up like the
+ * prototype's own `Math.round(sum / length)` (`NutritionScreen.tsx:410-411`). [NutritionWeek]
+ * always carries seven days (`NutritionRepository.week`'s own contract), so an empty list
+ * is not a shape this function's caller can produce — the guard exists only so a malformed
+ * fixture divides by a size it does not have rather than by zero.
+ */
+private fun weekProteinAverage(week: NutritionWeek): Int {
+    val days = week.days
+    if (days.isEmpty()) return 0
+    return (days.sumOf { it.proteinG }.toDouble() / days.size).roundToInt()
+}
+
+/**
+ * «Прошлая неделя» — [CadenceWeekBars], weekday labels read from real dates, the dashed
+ * «цель {N}» line and the «Белок · средн.» footer (`NutritionScreen.tsx:585-645`).
  *
- * Left as a stub for the same reason as [NutritionWeekSectionSeam]. Real
- * call, the same shape `TrendsScreen.kt:144-148` makes for its own
- * destination:
- *
- * ```
- * CadenceTabBar(active = CadenceDestination.NUTRITION, onSelect = onSelectTab, onLog = onOpenActions)
- * ```
- *
- * which means [NutritionScreen] itself gains `onSelectTab: (CadenceDestination) -> Unit = { }`
- * and `onOpenActions: () -> Unit = { }` parameters alongside this call.
+ * The prototype's «↑ 6 г к прошлой» pill (`NutritionScreen.tsx:642`) is a static string
+ * with no source and is **not** ported — see the KDoc on [weekDayLabels] for the other
+ * deliberate omission this section carries, and the file-level note above for why this one
+ * needed a wound clock to prove.
  */
 @Composable
-private fun NutritionTabBarSeam() = Unit
+private fun NutritionWeekSection(
+    week: NutritionWeek,
+    kcalGoal: Int,
+    modifier: Modifier = Modifier,
+) {
+    val palette = Cadence.palette
+
+    Column(
+        modifier
+            .fillMaxWidth()
+            .shadow(CadenceElevation.sm, CARD_SHAPE, clip = false)
+            .background(palette.paper, CARD_SHAPE)
+            .border(HAIRLINE, palette.hairline, CARD_SHAPE)
+            .padding(CadenceSpacing.lg),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = CadenceSpacing.md),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            CadenceEyebrow("Прошлая неделя")
+            CadenceMeta("ккал · по дням")
+        }
+
+        CadenceWeekBars(
+            values = week.days.map { it.kcal.toDouble() },
+            labels = weekDayLabels(week),
+            goal = kcalGoal.toDouble(),
+            goalLabel = "цель ${formatInteger(kcalGoal)}",
+            todayIndex = week.days.lastIndex,
+        )
+
+        CadenceHairline(Modifier.padding(top = CadenceSpacing.md, bottom = CadenceSpacing.sm))
+
+        Column {
+            CadenceEyebrow("Белок · средн.", Modifier.padding(bottom = CadenceSpacing.xxs))
+            CadenceNumber(
+                value = formatInteger(weekProteinAverage(week)),
+                unit = "г / день",
+                size = PROTEIN_AVERAGE_SIZE,
+            )
+        }
+    }
+}
+
+/**
+ * «Рецепты» — the transition card into the recipe library (`NutritionScreen.tsx:647-698`).
+ */
+@Composable
+private fun NutritionRecipesLink(
+    onOpenRecipes: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = Cadence.palette
+
+    Column(modifier.fillMaxWidth()) {
+        CadenceEyebrow("Рецепты", Modifier.padding(bottom = CadenceSpacing.sm))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .shadow(CadenceElevation.sm, CARD_SHAPE, clip = false)
+                .background(palette.paper, CARD_SHAPE)
+                .border(HAIRLINE, palette.hairline, CARD_SHAPE)
+                .pressable(onOpenRecipes, remember { MutableInteractionSource() })
+                .testTag(CADENCE_NUTRITION_RECIPES_LINK_TAG)
+                .padding(CadenceSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(RECIPES_ICON_BOX_SIZE)
+                    .clip(RoundedCornerShape(CadenceRadius.md))
+                    .background(CadenceColors.forest50),
+                contentAlignment = Alignment.Center,
+            ) {
+                CadenceIcon(paths = CadenceIcons.bookOpen, size = RECIPES_ICON_SIZE, tint = CadenceColors.forest700)
+            }
+            Column(Modifier.weight(1f)) {
+                CadenceBody("Рецепты и конструктор", maxLines = 1)
+                CadenceMeta("Белковые блюда · соберите своё", maxLines = 1)
+            }
+            CadenceIcon(paths = CadenceIcons.chevronRight, size = CHEVRON_SIZE, tint = palette.subtle)
+        }
+    }
+}

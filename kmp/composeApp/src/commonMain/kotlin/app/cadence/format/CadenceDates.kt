@@ -84,6 +84,9 @@ private val WEEKDAYS_SHORT =
 /** The calendar's column headings, Monday first as the prototype draws them. */
 fun weekdayHeadings(): List<String> = WEEKDAYS_SHORT
 
+/** «Ср» — one day's short label, for a column derived from a real date rather than a literal. */
+fun weekdayShort(day: DayOfWeek): String = WEEKDAYS_SHORT[day.isoDayNumber - 1]
+
 /** How many blanks precede the first of the month in a Monday-first grid. */
 fun leadingBlanks(firstOfMonth: LocalDate): Int = firstOfMonth.dayOfWeek.isoDayNumber - 1
 
