@@ -41,6 +41,24 @@ func newVerifier(t *testing.T, set *testsupport.JWKS, permittedKIDs ...string) *
 	return verifier
 }
 
+// TestNewVerifierRejectsAnEmptySessionKIDsList is this package's own copy of
+// the "an empty list fails startup" requirement, independent of
+// config.Load's. This package is what a flood of unknown kids would actually
+// reach, so it must refuse to start on an empty allowlist even if the
+// composition root's own check were ever skipped or bypassed.
+func TestNewVerifierRejectsAnEmptySessionKIDsList(t *testing.T) {
+	set := testsupport.StartJWKS(t, testsupport.NewRS256Key(t, "primary"))
+
+	_, err := token.NewVerifier(t.Context(), token.VerifierConfig{
+		Issuer:   set.Issuer,
+		Audience: testAudience,
+		JWKSURL:  set.Issuer + testsupport.JWKSPath,
+	})
+	if err == nil {
+		t.Fatal("NewVerifier: want an error for an empty SessionKIDs list, got nil")
+	}
+}
+
 // validClaims is a token that must be accepted. Every rejection test below is
 // this set with exactly one thing changed, so a test that fails names the rule
 // that rejected it rather than an unrelated omission.
@@ -163,11 +181,13 @@ func TestVerifyRejects(t *testing.T) {
 		},
 		{
 			// Before pinning, this kid was refused because it was absent
-			// from the published JWKS. Now it is refused one step earlier,
-			// by the permitted-kid check in keyfunc, before the JWKS is even
-			// consulted for it — see TestVerifyRejectsAnImpermissibleKeyID
-			// for the case this test can no longer isolate on its own: a kid
-			// that *is* published but is not on the permitted list.
+			// from the published JWKS. Now it is refused one step earlier, by
+			// the permitted-kid check in keyfunc, before the JWKS is ever
+			// consulted for it — this case alone cannot tell the two apart
+			// any more. See
+			// TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet
+			// for the test that isolates the new check specifically, by
+			// proving key resolution is never reached at all.
 			name: "unknown key id",
 			token: func(t *testing.T, key, _ *testsupport.SigningKey, issuer string) string {
 				return key.SignWithKID(t, "not-in-the-set", validClaims(issuer))
@@ -231,23 +251,20 @@ func TestVerifyRejects(t *testing.T) {
 	}
 }
 
-// TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet is the test
-// TestVerifyRejects/"unknown key id" used to be, made precise for pinning: a
-// kid that is genuinely published in the key set — so the pre-pinning
-// verifier would have resolved and accepted it — is refused anyway, because
-// it never appears on SessionKIDs.
+// TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet is the
+// ordering proof the AC asks for directly: the permitted-kid check "stands
+// before key resolution, so a flood of unknown kids never reaches the JWKS
+// refresh budget."
 //
-// The AC requires this check to sit before key resolution, "so a flood of
-// unknown kids never reaches the JWKS refresh budget". That ordering is
-// proved here rather than asserted: every kid below is distinct, so the
-// library's own per-kid state cannot short-circuit a second look at the same
-// one, and if the permitted check ran after resolution instead of before it,
-// each one would still cost at least an attempt at the on-demand refresh —
-// so zero fetches could never be attributed to it, since the check refuses
-// before resolve is ever called. The observable difference is exactly the
-// request count against the fixture: zero, not "at most one" as in
-// TestVerifyRateLimitsUnknownKeyIDRefresh, whose kids are permitted on
-// purpose so they can reach that library-level path instead.
+// Every kid below is both unpublished and unpermitted, and distinct from one
+// another, so the library's own per-kid state cannot short-circuit a second
+// look at the same one. If the permitted check ran after key resolution
+// instead of before it, each one would still cost at least an attempt at the
+// on-demand refresh — one real HTTP request the first time, per
+// TestVerifyRateLimitsUnknownKeyIDRefresh's measurement of that path. Running
+// the check first means resolve is never reached at all, so the fixture sees
+// zero requests, not "at most one": that is the difference this test makes
+// observable, plus the refusal naming the kid and the reason in its message.
 func TestVerifyRejectsAnImpermissibleKeyIDBeforeConsultingTheKeySet(t *testing.T) {
 	key := testsupport.NewRS256Key(t, "primary")
 	set := testsupport.StartJWKS(t, key)
