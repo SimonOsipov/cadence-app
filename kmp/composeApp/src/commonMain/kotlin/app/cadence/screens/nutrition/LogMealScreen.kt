@@ -249,9 +249,10 @@ fun LogMealScreen(
     }
 
     fun runParse() {
-        // Guarded twice: the button below is also disabled on either
-        // condition, but a guard here is what makes this function correct on
-        // its own rather than correct only alongside one particular caller.
+        // Guarded twice: the button below is disabled on either condition, so
+        // no click reaches here with blank text and this line has no test
+        // witness of its own. It stays because it makes the function correct
+        // on its own rather than correct only alongside one caller.
         if (chatText.isBlank() || parseState.parsing) return
         parseState = parseState.copy(parsing = true, failed = false)
         scope.launch { parseState = parseState.afterParseResult(parse(chatText)) }
@@ -481,14 +482,15 @@ private fun TextModeInput(
                 size = CadenceButtonSize.SMALL,
                 // One half of "an empty field does not start a parse" — the
                 // other is `runParse`'s own `chatText.isBlank()` early return.
-                // This half alone only dims the button and marks it
-                // `disabled()` in semantics (`CadenceControls.kt:136`); a tap
-                // that still reached `onParse` would be caught by the other
-                // half, not this one. Both are pinned because neither implies
-                // the other: dropping this `enabled` leaves the button
-                // clickable but the click a no-op; dropping the early return
-                // leaves `runParse` reachable by anything that calls it
-                // directly, disabled state notwithstanding.
+                // This half is the one a test can reach: it dims the button
+                // and marks it `disabled()` in semantics
+                // (`CadenceControls.kt:136`), and dropping it reddens
+                // `anEmptyFieldDoesNotStartAParse`. The early return in
+                // `runParse` is defence in depth and has **no** witness —
+                // while this `enabled` holds, no click can carry blank text
+                // that far, so removing that guard alone leaves the suite
+                // green. It earns its place by making `runParse` correct for
+                // a caller that is not this button; it does not earn a test.
                 enabled = text.isNotBlank() && !parsing,
             )
         }
