@@ -100,30 +100,23 @@ class CadenceSegmentedTest {
     @Test
     fun theDisabledTrackDimsAlongWithItsSegments() =
         runComposeUiTest {
-            // CadenceControls.kt:132-138's own precedent for a disabled
-            // control chains its alpha *before* `.background(...)`, so the
-            // background sits inside the dimmed layer. Chaining `.then(if
-            // (enabled) ... else Modifier.alpha(...))` *after*
-            // `.background(palette.sunk)` instead — the mutation this test
-            // exists to catch — leaves the track painted at full strength
-            // underneath the alpha, indistinguishable from the enabled
-            // track to every semantics-based test in this file.
+            // CadenceControls.kt:132-138's precedent chains alpha *before*
+            // `.background(...)` so the background sits inside the dimmed
+            // layer. Chaining alpha *after* `.background(palette.sunk)`
+            // instead — the mutation this test catches — leaves the track
+            // painted at full strength underneath the alpha, indistinguishable
+            // to every semantics-based test in this file.
             //
-            // The same node is captured both enabled and disabled and the
-            // two pixels are compared directly, rather than one pixel
-            // against a hardcoded `CadenceColors.linen` in one direction —
-            // this test's own first draft. That comparison passed on *any*
-            // pixel lighter than raw linen, including the selected
-            // segment's own `paper` fill (blue 0.9529 vs. linen's 0.8392),
-            // which is exactly the wrong pixel the first draft sampled
-            // before [CADENCE_SEGMENTED_TRACK_TAG] was moved ahead of
-            // `.padding(...)` in the modifier chain — a tag placed after
-            // padding reports the padding-reduced content box as its own
-            // bounds, cropping a capture to the segments and hiding the
-            // track's own edge. Comparing enabled against disabled needs no
-            // palette constant, assumes nothing about which colour is
-            // lighter, and holds regardless of which way a future
-            // palette's alpha blend shifts.
+            // Enabled and disabled pixels of the same node are compared
+            // directly, not one pixel against a hardcoded `CadenceColors.linen`
+            // — this test's first draft did that, and passed on *any* pixel
+            // lighter than raw linen, including the selected segment's own
+            // `paper` fill (0.9529 vs. linen's 0.8392): the wrong pixel,
+            // sampled before [CADENCE_SEGMENTED_TRACK_TAG] moved ahead of
+            // `.padding(...)` in the chain (a tag after padding reports the
+            // padding-reduced content box, cropping the track's own edge out
+            // of the capture). Enabled-vs-disabled needs no palette constant
+            // and holds regardless of which way a future alpha blend shifts.
             var enabled by mutableStateOf(true)
             setContent {
                 CadenceTheme {
@@ -156,16 +149,15 @@ class CadenceSegmentedTest {
     @Test
     fun theSelectedSegmentPaintsPaperOverTheTrack() =
         runComposeUiTest {
-            // theDisabledTrackDimsAlongWithItsSegments's own probe samples
-            // pixel (2, h/2), which sits inside the track's own
-            // CadenceSpacing.xxs padding and never reaches a segment — so
-            // `if (isSelected) palette.paper else Color.Transparent` always
-            // returning `Color.Transparent` (the active pill, the control's
-            // whole visible purpose, gone) leaves every test in this file
-            // green. Follows this file's own two pixel-probe precedents
-            // (this test and theFieldPaintsABorderDistinctFromItsPaperFill
-            // in CadenceTextFieldTest): compare against a palette token, not
-            // a hardcoded hex.
+            // theDisabledTrackDimsAlongWithItsSegments's probe samples pixel
+            // (2, h/2), inside the track's CadenceSpacing.xxs padding, never
+            // reaching a segment — so `if (isSelected) palette.paper else
+            // Color.Transparent` always returning `Color.Transparent` (the
+            // active pill gone) leaves every test in this file green.
+            // Follows this file's pixel-probe precedent (and
+            // theFieldPaintsABorderDistinctFromItsPaperFill in
+            // CadenceTextFieldTest): compare against a palette token, not a
+            // hardcoded hex.
             var paperColor = Color.Unspecified
             lateinit var density: Density
             setContent {
@@ -198,17 +190,14 @@ class CadenceSegmentedTest {
     fun theChosenSegmentIsSelectedAndItsNeighbourIsNot() =
         runComposeUiTest {
             // Same reasoning as theTodayColumnIsSelectedAndItsNeighbourIsNot
-            // for CadenceWeekBars: an existence check on a tag cannot tell
+            // for CadenceWeekBars: an existence check on a tag can't tell
             // «this one is on» from «every segment looks the same», so both
-            // halves below are measured, not just one. Against the mutation
-            // `selected = false` (every segment reads as not selected):
-            // assertIsSelected on «фото» is the half that catches it — its
-            // failure reads «Failed to assert … (Selected = 'true')» on
-            // that node. assertIsNotSelected on «текст» instead catches the
-            // opposite constant, `selected = true` (every segment marks
-            // itself) — a mutation assertIsSelected alone could not tell
-            // apart from correct, since «фото» would still read selected
-            // either way.
+            // halves below are measured. Against `selected = false` (every
+            // segment reads not-selected), assertIsSelected on «фото» is the
+            // half that catches it; against the opposite constant,
+            // `selected = true`, assertIsNotSelected on «текст» catches it —
+            // assertIsSelected alone couldn't tell that mutation from correct,
+            // since «фото» reads selected either way.
             setContent {
                 CadenceTheme {
                     CadenceSegmented(
@@ -227,13 +216,12 @@ class CadenceSegmentedTest {
     @Test
     fun theSegmentedControlStaysOneLineEvenWithATooLongLabel() =
         runComposeUiTest {
-            // A probe test measured this directly before the fix: the same
-            // long string, same width, rendered 140.dp tall with only
-            // overflow = TextOverflow.Ellipsis and 14.dp tall once maxLines = 1
-            // sat beside it — Ellipsis alone has nothing to truncate against, so
-            // the label wraps instead. Comparing two live tracks at the same
-            // width — one short label, one absurdly long — pins the fix without
-            // hardcoding a line-height constant that a font change would break.
+            // A probe measured this before the fix: the same long string, same
+            // width, rendered 140.dp tall with only overflow = Ellipsis, and
+            // 14.dp with maxLines = 1 beside it — Ellipsis alone has nothing to
+            // truncate against, so the label wraps instead. Comparing two live
+            // tracks at the same width pins the fix without a line-height
+            // constant a font change would break.
             val longLabel = "Очень длинное название режима, которое совершенно точно не влезет в один сегмент"
 
             setContent {

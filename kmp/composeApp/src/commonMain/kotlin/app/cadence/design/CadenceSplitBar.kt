@@ -38,14 +38,11 @@ private val SPLIT_BAR_HEIGHT = 8.dp
 private val LEGEND_SWATCH_SIZE = 8.dp
 
 /**
- * The three shares of a meal's energy, by calories rather than by grams.
- *
- * Grams would draw three equal segments for equal grams, which is wrong by a
- * factor of more than two on fat — and right on any fixture whose grams
- * happen to be equal, which is how such a bug survives a suite.
- *
- * An all-zero meal returns three zero shares rather than dividing by zero —
- * a meal with nothing logged yet is a real state, not an error.
+ * The three shares of a meal's energy, by calories, not grams — grams would
+ * draw three equal segments for equal grams, wrong by a factor of more than
+ * two on fat, and right on any fixture whose grams happen to be equal, which
+ * is how such a bug survives a suite. An all-zero meal returns three zero
+ * shares rather than dividing by zero — nothing logged yet is a real state.
  */
 fun splitShares(
     proteinG: Double,
@@ -65,23 +62,21 @@ fun splitShares(
 /**
  * A meal's energy split into protein / carbs / fat and drawn as one stacked
  * bar with a legend underneath — `RecipeMacroBar` in the prototype
- * (`RecipeDetailScreen.tsx:17-61`, and `MacroBarDark` in
- * `RecipeBuilderScreen.tsx:20-75` for the live builder card's dark variant).
- * Not [CadenceMacroBar]: that draws one macro against its own goal, this
- * draws three macros against each other's share of one meal.
+ * (`RecipeDetailScreen.tsx:17-61`; `MacroBarDark` in
+ * `RecipeBuilderScreen.tsx:20-75` for the builder card's dark variant). Not
+ * [CadenceMacroBar]: that draws one macro against its own goal, this draws
+ * three macros against each other's share of one meal.
  *
  * `Row` + `Modifier.weight(share)`, not three `fillMaxWidth(fraction)` boxes:
- * the three segments share one row, so each one's width is relative to the
- * other two, not to the row alone. A share of exactly zero is skipped rather
- * than laid out at `weight(0f)`, which Compose rejects.
+ * the three segments share one row, so each width is relative to the other
+ * two, not to the row alone. A zero share is skipped rather than laid out at
+ * `weight(0f)`, which Compose rejects.
  *
- * Carb colour: the per-macro `MacroBar` on the nutrition overview screen
- * hardcodes carbs to the literal `#a5773d` (`NutritionScreen.tsx:518`), which
- * has no matching token in [CadenceColors]. But this component's own two
- * call sites — `RecipeMacroBar` and its dark variant — map carbs to
- * `C.sand500` (`MACRO_C` in both files), which is [CadenceColors.sand500]
- * verbatim. This bar follows its own call sites rather than a different
- * screen's literal, so no approximation was needed.
+ * Carb colour: the nutrition overview's per-macro `MacroBar` hardcodes carbs
+ * to `#a5773d` (`NutritionScreen.tsx:518`), with no matching [CadenceColors]
+ * token — but this component's own two call sites map carbs to `C.sand500`
+ * (`MACRO_C` in both files), i.e. [CadenceColors.sand500] verbatim. This bar
+ * follows its own call sites, not a different screen's literal.
  */
 @Composable
 fun CadenceSplitBar(

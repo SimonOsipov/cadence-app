@@ -41,15 +41,10 @@ enum class CadenceBodyView(
 
 /**
  * Where each of §03's ten zones is drawn, and what it is called in Russian.
- *
- * A specification table: every number is a coordinate copied from
- * `mobile/src/features/log-dose/data.ts` (`ZONES_FRONT`, `ZONES_BACK`) against
- * its `viewBox="0 0 200 340"`, and every label is the prototype's own copy.
- * Neither is a value to reason about — they are what the frozen design says.
- *
- * The mapping lives here and not in `shared` because which side of a body a
- * zone is drawn on, and what it reads as, is presentation. `InjectionSite` is
- * the fact; this is the picture of it.
+ * Coordinates and labels are copied from `mobile/src/features/log-dose/data.ts`
+ * (`ZONES_FRONT`/`ZONES_BACK`) against its `viewBox="0 0 200 340"` — a spec
+ * table, not geometry to reason about. Lives here, not in `shared`, because
+ * which side a zone draws on is presentation; `InjectionSite` is the fact.
  */
 enum class CadenceBodyZone(
     val site: InjectionSite,
@@ -92,14 +87,11 @@ const val CADENCE_BODY_MAP_TAG = "cadence-body-map"
 private val CAPTION_MIN_HEIGHT = 32.dp
 
 /**
- * The ten-zone diagram, in the design system because it is a drawn primitive
- * with no product logic — it knows where a shoulder is and nothing about
- * protocols.
- *
- * Each zone is a real node with a Russian `contentDescription` and a `selected`
- * state, not a path inside a canvas. A `Canvas` has no text and no children, so
- * a diagram drawn as one is a diagram no test and no screen reader can read;
- * this draws the silhouette and lays the targets over it.
+ * The ten-zone diagram, in the design system because it draws a primitive with
+ * no product logic. Each zone is a real node with a Russian `contentDescription`
+ * and `selected` state, not a path inside a canvas: a `Canvas` has no text or
+ * children, so a diagram drawn as one is unreadable to any test or screen
+ * reader; this draws the silhouette and lays the targets over it.
  */
 @Composable
 fun CadenceBodyMap(
@@ -190,21 +182,18 @@ private fun ZoneTarget(
 
     Box(
         modifier
-            // Scaled, not fixed dp. Positioned in viewBox units and sized in
-            // dp, a target's centre drifts by `TARGET_R * (1.dp - unit)` —
-            // on a 360dp diagram every zone sat 14dp up and left of the
-            // shoulder the silhouette draws, and no test could see it.
+            // Scaled, not fixed dp: fixed dp let a target's centre drift by
+            // `TARGET_R * (1.dp - unit)` — measured as 14dp off from the
+            // shoulder on a 360dp diagram, invisible to any test.
             .size(size)
             .clip(CircleShape)
             .background(if (isSelected) CadenceColors.forest700 else Cadence.palette.paper)
             .clickable { onSelect(zone.site) }
-            // `clearAndSetSemantics`, so the target answers as one thing. Left
-            // to merge, the ring and the fill each become a node and
-            // `onNodeWithContentDescription` finds two.
+            // clearAndSetSemantics: left to merge, ring + fill become two
+            // nodes and onNodeWithContentDescription finds both.
             .clearAndSetSemantics {
-                // «Правое плечо · использовано» — the prototype draws a muted
-                // dot for `state.lastUsed`, and without it a suggestion reads as
-                // arbitrary: nothing on screen says why *this* zone is next.
+                // Prototype appends "· использовано" for `state.lastUsed`;
+                // without it a suggestion reads as arbitrary.
                 contentDescription = if (wasUsed) "${zone.labelRu} · использовано" else zone.labelRu
                 selected = isSelected
             },
@@ -223,10 +212,7 @@ private fun ZoneTarget(
     }
 }
 
-/**
- * «Левое плечо» once a zone is chosen, «Предложено: … — следующее в ротации»
- * before that, and nothing at all when there is neither.
- */
+/** Selected zone's name, a rotation-suggestion hint, or nothing. */
 @Composable
 private fun ZoneCaption(
     selected: InjectionSite?,
@@ -236,9 +222,8 @@ private fun ZoneCaption(
     val hint = suggested?.let { CadenceBodyZone.of(it) }
 
     Column(
-        // The prototype reserves `minHeight: 32` here: choosing a zone turns
-        // one caption line into two, and without the reservation everything
-        // below the diagram jumps mid-interaction.
+        // Reserves the prototype's `minHeight: 32`: choosing a zone turns one
+        // caption line into two, and without it everything below jumps.
         Modifier.padding(top = CadenceSpacing.sm).heightIn(min = CAPTION_MIN_HEIGHT),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -252,12 +237,10 @@ private fun ZoneCaption(
 }
 
 /**
- * The torso, head, arms and legs — the prototype's own SVG paths, scaled from
- * its `viewBox="0 0 200 340"` to whatever this is given.
- *
- * A path table, not geometry to reason about: `mobile/src/features/log-dose/
- * components.tsx` draws exactly these, and the back view differs from the front
- * only in where the torso ends.
+ * Torso, head, arms and legs — the prototype's own SVG paths
+ * (`mobile/src/features/log-dose/components.tsx`), scaled from its
+ * `viewBox="0 0 200 340"`. A path table, not geometry to reason about; back
+ * differs from front only in where the torso ends.
  */
 @Composable
 private fun CadenceBodySilhouette(

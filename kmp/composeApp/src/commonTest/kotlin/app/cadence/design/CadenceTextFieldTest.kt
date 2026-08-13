@@ -58,12 +58,11 @@ class CadenceTextFieldTest {
         runComposeUiTest {
             // Against the mutation «onValueChange is never wired»: a field that
             // renders but never reports back would leave every caller's draft
-            // frozen at its initial value. Reached through a testTag on
-            // `fieldModifier`, the same way `AddVialScreenTest.field` locates a
-            // real site's field — proving `fieldModifier` lands on the node
-            // that actually carries the text-editing action, not on the
-            // surrounding box (which is what plain `modifier` targets, per the
-            // fix-round ruling below).
+            // frozen at its initial value. Reached via a testTag on
+            // `fieldModifier` (same way `AddVialScreenTest.field` locates a
+            // real site's field), proving it lands on the node that actually
+            // carries the text-editing action, not on the surrounding box
+            // (which plain `modifier` targets, per the fix-round ruling below).
             var typed = ""
             setContent {
                 CadenceTheme {
@@ -87,13 +86,12 @@ class CadenceTextFieldTest {
             // Against the mutation that routes the whole `modifier` to the
             // inner `BasicTextField` instead of the outer `Box` (this
             // component's original shape, overridden in the fix round below):
-            // `Row` only reads a `weight` marker off its own immediate child,
-            // so a `weight(1f)` buried inside the field's internals is
-            // invisible to the `Row`, and the box's unconditional
-            // `fillMaxWidth()` then claims the entire row before the sibling
-            // is measured — the chat composer (`ChatThreadScreen.tsx:290-312`)
-            // and the ingredient search (`RecipeBuilderScreen.tsx:187-199`)
-            // both need exactly this shape.
+            // `Row` only reads a `weight` marker off its immediate child, so a
+            // `weight(1f)` buried inside the field's internals is invisible to
+            // it, and the box's unconditional `fillMaxWidth()` then claims the
+            // entire row before the sibling is measured — the chat composer
+            // (`ChatThreadScreen.tsx:290-312`) and the ingredient search
+            // (`RecipeBuilderScreen.tsx:187-199`) both need exactly this shape.
             lateinit var density: Density
             setContent {
                 CadenceTheme {
@@ -107,8 +105,8 @@ class CadenceTextFieldTest {
                         )
                         // Painted, not left empty: an unpainted Box with only a
                         // size modifier measured as (260,0)-(260,0) in this
-                        // harness — width 0 — even once correctly placed at
-                        // x=260 by Row, so this probe stands in for the send
+                        // harness — width 0, even once correctly placed at
+                        // x=260 by Row — so this probe stands in for the send
                         // button/icon a real sibling always paints.
                         Box(
                             Modifier
@@ -141,12 +139,11 @@ class CadenceTextFieldTest {
             // `.background(Cadence.palette.paper)` alone and 36/36 stayed
             // green, because `edge != center` only proved the two pixels
             // differ, not that the centre is the field's own paper fill —
-            // with the background gone, CadenceTheme's `bg` shows through
-            // the centre and still differs from `border`. Pinned against the
+            // with the background gone, CadenceTheme's `bg` shows through the
+            // centre and still differs from `border`. Pinned against the
             // palette values themselves (hoisted out of `setContent` the way
-            // this file already hoists `LocalDensity`), not a hardcoded hex,
-            // so the assertion holds regardless of what `paper`/`border`
-            // actually resolve to.
+            // this file hoists `LocalDensity`), not a hardcoded hex, so the
+            // assertion holds regardless of what `paper`/`border` resolve to.
             var paperColor = Color.Unspecified
             var borderColor = Color.Unspecified
             lateinit var density: Density
@@ -168,20 +165,20 @@ class CadenceTextFieldTest {
 
             val field = onNodeWithTag(TEXT_FIELD_PROBE_TAG, useUnmergedTree = true).captureToImage()
             val pixels = field.toPixelMap()
-            // TEXT_FIELD_HAIRLINE_PIN is deliberately a second, independent opinion
-            // about the border's width, not read from TEXT_FIELD_BORDER: an
-            // assertion that derives its own expectation from the exact constant a
-            // mutation would touch can never disagree with that mutation — widen
-            // TEXT_FIELD_BORDER and both the render and a self-referential
-            // expectation would move together. Pinning against a second value that
-            // does not move gives an 8x-wider border something to fail against.
-            // Verified: flipping TEXT_FIELD_BORDER from 1.dp to 8.dp turns this
-            // assertion red only because pinnedPx does not track it.
+            // TEXT_FIELD_HAIRLINE_PIN is deliberately a second, independent
+            // opinion on the border's width, not read from TEXT_FIELD_BORDER:
+            // an assertion deriving its expectation from the exact constant a
+            // mutation would touch can never disagree with that mutation —
+            // widen TEXT_FIELD_BORDER and both would move together. Pinning
+            // against a value that doesn't move gives an 8x-wider border
+            // something to fail against. Verified: flipping TEXT_FIELD_BORDER
+            // from 1.dp to 8.dp turns this assertion red only because
+            // pinnedPx doesn't track it.
             val pinnedPx = with(density) { TEXT_FIELD_HAIRLINE_PIN.roundToPx() }
-            // x=0, y=h/2 is the shape's leftmost point — true so long as the field's
-            // height is at least 2*CadenceRadius.md (24px at density 1.0), the point
-            // below which y=h/2 falls inside the corner arc instead of the straight
-            // edge; true today, since the field measures roughly 45px tall.
+            // x=0, y=h/2 is the shape's leftmost point — true as long as the
+            // field's height is at least 2*CadenceRadius.md (24px at density
+            // 1.0, below which y=h/2 falls inside the corner arc instead of
+            // the straight edge); true today, since the field is ~45px tall.
             val edge = pixels[0, field.height / 2]
             val justPastPin = pixels[pinnedPx, field.height / 2]
             val center = pixels[field.width / 2, field.height / 2]
@@ -201,18 +198,17 @@ class CadenceTextFieldTest {
         runComposeUiTest {
             // Same finding as above: an independent reviewer deleted
             // `.padding(CadenceSpacing.md)` and 36/36 stayed green, because
-            // `field > bare` only pins direction — `.padding(CadenceSpacing.md)`
-            // shrunk to `.padding(CadenceSpacing.xxs)` (12dp to 4dp) survives
-            // it too. Pinned to the exact amount instead: both components
-            // render the same body-styled `BasicTextField`, so its content
-            // height cancels out of the difference and only the padding
-            // remains — converted through `LocalDensity` (hoisted out of
-            // `setContent` the same way as the test above) rather than
-            // hardcoded, since CadenceSpacing is defined in Dp, not px. Not
-            // density-fragile at any density this target actually ships —
-            // integers and half-integers agree with layout's per-side
-            // rounding (2 * roundToPx(12.dp)) — but the two can diverge at
-            // a fractional density (e.g. d=3.3: 80 vs 79.2 here).
+            // `field > bare` only pins direction — shrinking it to
+            // `.padding(CadenceSpacing.xxs)` (12dp to 4dp) survives that too.
+            // Pinned to the exact amount instead: both components render the
+            // same body-styled `BasicTextField`, so content height cancels
+            // out of the difference and only the padding remains — converted
+            // through `LocalDensity` (hoisted the same way as the test above)
+            // rather than hardcoded, since CadenceSpacing is Dp, not px. Not
+            // density-fragile at any density this target ships — integers and
+            // half-integers agree with layout's per-side rounding
+            // (2 * roundToPx(12.dp)) — but can diverge at a fractional
+            // density (e.g. d=3.3: 80 vs 79.2 here).
             lateinit var density: Density
             setContent {
                 CadenceTheme {
@@ -282,14 +278,14 @@ class CadenceTextFieldTest {
         runComposeUiTest {
             // Against the mutation «singleLine is accepted but ignored»: a
             // one-line field (a search box, a title) would then grow onto a
-            // second line the moment a caller types past the visible width,
-            // which is exactly the shape a search bar cannot have.
+            // second line the moment a caller types past the visible width —
+            // exactly the shape a search bar cannot have.
             //
-            // The field's own box always fills whatever width its parent
-            // offers (`CadenceTextField.kt`'s outer `Box` calls
-            // `fillMaxWidth()` unconditionally), so the narrow width has to
-            // come from an ancestor — a plain `Row` would instead hand the
-            // first field the entire available width and starve the second.
+            // The field's box always fills whatever width its parent offers
+            // (`CadenceTextField.kt`'s outer `Box` calls `fillMaxWidth()`
+            // unconditionally), so the narrow width must come from an
+            // ancestor — a plain `Row` would hand the first field the entire
+            // available width and starve the second.
             val long = "нежирный творог пятипроцентный большая пачка из холодильника"
             setContent {
                 CadenceTheme {

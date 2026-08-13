@@ -123,20 +123,18 @@ class DesignSystemTest {
         }
 
     // The test that stood here composed `CadenceIcon(name = "no-such-icon")`
-    // and asserted the composition survived. That overload is gone: six of its
-    // seven call sites passed a compile-time literal and two of those were
-    // misspelled, so the miss it tolerated was never a runtime condition — it
-    // was a typo it hid.
+    // and asserted the composition survived. That overload is gone: six of
+    // seven call sites passed a compile-time literal, two of them misspelled
+    // — the miss it tolerated was never a runtime condition, it was a typo it hid.
 
     @Test
     fun everyIconNameTheDataCarriesResolves() {
-        // The one name that is still a string at runtime: `Compound.icon` comes
-        // off the wire, and `ProtocolStrip` resolves it through `byName` with a
-        // `?: CadenceIcons.beaker` fallback. The fallback is deliberate — a
-        // compound the client has no icon for must still draw a row — but it
-        // also means a rename on either side degrades silently to a beaker.
-        // This is the assertion that notices, and it is a set check rather than
-        // a count: `byName.size` is unchanged by swapping two keys' names.
+        // The one name still a string at runtime: `Compound.icon` comes off
+        // the wire, and `ProtocolStrip` resolves it through `byName` with a
+        // deliberate `?: CadenceIcons.beaker` fallback (a compound with no
+        // icon must still draw a row) — but that also means a rename on
+        // either side degrades silently to a beaker. Set check, not a count:
+        // `byName.size` is unchanged by swapping two keys' names.
         val used = MockSeed.compounds.map { it.icon }.toSet()
 
         assertEquals(

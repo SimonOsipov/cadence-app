@@ -38,15 +38,12 @@ private const val INACTIVE_STROKE = 1.5f
 private const val ACTION_STROKE = 2f
 
 /**
- * The bottom bar.
- *
- * Presentational only: it reports what was tapped and knows nothing about what
- * a destination is. The shell owns that, and wires it in step 2 of the port.
- *
- * Switching destination and logging a dose are separate callbacks because they
- * are separate things — one navigates, the other pushes a wizard. One callback
- * over a set containing both would hand the shell a `when` to unpick, which is
- * the work a type is meant to save.
+ * The bottom bar. Presentational only: it reports what was tapped and knows
+ * nothing about what a destination is — the shell owns that, wired in step 2
+ * of the port. Switching destination and logging a dose are separate
+ * callbacks because they're separate things — one navigates, one pushes a
+ * wizard — and a single callback over both would hand the shell a `when` to
+ * unpick, the work a type is meant to save.
  */
 @Composable
 fun CadenceTabBar(
@@ -127,12 +124,11 @@ private fun LogAction(
 }
 
 /**
- * An ordinary destination: icon over label.
- *
- * The current one is tinted, stroked heavier, and says so in its semantics. The
- * tint alone is not enough: a colour is invisible to a screen reader, and it
- * was invisible to the tests too, which is how a bar highlighting nothing
- * passed a suite that claimed to check exactly that.
+ * An ordinary destination: icon over label. The current one is tinted,
+ * stroked heavier, and says so in its semantics — tint alone isn't enough,
+ * since a colour is invisible to a screen reader, and it was invisible to the
+ * tests too, which is how a bar highlighting nothing passed a suite that
+ * claimed to check exactly that.
  */
 @Composable
 private fun Destination(
@@ -153,9 +149,8 @@ private fun Destination(
                     selected = current
                     role = Role.Tab
                     // Named as well as labelled: the label is a word other
-                    // components also draw — «Сегодня» appears on every due
-                    // protocol row — so a test matching text finds the wrong
-                    // node the moment a screen says the same thing.
+                    // components also draw («Сегодня» on every due protocol
+                    // row), so text-matching would find the wrong node.
                     contentDescription = destination.label
                 }.padding(vertical = CadenceSpacing.xs),
         horizontalAlignment = Alignment.CenterHorizontally,

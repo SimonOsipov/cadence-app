@@ -32,9 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // Buttons, chips and pills, ported from mobile/src/components/primitives.tsx.
-//
-// Every pressable scales to 0.98 while held — the prototype's `.press`
-// behaviour — and nothing ripples: this design language has no Material ink.
+// Every pressable scales to 0.98 while held (the prototype's `.press`); nothing
+// ripples, since this design language has no Material ink.
 
 internal const val PRESSED_SCALE = 0.98f
 private val PILL_SHAPE = RoundedCornerShape(CadenceRadius.pill)
@@ -117,8 +116,8 @@ fun CadenceButton(
     size: CadenceButtonSize = CadenceButtonSize.MEDIUM,
     icon: List<String>? = null,
     fillWidth: Boolean = false,
-    // The dose wizard's «Дальше» is dead until its step's rule is met, and a
-    // button that merely ignores taps looks identical to one that works.
+    // Disabled state is drawn distinctly, not just ignored: an inert-looking
+    // «Дальше» that still accepts taps is indistinguishable from a working one.
     enabled: Boolean = true,
 ) {
     val colors = colorsFor(kind)
@@ -130,9 +129,8 @@ fun CadenceButton(
             modifier
                 .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
                 .then(if (enabled) Modifier.pressable(onClick, interactionSource) else Modifier)
-                // Merged, so the button answers as one node: the label lives
-                // on a child `BasicText`, and a test asking «is «Дальше»
-                // enabled» would otherwise be handed the text and told yes.
+                // Merged so the button answers as one node — the label is a
+                // child `BasicText`, and unmerged a test would find it instead.
                 .semantics(mergeDescendants = true) { if (!enabled) disabled() }
                 .then(if (enabled) Modifier else Modifier.alpha(DISABLED_ALPHA))
                 .background(colors.background, PILL_SHAPE)
@@ -162,9 +160,8 @@ fun CadenceButton(
 @Composable
 fun CadenceIconButton(
     icon: List<String>,
-    // Required, not optional: an icon-only control with no name is announced as
-    // an unlabelled button, and this app is used by patients on a protocol.
-    // Russian, like every other string a user meets.
+    // Required, not optional: an icon-only control with no name is announced
+    // as an unlabelled button. Russian, like every other user-facing string.
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -269,7 +266,6 @@ fun CadencePill(
     ) {
         Box(Modifier.size(6.dp).background(colors.dot, PILL_SHAPE))
         BasicText(
-            // A pill label is not tracked out like an eyebrow, just small and medium.
             text = label,
             style = Cadence.typography.label.copy(color = colors.foreground, fontSize = 11.sp),
             maxLines = 1,

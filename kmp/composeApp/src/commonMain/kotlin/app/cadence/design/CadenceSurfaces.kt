@@ -112,13 +112,10 @@ fun CadenceSheet(
 ) {
     if (!open) return
 
-    // The prototype's sheet is a Modal with onRequestClose: on Android, back
-    // closes the sheet. Without this it finishes the activity and drops the
-    // user out of the app instead.
-    //
+    // Mirrors the prototype's Modal `onRequestClose`: on Android, back closes
+    // the sheet rather than finishing the activity and dropping the user out.
     // BackHandler is deprecated in favour of NavigationEventHandler, which
-    // Compose Multiplatform 1.11.1 does not ship yet — the replacement lands
-    // with a later release, and the warning is accepted until then.
+    // Compose Multiplatform 1.11.1 doesn't ship yet — accepted until it does.
     BackHandler(enabled = true, onBack = onDismiss)
 
     val palette = Cadence.palette

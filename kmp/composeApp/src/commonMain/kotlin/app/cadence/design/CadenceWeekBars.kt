@@ -41,12 +41,13 @@ const val CADENCE_WEEK_GOAL_CAPTION_TAG = "cadence-week-goal-caption"
 private const val HEADROOM = 1.05
 
 /**
- * The bar band's own height. Not a port of the prototype's `H = 90`: that number is the
- * *whole* SVG — `padT = 4` and `padB = 18` (`NutritionScreen.tsx:322-324`) leave only 68 of
- * those 90 units for bars, and the day labels share that same viewBox at `y = H - 4`
- * rather than sitting in a second row the way this port draws them. The prototype also
- * scales by `aspectRatio: W/H`, i.e. by the screen's own width, not by a fixed dp figure —
- * there is no exact number to carry over, so 84.dp is a chosen band, not a measurement.
+ * The bar band's own height. Not a port of the prototype's `H = 90`: that's
+ * the *whole* SVG — `padT = 4` and `padB = 18` (`NutritionScreen.tsx:322-324`)
+ * leave only 68 of those 90 units for bars, and the day labels share that
+ * viewBox at `y = H - 4` rather than a second row like this port draws. The
+ * prototype also scales by `aspectRatio: W/H` — the screen's own width, not a
+ * fixed dp figure — so there's no exact number to carry over; 84.dp is a
+ * chosen band, not a measurement.
  */
 private val WEEK_CHART_HEIGHT = 84.dp
 
@@ -72,10 +73,11 @@ fun weekScale(
 ): Double = (values.maxOrNull() ?: 0.0).coerceAtLeast(goal) * HEADROOM
 
 /**
- * A column's height, as a fraction of the scale. Public and unit-tested directly, the
- * same as [CadenceMacroBar]'s `macroFraction` and [CadenceGauge]'s `gaugeFraction`:
- * a `Box`'s fraction is only as trustworthy as the function a test can call without going
- * through a composable. Guards the zero-scale week the same way every gauge here does.
+ * A column's height, as a fraction of the scale. Public and unit-tested
+ * directly, same as [CadenceMacroBar]'s `macroFraction` and [CadenceGauge]'s
+ * `gaugeFraction`: a `Box`'s fraction is only as trustworthy as the function a
+ * test can call without going through a composable. Guards the zero-scale
+ * week the same way every gauge here does.
  */
 fun weekBarFraction(
     value: Double,
@@ -83,9 +85,9 @@ fun weekBarFraction(
 ): Float = if (scale <= 0.0) 0f else (value / scale).toFloat().coerceIn(0f, 1f)
 
 /**
- * Where the dashed goal line sits, measured down from the top of the chart. Public for the
- * same reason [weekBarFraction] is: a test needs to reach the clamp and the zero-scale
- * guard directly, not only through whatever the composable happens to draw with them.
+ * Where the dashed goal line sits, measured down from the top of the chart.
+ * Public for the same reason [weekBarFraction] is: a test needs to reach the
+ * clamp and the zero-scale guard directly, not only through the composable.
  */
 fun weekGoalFraction(
     goal: Double,
@@ -97,27 +99,27 @@ fun weekGoalFraction(
  * column picked out — `WeekBars` in the prototype (`NutritionScreen.tsx:316-387`).
  *
  * Not an extension of [CadenceUsageRow]: that row has neither a goal nor a
- * dashed target to draw, so it scales to the week's own maximum with no
- * headroom — correct for a row with nothing to compare against, wrong here,
- * where a week that never reaches its goal would draw the dashed line off the
- * top of that scale. Threading a goal, a dashed line and a highlighted column
- * through as three new optional parameters would leave that row carrying two
- * shapes for two call sites that need different scales; a second, smaller
- * component is cheaper than a first one bent to fit.
+ * dashed target, so it scales to the week's own maximum with no headroom —
+ * correct with nothing to compare against, wrong here, where a week that
+ * never reaches its goal would draw the dashed line off the top of that
+ * scale. Threading a goal, a dashed line and a highlighted column through as
+ * three optional parameters would leave that row carrying two shapes for two
+ * call sites needing different scales; a second, smaller component is
+ * cheaper than a first one bent to fit.
  *
  * `goalLabel` is the caller's finished caption — the prototype's own
  * `цель ${target.toLocaleString()}` — not `goal` re-rendered in here: numbers
- * are data, formatting is presentation, and a bar chart primitive is not the
- * nutrition screen's one formatter module.
+ * are data, formatting is presentation, and this primitive isn't the
+ * nutrition screen's formatter module.
  *
  * The fill is a laid-out `Box` per day, not a `Canvas` bar chart: a canvas's
- * pixels are asserted nowhere in this codebase, and [weekBarTag] is what lets
- * a test measure a column's height against [CADENCE_WEEK_ROW_TAG] instead of
+ * pixels are asserted nowhere in this codebase, and [weekBarTag] lets a test
+ * measure a column's height against [CADENCE_WEEK_ROW_TAG] instead of
  * trusting a draw call. The dashed goal line stays on a `Canvas` — it carries
- * no value a test needs to reach beyond [weekGoalFraction], which is public
- * and unit-tested directly — but [CADENCE_WEEK_GOAL_LINE_TAG] still measures
- * where the line itself lands, because *where a fraction is drawn* is a
- * layout question a pure function cannot answer on its own.
+ * no value a test needs beyond [weekGoalFraction], public and unit-tested
+ * directly — but [CADENCE_WEEK_GOAL_LINE_TAG] still measures where the line
+ * lands, since *where a fraction is drawn* is a layout question a pure
+ * function can't answer alone.
  */
 @Composable
 fun CadenceWeekBars(
@@ -159,11 +161,11 @@ fun CadenceWeekBars(
 
         Row(
             Modifier.fillMaxWidth().padding(top = CadenceSpacing.xxs),
-            // Same gap as the bar row above: without it, the bars' weighted
-            // columns are narrower than the labels' (the bar row reserves
-            // CadenceSpacing.xxs of gap between columns, this row didn't), so
-            // the two rows' column boundaries disagree and a label drifts up
-            // to ±1.7dp from its own bar at seven columns over ~350dp.
+            // Same gap as the bar row above: without it, the two rows'
+            // weighted columns disagree (the bar row reserves
+            // CadenceSpacing.xxs between columns, this row didn't), and a
+            // label drifts up to ±1.7dp from its bar at seven columns over
+            // ~350dp.
             horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.xxs),
         ) {
             labels.forEachIndexed { index, label ->
@@ -177,42 +179,43 @@ fun CadenceWeekBars(
 }
 
 /**
- * The dashed target line and its caption, placed at [goalFraction] down from the top of
- * the chart.
+ * The dashed target line and its caption, placed at [goalFraction] down from
+ * the top of the chart.
  *
- * A custom [Layout], not `BoxWithConstraints` with an `offset` per child: the caption's
- * placement depends on its own *measured* height, not an assumed one. An assumed 16dp
- * constant here once clamped the caption's top correctly but let its bottom escape the
- * chart whenever the real text was taller — larger font scale, or a `goalLabel` long
- * enough to wrap — because the clamp used the assumption while the actual drawn box used
- * whatever Compose measured. [Layout] measures both children once, so the placement math
- * in [weekGoalCaptionOffset] and the box Compose actually draws agree by construction; no
- * other technique in this file (`BoxWithConstraints`, the weighted-`Spacer` trick
- * [CadenceSplitBar] uses for its segments) reads a *sibling's* measured size, only the
+ * A custom [Layout], not `BoxWithConstraints` with an `offset` per child: the
+ * caption's placement depends on its own *measured* height, not an assumed
+ * one. An assumed 16dp constant here once clamped the caption's top correctly
+ * but let its bottom escape the chart whenever the real text was taller
+ * (larger font scale, or a wrapping `goalLabel`), because the clamp used the
+ * assumption while the drawn box used whatever Compose measured. [Layout]
+ * measures both children once, so [weekGoalCaptionOffset]'s placement math
+ * and the box Compose actually draws agree by construction; no other
+ * technique in this file (`BoxWithConstraints`, the weighted-`Spacer` trick
+ * [CadenceSplitBar] uses) reads a *sibling's* measured size, only the
  * parent's own constraints.
  *
  * The caption is not the line's row partner: the two are measured and placed
- * independently so the caption's height can never perturb the line's position — the
- * defect the weighted-`Spacer` layout this replaced had, where the caption's ~13dp
- * intrinsic height ate space two weighted spacers should have divided between them and
- * the line landed off by `captionHeight × (goalFraction − 0.5)`.
+ * independently so the caption's height can never perturb the line's
+ * position — the defect the weighted-`Spacer` layout this replaced had,
+ * where the caption's ~13dp intrinsic height ate space two weighted spacers
+ * should have divided, and the line landed off by
+ * `captionHeight × (goalFraction − 0.5)`.
  *
- * The caption is drawn *below* the line, not above it, whenever there isn't room above —
- * which is not a rare edge case. At the *default* font scale that flip happens for any
- * goal at roughly 79% of the scale or higher (using the caption's real height, not a
- * fixed number, since that height varies), which includes every week whose goal sits at
- * or above its own maximum. That 79% figure is a default-scale measurement only, not a
- * general property: a taller caption needs more headroom above the line before "above"
- * fits, so the flip point drops as font scale grows — measured at roughly 61% at
- * fontScale 2.0, and roughly 44% at fontScale 3.0. The prototype always draws the caption
- * above the line; this port does not attempt that everywhere. [weekGoalCaptionOffset]'s
- * own final `coerceIn` pulls the below-the-line fallback back toward the chart when it
- * would otherwise escape past the bottom, and in most such cases that clamp keeps the
- * caption clear of the line too — but not always: at fontScale 3.0, with a goal in the
- * middle of its range, the clamp pulls the caption up far enough that the line lands
- * strictly inside the caption's own box. Nothing in this suite measures caption/line
- * overlap above the default scale, so that case is an accepted, previously-undocumented
- * gap, not a placement this component is trying to hide.
+ * The caption draws *below* the line whenever there isn't room above — not a
+ * rare edge case. At *default* font scale that flip happens at roughly 79%
+ * of the scale or higher (using the caption's real, varying height), which
+ * includes every week whose goal sits at or above its own maximum. That 79%
+ * is a default-scale measurement only: a taller caption needs more headroom,
+ * so the flip point drops as font scale grows — roughly 61% at fontScale 2.0,
+ * roughly 44% at fontScale 3.0. The prototype always draws the caption above
+ * the line; this port doesn't attempt that everywhere.
+ * [weekGoalCaptionOffset]'s final `coerceIn` pulls the below-the-line
+ * fallback back toward the chart when it would otherwise escape the bottom,
+ * and usually keeps the caption clear of the line too — but not always: at
+ * fontScale 3.0, with a goal mid-range, the clamp pulls the caption up far
+ * enough that the line lands strictly inside the caption's box. Nothing in
+ * this suite measures caption/line overlap above default scale, so that case
+ * is an accepted, previously-undocumented gap, not a placement being hidden.
  */
 @Composable
 private fun GoalMarker(
@@ -261,13 +264,14 @@ private fun GoalMarker(
 }
 
 /**
- * Where [GoalMarker]'s caption's top edge lands: above the line with [GOAL_CAPTION_GAP]
- * to spare, below it when there isn't, and never outside `[0, chartHeight -
- * captionHeight]` either way. `captionHeight` is the caption's own *measured* height,
- * supplied by [GoalMarker]'s [Layout] — not an assumed constant, which is what let the
- * caption's bottom escape the chart whenever the real text was taller than the
- * assumption (larger font scale, or a wrapped `goalLabel`) even though this function's
- * own clamp was, at the time, applied correctly to the number it was given.
+ * Where [GoalMarker]'s caption's top edge lands: above the line with
+ * [GOAL_CAPTION_GAP] to spare, below it when there isn't, never outside
+ * `[0, chartHeight - captionHeight]` either way. `captionHeight` is the
+ * caption's own *measured* height, from [GoalMarker]'s [Layout] — not an
+ * assumed constant, which is what once let the caption's bottom escape the
+ * chart when the real text was taller (larger font scale, or a wrapped
+ * `goalLabel`), even though this function's clamp was applied correctly to
+ * the number it was given.
  */
 fun weekGoalCaptionOffset(
     lineY: Dp,

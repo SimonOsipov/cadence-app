@@ -16,12 +16,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * CadenceIcon strokes a Heroicons outline path.
- *
- * One renderer for the whole set: the icons are path data (see [CadenceIcons]),
- * so adding one costs a string rather than a file. The canvas is scaled from
- * the 24-unit source viewport, which keeps the stroke proportional — a 16dp
- * icon does not come out visually heavier than a 24dp one.
+ * CadenceIcon strokes a Heroicons outline path. One renderer for the whole
+ * set — icons are path data (see [CadenceIcons]), so adding one costs a string
+ * rather than a file. Scaled from the 24-unit source viewport so a 16dp icon
+ * doesn't come out visually heavier than a 24dp one.
  */
 @Composable
 fun CadenceIcon(
@@ -57,15 +55,12 @@ fun CadenceIcon(
     }
 }
 
-// There was a `CadenceIcon(name: String)` overload here that resolved through
-// `CadenceIcons.byName` and drew nothing on a miss. Six of its seven call sites
-// passed a compile-time literal, and two of those literals were «chevrn-up» and
-// «chevrn-dwn» — so the collapsible «В запасе» section shipped with no chevron
-// in either state, silently, past both gates. No test in the tree ever passed an
-// icon name as a string, and `DesignSystemTest` checks the size of `byName`
-// rather than its keys, so nothing could have caught it.
+// A former `CadenceIcon(name: String)` overload resolved through
+// `CadenceIcons.byName`, drawing nothing on a miss. Two literal typos
+// («chevrn-up»/«chevrn-dwn») shipped a chevronless collapsible section
+// silently, since `DesignSystemTest` checked `byName`'s size, not its keys.
 //
-// The typed vals on [CadenceIcons] are the whole API now, and a typo is a
-// compile error. The one genuinely runtime name — a compound's `icon` field
-// from the server — reads `byName` directly at `ProtocolStrip`, with an explicit
-// `?: CadenceIcons.beaker` fallback where the miss is expected and handled.
+// The typed vals on [CadenceIcons] are the whole API now — a typo is a compile
+// error. The one genuinely runtime name (a compound's server `icon` field)
+// reads `byName` directly at `ProtocolStrip`, with an explicit
+// `?: CadenceIcons.beaker` fallback where the miss is expected.
