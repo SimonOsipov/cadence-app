@@ -319,7 +319,8 @@ The prototype draws one 13sp paragraph, «{ккал} ккал · {белок} г
 {meta}» (`TodayScreen.tsx:783-800`); we promote the numbers to a 22sp «Осталось …
 ккал · … г белка» and put the suggestion's `meta` on its own body line beneath
 (`MealHero.kt:109-118`). Decided 2026-08-11 in the nutrition spec — the remaining
-figure is what the card is for, and `TodayScreenTest.kt:324` pins the wording.
+figure is what the card is for, and `TodayScreenTest.kt:320` pins the wording
+(«Осталось 960 ккал · 80 г белка»).
 
 **Why this is recorded rather than deleted:** the claim survived two ports and
 was cited as the reason a whole card was left unbuilt. The register is read as
