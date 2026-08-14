@@ -449,6 +449,21 @@ todoist: "6h9JQ3pfvMFFQ8Xq"
 
 ## Открытые вопросы
 
+> [!decision] 2026-08-14 — **all six steps are implemented and merged** (PR #8,
+> `scripts/gate/all.sh` green including the integration suite). The spec stays
+> `approved` rather than going to `done`, because one acceptance criterion is not
+> satisfied and no code can satisfy it: the probe against the deployed harness's
+> public name has never been run, there being no deployment. It reopens with SKL-06
+> — todoist: `6hGwxFFhF9Grp43q`.
+> The component notes were brought to the implemented state on the same day; the
+> proposal is **not** condensed into an ADR yet, because it covers both blocks and
+> `patient-onboarding` is unbuilt.
+
+> [!question] `LookupBatch` does not bound its list. The component contract says
+> 100 identifiers; the timeout ladder was sized against a different figure. The two
+> do not agree, and which one moves is a design decision rather than a patch.
+> todoist: `6hGwxFMW5WJQM6Fq`.
+
 > [!question] The choreography of shared-secret rotation: two current values
 > overlapping — the shape is accepted, but the replacement order (who goes first,
 > how long both are held) is not chosen. Decided at step 5; affects only a RUNBOOK
