@@ -78,6 +78,11 @@ class AppTest {
             // draws the wizard itself, so the assertion is its own composer rather than the
             // placeholder's title.
             onNodeWithTag(LOG_MEAL_CHAT_FIELD_TAG, useUnmergedTree = true).assertExists()
+            // The sheet closed behind it: none of the five ported screens draws «Записать
+            // дозу», so the sheet's own row is still the witness that `onPickMeal` dismissed
+            // it — without this, a handler that only navigates leaves the sheet waiting
+            // underneath the modal.
+            assertTrue(onAllNodesWithText("Записать дозу").fetchSemanticsNodes().isEmpty())
         }
 
     @Test

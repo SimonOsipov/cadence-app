@@ -1,10 +1,5 @@
 package app.cadence.shell
 
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
@@ -21,7 +16,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
-import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -29,18 +23,6 @@ import androidx.navigation.toRoute
 import app.cadence.design.CadenceTheme
 import app.cadence.screens.inventory.ADD_VIAL_SAVE_TAG
 import app.cadence.screens.inventory.addVialFieldTag
-import app.cadence.screens.nutrition.CADENCE_NUTRITION_RECIPES_LINK_TAG
-import app.cadence.screens.nutrition.CADENCE_NUTRITION_TAG
-import app.cadence.screens.nutrition.LOG_MEAL_CHAT_FIELD_TAG
-import app.cadence.screens.nutrition.LOG_MEAL_SAVE_TAG
-import app.cadence.screens.recipes.CADENCE_INGREDIENT_PICKER_ADD_TAG
-import app.cadence.screens.recipes.CADENCE_RECIPES_TAG
-import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_ADD_INGREDIENT_TAG
-import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_NAME_TAG
-import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_SAVE_TAG
-import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_ADD_TAG
-import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_BACK_TAG
-import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_TAG
 import app.cadence.screens.trends.CADENCE_TRENDS_HERO_TAG
 import app.cadence.screens.trends.CADENCE_TREND_DETAIL_STATS_TAG
 import app.cadence.screens.trends.cadenceTrendCardTag
@@ -54,8 +36,6 @@ import app.cadence.shared.domain.ProtocolRow
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
-import app.cadence.shared.parsing.MockMealParser
-import app.cadence.shared.repository.MealLogResult
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalTime

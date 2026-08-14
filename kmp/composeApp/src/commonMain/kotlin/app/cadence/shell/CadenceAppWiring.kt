@@ -64,7 +64,7 @@ internal class DayUiState {
     var nutritionDay by mutableStateOf<NutritionDay?>(null)
     var nutritionWeek by mutableStateOf<NutritionWeek?>(null)
     var recipes by mutableStateOf<RecipeList?>(null)
-    var ingredients by mutableStateOf<List<Ingredient>>(emptyList())
+    var ingredients by mutableStateOf<List<Ingredient>?>(null)
 }
 
 @Composable
@@ -172,6 +172,7 @@ internal fun shellActions(
         onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
         parseMeal = { text -> parser.parse(text) },
         searchIngredients = { query -> mocks.recipes.ingredients(query) },
+        loadRecipe = { id -> mocks.recipes.recipe(id) },
         onRecipeSaved = { draft ->
             val result = mocks.recipes.save(draft)
             if (result is RecipeSaveResult.Saved) onReload()

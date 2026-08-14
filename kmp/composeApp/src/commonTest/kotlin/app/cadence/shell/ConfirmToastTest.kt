@@ -74,17 +74,16 @@ class ConfirmToastTest {
                 CadenceTheme { CadenceApp(navController = nav, mocks = seededDay()) }
             }
 
-            logAMeal(nav)
+            val raisedAt = logAMeal(nav)
             onNodeWithText("Обед · записано").assertIsDisplayed()
 
-            // The clock is taken over only now, so the walk above cannot spend the toast's
-            // life. Bracketed with literals deliberately, not CADENCE_CONFIRM_TOAST_MS: an
-            // assertion that advances by the constant it checks passes at 17000ms as happily
-            // as at 1700 — a mutation proved that before these two lines replaced one.
+            // Absolute deadlines measured from the raise, so the walk's own virtual time
+            // cannot widen the bracket. Literals deliberately, not CADENCE_CONFIRM_TOAST_MS:
+            // an assertion that advances by the constant it checks passes at 17000ms as
+            // happily as at 1700 — a mutation proved that before these lines replaced one.
             mainClock.autoAdvance = false
-            mainClock.advanceTimeBy(JUST_UNDER_THE_DEADLINE_MS)
-            onNodeWithText("Обед · записано")
-                .assertIsDisplayed()
+            mainClock.advanceTimeBy(raisedAt + JUST_UNDER_THE_DEADLINE_MS - mainClock.currentTime)
+            onNodeWithText("Обед · записано").assertIsDisplayed()
 
             mainClock.advanceTimeBy(PAST_THE_DEADLINE_MS)
             assertTrue(onAllNodesWithText("Обед · записано").fetchSemanticsNodes().isEmpty())
@@ -140,13 +139,11 @@ class ConfirmToastTest {
 /**
  * Written out rather than derived from `CADENCE_CONFIRM_TOAST_MS`: an assertion that
  * advances by the constant it checks passes at 17000ms as happily as at 1700, and a
- * mutation proved exactly that. The bracket is measured from *after* the walk, which spends
- * an unknown amount of virtual time, so it is deliberately loose on the near side and
- * generous on the far one: a tenfold constant is still up at +2000, and a tenth of it is
- * already gone before the first assertion above.
+ * mutation proved exactly that. Both are absolute offsets from the raise — alive at 1600,
+ * gone at 1800, a 200ms window neither a longer nor a shorter constant fits through.
  */
-private const val JUST_UNDER_THE_DEADLINE_MS = 1000L
-private const val PAST_THE_DEADLINE_MS = 1000L
+private const val JUST_UNDER_THE_DEADLINE_MS = 1600L
+private const val PAST_THE_DEADLINE_MS = 200L
 
 /**
  * Opens the meal wizard, parses «курица с рисом» through the shell's own parser and saves —
@@ -154,7 +151,7 @@ private const val PAST_THE_DEADLINE_MS = 1000L
  * constant. The canned «Обед» parse is 625 kcal (240+145+60+90+90).
  */
 @OptIn(ExperimentalTestApi::class)
-private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostController) {
+private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostController): Long {
     // Driven with the clock free: both the parse and the write are `launch`ed coroutines,
     // and neither is dispatched while `autoAdvance` is off. The toast's own timer survives
     // this — a pending `delay` is not what «idle» waits for — so a test that needs to
@@ -168,5 +165,10 @@ private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostControll
     // Scrolled to first: the footer sits below the fold once the parse fills the list, and a
     // click on an off-screen node lands on nothing at all.
     onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
+    val raisedAt = mainClock.currentTime
     waitForIdle()
+    // Returned, not assumed: the toast's clock starts here, and the walk above spends virtual
+    // time of its own. A bracket measured from zero would pin the 1700ms constant only to
+    // «somewhere between one and two seconds».
+    return raisedAt
 }

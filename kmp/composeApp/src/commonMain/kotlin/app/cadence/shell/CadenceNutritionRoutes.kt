@@ -1,7 +1,12 @@
 package app.cadence.shell
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
@@ -42,6 +47,10 @@ internal fun LogMealModal(
     back: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    // One write in flight at a time. «Сохранить» stays live until the answer lands (the
+    // footer only knows whether there are items), and on M9's round trip that window is a
+    // whole request — two taps would log the meal twice, each with its own toast.
+    var saving by remember { mutableStateOf(false) }
 
     if (summary == null || now == null) {
         PlaceholderScreen(title = "Записать приём пищи", onBack = back)
@@ -53,8 +62,12 @@ internal fun LogMealModal(
         targets = summary.targets,
         parse = actions.parseMeal,
         onSave = { draft ->
-            scope.launch {
-                if (actions.onMealLogged(draft) is MealLogResult.Written) back()
+            if (!saving) {
+                saving = true
+                scope.launch {
+                    if (actions.onMealLogged(draft) is MealLogResult.Written) back()
+                    saving = false
+                }
             }
         },
         onCancel = back,
@@ -76,7 +89,9 @@ internal suspend fun logMeal(
 ): MealLogResult {
     val result = mocks.nutrition.log(draft)
     if (result is MealLogResult.Written) {
-        toast.raise(draft.name.orEmpty(), result.dayTotals.kcal)
+        // Non-null by `MealDraft.canLog`, which every `Written` has already passed — an
+        // unnamed confirmation would be a silent defect, not a tolerable default.
+        toast.raise(requireNotNull(draft.name), result.dayTotals.kcal)
         onWritten()
     }
     return result
@@ -114,8 +129,9 @@ internal fun NutritionRoute(
 }
 
 /**
- * The library and one recipe's card. Both are gated on the library read — the same list the
- * detail resolves its id against, so a card and the row that opened it can never disagree.
+ * The library, one recipe's card and the builder. «Рецепты» is gated on all three of its
+ * reads — the library, the day it scores against and the ingredient table it prices with,
+ * an empty one of which is not «no ingredients» but a table that throws on the first row.
  */
 internal fun NavGraphBuilder.recipeRoutes(
     nav: NavHostController,
@@ -130,13 +146,14 @@ internal fun NavGraphBuilder.recipeRoutes(
     composable<CadenceRoute.Recipes> {
         val library = data.recipes
         val day = data.nutritionDay
+        val ingredients = data.ingredients
 
-        if (library == null || day == null) {
+        if (library == null || day == null || ingredients == null) {
             PlaceholderScreen("Рецепты", onBack = back)
         } else {
             RecipesScreen(
                 library = library,
-                ingredients = data.ingredients,
+                ingredients = ingredients,
                 consumed = day.totals,
                 goals = day.targets.macros,
                 onBack = back,
@@ -158,6 +175,7 @@ internal fun NavGraphBuilder.recipeRoutes(
 
     modal<CadenceRoute.RecipeBuilder> {
         val scope = rememberCoroutineScope()
+        var saving by remember { mutableStateOf(false) }
 
         RecipeBuilderScreen(
             search = actions.searchIngredients,
@@ -166,10 +184,14 @@ internal fun NavGraphBuilder.recipeRoutes(
             // recipe, and going back from what they made belongs to the library they started
             // from, not to the form (`CadenceNavigation.kt`'s `replaceRoute` names this case).
             onSave = { draft ->
-                scope.launch {
-                    val result = actions.onRecipeSaved(draft)
-                    if (result is RecipeSaveResult.Saved) {
-                        nav.replaceRoute(CadenceRoute.RecipeDetail(result.id.raw))
+                if (!saving) {
+                    saving = true
+                    scope.launch {
+                        val result = actions.onRecipeSaved(draft)
+                        if (result is RecipeSaveResult.Saved) {
+                            nav.replaceRoute(CadenceRoute.RecipeDetail(result.id.raw))
+                        }
+                        saving = false
                     }
                 }
             },
@@ -178,9 +200,14 @@ internal fun NavGraphBuilder.recipeRoutes(
 }
 
 /**
- * One recipe's card, resolved against the same library the row that opened it was drawn
- * from — three states, not two: «библиотека ещё не прочитана» is not «такого рецепта нет»,
- * and a deep link can carry an id no recipe has.
+ * One recipe's card, read through [CadenceShellActions.loadRecipe] — the repository's own
+ * `recipe(id)`, not the library snapshot the row was drawn from. The snapshot is a frame
+ * behind its own writes: `replaceRoute` onto a just-saved recipe composes before
+ * `LaunchedEffect(reloads)` has re-read the library, so a card resolved against it answers
+ * «Рецепт не найден.» to the recipe the patient just made.
+ *
+ * Three states, not two: «ещё не ответили» is not «такого рецепта нет», and a deep link can
+ * carry an id no recipe has. Same shape as `TrendDetail`'s own read one file over.
  */
 @Composable
 private fun RecipeDetailRoute(
@@ -191,29 +218,32 @@ private fun RecipeDetailRoute(
     back: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val library = data.recipes
-    val state =
-        if (library == null) {
-            RecipeDetailState.Loading
-        } else {
-            library.recipes
-                .firstOrNull { it.id == id }
-                ?.let(RecipeDetailState::Found)
-                ?: RecipeDetailState.NotFound
-        }
+    var state by remember(id) { mutableStateOf<RecipeDetailState>(RecipeDetailState.Loading) }
+    // One write in flight at a time: the button stays live until the answer lands, and two
+    // taps in the same frame would otherwise queue two coroutines and log the meal twice —
+    // the defect `LogDoseModal`'s own `submitting` flag exists for.
+    var adding by remember { mutableStateOf(false) }
+
+    LaunchedEffect(id) {
+        state = actions.loadRecipe(id)?.let(RecipeDetailState::Found) ?: RecipeDetailState.NotFound
+    }
 
     RecipeDetailScreen(
         state = state,
-        ingredients = data.ingredients,
+        ingredients = data.ingredients.orEmpty(),
         onBack = back,
         // The same write and the same confirmation as the wizard's, and then «Питание» —
         // where the meal it just wrote is visible. The draft already carries
         // `source = RECIPE` and the recipe's id (`Recipe.toMealDraft`), so this path cannot
         // log a recipe as free text.
         onAddToDay = { draft ->
-            scope.launch {
-                if (actions.onMealLogged(draft) is MealLogResult.Written) {
-                    nav.selectDestination(CadenceDestination.NUTRITION)
+            if (!adding) {
+                adding = true
+                scope.launch {
+                    if (actions.onMealLogged(draft) is MealLogResult.Written) {
+                        nav.selectDestination(CadenceDestination.NUTRITION)
+                    }
+                    adding = false
                 }
             }
         },

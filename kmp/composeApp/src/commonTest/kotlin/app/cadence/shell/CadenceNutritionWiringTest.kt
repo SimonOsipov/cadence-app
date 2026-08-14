@@ -5,15 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.onAllNodesWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -22,13 +15,10 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.navigation.NavDestination.Companion.hasRoute
-import androidx.navigation.NavGraph
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.toRoute
+import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceTheme
-import app.cadence.screens.inventory.ADD_VIAL_SAVE_TAG
-import app.cadence.screens.inventory.addVialFieldTag
 import app.cadence.screens.nutrition.CADENCE_NUTRITION_RECIPES_LINK_TAG
 import app.cadence.screens.nutrition.CADENCE_NUTRITION_TAG
 import app.cadence.screens.nutrition.LOG_MEAL_CHAT_FIELD_TAG
@@ -40,29 +30,27 @@ import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_NAME_TAG
 import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_SAVE_TAG
 import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_ADD_TAG
 import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_BACK_TAG
+import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_LOADING_TAG
+import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_NOT_FOUND_TAG
 import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_TAG
-import app.cadence.screens.trends.CADENCE_TRENDS_HERO_TAG
-import app.cadence.screens.trends.CADENCE_TREND_DETAIL_STATS_TAG
-import app.cadence.screens.trends.cadenceTrendCardTag
-import app.cadence.screens.trends.cadenceTrendWindowTag
 import app.cadence.shared.domain.FixedCadenceClock
-import app.cadence.shared.domain.Metric
-import app.cadence.shared.domain.ProtocolCadence
-import app.cadence.shared.domain.ProtocolItemId
-import app.cadence.shared.domain.ProtocolItemKind
-import app.cadence.shared.domain.ProtocolRow
-import app.cadence.shared.domain.TrendWindow
+import app.cadence.shared.domain.Ingredient
+import app.cadence.shared.domain.IngredientId
+import app.cadence.shared.domain.Macros
+import app.cadence.shared.domain.MacrosTenths
+import app.cadence.shared.domain.NutritionTargets
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
 import app.cadence.shared.parsing.MockMealParser
 import app.cadence.shared.repository.MealLogResult
+import app.cadence.shared.repository.NutritionDay
+import app.cadence.shared.repository.RecipeList
+import app.cadence.shared.repository.RecipeSaveResult
 import app.cadence.shared.repository.TodaySummary
-import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.LocalTime
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 // The nutrition port's wiring, at the level `CadenceApp` composes it — split out of
@@ -70,6 +58,19 @@ import kotlin.test.assertTrue
 // same path a patient does: a tap, a screen, a repository, and what the next screen shows.
 
 private fun wiringMocks() = CadenceMocks(FixedCadenceClock.at("2026-05-31T09:00:00Z"), TimeZone.of("Europe/Moscow"))
+
+/** One product, so a half-read `CadenceShellData` still has something the builder can add. */
+private val WIRING_INGREDIENT =
+    Ingredient(IngredientId("chicken"), nameRu = "Куриная грудка", per100g = MacrosTenths(1650, 310, 0, 36))
+
+/** A day with nothing in it — the point is that it landed, not what it holds. */
+private fun wiringDay() =
+    NutritionDay(
+        date = LocalDate.parse("2026-05-31"),
+        meals = emptyList(),
+        totals = Macros(0, 0, 0, 0),
+        targets = NutritionTargets(MockSeed.patientId, Macros(1800, 140, 200, 60), waterMl = null),
+    )
 
 @OptIn(ExperimentalTestApi::class)
 class CadenceNutritionWiringTest {
@@ -136,8 +137,10 @@ class CadenceNutritionWiringTest {
             // The tab bar is the reason this is a tab and not a pushed route: the placeholder
             // drew one too, so the screen alone would not tell the two apart.
             onNodeWithContentDescription("Аптечка").assertExists()
-            // From the repository, not a constant: the seeded day is 840 kcal against 1800.
-            onNodeWithText("840", substring = true).assertExists()
+            // From the repository, not a constant, and both halves: the seeded day is 840 kcal
+            // against a 1800 target, and passing the eaten total for both would render «840 / 840».
+            onNodeWithText("840").assertExists()
+            onNodeWithText("/ 1\u00A0800").assertExists()
         }
 
     @Test
@@ -259,6 +262,9 @@ class CadenceNutritionWiringTest {
             onNodeWithTag(CADENCE_NUTRITION_TAG).assertExists()
             // Three meals now, where the seed has two: the write reached the same store «Питание» reads.
             onNodeWithText("3 приёма", substring = true).assertExists()
+            // And it is *this* recipe in the feed, at the clock's own time — the count alone
+            // would pass for any meal, and the name alone for a feed listing the wrong one.
+            onNodeWithText("Тёплая чечевица с индейкой").performScrollTo().assertExists()
         }
 
     private fun ComposeUiTest.myRecipesHeading() = onNodeWithText("Мои рецепты", ignoreCase = true)
@@ -283,4 +289,162 @@ class CadenceNutritionWiringTest {
         onNodeWithTag(CADENCE_RECIPE_BUILDER_SAVE_TAG).performClick()
         waitForIdle()
     }
+
+    /**
+     * The header chip is the only thing the wizard does with the clock reading this step
+     * made public, and nothing observed it: `now` replaced by any literal, or read in `UTC`
+     * instead of the patient's zone, left the whole suite green while stamping the meal three
+     * hours off. 09:00Z in Europe/Moscow is 12:00.
+     */
+    @Test
+    fun theWizardStampsTheClockReadingItWasGivenInThePatientsZone() =
+        runComposeUiTest {
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceApp(navController = nav, mocks = wiringMocks()) }
+            }
+            waitForIdle()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
+            waitForIdle()
+
+            onNodeWithText("12:00 · Вс 31 мая").assertExists()
+        }
+
+    /** The wizard's own write, seen where the patient sees it — the toast is not the feed. */
+    @Test
+    fun aMealLoggedInTheWizardJoinsTheDaysFeed() =
+        runComposeUiTest {
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme { CadenceApp(navController = nav, mocks = wiringMocks()) }
+            }
+            waitForIdle()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
+            waitForIdle()
+            onNodeWithTag(LOG_MEAL_CHAT_FIELD_TAG, useUnmergedTree = true).performTextReplacement("курица с рисом")
+            waitForIdle()
+            onNodeWithText("Разобрать →").performClick()
+            waitForIdle()
+            onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
+            waitForIdle()
+            // The confirmation overlay swallows every touch while it is up
+            // (`ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp`), so the tab tap has to
+            // wait it out rather than land on the scrim.
+            mainClock.advanceTimeBy(CADENCE_CONFIRM_TOAST_MS + 100L)
+            waitForIdle()
+
+            nutritionTab().performClick()
+            waitForIdle()
+
+            // Named and counted: the count alone would pass for any meal at all, and the name
+            // alone would pass for a feed that lists what was typed rather than what was written.
+            onNodeWithText("3 приёма", substring = true).assertExists()
+            onNodeWithText("12:00", substring = true).performScrollTo().assertExists()
+        }
+
+    /** A rejected save keeps the form, exactly as a rejected meal keeps the wizard. */
+    @Test
+    fun aRejectedRecipeLeavesTheBuilderOpen() =
+        runComposeUiTest {
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme {
+                    CadenceShell(
+                        navController = nav,
+                        actions =
+                            CadenceShellActions(
+                                searchIngredients = { listOf(WIRING_INGREDIENT) },
+                                onRecipeSaved = { RecipeSaveResult.Rejected },
+                            ),
+                    )
+                }
+            }
+            waitForIdle()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.RecipeBuilder) }
+            waitForIdle()
+            buildARecipe("Курица на пару")
+
+            assertTrue(
+                nav.currentBackStack.value.any { it.destination.hasRoute<CadenceRoute.RecipeBuilder>() },
+                "a rejected save dismissed the builder as if the recipe had been written",
+            )
+        }
+
+    /**
+     * The card's own three states, at the level that chooses between them. «Ещё не ответили»
+     * is a suspended read, not an answer of null — a route that collapses the two tells a
+     * patient «Рецепт не найден.» while the read is still in flight.
+     */
+    @Test
+    fun theCardSaysLoadingUntilTheReadAnswers() =
+        runComposeUiTest {
+            val gate = CompletableDeferred<Unit>()
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme {
+                    CadenceShell(
+                        navController = nav,
+                        actions =
+                            CadenceShellActions(
+                                loadRecipe = {
+                                    gate.await()
+                                    null
+                                },
+                            ),
+                    )
+                }
+            }
+            waitForIdle()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.RecipeDetail("whatever")) }
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_LOADING_TAG).assertExists()
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_NOT_FOUND_TAG).assertDoesNotExist()
+
+            gate.complete(Unit)
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_NOT_FOUND_TAG).assertExists()
+        }
+
+    /** The second clause of each gate: one read landing does not make a screen composable. */
+    @Test
+    fun eachRouteWaitsForEveryReadItDrawsFrom() =
+        runComposeUiTest {
+            lateinit var nav: NavHostController
+            val day = wiringDay()
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme {
+                    CadenceShell(
+                        navController = nav,
+                        // Deliberately half-read: the day without its week, and the library
+                        // without the table that prices it.
+                        data = CadenceShellData(nutritionDay = day, recipes = RecipeList(emptyList())),
+                    )
+                }
+            }
+            waitForIdle()
+
+            runOnUiThread { nav.selectDestination(CadenceDestination.NUTRITION) }
+            waitForIdle()
+            onNodeWithTag(CADENCE_NUTRITION_TAG).assertDoesNotExist()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.Recipes) }
+            waitForIdle()
+            onNodeWithTag(CADENCE_RECIPES_TAG).assertDoesNotExist()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
+            waitForIdle()
+            // The wizard needs the clock reading as well as the day; `now` is still null here.
+            onNodeWithTag(LOG_MEAL_CHAT_FIELD_TAG, useUnmergedTree = true).assertDoesNotExist()
+        }
 }

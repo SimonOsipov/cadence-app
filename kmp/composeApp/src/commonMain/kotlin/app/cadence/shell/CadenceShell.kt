@@ -25,7 +25,6 @@ import app.cadence.screens.dose.DoseWizard
 import app.cadence.screens.inventory.AddVialScreen
 import app.cadence.screens.inventory.VialDetailSheet
 import app.cadence.screens.inventory.VialsScreen
-import app.cadence.screens.nutrition.LogMealScreen
 import app.cadence.screens.schedule.ScheduleScreen
 import app.cadence.screens.schedule.ScheduleState
 import app.cadence.screens.today.TodayScreen
@@ -35,13 +34,14 @@ import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseStep
 import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.domain.Ingredient
-import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.Meal
 import app.cadence.shared.domain.MealDraft
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.ProtocolCadence
 import app.cadence.shared.domain.ProtocolRow
+import app.cadence.shared.domain.Recipe
+import app.cadence.shared.domain.RecipeId
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.domain.TrendsOverview
 import app.cadence.shared.domain.VialDetail
@@ -57,7 +57,6 @@ import app.cadence.shared.repository.MetricDetail
 import app.cadence.shared.repository.NutritionDay
 import app.cadence.shared.repository.NutritionWeek
 import app.cadence.shared.repository.RecipeDraft
-import app.cadence.shared.repository.RecipeFilter
 import app.cadence.shared.repository.RecipeList
 import app.cadence.shared.repository.RecipeSaveResult
 import app.cadence.shared.repository.TodaySummary
@@ -117,16 +116,18 @@ fun CadenceApp(
                     zone = mocks.zone,
                 ),
             actions =
-                shellActions(
-                    mocks = mocks,
-                    parser = parser,
-                    toast = toast,
-                    scope = scope,
-                    onReload = { reloads++ },
-                    onOpenActions = { actionsOpen = true },
-                    onOpenVial = { openVial = it },
-                    onTrendWindow = { trendsState.window = it },
-                ),
+                remember(mocks, parser, toast, scope) {
+                    shellActions(
+                        mocks = mocks,
+                        parser = parser,
+                        toast = toast,
+                        scope = scope,
+                        onReload = { reloads++ },
+                        onOpenActions = { actionsOpen = true },
+                        onOpenVial = { openVial = it },
+                        onTrendWindow = { trendsState.window = it },
+                    )
+                },
         )
 
         Actions(summary, actionsOpen, navController, onDismiss = { actionsOpen = false })
@@ -177,7 +178,9 @@ data class CadenceShellData(
     val nutritionDay: NutritionDay? = null,
     val nutritionWeek: NutritionWeek? = null,
     val recipes: RecipeList? = null,
-    val ingredients: List<Ingredient> = emptyList(),
+    /** Null until the reference table has been read: an empty one is not «no ingredients», it
+     * is a table that cannot price a single row. */
+    val ingredients: List<Ingredient>? = null,
     val zone: TimeZone = TimeZone.currentSystemDefault(),
 )
 
@@ -202,6 +205,7 @@ data class CadenceShellActions(
     val onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail? = { _, _ -> null },
     val parseMeal: suspend (String) -> MealParseResult = { MealParseResult.Unavailable },
     val searchIngredients: suspend (String) -> List<Ingredient> = { emptyList() },
+    val loadRecipe: suspend (RecipeId) -> Recipe? = { null },
     val onRecipeSaved: suspend (RecipeDraft) -> RecipeSaveResult = { RecipeSaveResult.Rejected },
 )
 
