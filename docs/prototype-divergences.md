@@ -318,9 +318,10 @@ into an `hour` that the next line discards with `void hour`.
 The prototype draws one 13sp paragraph, «{ккал} ккал · {белок} г белка осталось.
 {meta}» (`TodayScreen.tsx:783-800`); we promote the numbers to a 22sp «Осталось …
 ккал · … г белка» and put the suggestion's `meta` on its own body line beneath
-(`MealHero.kt:109-118`). Decided 2026-08-11 in the nutrition spec — the remaining
-figure is what the card is for, and `TodayScreenTest.kt:320` pins the wording
-(«Осталось 960 ккал · 80 г белка»).
+(`MealHero.kt:109-118`). The promotion came with the first five-section port
+(2026-08-10, `35dfe30`); the nutrition spec's own decision was that it **stays**
+as it is, and step 14 added the `meta` line beneath it. `TodayScreenTest.kt:320`
+pins the wording («Осталось 960 ккал · 80 г белка»).
 
 **Why this is recorded rather than deleted:** the claim survived two ports and
 was cited as the reason a whole card was left unbuilt. The register is read as
@@ -388,11 +389,14 @@ it is measured by tests rather than by a side-by-side run. Step 11 is that run.
 
 **The dropped timestamp, revisited 2026-08-14.** It stays dropped, and now for a
 stated reason rather than by omission. One thing is missing, and it is a
-contract, not a label: `TodaySummary` (`TodayRepository.kt:22-52`) carries
+contract, not a label: `TodaySummary` (`TodayRepository.kt:22-51`) carries
 `suggestedSite` and `doseLoggedToday` but neither the hour of today's injection
-nor the site it went into, and nothing else in `shared` exposes them — the
-dosing repository submits events and never reads them back. Adding that field
-belongs to the dosing surface, not to the nutrition port that walked past it.
+nor the site it went into. No contract the «Сегодня» screen reads returns
+either; the hour is exposed nowhere at all — no repository hands back a
+`DoseEvent` — while a logged site survives only per vial, on `VialDose`
+(`VialDetail.kt:10,42`), which is why the sheet two sentences down has one to
+draw. Adding the field belongs to the dosing surface, not to the nutrition port
+that walked past it.
 
 The Russian site names are **not** an obstacle, contrary to what an earlier
 version of this paragraph claimed: `CadenceBodyZone` (`CadenceBodyMap.kt:49-74`)
@@ -1009,7 +1013,7 @@ Android нет по решению в `build.gradle.kts`.
 M9 он **неизмерим** — не потому, что порт что-то упустил, а потому, что
 поверхности, на которой это проверяется, не существует ни у одной из сторон.
 
-## Питание: время приёма берётся из часов, а не из двух литералов
+## Питание: время приёма берётся из часов, а не из трёх литералов
 
 **Что делает прототип:** три литерала, не два. Шапка мастера прибита целиком —
 «08:42 · вс 24 мая» (`LogMealScreen.tsx:133`), то есть и время, и дата. Запись
@@ -1099,7 +1103,7 @@ totals.kcal]` и такой же массив по белку (`NutritionScreen.
 
 **Почему это записано:** замер, а не вкус, и с шириной, при которой он взят
 (`RecipesScreen.kt:329-335`). При строке 358dp — это 390pt-телефон минус
-16dp отступов — сегмент-контрол отводит «Мягкие для желудка» 72dp при
+по 16dp с каждой стороны — сегмент-контрол отводит «Мягкие для желудка» 72dp при
 естественных 132dp; при 343dp (375pt, iPhone SE) обрезаются ещё «Завтрак» и
 «Перекус». Три значения из девяти нечитаемы на обычных телефонах. Фильтр, чьи
 значения нельзя прочитать, сломан, а не просто некрасив.
@@ -1178,3 +1182,22 @@ totals.kcal]` и такой же массив по белку (`NutritionScreen.
 это просто акцент на второй половине составного числового предложения. Тот же
 выбор уже сделан на строке остатка `MealHero` и на мета-строке карточки приёма;
 третий способ рисовать одно и то же был бы расхождением внутри порта.
+
+## Питание: футер мастера прокручивается, а у прототипа прибит к низу
+
+**Что делает прототип:** «Сохранить · {N} ккал» лежит поверх содержимого —
+`position: 'absolute', bottom: 0` внутри `LinearGradient`
+(`LogMealScreen.tsx:344-394`), а прокрутка резервирует под него
+`paddingBottom: 130` (`:99`). Кнопка видна всегда.
+
+**Что делаем мы:** футер — последний ребёнок той же прокручиваемой колонки
+(`LogMealScreen.kt:265-271,381`), поэтому при нескольких разобранных позициях
+он уходит ниже сгиба.
+
+**Почему это записано как долг, а не как решение:** решения тут никто не
+принимал. Порт держит нужную форму на соседнем экране — у конструктора рецепта
+панель зафиксирована, а прокрутка кончается замеренным зазором
+(`RecipeBuilderScreen.kt:124-131`, `SAVE_BAR_CLEARANCE`, и тест
+`theSaveBarFitsInsideItsOwnClearance` его держит). Та же форма нужна и здесь:
+`Box` с прокруткой под фиксированной панелью и зазор в хвосте колонки. Главное
+действие экрана записи не должно требовать прокрутки, чтобы его увидеть.
