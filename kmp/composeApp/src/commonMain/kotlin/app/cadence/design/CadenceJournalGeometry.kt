@@ -91,7 +91,7 @@ internal fun heatmapWeeks(
 }
 
 /** One day's entry. [dosed] draws larger and filled: a mood beside a dose is the reading the doctor reads for. */
-internal data class MoodReading(
+data class MoodReading(
     val date: LocalDate,
     val level: MoodLevel,
     val dosed: Boolean,
