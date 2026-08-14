@@ -767,10 +767,12 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 		return objects
 	}
 
-	// The same objects, plus what a policy actually says. A migration that
-	// rewrites a policy rather than adding one leaves the count where it was and
-	// the schema genuinely changed — 000006 is the first of those — so the
-	// witness that its down file did something has to be able to see a predicate.
+	// The same objects, plus what a policy actually says, plus what the chain's
+	// roles carry as connection defaults. A migration that rewrites a policy
+	// rather than adding one leaves the count where it was — 000006 is the first
+	// of those — and one that only sets a limit on a role touches the schema not
+	// at all, which 000007 is the first of. The witness has to be able to see
+	// both, or an empty down file passes.
 	describeSchema := func() string {
 		t.Helper()
 
@@ -790,8 +792,13 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 				SELECT 'p ' || tablename || ' ' || policyname || ' ' || cmd || ' ' ||
 				       coalesce(qual, '-') || ' | ' || coalesce(with_check, '-')
 				FROM pg_policies WHERE schemaname = $1
+				UNION ALL
+				SELECT 'r ' || r.rolname || ' ' || array_to_string(s.setconfig, ',')
+				FROM pg_db_role_setting s
+				JOIN pg_roles r ON r.oid = s.setrole
+				WHERE r.rolname = ANY($2)
 			) AS objects
-		`, testsupport.AppSchema).Scan(&description); err != nil {
+		`, testsupport.AppSchema, testsupport.ChainRoles()).Scan(&description); err != nil {
 			t.Fatalf("describing the schema: %v", err)
 		}
 

@@ -59,11 +59,13 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// A second pool, not a second statement. The boundary between the request
-	// path and the service path runs along session_user: the roles they connect
-	// as can assume different things, so a bug on one cannot reach the other's
-	// grants even inside the same process.
-	servicePool, err := database.NewPool(connectCtx, cfg.Database.ServiceURL)
+	// A second pool, not a second statement, and its own constructor rather than
+	// NewPool with another URL. The boundary between the request path and the
+	// service path runs along session_user: the roles they connect as can assume
+	// different things, so a bug on one cannot reach the other's grants even
+	// inside the same process. What NewServicePool adds on top of that is the two
+	// time limits and a connection count somebody chose.
+	servicePool, err := database.NewServicePool(connectCtx, cfg.Database.ServiceURL)
 	if err != nil {
 		return fmt.Errorf("connecting to database on the service path: %w", err)
 	}

@@ -48,6 +48,7 @@ func exportedSurface() []string {
 		"MigrateDown(string, string, int) error",
 		"MigrateForce(string, string, int) error",
 		"NewPool(context.Context, string) (*pgxpool.Pool, error)",
+		"NewServicePool(context.Context, string) (*pgxpool.Pool, error)",
 		"RunMigrations(string, string) error",
 		"VerifyPools(context.Context, *pgxpool.Pool, *pgxpool.Pool) error",
 		"WithCaller(context.Context, *pgxpool.Pool, Caller, func(context.Context, pgx.Tx) error) error",
