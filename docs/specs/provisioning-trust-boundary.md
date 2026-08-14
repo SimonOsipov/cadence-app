@@ -8,12 +8,11 @@ todoist_parent: "6h9JPwH5pfVwVmrq"
 components: [provisioner, api, data-layer, identity, audit]
 proposal: "[[20-Projects/cadence/architecture/proposals/invites-and-onboarding|architecture/proposals/invites-and-onboarding]]"
 ---
-
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/provisioning-trust-boundary.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
 # The provisioning trust boundary: the admin key leaves the API
 
-## Summary
+## Описание
 
 The first of the two onboarding blocks. It creates no patients at all — it builds
 the boundary inside which creating them is safe, and closes three escalation paths
@@ -79,7 +78,7 @@ the decision about `POST /recover`. mTLS between the API and `provisioner` — a
 deliberate omission for the pilot. A full rewrite of `architecture/overview.md`,
 made stale by ADR-008.
 
-## What already exists (DONE)
+## Что уже реализовано (DONE)
 
 From the identity block: seven roles, two seams, `app.jwt_subject()`, six tables,
 six policy shapes, three registries over the `app` schema, the separation of `auth`
@@ -112,7 +111,7 @@ registration disabled.
 - The `auth` schema is today owned by the container's superuser — by accident of
   configuration, not by rule.
 
-## Technical detail
+## Технические детали
 
 ### The `provisioner` component
 
@@ -202,7 +201,7 @@ default against forgetfulness, not a barrier, and that is written down.
 The service pool gets its own constructor with an explicit `MaxConns` — today
 `postgres.go` sets neither it, nor a connection timeout, nor an execution mode.
 
-## Architecture decision
+## Архитектурное решение
 
 Whoever holds the GoTrue admin key can reset any user's password and obtain a
 session token by legitimate means — verified with a chain of three calls. The
@@ -221,7 +220,7 @@ process ignores the restriction. The full account of the three measurement round
 is in the
 [[20-Projects/cadence/architecture/proposals/invites-and-onboarding|proposal]].
 
-## Component deltas
+## Дельты компонентов
 
 ### overview.md
 - ADDED: a fifth deployed component, `provisioner` — the sole holder of the GoTrue admin key. It is absent from the partner's document: there that role was played by the key issued by Supabase
@@ -278,6 +277,31 @@ green for a different reason and moves onto the new refusal;
 `config_test.go` — `clearEnv` and `setRequired` gain the new variable, and
 `TestLoadRejectsBadInput` gains a case for it.
 todoist: "6h9JQ33h8JVfHrGq"
+
+> [!deviation] 2026-08-13
+> Spec said: one new configuration variable — the permitted session `kid` list.
+> Actually done: **two**, `AUTH_JWT_SESSION_KIDS` and `AUTH_JWT_ADMIN_KID`, with
+> three rejection cases in `TestLoadRejectsBadInput` rather than one. Why: the
+> non-intersection check has nothing to compare against without a concrete admin
+> `kid`, and the API cannot derive one. It never sees `GOTRUE_JWT_KEYS`, and the
+> JWKS cannot supply it — measured on the pinned image, GoTrue rewrites
+> `key_ops` to `["verify"]` on **both** published keys, so the signing marker is
+> invisible from outside. A value fetched over the network could not gate
+> startup in any case: `config.Load` does no I/O. That same probe is what shows
+> the check is load-bearing rather than decorative — both `kid`s are genuinely
+> published, so without it an admin-signed token would resolve against a real
+> public key.
+
+> [!deviation] 2026-08-13
+> Spec said: the edits to existing tests are a closed list of five. Actually
+> done: two more — `TestVerifyRateLimitsUnknownKeyIDRefresh` and
+> `TestRateLimitedUnknownKeyIDIsStillTheCallersProblem` had their junk `kid`s
+> added to the permitted list. Why: both exist to exercise the key resolver's
+> rate limiting, and the new check sits **before** resolution, so without
+> pre-permitting they would have gone green without ever reaching the path they
+> are named for — passing for the wrong reason. Confirmed by mutation that each
+> still reaches it: forcing the limiter to `rate.Inf` reddens the first, and
+> forcing `classifyKeyFailure` down the outage branch reddens the second.
 
 ### step-2: Contract tests for GoTrue behaviours
 
@@ -351,18 +375,30 @@ grep rule forbids mentioning the admin key's variable in `api/cmd/api` and
 `api/internal/**`.
 todoist: "6h9JQ3pfvMFFQ8Xq"
 
-## Open questions
+## Открытые вопросы
 
 > [!question] The choreography of shared-secret rotation: two current values
 > overlapping — the shape is accepted, but the replacement order (who goes first,
 > how long both are held) is not chosen. Decided at step 5; affects only a RUNBOOK
 > that does not yet exist.
 
-> [!question] Where `provisioner` lives in the repository: `cmd/provisioner` inside
-> the `api` module, or its own module. The first is simpler and shares the platform
-> wiring; the second is more honest about the boundary — a component that must not
-> be able to reach the database will not compile against `pgx`. Decided at step 5; I
-> lean toward the second precisely because of the dependency graph.
+> [!decision] 2026-08-14. `provisioner` lives at **`cmd/provisioner` inside the
+> `api` module** — as step-5's own text already said, and against the lean recorded
+> below it, which is kept for the record. The two places contradicted each other and
+> would have left the module boundary to be settled by whoever wrote the code first.
+>
+> What is given up: the compiler stops being the thing that proves the component
+> cannot reach the database. What holds the boundary instead is step-6's grep rule
+> (`api/cmd/api` and `api/internal/**` may not mention the admin key's variable) plus
+> the absence of any `pgx` import under `cmd/provisioner` — both checked by the gate,
+> neither by the type system. If the boundary is ever broken in review, the answer is
+> to lift `provisioner` into its own module, not to add a third guard.
+>
+> ~~Where `provisioner` lives in the repository: `cmd/provisioner` inside the `api`
+> module, or its own module. The first is simpler and shares the platform wiring; the
+> second is more honest about the boundary — a component that must not be able to
+> reach the database will not compile against `pgx`. I lean toward the second
+> precisely because of the dependency graph.~~
 
 > [!question] The `USERSET` time limits are called a default rather than a barrier.
 > Whether to additionally forbid lifting them — say, with a separate role lacking

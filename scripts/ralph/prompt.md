@@ -26,7 +26,8 @@ that fork this project from the partner's original documents.
    story title.
 5. Implement that **one** story with TDD. Keep the change minimal.
 6. Run the full quality gate below. Never commit a red gate.
-7. On green, commit the story's changes as `<type>: [story id] - [title]`, where
+7. On green, and **before committing**, run the independent review below.
+8. On a resolved review, commit the story's changes as `<type>: [story id] - [title]`, where
    `<type>` is the conventional-commit type that actually fits the story —
    `feat`, `fix`, `refactor`, `docs`, `chore` or `test`, not `feat` for
    everything. English, and no mention of AI or Claude anywhere in the message.
@@ -34,15 +35,37 @@ that fork this project from the partner's original documents.
    `progress.txt`, `.last-branch`, `archive/` — is untracked and stays that way;
    never force-add it. Step 8 edits `prd.json` in place, which works fine on an
    untracked file.
-8. Set `passes: true` for that story in `prd.json`.
-9. Append to `progress.txt`; never overwrite it.
-10. Write-backs, only if the MCP tools are available — otherwise note them in
+9. Set `passes: true` for that story in `prd.json`.
+10. Append to `progress.txt`; never overwrite it.
+11. Write-backs, only if the MCP tools are available — otherwise note them in
     `progress.txt` for a human to sync:
     - story has a `todoistId` → `mcp__todoist__complete-tasks([todoistId])`
     - the implementation diverged from the spec step → append a `[!deviation]`
       callout to that step (date, what the spec said, what was done, why)
 
 When every story has `passes: true`, print `<promise>COMPLETE</promise>`.
+
+## Independent review (after the gate, before the commit)
+
+Once the full gate is green, and BEFORE committing, spawn the
+`implementation-reviewer` subagent (Agent tool,
+`subagent_type: "implementation-reviewer"`). Pass it: `git diff HEAD` as the diff
+range plus the changed-file list, the story's `specAnchor` step text (its
+authoritative definition), the component notes the story touches, and the project
+root. It judges only — it never edits.
+
+- `VERDICT: PASS` → commit. Record any minor/nit findings in `progress.txt`.
+- `critical` / `major` → fix, re-run the gate, re-review. **Max 2 rounds.**
+- Still not PASS after 2 rounds → do NOT commit the story as done and do NOT set
+  `passes: true`. Append the outstanding findings to `progress.txt` and move on;
+  the story stays open for a human.
+- Reviewer itself fails (unavailable / no `VERDICT:` line) → retry once, then
+  **fail open**: the gate did pass, so commit and set `passes: true`, but write
+  `review-unavailable` prominently in `progress.txt` so a human checks this step
+  before merge.
+
+Reviewing your own work inline does not satisfy this — the value is a context that
+did not write the code.
 
 ## TDD is required
 
