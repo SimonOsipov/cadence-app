@@ -11,10 +11,10 @@ import (
 // compiling against a JWKS client and a JWT library. Eleven contexts were about
 // to inherit that.
 //
-// It is not cosmetic. ADR-006 counts the replaceability of the identity provider
-// as part of the bounded cost of a migration — "replacing it with our own token
-// issuance is one implementation, not a sweeping edit" — and that is only true
-// while the contexts import auth and nothing else.
+// It is not cosmetic. ADR-006 costed a provider migration on the promise that
+// "replacing GoTrue with our own token issuance is one implementation, not a
+// sweeping edit"; ADR-008 spent that migration and found the promise kept, with
+// this import direction named as its one caveat.
 //
 // Asserted as a test rather than checked once by hand, because the failure is
 // silent: a single import somewhere puts the dependency back and nothing else

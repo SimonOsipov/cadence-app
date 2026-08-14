@@ -436,11 +436,9 @@ func TestApplicationSchemaIsOwnedByTheOwnerRole(t *testing.T) {
 	}
 }
 
-// The chain has to survive without superuser, because it will never have one:
-// on Supabase the role that applies migrations is `postgres`, which has
-// CREATEROLE and CREATEDB and is not a superuser. Asserted rather than assumed
-// so that a future change to the harness cannot quietly hand the chain rights
-// the deployment does not have.
+// The chain has to survive without superuser, because it will never have one —
+// see bootstrapRole. Asserted rather than assumed so that a future change to the
+// harness cannot quietly hand the chain rights the deployment does not have.
 func TestChainAppliesWithoutSuperuser(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.MigrationURL)
@@ -454,7 +452,7 @@ func TestChainAppliesWithoutSuperuser(t *testing.T) {
 	}
 
 	if super {
-		t.Fatal("the chain was applied by a superuser, so it proves nothing about Supabase")
+		t.Fatal("the chain was applied by a superuser, so it proves nothing about the deployment")
 	}
 }
 
