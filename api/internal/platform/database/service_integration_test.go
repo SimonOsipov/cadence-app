@@ -17,6 +17,11 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
+// testProbe stands in for the reminder sweep and the invitation mailer: a path
+// with no human behind it, which is the constructor most of the assertions here
+// reach for because what they are about is the transaction rather than the actor.
+const testProbe = "test.probe"
+
 // servicePool opens the pool the system jobs write through: a second connection
 // as a second role, which is what makes the barrier between the paths something
 // the server enforces rather than something the code remembers.
@@ -32,17 +37,6 @@ func servicePool(t *testing.T, db *testsupport.Database) *pgxpool.Pool {
 	return pool
 }
 
-func testJob(t *testing.T) database.Actor {
-	t.Helper()
-
-	actor, err := database.ActingAsJob("test.probe")
-	if err != nil {
-		t.Fatalf("building the actor: %v", err)
-	}
-
-	return actor
-}
-
 // TestWithServiceImpersonates is the service seam's reason to exist: the writes
 // no policy lets a request make run as cadence_service, from a connection the
 // request path cannot reach.
@@ -51,7 +45,7 @@ func TestWithServiceImpersonates(t *testing.T) {
 	pool := servicePool(t, db)
 
 	var current, session string
-	err := database.WithService(t.Context(), pool, testJob(t), func(ctx context.Context, tx pgx.Tx) error {
+	err := database.WithServiceJob(t.Context(), pool, testProbe, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, "SELECT current_user, session_user").Scan(&current, &session)
 	})
 	if err != nil {
@@ -112,15 +106,15 @@ func TestWithServiceCarriesNoCallerClaims(t *testing.T) {
 	}
 
 	var claims *string
-	if err := database.WithService(
-		ctx, pool, testJob(t),
+	if err := database.WithServiceJob(
+		ctx, pool, testProbe,
 		func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(
 				ctx, `SELECT nullif(current_setting('request.jwt.claims', true), '')`,
 			).Scan(&claims)
 		},
 	); err != nil {
-		t.Fatalf("WithService: %v", err)
+		t.Fatalf("WithServiceJob: %v", err)
 	}
 
 	if claims != nil {
@@ -134,45 +128,63 @@ func TestWithServiceCarriesNoCallerClaims(t *testing.T) {
 // actors for one action — and the seam is where that becomes impossible rather
 // than merely required.
 func TestWithServicePublishesExactlyOneActor(t *testing.T) {
+	const person = "8a1f3b7c-0000-4000-8000-000000000001"
+
 	db := cluster.NewDatabase(t)
 	pool := servicePool(t, db)
 
-	user, err := database.ActingAsUser("8a1f3b7c-0000-4000-8000-000000000001")
-	if err != nil {
-		t.Fatalf("building the user actor: %v", err)
+	// One entry point per kind of actor, which is the shape the property now
+	// rests on: there is no value either of them could be handed that would
+	// publish the other's setting.
+	read := func(ctx context.Context, tx pgx.Tx, id, job *string) error {
+		// coalesce, because an unpublished setting reads as NULL rather than as
+		// the empty string — and NULL is exactly what the audit_log constraint
+		// wants to see in the other column.
+		return tx.QueryRow(ctx, `
+			SELECT coalesce(current_setting('app.actor_id', true), ''),
+			       coalesce(current_setting('app.actor_job', true), '')
+		`).Scan(id, job)
 	}
 
-	for name, actor := range map[string]struct {
-		actor   database.Actor
+	for name, run := range map[string]struct {
+		open    func(*testing.T, *string, *string) error
 		wantID  string
 		wantJob string
 	}{
-		"a person": {actor: user, wantID: "8a1f3b7c-0000-4000-8000-000000000001"},
-		"a job":    {actor: testJob(t), wantJob: "test.probe"},
+		"a person": {
+			open: func(t *testing.T, id, job *string) error {
+				t.Helper()
+
+				return database.WithService(
+					requestOf(t, person), pool,
+					func(ctx context.Context, tx pgx.Tx) error { return read(ctx, tx, id, job) },
+				)
+			},
+			wantID: person,
+		},
+		"a job": {
+			open: func(t *testing.T, id, job *string) error {
+				t.Helper()
+
+				return database.WithServiceJob(
+					t.Context(), pool, testProbe,
+					func(ctx context.Context, tx pgx.Tx) error { return read(ctx, tx, id, job) },
+				)
+			},
+			wantJob: testProbe,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var id, job string
-			if err := database.WithService(
-				t.Context(), pool, actor.actor,
-				func(ctx context.Context, tx pgx.Tx) error {
-					// coalesce, because an unpublished setting reads as NULL
-					// rather than as the empty string — and NULL is exactly
-					// what the audit_log constraint wants to see in the other
-					// column.
-					return tx.QueryRow(ctx, `
-						SELECT coalesce(current_setting('app.actor_id', true), ''),
-						       coalesce(current_setting('app.actor_job', true), '')
-					`).Scan(&id, &job)
-				},
-			); err != nil {
-				t.Fatalf("WithService: %v", err)
+			if err := run.open(t, &id, &job); err != nil {
+				t.Fatalf("opening the service seam: %v", err)
 			}
 
-			if id != actor.wantID {
-				t.Errorf("app.actor_id = %q, want %q", id, actor.wantID)
+			if id != run.wantID {
+				t.Errorf("app.actor_id = %q, want %q", id, run.wantID)
 			}
-			if job != actor.wantJob {
-				t.Errorf("app.actor_job = %q, want %q", job, actor.wantJob)
+			if job != run.wantJob {
+				t.Errorf("app.actor_job = %q, want %q", job, run.wantJob)
 			}
 		})
 	}
@@ -189,14 +201,9 @@ func TestWithServiceIsNotAnInjectionVector(t *testing.T) {
 	createAppTable(t, db, "injection_probe")
 
 	for _, name := range hostileValues() {
-		actor, err := database.ActingAsJob(name)
-		if err != nil {
-			t.Fatalf("building the actor for %q: %v", name, err)
-		}
-
 		var readBack, current string
-		if err := database.WithService(
-			t.Context(), pool, actor,
+		if err := database.WithServiceJob(
+			t.Context(), pool, name,
 			func(ctx context.Context, tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `
 					SELECT current_setting('app.actor_job', true), current_user
@@ -231,58 +238,55 @@ func TestWithServiceIsNotAnInjectionVector(t *testing.T) {
 	}
 }
 
-// An actor is not optional, and the zero value is not one. Every service write
-// is audited, and an audit row nobody signed answers "who changed this" with
+// An actor is not optional, and a blank name is not one. Every service write is
+// audited, and an audit row nobody signed answers "who changed this" with
 // silence.
+//
+// The person-shaped half of this — no principal, a malformed subject — moved to
+// TestWithServiceRefusesARequestWithNoVerifiedCaller when the subject stopped
+// being an argument. What is left here is the job name, the one thing about an
+// actor a caller still supplies.
 func TestWithServiceRefusesAnActorNobodyChose(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	pool := servicePool(t, db)
 
-	before := pool.Stat().AcquireCount()
-
-	err := database.WithService(
-		t.Context(), pool, database.Actor{}, func(context.Context, pgx.Tx) error {
-			t.Error("the closure ran for a transaction with no actor")
-
-			return nil
-		},
-	)
-	if !errors.Is(err, database.ErrNoActor) {
-		t.Fatalf("WithService = %v, want ErrNoActor", err)
-	}
-
-	if after := pool.Stat().AcquireCount(); after != before {
-		t.Errorf("the pool was acquired %d time(s) for a transaction with no actor", after-before)
-	}
-
-	if _, err := database.ActingAsUser(""); !errors.Is(err, database.ErrNoActor) {
-		t.Errorf("ActingAsUser with an empty subject = %v, want ErrNoActor", err)
-	}
-	if _, err := database.ActingAsJob(""); !errors.Is(err, database.ErrNoActor) {
-		t.Errorf("ActingAsJob with an empty name = %v, want ErrNoActor", err)
-	}
-	if _, err := database.ActingAsUser("not-a-uuid"); !errors.Is(err, database.ErrInvalidSubject) {
-		t.Errorf("ActingAsUser with a non-UUID = %v, want ErrInvalidSubject", err)
-	}
-
-	// Whitespace is not a job name. It passes the database's constraint —
+	// Whitespace is not a job name either. It passes the database's constraint —
 	// coalesce(actor_job,'x') <> '' is true for a space — and it is the audit
 	// log's grouping key, where " sweep" beside "sweep" is two jobs in every
 	// report anybody runs.
-	if _, err := database.ActingAsJob("   "); !errors.Is(err, database.ErrNoActor) {
-		t.Errorf("ActingAsJob with only whitespace = %v, want ErrNoActor", err)
+	for _, blank := range []string{"", "   ", "\t\n"} {
+		before := pool.Stat().AcquireCount()
+
+		err := database.WithServiceJob(
+			t.Context(), pool, blank, func(context.Context, pgx.Tx) error {
+				t.Errorf("the closure ran for the job name %q", blank)
+
+				return nil
+			},
+		)
+		if !errors.Is(err, database.ErrNoActor) {
+			t.Errorf("WithServiceJob with the name %q = %v, want ErrNoActor", blank, err)
+		}
+
+		if after := pool.Stat().AcquireCount(); after != before {
+			t.Errorf("the pool was acquired %d time(s) for the job name %q", after-before, blank)
+		}
 	}
 
-	padded, err := database.ActingAsJob("  reminder-sweep  ")
-	if err != nil {
-		t.Fatalf("ActingAsJob with padding: %v", err)
+	// Padding is not a second job. The name is trimmed on the way in, and the
+	// witness is the value the transaction actually publishes rather than two
+	// values compared to each other.
+	var published string
+	if err := database.WithServiceJob(
+		t.Context(), pool, "  reminder-sweep  ",
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT current_setting('app.actor_job', true)`).Scan(&published)
+		},
+	); err != nil {
+		t.Fatalf("WithServiceJob with a padded name: %v", err)
 	}
-	trimmed, err := database.ActingAsJob("reminder-sweep")
-	if err != nil {
-		t.Fatalf("ActingAsJob: %v", err)
-	}
-	if padded != trimmed {
-		t.Error("a padded job name is a different actor from the same name trimmed")
+	if published != "reminder-sweep" {
+		t.Errorf("a padded job name was published as %q", published)
 	}
 }
 
@@ -298,11 +302,10 @@ func TestSeamsRefuseToNestInEitherOrder(t *testing.T) {
 	t.Cleanup(request.Close)
 
 	service := servicePool(t, db)
-	actor := testJob(t)
 
 	t.Run("service inside caller", func(t *testing.T) {
 		err := database.WithCaller(t.Context(), request, testCaller(), func(ctx context.Context, _ pgx.Tx) error {
-			return database.WithService(ctx, service, actor, func(context.Context, pgx.Tx) error {
+			return database.WithServiceJob(ctx, service, testProbe, func(context.Context, pgx.Tx) error {
 				t.Error("the nested closure ran")
 
 				return nil
@@ -314,7 +317,7 @@ func TestSeamsRefuseToNestInEitherOrder(t *testing.T) {
 	})
 
 	t.Run("caller inside service", func(t *testing.T) {
-		err := database.WithService(t.Context(), service, actor, func(ctx context.Context, _ pgx.Tx) error {
+		err := database.WithServiceJob(t.Context(), service, testProbe, func(ctx context.Context, _ pgx.Tx) error {
 			return database.WithCaller(ctx, request, testCaller(), func(context.Context, pgx.Tx) error {
 				t.Error("the nested closure ran")
 
@@ -348,8 +351,8 @@ func TestWithServiceCommitsAndRollsBack(t *testing.T) {
 	createAppTable(t, db, "service_write_probe")
 
 	sentinel := errors.New("the closure refused")
-	if err := database.WithService(
-		t.Context(), pool, testJob(t),
+	if err := database.WithServiceJob(
+		t.Context(), pool, testProbe,
 		func(ctx context.Context, tx pgx.Tx) error {
 			if _, err := tx.Exec(ctx, "INSERT INTO app.service_write_probe (note) VALUES ('a')"); err != nil {
 				return err
@@ -361,8 +364,8 @@ func TestWithServiceCommitsAndRollsBack(t *testing.T) {
 		t.Fatalf("WithService = %v, want it to wrap the closure's error", err)
 	}
 
-	if err := database.WithService(
-		t.Context(), pool, testJob(t),
+	if err := database.WithServiceJob(
+		t.Context(), pool, testProbe,
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, "INSERT INTO app.service_write_probe (note) VALUES ('b')")
 
@@ -373,8 +376,8 @@ func TestWithServiceCommitsAndRollsBack(t *testing.T) {
 	}
 
 	var rows int
-	if err := database.WithService(
-		t.Context(), pool, testJob(t),
+	if err := database.WithServiceJob(
+		t.Context(), pool, testProbe,
 		func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx, "SELECT count(*) FROM app.service_write_probe").Scan(&rows)
 		},
@@ -495,7 +498,7 @@ func TestThePackageIssuesNoSettingThatOutlivesItsTransaction(t *testing.T) {
 }
 
 // audit_log wants exactly one of actor_id and actor_job, and "exactly one" is a
-// property of the transaction rather than of the Actor value. A leftover on the
+// property of the transaction rather than of the actor value. A leftover on the
 // connection makes it two, at the moment the row is written — so the seam clears
 // the setting it is not publishing, and this is the witness.
 //
@@ -524,18 +527,16 @@ func TestWithServiceClearsTheActorSettingItDoesNotPublish(t *testing.T) {
 		t.Fatalf("dirtying the connection: %v", err)
 	}
 
-	user, err := database.ActingAsUser("8a1f3b7c-0000-4000-8000-000000000001")
-	if err != nil {
-		t.Fatalf("building the user actor: %v", err)
-	}
-
 	var id, job string
-	if err := database.WithService(ctx, pool, user, func(ctx context.Context, tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
-			SELECT coalesce(nullif(current_setting('app.actor_id', true), ''), ''),
-			       coalesce(nullif(current_setting('app.actor_job', true), ''), '')
-		`).Scan(&id, &job)
-	}); err != nil {
+	if err := database.WithService(
+		requestOf(t, "8a1f3b7c-0000-4000-8000-000000000001"), pool,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT coalesce(nullif(current_setting('app.actor_id', true), ''), ''),
+				       coalesce(nullif(current_setting('app.actor_job', true), ''), '')
+			`).Scan(&id, &job)
+		},
+	); err != nil {
 		t.Fatalf("WithService: %v", err)
 	}
 

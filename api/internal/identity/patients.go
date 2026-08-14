@@ -107,14 +107,17 @@ type NewPatient struct {
 // There is no HTTP endpoint. Sending the invitation belongs to the same action
 // and does not exist yet, and half of an action behind a URL is worse than none
 // of it: openapi.json is committed and generates two client surfaces.
-func CreatePatient(
-	ctx context.Context, pool *pgxpool.Pool, actor database.Actor, patient NewPatient,
-) error {
+//
+// Who the patient is created *by* is not a parameter. It is the caller the
+// request was verified as, read off the context by the seam — so this function
+// has no way of signing the audit row with somebody else's name, and neither has
+// whatever eventually calls it.
+func CreatePatient(ctx context.Context, pool *pgxpool.Pool, patient NewPatient) error {
 	if err := check(patient); err != nil {
 		return fmt.Errorf("creating patient %s: %w", patient.UserID, err)
 	}
 
-	err := database.WithService(ctx, pool, actor, func(ctx context.Context, tx pgx.Tx) error {
+	err := database.WithService(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
 		if err := requireKnownTimezone(ctx, tx, patient.Timezone); err != nil {
 			return err
 		}

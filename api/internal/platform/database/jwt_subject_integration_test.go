@@ -174,13 +174,13 @@ func TestJWTSubjectIsNullInsideTheServiceSeam(t *testing.T) {
 	}
 
 	var subject *string
-	if err := database.WithService(
-		ctx, pool, testJob(t),
+	if err := database.WithServiceJob(
+		ctx, pool, testProbe,
 		func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx, "SELECT app.jwt_subject()::text").Scan(&subject)
 		},
 	); err != nil {
-		t.Fatalf("WithService: %v", err)
+		t.Fatalf("WithServiceJob: %v", err)
 	}
 
 	if subject != nil {

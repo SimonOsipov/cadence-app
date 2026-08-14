@@ -43,13 +43,12 @@ const (
 type clinic struct {
 	service *pgxpool.Pool
 	request *pgxpool.Pool
-	actor   database.Actor
 }
 
 func newClinic(t *testing.T) clinic {
 	t.Helper()
 
-	service, db, actor := stand(t)
+	service, db := stand(t)
 
 	request, err := database.NewPool(t.Context(), db.AppURL)
 	if err != nil {
@@ -57,8 +56,8 @@ func newClinic(t *testing.T) clinic {
 	}
 	t.Cleanup(request.Close)
 
-	if err := database.WithService(
-		t.Context(), service, actor,
+	if err := database.WithServiceJob(
+		t.Context(), service, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO app.profiles (user_id, role, full_name, timezone)
@@ -89,7 +88,7 @@ func newClinic(t *testing.T) clinic {
 	}
 
 	first := newPatient()
-	if err := identity.CreatePatient(t.Context(), service, actor, first); err != nil {
+	if err := identity.CreatePatient(asTheDoctor(t), service, first); err != nil {
 		t.Fatalf("creating the first patient: %v", err)
 	}
 
@@ -99,11 +98,11 @@ func newClinic(t *testing.T) clinic {
 	second.Specialists = []identity.Assignment{
 		{ProviderID: otherDoctorID, CareRole: "endo", Primary: true},
 	}
-	if err := identity.CreatePatient(t.Context(), service, actor, second); err != nil {
+	if err := identity.CreatePatient(asTheDoctor(t), service, second); err != nil {
 		t.Fatalf("creating the second patient: %v", err)
 	}
 
-	return clinic{service: service, request: request, actor: actor}
+	return clinic{service: service, request: request}
 }
 
 // as runs fn as one caller through the request seam — the way every request
@@ -273,8 +272,8 @@ func TestVisibilityFollowsTheCareTeamInBothDirections(t *testing.T) {
 		t.Fatal("a doctor sees a patient nobody assigned to them")
 	}
 
-	if err := database.WithService(
-		ctx, c.service, c.actor,
+	if err := database.WithServiceJob(
+		ctx, c.service, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
 				INSERT INTO app.care_team_assignments (patient_id, provider_id, care_role)
@@ -291,8 +290,8 @@ func TestVisibilityFollowsTheCareTeamInBothDirections(t *testing.T) {
 		t.Error("adding an assignment did not grant visibility")
 	}
 
-	if err := database.WithService(
-		ctx, c.service, c.actor,
+	if err := database.WithServiceJob(
+		ctx, c.service, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
 				DELETE FROM app.care_team_assignments

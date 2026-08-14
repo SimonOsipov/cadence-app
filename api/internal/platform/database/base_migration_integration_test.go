@@ -767,6 +767,37 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 		return objects
 	}
 
+	// The same objects, plus what a policy actually says. A migration that
+	// rewrites a policy rather than adding one leaves the count where it was and
+	// the schema genuinely changed — 000006 is the first of those — so the
+	// witness that its down file did something has to be able to see a predicate.
+	describeSchema := func() string {
+		t.Helper()
+
+		var description string
+		if err := admin.QueryRow(ctx, `
+			SELECT coalesce(string_agg(line, E'\n' ORDER BY line), '') FROM (
+				SELECT c.relkind::text || ' ' || c.relname AS line
+				FROM pg_class c
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+				UNION ALL
+				SELECT 'f ' || p.proname || ' ' || pg_get_functiondef(p.oid)
+				FROM pg_proc p
+				JOIN pg_namespace n ON n.oid = p.pronamespace
+				WHERE n.nspname = $1
+				UNION ALL
+				SELECT 'p ' || tablename || ' ' || policyname || ' ' || cmd || ' ' ||
+				       coalesce(qual, '-') || ' | ' || coalesce(with_check, '-')
+				FROM pg_policies WHERE schemaname = $1
+			) AS objects
+		`, testsupport.AppSchema).Scan(&description); err != nil {
+			t.Fatalf("describing the schema: %v", err)
+		}
+
+		return description
+	}
+
 	before := appliedVersion()
 	if before == nil || *before < 2 {
 		t.Fatal("the chain is one migration long, so stepping through it says nothing")
@@ -775,6 +806,7 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 	if objectsBefore == 0 {
 		t.Fatal("the schema holds nothing, so a rollback has nothing to be seen undoing")
 	}
+	describedBefore := describeSchema()
 
 	if err := database.MigrateDown(db.MigrationURL, path, 1); err != nil {
 		t.Fatalf("rolling back one step: %v", err)
@@ -792,12 +824,20 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 
 	// And the file it ran actually did something. golang-migrate decrements the
 	// version whether or not the SQL inside the down file changed anything, so
-	// without an object-level witness an empty down migration passes — and the
+	// without a schema-level witness an empty down migration passes — and the
 	// whole-chain assertions below cannot supply one, because the base migration
 	// drops the schema CASCADE and sweeps up whatever was left behind.
-	if objectsAfter := countObjects(); objectsAfter >= objectsBefore {
+	//
+	// The witness is the description rather than the count, because a migration
+	// whose whole content is a rewritten policy leaves the count untouched while
+	// changing the schema. The count is still checked in the one direction it
+	// still means something: rolling back does not add.
+	if describeSchema() == describedBefore {
+		t.Error("the schema is unchanged by the rollback; the migration's down file did nothing")
+	}
+	if objectsAfter := countObjects(); objectsAfter > objectsBefore {
 		t.Errorf("the schema held %d objects before the rollback and %d after; the migration's "+
-			"down file removed nothing", objectsBefore, objectsAfter)
+			"down file added to it", objectsBefore, objectsAfter)
 	}
 
 	// It took the base arrangement nothing, though: the operator undoing the last
