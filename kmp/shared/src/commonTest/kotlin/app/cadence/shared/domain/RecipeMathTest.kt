@@ -2,6 +2,7 @@ package app.cadence.shared.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -109,6 +110,55 @@ class RecipeMathTest {
         val perServing = bowl.perServing(listOf(tie))
 
         assertEquals(MacrosTenths(826, 156, 101, 46), perServing)
+    }
+
+    // ── totalsOf / perServingOf (rows without a Recipe) ────────────────
+
+    /**
+     * Two rows with different grams *and* different per-100g macros: a single row, or two
+     * rows sharing either number, would let a fold that reads `rows[0]` twice pass.
+     */
+    @Test
+    fun totalsOfSumsLooseRowsTheSameWayARecipeDoes() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+        val rice = ingredient("rice", kcalTenths = 1230, proteinGTenths = 27)
+        val rows = listOf(RecipeIngredient(chicken.id, 300), RecipeIngredient(rice.id, 200))
+
+        assertEquals(MacrosTenths(7410, 984, 0, 0), rows.totalsOf(listOf(chicken, rice)))
+    }
+
+    /** Servings 3, not 2: a halving is also what a stray `/ 2` produces. */
+    @Test
+    fun perServingOfDividesLooseRowsByServings() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+        val rows = listOf(RecipeIngredient(chicken.id, 300))
+
+        assertEquals(MacrosTenths(1650, 310, 0, 0), rows.perServingOf(listOf(chicken), servings = 3))
+    }
+
+    @Test
+    fun aRecipesOwnPerServingAgreesWithItsRows() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+        val rice = ingredient("rice", kcalTenths = 1230, proteinGTenths = 27)
+        val table = listOf(chicken, rice)
+        val bowl =
+            recipe(
+                "bowl",
+                servings = 4,
+                ingredients = listOf(RecipeIngredient(chicken.id, 250), RecipeIngredient(rice.id, 180)),
+            )
+
+        assertEquals(bowl.perServing(table), bowl.ingredients.perServingOf(table, bowl.servings))
+        assertEquals(bowl.totals(table), bowl.ingredients.totalsOf(table))
+    }
+
+    @Test
+    fun perServingOfRefusesZeroServings() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+
+        assertFailsWith<IllegalArgumentException> {
+            listOf(RecipeIngredient(chicken.id, 100)).perServingOf(listOf(chicken), servings = 0)
+        }
     }
 
     // ── totalTimeMin ───────────────────────────────────────────────────
