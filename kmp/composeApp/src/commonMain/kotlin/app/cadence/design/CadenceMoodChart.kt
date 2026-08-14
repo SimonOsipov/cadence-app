@@ -41,18 +41,12 @@ const val CADENCE_MOOD_CHART_TAG = "cadence-mood-chart"
 fun cadenceMoodMarkTag(date: LocalDate): String = "cadence-mood-mark-$date"
 
 private val CHART_HEIGHT = 132.dp
-private val LINE_STROKE = 2.dp
+private val LINE_STROKE = 2.5.dp
 private val GRID_STROKE = 1.dp
-private val DOT_STROKE = 1.5.dp
-private val MARK_CAP_RADIUS = 2.5.dp
-private val MARK_WIDTH = 1.dp
+private val DOT_STROKE = 2.dp
+private val MARK_WIDTH = 1.5.dp
 
-private val TITRATION_DASH_ON = 3.dp
-private val TODAY_DASH_ON = 2.dp
 private val DASH_OFF = 3.dp
-
-/** Today is the fainter of the two hairlines — the prototype's own 0.6. */
-private const val TODAY_ALPHA = 0.6f
 
 /** The four the prototype labels — «нед 1 / нед 4 / нед 8 / нед 12» (`JournalScreen.tsx:104`). */
 private val LABELLED_WEEKS = listOf(1, 4, 8, 12)
@@ -85,8 +79,8 @@ fun CadenceMoodChart(
         Canvas(Modifier.fillMaxSize()) {
             drawFuture(course, today, inset, palette.sunk)
             drawGrid(inset, palette.hairline)
-            drawTitrations(titrations, course, inset)
-            drawToday(today, course, inset)
+            drawMarks(titrations, MoodMarkKind.TITRATION, course, inset)
+            drawMarks(listOf(today), MoodMarkKind.TODAY, course, inset)
             drawMoodLine(readings, course, inset, palette)
         }
 
@@ -183,53 +177,29 @@ private fun DrawScope.drawGrid(
     }
 }
 
-private fun DrawScope.drawTitrations(
+private fun DrawScope.drawMarks(
     dates: List<LocalDate>,
+    kind: MoodMarkKind,
     course: TrendRange,
     inset: ChartInset,
 ) {
-    val dash = PathEffect.dashPathEffect(floatArrayOf(TITRATION_DASH_ON.toPx(), DASH_OFF.toPx()))
+    val style = moodMarkStyle(kind)
+    val dash = PathEffect.dashPathEffect(floatArrayOf(style.dashOn.toPx(), DASH_OFF.toPx()))
 
     dates.filter { it in course }.forEach { date ->
         val x = plotX(course.middleOf(date), size.width, inset)
 
-        drawMarkLine(x, inset, CadenceColors.sand500, dash)
-        // The cap is what tells a titration from today at a glance; today has none.
-        drawCircle(color = CadenceColors.sand500, radius = MARK_CAP_RADIUS.toPx(), center = Offset(x, inset.top))
+        drawLine(
+            color = style.color,
+            start = Offset(x, inset.top),
+            end = Offset(x, size.height - inset.bottom),
+            strokeWidth = MARK_WIDTH.toPx(),
+            pathEffect = dash,
+        )
+        style.cap?.let {
+            drawCircle(color = style.color, radius = it.toPx(), center = Offset(x, inset.top))
+        }
     }
-}
-
-/**
- * Today, drawn unlike a titration on purpose: the prototype gives it forest700, a
- * tighter dash and no cap (`JournalScreen.tsx:71-81`). Drawn the same, three
- * hairlines on a seeded course read as three dose changes.
- */
-private fun DrawScope.drawToday(
-    today: LocalDate,
-    course: TrendRange,
-    inset: ChartInset,
-) {
-    if (today !in course) return
-
-    val dash = PathEffect.dashPathEffect(floatArrayOf(TODAY_DASH_ON.toPx(), DASH_OFF.toPx()))
-    val x = plotX(course.middleOf(today), size.width, inset)
-
-    drawMarkLine(x, inset, CadenceColors.forest700.copy(alpha = TODAY_ALPHA), dash)
-}
-
-private fun DrawScope.drawMarkLine(
-    x: Float,
-    inset: ChartInset,
-    color: Color,
-    dash: PathEffect,
-) {
-    drawLine(
-        color = color,
-        start = Offset(x, inset.top),
-        end = Offset(x, size.height - inset.bottom),
-        strokeWidth = MARK_WIDTH.toPx(),
-        pathEffect = dash,
-    )
 }
 
 private fun DrawScope.drawMoodLine(
@@ -258,9 +228,7 @@ private fun DrawScope.drawMoodLine(
         val dot = moodDot(reading, palette)
 
         drawCircle(color = dot.fill, radius = dot.radius.toPx(), center = point)
-        dot.stroke?.let {
-            drawCircle(color = it, radius = dot.radius.toPx(), center = point, style = Stroke(DOT_STROKE.toPx()))
-        }
+        drawCircle(color = dot.stroke, radius = dot.radius.toPx(), center = point, style = Stroke(DOT_STROKE.toPx()))
     }
 }
 

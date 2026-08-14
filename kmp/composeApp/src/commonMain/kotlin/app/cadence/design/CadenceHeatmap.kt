@@ -40,8 +40,8 @@ private val TITRATION_DOT = 6.dp
 private val TITRATION_OFFSET = 2.dp
 
 /**
- * Twelve weeks of days, Monday first, one row per calendar week — see
- * [heatmapWeeks] for why there are thirteen rows and not the prototype's twelve.
+ * The course's days, Monday first, one row per calendar week — [heatmapRows] carries
+ * why the row count is counted rather than fixed at the prototype's twelve.
  *
  * Every cell is a laid-out node rather than a painted square, on
  * [CadenceScrubChart]'s precedent: painted, «the last day of the course is on the

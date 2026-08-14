@@ -1,6 +1,7 @@
 package app.cadence.design
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import app.cadence.shared.domain.MoodLevel
 import app.cadence.shared.domain.TrendRange
 import kotlinx.datetime.DatePeriod
@@ -190,10 +191,10 @@ class JournalChartsTest {
         assertEquals(palette.border, assertNotNull(heatmapBorder(DayStanding.FUTURE, palette)).color)
         assertNull(heatmapBorder(DayStanding.PAST, palette), "a past day carries no ring")
 
-        // Today's ring has to win against a filled neighbour, so it is the heavier.
-        val todayRing = assertNotNull(heatmapBorder(DayStanding.TODAY, palette)).width
-        val futureRing = assertNotNull(heatmapBorder(DayStanding.FUTURE, palette)).width
-        assertTrue(todayRing > futureRing, "today's ring is ${'$'}todayRing against the future's ${'$'}futureRing")
+        // Today's ring has to win against a filled neighbour, so it is the heavier —
+        // pinned by width and not only by direction, or 1.1dp would pass for 1.5dp.
+        assertEquals(1.5.dp, assertNotNull(heatmapBorder(DayStanding.TODAY, palette)).width)
+        assertEquals(1.dp, assertNotNull(heatmapBorder(DayStanding.FUTURE, palette)).width)
     }
 
     @Test
@@ -227,19 +228,33 @@ class JournalChartsTest {
     @Test
     fun aDosedReadingIsSolidAndAHandWrittenOneIsHollow() {
         val palette = CadenceLightPalette
-        val level = MoodLevel.GOOD
-        val tone = assertNotNull(CadenceMoodTone.of(level)).color
 
-        val dosed = moodDot(MoodReading(day(0), level, dosed = true), palette)
-        val byHand = moodDot(MoodReading(day(0), level, dosed = false), palette)
+        val dosed = moodDot(MoodReading(day(0), MoodLevel.GOOD, dosed = true), palette)
+        val byHand = moodDot(MoodReading(day(0), MoodLevel.GOOD, dosed = false), palette)
 
-        assertEquals(tone, dosed.fill)
-        assertNull(dosed.stroke, "a dose's dot is solid, so it carries no outline")
-
+        assertEquals(CadenceColors.sand500, dosed.fill, "a dose's dot is filled sand")
         assertEquals(palette.paper, byHand.fill, "a hand-written dot is hollow on the paper")
-        assertEquals(tone, byHand.stroke)
 
-        assertTrue(dosed.radius > byHand.radius, "${'$'}{dosed.radius} is not larger than ${'$'}{byHand.radius}")
+        // The same outline on both: the difference a reader catches is fill and size.
+        assertEquals(CadenceColors.forest700, dosed.stroke)
+        assertEquals(CadenceColors.forest700, byHand.stroke)
+
+        assertEquals(4.5.dp, dosed.radius)
+        assertEquals(3.2.dp, byHand.radius)
+    }
+
+    @Test
+    fun aTitrationHairlineIsNotDrawnLikeTheDayTheUserStandsOn() {
+        val titration = moodMarkStyle(MoodMarkKind.TITRATION)
+        val today = moodMarkStyle(MoodMarkKind.TODAY)
+
+        assertEquals(CadenceColors.sand500, titration.color)
+        assertEquals(3.dp, titration.dashOn)
+        assertEquals(3.dp, assertNotNull(titration.cap), "a titration is capped")
+
+        assertEquals(CadenceColors.forest700.copy(alpha = 0.6f), today.color)
+        assertEquals(2.dp, today.dashOn)
+        assertNull(today.cap, "today carries no cap — the cap is what tells the two apart")
     }
 
     @Test

@@ -162,31 +162,61 @@ internal fun moodPoints(
     }
 
 /**
- * How a reading's dot is drawn. The prototype fills a dose's dot and leaves a
- * hand-written one hollow on the paper (`JournalScreen.tsx:108-118`); size alone
- * would reduce «this mood was recorded beside a dose» to 1.5 dp.
+ * How a reading's dot is drawn (`JournalScreen.tsx:91-102`). A dose's dot is filled
+ * sand and larger; a hand-written one is hollow on the paper. Both keep the same
+ * outline, so the difference a reader has to catch is fill and size, not colour —
+ * the mood's own colour stays in the heatmap, where a cell has nothing else to say it.
  */
 internal fun moodDot(
     reading: MoodReading,
     palette: CadencePalette,
-): MoodDot {
-    val tone = CadenceMoodTone.of(reading.level)?.color ?: palette.ink
-
-    return if (reading.dosed) {
-        MoodDot(radius = DOSED_DOT_RADIUS, fill = tone, stroke = null)
+): MoodDot =
+    if (reading.dosed) {
+        MoodDot(DOSED_DOT_RADIUS, CadenceColors.sand500, CadenceColors.forest700)
     } else {
-        MoodDot(radius = DOT_RADIUS, fill = palette.paper, stroke = tone)
+        MoodDot(DOT_RADIUS, palette.paper, CadenceColors.forest700)
     }
-}
 
 internal data class MoodDot(
     val radius: Dp,
     val fill: Color,
-    val stroke: Color?,
+    val stroke: Color,
 )
 
-private val DOT_RADIUS = 3.dp
+private val DOT_RADIUS = 3.2.dp
 private val DOSED_DOT_RADIUS = 4.5.dp
+
+/** Which hairline: a dose change, or the day the patient is standing on. */
+internal enum class MoodMarkKind {
+    TITRATION,
+    TODAY,
+}
+
+/**
+ * The two hairlines drawn differently on purpose (`JournalScreen.tsx:61-81`): the
+ * titration carries sand and a cap, today is a fainter forest with a tighter dash and
+ * none. Named rather than left inside the canvas for [heatmapFill]'s reason — drawn
+ * alike, three hairlines on a seeded course read as three dose changes, and no
+ * assertion about layout would notice.
+ */
+internal fun moodMarkStyle(kind: MoodMarkKind): MoodMarkStyle =
+    when (kind) {
+        MoodMarkKind.TITRATION -> MoodMarkStyle(CadenceColors.sand500, TITRATION_DASH_ON, MARK_CAP_RADIUS)
+        MoodMarkKind.TODAY -> MoodMarkStyle(CadenceColors.forest700.copy(alpha = TODAY_ALPHA), TODAY_DASH_ON, null)
+    }
+
+internal data class MoodMarkStyle(
+    val color: Color,
+    val dashOn: Dp,
+    val cap: Dp?,
+)
+
+private val TITRATION_DASH_ON = 3.dp
+private val TODAY_DASH_ON = 2.dp
+private val MARK_CAP_RADIUS = 3.dp
+
+/** Today is the fainter of the two — the prototype's own 0.6. */
+private const val TODAY_ALPHA = 0.6f
 
 /**
  * The five level lines, brightest first — that is, top to bottom on a canvas.

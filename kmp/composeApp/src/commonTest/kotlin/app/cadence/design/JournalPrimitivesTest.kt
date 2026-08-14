@@ -218,14 +218,12 @@ class JournalPrimitivesTest {
             val label = onNodeWithText("нед 12").fetchSemanticsNode()
             val tick = markX(day(77))
 
-            // The last label is anchored by its right edge, so its own width is the
-            // whole distance it may sit to the left of its tick — further left and
-            // LABEL_WIDTH has been over-guessed, which no other assertion would catch.
-            val left = label.positionInRoot.x
-            val right = left + label.size.width
+            // Anchored by its right edge means the right edge lands *on* the tick —
+            // both directions, or an anchor of half a width would pass as readily as
+            // a whole one and pull the label off its own week.
+            val right = label.positionInRoot.x + label.size.width
 
-            assertTrue(right <= tick + 1f, "«нед 12» ends at $right, past its tick at $tick")
-            assertTrue(right >= tick - label.size.width, "«нед 12» ends at $right, well short of its tick at $tick")
+            assertTrue(abs(right - tick) <= 1f, "«нед 12» ends at $right, its tick is at $tick")
         }
 
     @Test
