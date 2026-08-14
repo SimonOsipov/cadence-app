@@ -20,12 +20,18 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
+import app.cadence.shared.domain.MoodLevel
 
 /** §03: `mood smallint 1..5`, and the prototype's five points. */
 const val CADENCE_MOOD_MAX = 5
 
-/** `labels` in the prototype's `MoodSlider`, in its order. */
-val CADENCE_MOOD_LABELS = listOf("Никак", "Слабо", "Ровно", "Хорошо", "Светло")
+/**
+ * The product's one mood scale, in order. Read from [MoodLevel] rather than declared here:
+ * the prototype keeps two lists for the same `mood 1..5` — «Никак / Слабо / …» in the dose
+ * wizard, «Тяжело / Так себе / …» in the journal — and the journal's wording is the one the
+ * number is read back in.
+ */
+val CADENCE_MOOD_LABELS: List<String> = MoodLevel.entries.map { it.labelRu }
 
 private val MOOD_DOT = 34.dp
 
@@ -33,7 +39,7 @@ private val MOOD_DOT = 34.dp
 private val MOOD_BORDER = 1.5.dp
 
 /**
- * «Энергия · сегодня» — five points, and the word for the one chosen.
+ * «Самочувствие · сегодня» — five points, and the word for the one chosen.
  * [value] is nullable, the one difference from the prototype: its
  * `INITIAL_LOG_STATE` seeds `mood: 3`, so the slider always shows «Ровно» — a
  * word the patient didn't say. Step 4 is «всё по желанию», so nothing chosen
@@ -63,12 +69,9 @@ fun CadenceMoodSlider(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             CadenceMeta(CADENCE_MOOD_LABELS.first())
-            // `getOrNull`: the parameter admits any Int, and a wizard passing
-            // 0 or 6 would crash rather than show no word — 1..5 isn't the type's
-            // own invariant.
-            value?.let { point ->
-                CADENCE_MOOD_LABELS.getOrNull(point - 1)?.let { CadenceMeta(it, color = Cadence.palette.ink2) }
-            }
+            // `MoodLevel.of`: the parameter admits any Int, and a wizard passing 0 or 6 would
+            // crash rather than show no word — 1..5 isn't the type's own invariant.
+            MoodLevel.of(value)?.let { CadenceMeta(it.labelRu, color = Cadence.palette.ink2) }
             CadenceMeta(CADENCE_MOOD_LABELS.last())
         }
     }

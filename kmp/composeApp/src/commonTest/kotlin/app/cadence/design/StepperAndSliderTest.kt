@@ -246,4 +246,26 @@ class StepperAndSliderTest {
             }
             assertTrue(CADENCE_MOOD_LABELS.size == CADENCE_MOOD_MAX)
         }
+
+    /**
+     * The scale is the product's, not this file's. Every assertion above compares what was
+     * drawn against `CADENCE_MOOD_LABELS` — the same list that produced it — so renaming a
+     * level passes all of them; `:247` only counted. Literals here, and the set rather than
+     * its size ([[assert-the-set-not-the-size]] in the register of hard-won lessons).
+     */
+    @Test
+    fun theSliderNamesTheFiveLevelsTheJournalNames() =
+        runComposeUiTest {
+            // Level 2, not 1 or 5: the two ends are also drawn as captions, so a chosen end
+            // renders its word twice and «displayed» stops being a single node.
+            setContent { CadenceTheme { CadenceMoodSlider(value = 2, onChange = { }) } }
+
+            // The journal's wording (`journal/data.ts:46-53`), not the dose wizard's own
+            // «Никак / Слабо» — one number cannot have two words.
+            onNodeWithText("Так себе").assertIsDisplayed()
+            assertEquals(1, onAllNodesWithText("Тяжело").fetchSemanticsNodes().size, "the scale starts at «Тяжело»")
+            assertEquals(1, onAllNodesWithText("Светло").fetchSemanticsNodes().size, "the scale ends at «Светло»")
+            assertEquals(0, onAllNodesWithText("Никак").fetchSemanticsNodes().size)
+            assertEquals(0, onAllNodesWithText("Слабо").fetchSemanticsNodes().size)
+        }
 }
