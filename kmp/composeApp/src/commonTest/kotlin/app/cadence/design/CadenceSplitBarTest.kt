@@ -1,5 +1,6 @@
 package app.cadence.design
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
@@ -70,5 +71,41 @@ class CadenceSplitBarTest {
 
             assertEquals(CadenceColors.forest700, proteinPixel, "protein's own segment is not painted forest700")
             assertNotEquals(proteinPixel, fatPixel, "protein and fat segments paint the same colour")
+        }
+
+    /**
+     * The dark card variant (`MacroBarDark`, `RecipeBuilderScreen.tsx:20-75`): on
+     * `forest800` the default `sunk` track is invisible, so the track is a parameter.
+     * Measured on an all-zero split, the one state where the track is not covered by
+     * its own segments.
+     */
+    @Test
+    fun anEmptyTrackPaintsTheTrackColourItWasGiven() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    CadenceSplitBar(proteinG = 0.0, carbsG = 0.0, fatG = 0.0, trackColor = CadenceColors.forest700)
+                }
+            }
+
+            val track = onNodeWithTag(CADENCE_SPLIT_TRACK_TAG, useUnmergedTree = true).captureToImage()
+
+            assertEquals(CadenceColors.forest700, track.toPixelMap()[track.width / 2, track.height / 2])
+        }
+
+    @Test
+    fun anEmptyTrackDefaultsToSunk() =
+        runComposeUiTest {
+            var sunk = Color.Unspecified
+            setContent {
+                CadenceTheme {
+                    sunk = Cadence.palette.sunk
+                    CadenceSplitBar(proteinG = 0.0, carbsG = 0.0, fatG = 0.0)
+                }
+            }
+
+            val track = onNodeWithTag(CADENCE_SPLIT_TRACK_TAG, useUnmergedTree = true).captureToImage()
+
+            assertEquals(sunk, track.toPixelMap()[track.width / 2, track.height / 2])
         }
 }

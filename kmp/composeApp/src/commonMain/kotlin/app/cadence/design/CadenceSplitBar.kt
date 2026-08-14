@@ -72,6 +72,9 @@ fun splitShares(
  * two, not to the row alone. A zero share is skipped rather than laid out at
  * `weight(0f)`, which Compose rejects.
  *
+ * [trackColor]/[labelColor]/[valueColor] exist for that dark call site: the
+ * defaults (`sunk`, `subtle`, `ink2`) are unreadable on `forest800`.
+ *
  * Carb colour: the nutrition overview's per-macro `MacroBar` hardcodes carbs
  * to `#a5773d` (`NutritionScreen.tsx:518`), with no matching [CadenceColors]
  * token — but this component's own two call sites map carbs to `C.sand500`
@@ -84,6 +87,9 @@ fun CadenceSplitBar(
     carbsG: Double,
     fatG: Double,
     modifier: Modifier = Modifier,
+    trackColor: Color = Cadence.palette.sunk,
+    labelColor: Color = Cadence.palette.subtle,
+    valueColor: Color = Cadence.palette.ink2,
 ) {
     val (proteinShare, carbsShare, fatShare) = splitShares(proteinG, carbsG, fatG)
 
@@ -93,7 +99,7 @@ fun CadenceSplitBar(
                 .fillMaxWidth()
                 .height(SPLIT_BAR_HEIGHT)
                 .clip(RoundedCornerShape(CadenceRadius.pill))
-                .background(Cadence.palette.sunk)
+                .background(trackColor)
                 .testTag(CADENCE_SPLIT_TRACK_TAG),
         ) {
             if (proteinShare > 0f) {
@@ -129,9 +135,9 @@ fun CadenceSplitBar(
             Modifier.fillMaxWidth().padding(top = CadenceSpacing.sm),
             horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.lg),
         ) {
-            SplitLegendItem("Белок", proteinG, CadenceColors.forest700)
-            SplitLegendItem("Углев", carbsG, CadenceColors.sand500)
-            SplitLegendItem("Жиры", fatG, CadenceColors.sand700)
+            SplitLegendItem("Белок", proteinG, CadenceColors.forest700, labelColor, valueColor)
+            SplitLegendItem("Углев", carbsG, CadenceColors.sand500, labelColor, valueColor)
+            SplitLegendItem("Жиры", fatG, CadenceColors.sand700, labelColor, valueColor)
         }
     }
 }
@@ -142,6 +148,8 @@ private fun SplitLegendItem(
     label: String,
     grams: Double,
     color: Color,
+    labelColor: Color,
+    valueColor: Color,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -153,7 +161,7 @@ private fun SplitLegendItem(
                 .clip(RoundedCornerShape(CadenceRadius.xs))
                 .background(color),
         )
-        CadenceMeta(label, color = Cadence.palette.subtle)
-        CadenceMeta("${formatDecimal(grams, digits = 0)} г", color = Cadence.palette.ink2)
+        CadenceMeta(label, color = labelColor)
+        CadenceMeta("${formatDecimal(grams, digits = 0)} г", color = valueColor)
     }
 }

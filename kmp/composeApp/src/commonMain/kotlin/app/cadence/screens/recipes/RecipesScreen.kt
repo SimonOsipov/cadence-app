@@ -1,7 +1,6 @@
 package app.cadence.screens.recipes
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -30,12 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
@@ -326,7 +321,7 @@ private fun FeaturedBadge() {
  * [app.cadence.shared.domain.filteredByTypeAndTag] by the caller.
  *
  * Ported as the prototype draws it: a horizontally scrolling strip of
- * hug-width pills ([RecipesFilterChip]/[RecipesFilterRow]), not
+ * hug-width pills ([RecipeChip]/[RecipesFilterRow]), not
  * [app.cadence.design.CadenceSegmented]. An earlier version of this screen
  * used [app.cadence.design.CadenceSegmented] — every segment forced to equal
  * width by [Modifier.weight] — because it already existed and named a
@@ -397,52 +392,11 @@ private fun <T> RecipesFilterRow(
         horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
     ) {
         options.forEach { option ->
-            RecipesFilterChip(
+            RecipeChip(
                 label = label(option),
                 active = option == selected,
                 onClick = { onSelect(option) },
             )
         }
-    }
-}
-
-/**
- * `FilterChip` (`RecipesScreen.tsx:20-39`): a hug-width pill, solid forest
- * when active, an outline in [app.cadence.design.CadencePalette.border]
- * otherwise. Not [app.cadence.design.CadenceChip] — that primitive's active
- * state is `palette.ink`, matching a different prototype control, while this
- * screen's own filter chip is `forest700`/`cream`, read directly off
- * `RecipesScreen.tsx:29-34` rather than off a component built for another
- * screen's colours.
- */
-@Composable
-private fun RecipesFilterChip(
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit,
-) {
-    val palette = Cadence.palette
-    val shape = RoundedCornerShape(CadenceRadius.pill)
-    val background = if (active) CadenceColors.forest700 else Color.Transparent
-    val outline = if (active) CadenceColors.forest700 else palette.border
-    val foreground = if (active) CadenceColors.cream else palette.ink2
-
-    Box(
-        Modifier
-            .pressable(onClick, remember { MutableInteractionSource() })
-            .background(background, shape)
-            .border(1.dp, outline, shape)
-            // Merged `selected`, the same idiom `CadenceSegmented` uses for its
-            // own option boxes — lets a test assert both that this chip is
-            // selected and that a sibling is not.
-            .semantics(mergeDescendants = true) { this.selected = active }
-            .padding(horizontal = CadenceSpacing.md, vertical = CadenceSpacing.xs),
-    ) {
-        BasicText(
-            text = label,
-            style = Cadence.typography.label.copy(color = foreground, fontSize = 13.sp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
