@@ -103,24 +103,7 @@ func GoTrueJWKS(t *testing.T, entries ...JWKEntry) string {
 	keys := make([]jwkset.JWKMarshal, 0, len(entries))
 
 	for _, entry := range entries {
-		metadata := jwkset.JWKMetadataOptions{
-			ALG: jwkset.ALG(entry.Key.Alg),
-			KID: entry.Key.KID,
-			USE: jwkset.UseSig,
-		}
-		if entry.Signing {
-			metadata.KEYOPS = []jwkset.KEYOPS{jwkset.KeyOpsSign}
-		}
-
-		jwk, err := jwkset.NewJWKFromKey(entry.Key.private, jwkset.JWKOptions{
-			Marshal:  jwkset.JWKMarshalOptions{Private: true},
-			Metadata: metadata,
-		})
-		if err != nil {
-			t.Fatalf("building the JWK for %q: %v", entry.Key.KID, err)
-		}
-
-		keys = append(keys, jwk.Marshal())
+		keys = append(keys, privateJWKMarshal(t, entry.Key, entry.Signing))
 	}
 
 	raw, err := json.Marshal(keys)
