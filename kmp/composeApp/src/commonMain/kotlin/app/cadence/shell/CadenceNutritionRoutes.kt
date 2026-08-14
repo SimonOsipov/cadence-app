@@ -49,7 +49,8 @@ internal fun LogMealModal(
     val scope = rememberCoroutineScope()
     // One write in flight at a time. «Сохранить» stays live until the answer lands (the
     // footer only knows whether there are items), and on M9's round trip that window is a
-    // whole request — two taps would log the meal twice, each with its own toast.
+    // whole request — two taps would log the meal twice, each with its own toast. Same
+    // guard, and the same test-harness blind spot, as the recipe card's below.
     var saving by remember { mutableStateOf(false) }
 
     if (summary == null || now == null) {
@@ -221,7 +222,8 @@ private fun RecipeDetailRoute(
     var state by remember(id) { mutableStateOf<RecipeDetailState>(RecipeDetailState.Loading) }
     // One write in flight at a time: the button stays live until the answer lands, and two
     // taps in the same frame would otherwise queue two coroutines and log the meal twice —
-    // the defect `LogDoseModal`'s own `submitting` flag exists for.
+    // the defect `LogDoseModal`'s own `submitting` flag exists for. Unverifiable by test:
+    // each `performClick()` pumps a frame, so the harness cannot deliver two taps inside one.
     var adding by remember { mutableStateOf(false) }
 
     LaunchedEffect(id) {
