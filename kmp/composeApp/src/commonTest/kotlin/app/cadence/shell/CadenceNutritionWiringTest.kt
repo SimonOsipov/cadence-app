@@ -530,4 +530,41 @@ class CadenceNutritionWiringTest {
             gate.complete(Unit)
             waitForIdle()
         }
+
+    /**
+     * The card's *other* read. A recipe with no price table is not a card with blank
+     * numbers: `RecipeMath.totalsOf` throws on the first row it cannot find, so the answer
+     * has to stay «загружается» until the table lands — the same gate «Рецепты» keeps, on
+     * the screen that actually prices every row.
+     */
+    @Test
+    fun theCardWaitsForThePriceTableEvenOnceItsRecipeHasAnswered() =
+        runComposeUiTest {
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme {
+                    CadenceShell(
+                        navController = nav,
+                        // The recipe answers immediately; the table has not been read at all.
+                        actions = CadenceShellActions(loadRecipe = { MockSeed.recipes.first() }),
+                    )
+                }
+            }
+            waitForIdle()
+
+            runOnUiThread {
+                nav.openRoute(
+                    CadenceRoute.RecipeDetail(
+                        MockSeed.recipes
+                            .first()
+                            .id.raw,
+                    ),
+                )
+            }
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_LOADING_TAG).assertExists()
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_TAG).assertDoesNotExist()
+        }
 }
