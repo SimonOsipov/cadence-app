@@ -1,13 +1,16 @@
 package app.cadence.design
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import app.cadence.format.leadingBlanks
 import app.cadence.shared.domain.MoodLevel
 import app.cadence.shared.domain.TrendRange
 import app.cadence.shared.domain.middleOf
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.daysUntil
-import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.plus
 
 /*
@@ -18,18 +21,21 @@ import kotlinx.datetime.plus
 
 private const val DAYS_IN_WEEK = 7
 
-/** The last day of a twelve-week course, counted from zero. */
-internal const val COURSE_LAST_DAY = 83
-
 /**
- * Thirteen rows, not the prototype's twelve (`journal/data.ts:126-135`). Twelve
- * rows hold 84 cells, which is exactly the course — but the grid opens on the
- * Monday of the starting week, so a course beginning any day but Monday spends
- * some of them on the lead-in and runs out early. A Sunday start, which the
- * prototype's own seed uses, loses days 78–83 off the bottom. Thirteen is the
- * smallest number that covers the worst lead-in of six.
+ * Enough rows to hold the lead-in and every day of the course — computed, not the
+ * prototype's twelve (`journal/data.ts:126-135`). Twelve rows hold exactly 84 cells,
+ * but the grid opens on the Monday of the starting week, so a course beginning on any
+ * other day spends some of them before it starts and runs out early: the prototype's
+ * own seed opens on a Sunday and loses days 78–83 off the bottom.
+ *
+ * Counted rather than fixed at thirteen, because a course is not always twelve weeks
+ * (`Protocol.weeks` is data), and a fixed thirteen would truncate a longer one exactly
+ * the way twelve truncates this one — while drawing an empty row for a Monday start.
  */
-internal const val HEATMAP_ROWS = 13
+internal fun heatmapRows(
+    lead: Int,
+    days: Int,
+): Int = (lead + days + DAYS_IN_WEEK - 1) / DAYS_IN_WEEK
 
 /** Three states, not two: an unwritten past day and a day still ahead are not the same absence. */
 internal enum class DayStanding {
@@ -40,7 +46,7 @@ internal enum class DayStanding {
 
 /**
  * One square of the heatmap. [week] is the calendar week the row draws, counted
- * from the Monday the grid opens on (`JournalScreen.tsx:158` labels the row with
+ * from the Monday the grid opens on (`JournalScreen.tsx:160` labels the row with
  * its own index). That is not days-since-the-start divided by seven: on a Sunday
  * start the two disagree by one from the second row down, and the last course day
  * sits in week 13 of a course twelve weeks long — because it does.
@@ -63,10 +69,10 @@ internal fun heatmapWeeks(
     moodByDate: Map<LocalDate, MoodLevel>,
     titrations: Set<LocalDate>,
 ): List<List<HeatmapCell?>> {
-    val lead = course.from.dayOfWeek.isoDayNumber - 1
+    val lead = leadingBlanks(course.from)
     val gridStart = course.from.plus(DatePeriod(days = -lead))
 
-    return List(HEATMAP_ROWS) { row ->
+    return List(heatmapRows(lead, course.days)) { row ->
         List(DAYS_IN_WEEK) { column ->
             val date = gridStart.plus(DatePeriod(days = row * DAYS_IN_WEEK + column))
 
@@ -90,7 +96,45 @@ internal fun heatmapWeeks(
     }
 }
 
-/** One day's entry. [dosed] draws larger and filled: a mood beside a dose is the reading the doctor reads for. */
+/**
+ * How a cell is filled. Named rather than decided inside the modifier chain, for
+ * [accentStroke]'s reason: a colour reaches only a canvas and a background, so an
+ * inverted branch is invisible to every assertion about layout — and «past, today and
+ * still to come are told apart» is this step's acceptance, not a matter of taste.
+ */
+internal fun heatmapFill(
+    cell: HeatmapCell,
+    palette: CadencePalette,
+): Color =
+    when {
+        cell.mood != null -> CadenceMoodTone.of(cell.mood)?.color ?: palette.sunk
+        cell.standing == DayStanding.FUTURE -> Color.Transparent
+        else -> palette.sunk.copy(alpha = UNWRITTEN_ALPHA)
+    }
+
+/** An unwritten past day is drawn faint rather than absent — «I did not write» is itself a reading. */
+private const val UNWRITTEN_ALPHA = 0.7f
+
+/** The ring around a cell, or none. Today's is the heavier one: it has to win against a filled neighbour. */
+internal fun heatmapBorder(
+    standing: DayStanding,
+    palette: CadencePalette,
+): HeatmapBorder? =
+    when (standing) {
+        DayStanding.TODAY -> HeatmapBorder(TODAY_RING, CadenceColors.forest700)
+        DayStanding.FUTURE -> HeatmapBorder(FUTURE_BORDER, palette.border)
+        DayStanding.PAST -> null
+    }
+
+internal data class HeatmapBorder(
+    val width: Dp,
+    val color: Color,
+)
+
+private val TODAY_RING = 1.5.dp
+private val FUTURE_BORDER = 1.dp
+
+/** One day's entry. [dosed] is drawn larger and solid; a hand-written one is hollow. */
 data class MoodReading(
     val date: LocalDate,
     val level: MoodLevel,
@@ -116,6 +160,33 @@ internal fun moodPoints(
             y = moodY(reading.level, canvasHeight, inset),
         )
     }
+
+/**
+ * How a reading's dot is drawn. The prototype fills a dose's dot and leaves a
+ * hand-written one hollow on the paper (`JournalScreen.tsx:108-118`); size alone
+ * would reduce «this mood was recorded beside a dose» to 1.5 dp.
+ */
+internal fun moodDot(
+    reading: MoodReading,
+    palette: CadencePalette,
+): MoodDot {
+    val tone = CadenceMoodTone.of(reading.level)?.color ?: palette.ink
+
+    return if (reading.dosed) {
+        MoodDot(radius = DOSED_DOT_RADIUS, fill = tone, stroke = null)
+    } else {
+        MoodDot(radius = DOT_RADIUS, fill = palette.paper, stroke = tone)
+    }
+}
+
+internal data class MoodDot(
+    val radius: Dp,
+    val fill: Color,
+    val stroke: Color?,
+)
+
+private val DOT_RADIUS = 3.dp
+private val DOSED_DOT_RADIUS = 4.5.dp
 
 /**
  * The five level lines, brightest first — that is, top to bottom on a canvas.

@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ import app.cadence.shared.domain.middleOf
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
+import kotlin.math.roundToInt
 
 const val CADENCE_MOOD_CHART_TAG = "cadence-mood-chart"
 
@@ -41,18 +43,21 @@ fun cadenceMoodMarkTag(date: LocalDate): String = "cadence-mood-mark-$date"
 private val CHART_HEIGHT = 132.dp
 private val LINE_STROKE = 2.dp
 private val GRID_STROKE = 1.dp
-private val DOT_RADIUS = 3.dp
-private val DOSED_DOT_RADIUS = 4.5.dp
+private val DOT_STROKE = 1.5.dp
 private val MARK_CAP_RADIUS = 2.5.dp
 private val MARK_WIDTH = 1.dp
 
-private val DASH_ON = 4.dp
+private val TITRATION_DASH_ON = 3.dp
+private val TODAY_DASH_ON = 2.dp
 private val DASH_OFF = 3.dp
+
+/** Today is the fainter of the two hairlines — the prototype's own 0.6. */
+private const val TODAY_ALPHA = 0.6f
 
 /** The four the prototype labels — «нед 1 / нед 4 / нед 8 / нед 12» (`JournalScreen.tsx:104`). */
 private val LABELLED_WEEKS = listOf(1, 4, 8, 12)
 
-private const val DAYS_IN_WEEK = 7
+private const val WEEK_LENGTH = 7
 
 /** How faint the days still to come are drawn behind the grid. */
 private const val FUTURE_ALPHA = 0.35f
@@ -76,13 +81,13 @@ fun CadenceMoodChart(
 
     BoxWithConstraints(modifier.fillMaxWidth().height(CHART_HEIGHT).testTag(CADENCE_MOOD_CHART_TAG)) {
         val widthPx = with(density) { maxWidth.toPx() }
-        val heightPx = with(density) { maxHeight.toPx() }
 
         Canvas(Modifier.fillMaxSize()) {
             drawFuture(course, today, inset, palette.sunk)
-            drawGrid(heightPx, inset, palette.hairline)
-            drawMarks(titrations + today, course, inset, palette.border)
-            drawMoodLine(readings, course, widthPx, heightPx, inset)
+            drawGrid(inset, palette.hairline)
+            drawTitrations(titrations, course, inset)
+            drawToday(today, course, inset)
+            drawMoodLine(readings, course, inset, palette)
         }
 
         titrations.forEach { date ->
@@ -107,7 +112,7 @@ private fun BoxScope.MoodChartWeekLabels(
     val palette = Cadence.palette
 
     LABELLED_WEEKS.forEach { week ->
-        val day = course.from.plusDays((week - 1) * DAYS_IN_WEEK)
+        val day = course.from.plusDays((week - 1) * WEEK_LENGTH)
         val x = plotX(course.middleOf(day), widthPx, inset)
 
         Box(
@@ -121,21 +126,31 @@ private fun BoxScope.MoodChartWeekLabels(
                 text = "нед $week",
                 color = palette.subtle,
                 modifier =
-                    Modifier.offset(
-                        x =
-                            when (week) {
-                                LABELLED_WEEKS.first() -> 0.dp
-                                LABELLED_WEEKS.last() -> -LABEL_WIDTH
-                                else -> -LABEL_WIDTH / 2
-                            },
+                    Modifier.anchoredAt(
+                        when (week) {
+                            LABELLED_WEEKS.first() -> 0f
+                            LABELLED_WEEKS.last() -> 1f
+                            else -> 0.5f
+                        },
                     ),
             )
         }
     }
 }
 
-/** Wide enough for «нед 12» at the meta size — the anchor rule needs a width before the text is measured. */
-private val LABEL_WIDTH = 34.dp
+/**
+ * Shifts a label left by [fraction] of its own **measured** width, so the first sits
+ * on its tick, the last ends on it and the middle two straddle it. Measured rather
+ * than assumed: a guessed width that runs short pushes the last label past the plot,
+ * and one that runs long pulls it off its own tick with nothing to notice.
+ */
+private fun Modifier.anchoredAt(fraction: Float): Modifier =
+    layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        layout(placeable.width, placeable.height) {
+            placeable.place(-(placeable.width * fraction).roundToInt(), 0)
+        }
+    }
 
 private fun DrawScope.drawFuture(
     course: TrendRange,
@@ -155,11 +170,10 @@ private fun DrawScope.drawFuture(
 }
 
 private fun DrawScope.drawGrid(
-    canvasHeight: Float,
     inset: ChartInset,
     color: Color,
 ) {
-    moodGridLines(canvasHeight, inset).forEach { y ->
+    moodGridLines(size.height, inset).forEach { y ->
         drawLine(
             color = color,
             start = Offset(inset.left, y),
@@ -169,37 +183,62 @@ private fun DrawScope.drawGrid(
     }
 }
 
-private fun DrawScope.drawMarks(
+private fun DrawScope.drawTitrations(
     dates: List<LocalDate>,
     course: TrendRange,
     inset: ChartInset,
-    color: Color,
 ) {
-    val dash = PathEffect.dashPathEffect(floatArrayOf(DASH_ON.toPx(), DASH_OFF.toPx()))
+    val dash = PathEffect.dashPathEffect(floatArrayOf(TITRATION_DASH_ON.toPx(), DASH_OFF.toPx()))
 
     dates.filter { it in course }.forEach { date ->
         val x = plotX(course.middleOf(date), size.width, inset)
 
-        drawLine(
-            color = color,
-            start = Offset(x, inset.top),
-            end = Offset(x, size.height - inset.bottom),
-            strokeWidth = MARK_WIDTH.toPx(),
-            pathEffect = dash,
-        )
-        // The cap tells a mark from the grid it crosses at a glance.
-        drawCircle(color = color, radius = MARK_CAP_RADIUS.toPx(), center = Offset(x, inset.top))
+        drawMarkLine(x, inset, CadenceColors.sand500, dash)
+        // The cap is what tells a titration from today at a glance; today has none.
+        drawCircle(color = CadenceColors.sand500, radius = MARK_CAP_RADIUS.toPx(), center = Offset(x, inset.top))
     }
+}
+
+/**
+ * Today, drawn unlike a titration on purpose: the prototype gives it forest700, a
+ * tighter dash and no cap (`JournalScreen.tsx:71-81`). Drawn the same, three
+ * hairlines on a seeded course read as three dose changes.
+ */
+private fun DrawScope.drawToday(
+    today: LocalDate,
+    course: TrendRange,
+    inset: ChartInset,
+) {
+    if (today !in course) return
+
+    val dash = PathEffect.dashPathEffect(floatArrayOf(TODAY_DASH_ON.toPx(), DASH_OFF.toPx()))
+    val x = plotX(course.middleOf(today), size.width, inset)
+
+    drawMarkLine(x, inset, CadenceColors.forest700.copy(alpha = TODAY_ALPHA), dash)
+}
+
+private fun DrawScope.drawMarkLine(
+    x: Float,
+    inset: ChartInset,
+    color: Color,
+    dash: PathEffect,
+) {
+    drawLine(
+        color = color,
+        start = Offset(x, inset.top),
+        end = Offset(x, size.height - inset.bottom),
+        strokeWidth = MARK_WIDTH.toPx(),
+        pathEffect = dash,
+    )
 }
 
 private fun DrawScope.drawMoodLine(
     readings: List<MoodReading>,
     course: TrendRange,
-    canvasWidth: Float,
-    canvasHeight: Float,
     inset: ChartInset,
+    palette: CadencePalette,
 ) {
-    val points = moodPoints(readings, course, canvasWidth, canvasHeight, inset)
+    val points = moodPoints(readings, course, size.width, size.height, inset)
     if (points.isEmpty()) return
 
     if (points.size > 1) {
@@ -216,9 +255,12 @@ private fun DrawScope.drawMoodLine(
     }
 
     readings.zip(points).forEach { (reading, point) ->
-        val tone = CadenceMoodTone.of(reading.level) ?: return@forEach
-        val radius = if (reading.dosed) DOSED_DOT_RADIUS else DOT_RADIUS
-        drawCircle(color = tone.color, radius = radius.toPx(), center = point)
+        val dot = moodDot(reading, palette)
+
+        drawCircle(color = dot.fill, radius = dot.radius.toPx(), center = point)
+        dot.stroke?.let {
+            drawCircle(color = it, radius = dot.radius.toPx(), center = point, style = Stroke(DOT_STROKE.toPx()))
+        }
     }
 }
 

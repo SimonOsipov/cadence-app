@@ -2,6 +2,7 @@ package app.cadence.design
 
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
@@ -30,8 +31,18 @@ private val TITRATIONS = listOf(day(28), day(56))
 /** Uneven on purpose: equal gaps would look the same laid out by date and by list position. */
 private val UNEVEN_MARKS = listOf(day(7), day(28), day(56))
 
+/**
+ * Marks standing on the days the week labels claim, used as measuring sticks: a
+ * label's x can then be pinned against a node rather than against the inset
+ * arithmetic the labels themselves go through.
+ */
+private val RULER_MARKS = listOf(day(0), day(7), day(77))
+
 @OptIn(ExperimentalTestApi::class)
 class JournalPrimitivesTest {
+    private fun ComposeUiTest.markX(date: LocalDate): Float =
+        onNodeWithTag(cadenceMoodMarkTag(date), useUnmergedTree = true).fetchSemanticsNode().positionInRoot.x
+
     @Test
     fun theHeatmapDrawsTheDayTheProtoypesTwelveRowsRanOutBefore() =
         runComposeUiTest {
@@ -159,6 +170,62 @@ class JournalPrimitivesTest {
             listOf(1, 4, 8, 12).forEach { week ->
                 onNodeWithText("нед $week").assertExists()
             }
+        }
+
+    @Test
+    fun theFirstWeekLabelStandsOnTheDayTheCourseOpens() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    CadenceMoodChart(
+                        readings = emptyList(),
+                        course = COURSE,
+                        today = day(40),
+                        titrations = RULER_MARKS,
+                        modifier = Modifier.width(343.dp),
+                    )
+                }
+            }
+
+            val label = onNodeWithText("нед 1").fetchSemanticsNode().positionInRoot.x
+            val dayZero = markX(day(0))
+            val daySeven = markX(day(7))
+
+            // «нед 1» means day 0, not day 7. Counting the weeks from one instead of
+            // from zero would move it a week along, which is what these two rulers
+            // measure — no inset arithmetic repeated on the test's side.
+            assertTrue(
+                abs(label - dayZero) < abs(label - daySeven),
+                "«нед 1» sits at $label, between day 0 at $dayZero and day 7 at $daySeven",
+            )
+        }
+
+    @Test
+    fun theLastWeekLabelIsAnchoredOnItsOwnDayAndNotPastTheEdge() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    CadenceMoodChart(
+                        readings = emptyList(),
+                        course = COURSE,
+                        today = day(40),
+                        titrations = RULER_MARKS,
+                        modifier = Modifier.width(343.dp),
+                    )
+                }
+            }
+
+            val label = onNodeWithText("нед 12").fetchSemanticsNode()
+            val tick = markX(day(77))
+
+            // The last label is anchored by its right edge, so its own width is the
+            // whole distance it may sit to the left of its tick — further left and
+            // LABEL_WIDTH has been over-guessed, which no other assertion would catch.
+            val left = label.positionInRoot.x
+            val right = left + label.size.width
+
+            assertTrue(right <= tick + 1f, "«нед 12» ends at $right, past its tick at $tick")
+            assertTrue(right >= tick - label.size.width, "«нед 12» ends at $right, well short of its tick at $tick")
         }
 
     @Test

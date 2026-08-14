@@ -83,8 +83,8 @@ fun weekdayHeadings(): List<String> = WEEKDAYS_SHORT
 /** «Ср» — one day's short label, for a column derived from a real date rather than a literal. */
 fun weekdayShort(day: DayOfWeek): String = WEEKDAYS_SHORT[day.isoDayNumber - 1]
 
-/** How many blanks precede the first of the month in a Monday-first grid. */
-fun leadingBlanks(firstOfMonth: LocalDate): Int = firstOfMonth.dayOfWeek.isoDayNumber - 1
+/** How many blanks precede [openingDay] in a Monday-first grid: a month's first day, or a course's. */
+fun leadingBlanks(openingDay: LocalDate): Int = openingDay.dayOfWeek.isoDayNumber - 1
 
 /** «сегодня» / «вчера» / «3 дн назад» / «2 нед назад» — the prototype's own scale. */
 fun relativeDay(

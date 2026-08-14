@@ -16,7 +16,6 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,11 +38,6 @@ private val CELL_CORNER = 5.dp
 private val WEEK_NUMBER_SIZE = 9.5.sp
 private val TITRATION_DOT = 6.dp
 private val TITRATION_OFFSET = 2.dp
-private val TODAY_RING = 1.5.dp
-private val FUTURE_BORDER = 1.dp
-
-/** An unwritten past day is drawn faint rather than absent — «I did not write» is itself a reading. */
-private const val UNWRITTEN_ALPHA = 0.7f
 
 /**
  * Twelve weeks of days, Monday first, one row per calendar week — see
@@ -121,29 +115,16 @@ private fun HeatmapCellBox(
     modifier: Modifier,
 ) {
     val palette = Cadence.palette
-    val tone = cell.mood?.let(CadenceMoodTone::of)
-
-    val fill =
-        when {
-            tone != null -> tone.color
-            cell.standing == DayStanding.FUTURE -> Color.Transparent
-            else -> palette.sunk.copy(alpha = UNWRITTEN_ALPHA)
-        }
-
-    val border =
-        when {
-            cell.standing == DayStanding.TODAY -> TODAY_RING to CadenceColors.forest700
-            cell.standing == DayStanding.FUTURE -> FUTURE_BORDER to palette.border
-            else -> null
-        }
+    val fill = heatmapFill(cell, palette)
+    val border = heatmapBorder(cell.standing, palette)
 
     Box(
         modifier
             .aspectRatio(1f)
             .background(fill, RoundedCornerShape(CELL_CORNER))
             .then(
-                border?.let { (width, color) ->
-                    Modifier.border(width, color, RoundedCornerShape(CELL_CORNER))
+                border?.let {
+                    Modifier.border(it.width, it.color, RoundedCornerShape(CELL_CORNER))
                 } ?: Modifier,
             ).testTag(cadenceHeatmapCellTag(cell.date)),
     ) {

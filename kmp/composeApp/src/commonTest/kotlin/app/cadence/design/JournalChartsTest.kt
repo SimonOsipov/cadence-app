@@ -1,5 +1,6 @@
 package app.cadence.design
 
+import androidx.compose.ui.graphics.Color
 import app.cadence.shared.domain.MoodLevel
 import app.cadence.shared.domain.TrendRange
 import kotlinx.datetime.DatePeriod
@@ -8,9 +9,12 @@ import kotlinx.datetime.plus
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+
+internal const val COURSE_LAST_DAY = 83
 
 private const val TOLERANCE = 1e-3f
 
@@ -165,6 +169,77 @@ class JournalChartsTest {
             bright.single().y < hard.single().y,
             "«Светло» drew at ${bright.single().y}, «Тяжело» at ${hard.single().y}",
         )
+    }
+
+    @Test
+    fun aGridRowIsAddedForTheLeadInRatherThanFixedAtThirteen() {
+        // A Sunday start spends six cells before the course opens, so 84 days need
+        // thirteen rows; a Monday start fits the same course in twelve, and drawing
+        // thirteen would leave an empty row under it.
+        assertEquals(13, heatmapRows(lead = 6, days = 84))
+        assertEquals(12, heatmapRows(lead = 0, days = 84))
+        // A course is not always twelve weeks: sixteen must not be truncated.
+        assertEquals(17, heatmapRows(lead = 6, days = 112))
+    }
+
+    @Test
+    fun theHeatmapTellsTodayFromWhatIsAheadAndWhatIsPast() {
+        val palette = CadenceLightPalette
+
+        assertEquals(CadenceColors.forest700, assertNotNull(heatmapBorder(DayStanding.TODAY, palette)).color)
+        assertEquals(palette.border, assertNotNull(heatmapBorder(DayStanding.FUTURE, palette)).color)
+        assertNull(heatmapBorder(DayStanding.PAST, palette), "a past day carries no ring")
+
+        // Today's ring has to win against a filled neighbour, so it is the heavier.
+        val todayRing = assertNotNull(heatmapBorder(DayStanding.TODAY, palette)).width
+        val futureRing = assertNotNull(heatmapBorder(DayStanding.FUTURE, palette)).width
+        assertTrue(todayRing > futureRing, "today's ring is ${'$'}todayRing against the future's ${'$'}futureRing")
+    }
+
+    @Test
+    fun anUnwrittenDayAheadIsEmptyAndOneBehindIsNot() {
+        val palette = CadenceLightPalette
+        val cells =
+            heatmapWeeks(COURSE, today = day(10), moodByDate = emptyMap(), titrations = emptySet())
+                .flatten()
+                .filterNotNull()
+                .associateBy { it.date }
+
+        assertEquals(Color.Transparent, heatmapFill(assertNotNull(cells[day(11)]), palette))
+        assertNotEquals(Color.Transparent, heatmapFill(assertNotNull(cells[day(9)]), palette))
+    }
+
+    @Test
+    fun aMoodCellCarriesItsOwnToneRatherThanTheGroundBehindIt() {
+        val palette = CadenceLightPalette
+        val cells =
+            heatmapWeeks(COURSE, day(10), mapOf(day(3) to MoodLevel.HARD), emptySet())
+                .flatten()
+                .filterNotNull()
+                .associateBy { it.date }
+
+        assertEquals(
+            assertNotNull(CadenceMoodTone.of(MoodLevel.HARD)).color,
+            heatmapFill(assertNotNull(cells[day(3)]), palette),
+        )
+    }
+
+    @Test
+    fun aDosedReadingIsSolidAndAHandWrittenOneIsHollow() {
+        val palette = CadenceLightPalette
+        val level = MoodLevel.GOOD
+        val tone = assertNotNull(CadenceMoodTone.of(level)).color
+
+        val dosed = moodDot(MoodReading(day(0), level, dosed = true), palette)
+        val byHand = moodDot(MoodReading(day(0), level, dosed = false), palette)
+
+        assertEquals(tone, dosed.fill)
+        assertNull(dosed.stroke, "a dose's dot is solid, so it carries no outline")
+
+        assertEquals(palette.paper, byHand.fill, "a hand-written dot is hollow on the paper")
+        assertEquals(tone, byHand.stroke)
+
+        assertTrue(dosed.radius > byHand.radius, "${'$'}{dosed.radius} is not larger than ${'$'}{byHand.radius}")
     }
 
     @Test
