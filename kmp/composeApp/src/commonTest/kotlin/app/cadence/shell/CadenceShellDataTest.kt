@@ -1,5 +1,10 @@
 package app.cadence.shell
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
@@ -16,6 +21,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -23,6 +29,8 @@ import androidx.navigation.toRoute
 import app.cadence.design.CadenceTheme
 import app.cadence.screens.inventory.ADD_VIAL_SAVE_TAG
 import app.cadence.screens.inventory.addVialFieldTag
+import app.cadence.screens.nutrition.LOG_MEAL_CHAT_FIELD_TAG
+import app.cadence.screens.nutrition.LOG_MEAL_SAVE_TAG
 import app.cadence.screens.trends.CADENCE_TRENDS_HERO_TAG
 import app.cadence.screens.trends.CADENCE_TREND_DETAIL_STATS_TAG
 import app.cadence.screens.trends.cadenceTrendCardTag
@@ -36,13 +44,16 @@ import app.cadence.shared.domain.ProtocolRow
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
-import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.LocalTime
-import kotlinx.datetime.TimeZone
+import app.cadence.shared.parsing.MockMealParser
+import app.cadence.shared.repository.MealLogResult
+import app.cadence.shared.repository.TodaySummary
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
 
 private val ZONE = TimeZone.of("Europe/Moscow")
 
@@ -684,5 +695,50 @@ class CadenceShellDataTest {
             )
             // Only exists once the read landed — a loader stuck on null leaves the placeholder here.
             onNodeWithTag(CADENCE_TREND_DETAIL_STATS_TAG, useUnmergedTree = true).assertExists()
+        }
+
+    /**
+     * The write's own answer decides whether the wizard closes. Unreachable through the mock,
+     * whose parse always names a meal — so the case is driven by handing the shell an action
+     * that rejects, which is what M9's server will do when a draft doesn't survive the round
+     * trip. Without this, «close on any answer» passes every other test in the suite.
+     */
+    @Test
+    fun aRejectedMealLeavesTheWizardOpenWithWhatWasTyped() =
+        runComposeUiTest {
+            val mocks = mocks()
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                var summary by remember { mutableStateOf<TodaySummary?>(null) }
+                LaunchedEffect(Unit) { summary = mocks.today.today() }
+                CadenceTheme {
+                    CadenceShell(
+                        navController = nav,
+                        data = CadenceShellData(summary = summary, now = mocks.nowLocal()),
+                        actions =
+                            CadenceShellActions(
+                                parseMeal = { text -> MockMealParser().parse(text) },
+                                onMealLogged = { MealLogResult.Rejected },
+                            ),
+                    )
+                }
+            }
+            waitForIdle()
+
+            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
+            waitForIdle()
+            onNodeWithTag(LOG_MEAL_CHAT_FIELD_TAG, useUnmergedTree = true).performTextReplacement("курица с рисом")
+            waitForIdle()
+            onNodeWithText("Разобрать →").performClick()
+            waitForIdle()
+            onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
+            waitForIdle()
+
+            assertTrue(
+                nav.currentBackStack.value.any { it.destination.hasRoute<CadenceRoute.LogMeal>() },
+                "a rejected draft dismissed the wizard as if it had been recorded",
+            )
+            onNodeWithText("Куриная грудка", substring = true).assertExists()
         }
 }
