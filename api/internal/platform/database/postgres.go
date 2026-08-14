@@ -7,6 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -16,6 +19,56 @@ import (
 // insufficientPrivilege is the only SQLSTATE that means "the database refused
 // this on privileges". Every other error means the probe did not find out.
 const insufficientPrivilege = "42501"
+
+// The time limits the service path runs under. Both are exported because the
+// number is load-bearing outside this package: an outward call made between two
+// statements of a service transaction is idle-in-transaction time, so whatever
+// bounds that call has to be compared against the limit here rather than against
+// a copy of it — and a copy is how two numbers stop being one.
+//
+// They are a default rather than a barrier: both settings are USERSET, so a
+// session may raise its own. Forbidding that needs a role without the SET
+// privilege and is probably impossible without a superuser — an open question in
+// the spec, written down so the ceiling is not mistaken for a wall.
+const (
+	// ServiceStatementTimeout bounds one statement on the service path.
+	ServiceStatementTimeout = 5 * time.Second
+
+	// ServiceIdleInTransactionTimeout bounds a service transaction that is
+	// holding its locks and doing nothing. Ordered against the one above by
+	// TestTheServicePathLimitsAreOrdered.
+	ServiceIdleInTransactionTimeout = 15 * time.Second
+)
+
+// serviceMaxConns is how many connections the service path may hold at once.
+//
+// Explicit because pgx's default is max(4, NumCPU) — a number nobody chose,
+// which grows with the host the process happens to land on. This path makes the
+// writes no request may make and its policies carry no row predicate; how many
+// of those run at once is a decision, and Postgres's connection budget is shared
+// with the request path.
+const serviceMaxConns = 4
+
+// serviceRuntimeParams is what the service pool sends in the startup packet:
+// the same two limits migration 000007 sets on the role, in milliseconds, which
+// is the unit both settings take a bare integer in.
+//
+// Duplicated on purpose, and neither copy replaces the other. The role setting
+// covers every session that logs in as cadence_service_app — a psql session, a
+// job somebody ran by hand. The startup packet covers this pool on a database
+// the migration never reached, a restored dump among them.
+// TestTheMigrationSetsTheNumbersTheServicePoolConnectsUnder is what keeps the
+// two spellings one number.
+func serviceRuntimeParams() map[string]string {
+	return map[string]string{
+		"statement_timeout":                   milliseconds(ServiceStatementTimeout),
+		"idle_in_transaction_session_timeout": milliseconds(ServiceIdleInTransactionTimeout),
+	}
+}
+
+func milliseconds(d time.Duration) string {
+	return strconv.FormatInt(d.Milliseconds(), 10)
+}
 
 // NewPool opens a connection pool and verifies it can reach the database, so
 // that an unreachable Postgres fails the process at startup rather than on the
@@ -28,6 +81,46 @@ const insufficientPrivilege = "42501"
 // other's grants — see VerifyPools, which asserts that at startup rather than
 // trusting the connection strings.
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	cfg, err := poolConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return open(ctx, cfg)
+}
+
+// NewServicePool opens the service path's pool.
+//
+// Its own constructor rather than NewPool with another URL, because the two
+// paths differ in more than a connection string: this one connects under both
+// time limits and holds a number of connections somebody chose. A constructor is
+// where that stops depending on whoever writes the composition root next.
+func NewServicePool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	cfg, err := serviceConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return open(ctx, cfg)
+}
+
+func serviceConfig(databaseURL string) (*pgxpool.Config, error) {
+	cfg, err := poolConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.MaxConns = serviceMaxConns
+
+	// In the startup packet rather than as a SET on every transaction: a
+	// statement that publishes the limit is a statement somebody's closure can
+	// run without, and the connection is where a limit belongs to the connection.
+	maps.Copy(cfg.ConnConfig.RuntimeParams, serviceRuntimeParams())
+
+	return cfg, nil
+}
+
+func poolConfig(databaseURL string) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing database URL: %w", err)
@@ -46,6 +139,10 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	// sits in front of this, which is where prepared statements stop working.
 	cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
 
+	return cfg, nil
+}
+
+func open(ctx context.Context, cfg *pgxpool.Config) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("creating connection pool: %w", err)
@@ -173,14 +270,11 @@ func VerifyPools(ctx context.Context, request, service *pgxpool.Pool) error {
 	return nil
 }
 
-// roleChangeIsRefused reports whether the pool's connection role is forbidden to
-// assume the named role.
-//
-// The distinction it draws is the whole value of the check. Any error at all
-// would read as "refused" — including the role not existing, which is exactly
-// the state of a cluster where the migration chain has not been applied, and
-// which would let a process start having measured nothing at all. So only 42501
-// counts as a refusal; anything else is reported as a failure to find out.
+// roleChangeIsRefused counts only 42501 as a refusal, and that distinction is
+// the whole value of the check: any error at all would read as "refused" —
+// including the role not existing, which is exactly the state of a cluster
+// where the migration chain has not been applied, and which would let a process
+// start having measured nothing. Anything else is a failure to find out.
 func roleChangeIsRefused(ctx context.Context, pool *pgxpool.Pool, role string) (bool, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {

@@ -45,6 +45,18 @@ linters:
           deny:
             - pkg: github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport
               desc: the test harness is reachable from _test.go files only
+        # Two credentials in this module travel in a request header: the admin
+        # token the provisioner mints, and the shared secret the API presents to
+        # it. httputil.DumpRequest and DumpRequestOut render every header, so one
+        # line of debugging writes either of them into the log — where they
+        # outlive the session, get shipped to whatever collects logs, and are
+        # unrecoverable once there.
+        #
+        # Tests included: a dump in a test is the same value in the same CI log.
+        no-request-dumps:
+          deny:
+            - pkg: net/http/httputil
+              desc: DumpRequest renders the Authorization and shared-secret headers into the log
 
 formatters:
   enable:

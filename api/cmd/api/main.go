@@ -59,19 +59,12 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// A second pool, not a second statement. The boundary between the request
-	// path and the service path runs along session_user: the roles they connect
-	// as can assume different things, so a bug on one cannot reach the other's
-	// grants even inside the same process.
-	servicePool, err := database.NewPool(connectCtx, cfg.Database.ServiceURL)
+	servicePool, err := database.NewServicePool(connectCtx, cfg.Database.ServiceURL)
 	if err != nil {
 		return fmt.Errorf("connecting to database on the service path: %w", err)
 	}
 	defer servicePool.Close()
 
-	// Asserted at startup rather than assumed from the connection strings. Two
-	// variables in a store are two strings somebody can swap, and the symptom of
-	// swapping them is not visible in any request.
 	if err := database.VerifyPools(connectCtx, pool, servicePool); err != nil {
 		return fmt.Errorf("verifying the connection pools: %w", err)
 	}

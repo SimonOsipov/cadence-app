@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
@@ -46,14 +47,37 @@ const (
 	adminID   = "8a1f3b7c-0000-4000-8000-000000000003"
 )
 
-// stand brings up a database with the chain applied, a service pool, and the one
-// row every test here needs: a doctor to assign the patient to.
+// provisioningJob is the harness itself: the rows the fixtures need exist
+// because a test put them there, and no human asked for them.
+const provisioningJob = "test.provisioning"
+
+// asTheDoctor is the request a patient is created on behalf of.
+//
+// Since step-4 the audit actor is read off the principal instead of being passed
+// in, so creating a patient is no longer something a test can do anonymously —
+// which is the point: in production this is a doctor's action, and the audit row
+// now has to say so.
+func asTheDoctor(t *testing.T) context.Context {
+	t.Helper()
+
+	return auth.WithPrincipal(t.Context(), auth.Principal{Subject: doctorID, Role: "doctor"})
+}
+
+// stand brings up a database with the chain applied, a service pool, and the two
+// rows every test here needs: a doctor to assign the patient to, and an admin to
+// ask the policies about.
 //
 // The doctor is written through the service seam rather than by the owner,
 // because under forced row level security the owner cannot write these tables
 // either. That is not an inconvenience of the harness — it is the property the
 // whole arrangement is built on, and this path is the only way rows exist at all.
-func stand(t *testing.T) (*pgxpool.Pool, *testsupport.Database, database.Actor) {
+//
+// The admin is the exception, and it is one since 000006 rather than an oversight
+// of the harness: the service policies on profiles refuse the value outright, so
+// the row is written by the superuser instead. Everything the tests below assert
+// about an admin caller is unchanged; only the way the row comes into being is,
+// and that is the point of the step.
+func stand(t *testing.T) (*pgxpool.Pool, *testsupport.Database) {
 	t.Helper()
 
 	db := cluster.NewDatabase(t)
@@ -64,35 +88,29 @@ func stand(t *testing.T) (*pgxpool.Pool, *testsupport.Database, database.Actor) 
 	}
 	t.Cleanup(pool.Close)
 
-	actor, err := database.ActingAsJob("test.provisioning")
-	if err != nil {
-		t.Fatalf("building the actor: %v", err)
-	}
-
-	if err := database.WithService(
-		t.Context(), pool, actor,
+	if err := database.WithServiceJob(
+		t.Context(), pool, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
-			for _, seed := range []struct {
-				id, role, name string
-			}{
-				{doctorID, "doctor", "Марина Крылова"},
-				{adminID, "admin", "Пётр Аверин"},
-			} {
-				if _, err := tx.Exec(ctx, `
-					INSERT INTO app.profiles (user_id, role, full_name, timezone)
-					VALUES ($1, $2, $3, 'Europe/Moscow')
-				`, seed.id, seed.role, seed.name); err != nil {
-					return err
-				}
-			}
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.profiles (user_id, role, full_name, timezone)
+				VALUES ($1, 'doctor', 'Марина Крылова', 'Europe/Moscow')
+			`, doctorID)
 
-			return nil
+			return err
 		},
 	); err != nil {
-		t.Fatalf("seeding the clinic: %v", err)
+		t.Fatalf("seeding the doctor: %v", err)
 	}
 
-	return pool, db, actor
+	superuser := testsupport.Connect(t, db.SuperuserURL)
+	if _, err := superuser.Exec(t.Context(), `
+		INSERT INTO app.profiles (user_id, role, full_name, timezone)
+		VALUES ($1, 'admin', 'Пётр Аверин', 'Europe/Moscow')
+	`, adminID); err != nil {
+		t.Fatalf("seeding the admin: %v", err)
+	}
+
+	return pool, db
 }
 
 // The values are deliberately all different from one another: two adjacent
@@ -122,17 +140,16 @@ func newPatient() identity.NewPatient {
 // Four rows and an audit record, or none of them. This is the direction that has
 // to work before any of the refusals below mean anything.
 func TestCreatePatientWritesEverythingThatDescribesThem(t *testing.T) {
-	pool, db, actor := stand(t)
-	ctx := t.Context()
+	pool, db := stand(t)
+	ctx := asTheDoctor(t)
 
-	if err := identity.CreatePatient(ctx, pool, actor, newPatient()); err != nil {
+	if err := identity.CreatePatient(ctx, pool, newPatient()); err != nil {
 		t.Fatalf("CreatePatient: %v", err)
 	}
 
-	// Counted through the superuser, not through a seam. The service role holds
-	// INSERT on audit_log and not SELECT — the grants matrix says so — and a
-	// test that had to be granted something to see its own result would be
-	// changing the arrangement it is checking.
+	// Counted through the superuser: the service role holds INSERT on audit_log
+	// and not SELECT, and a test that had to be granted something to see its own
+	// result would be changing the arrangement it is checking.
 	observer := testsupport.Connect(t, db.SuperuserURL)
 
 	var profiles, cards, assignments, preferences, audits int
@@ -171,20 +188,21 @@ func TestCreatePatientWritesEverythingThatDescribesThem(t *testing.T) {
 	var role, fullName, timezone, locale, sex, careRole string
 	var height, target float64
 	var isPrimary bool
-	var action, entity, actorJob string
+	var action, entity, actorID, actorJob string
 	var entityID string
 	if err := observer.QueryRow(ctx, `
 		SELECT p.role, p.full_name, p.timezone, p.locale,
 		       c.sex, c.height_cm, c.target_weight_kg,
 		       a.care_role, a.is_primary,
-		       l.action, l.entity, l.entity_id::text, l.actor_job
+		       l.action, l.entity, l.entity_id::text,
+		       coalesce(l.actor_id::text, ''), coalesce(l.actor_job, '')
 		FROM app.profiles p
 		JOIN app.patient_profiles c ON c.user_id = p.user_id
 		JOIN app.care_team_assignments a ON a.patient_id = p.user_id
 		JOIN app.audit_log l ON l.patient_id = p.user_id
 		WHERE p.user_id = $1
 	`, patientID).Scan(&role, &fullName, &timezone, &locale, &sex, &height, &target,
-		&careRole, &isPrimary, &action, &entity, &entityID, &actorJob); err != nil {
+		&careRole, &isPrimary, &action, &entity, &entityID, &actorID, &actorJob); err != nil {
 		t.Fatalf("reading back what was written: %v", err)
 	}
 
@@ -198,7 +216,11 @@ func TestCreatePatientWritesEverythingThatDescribesThem(t *testing.T) {
 		"action":    {action, "patient.create"},
 		"entity":    {entity, "profiles"},
 		"entity_id": {entityID, patientID},
-		"actor_job": {actorJob, "test.provisioning"},
+		// The audit row names the doctor the request was verified as, and names
+		// no job: creating a patient is somebody's action, and since step-4 the
+		// seam reads who from the principal rather than from an argument.
+		"actor_id":  {actorID, doctorID},
+		"actor_job": {actorJob, ""},
 	} {
 		if got[0] != got[1] {
 			t.Errorf("%s = %q, want %q", what, got[0], got[1])
@@ -215,8 +237,6 @@ func TestCreatePatientWritesEverythingThatDescribesThem(t *testing.T) {
 		t.Error("is_primary = false on the only specialist, who was named primary")
 	}
 
-	// joined_at is the moment the invitation is accepted, which has not
-	// happened. profiles.created_at is the moment the clinic created the row.
 	if joined != nil {
 		t.Errorf("joined_at is %q on a patient who has not accepted an invitation", *joined)
 	}
@@ -225,8 +245,8 @@ func TestCreatePatientWritesEverythingThatDescribesThem(t *testing.T) {
 // A refusal partway through takes everything with it, the audit row included.
 // There is nothing to have signed.
 func TestCreatePatientLeavesNothingBehindWhenItRefuses(t *testing.T) {
-	pool, db, actor := stand(t)
-	ctx := t.Context()
+	pool, db := stand(t)
+	ctx := asTheDoctor(t)
 
 	// The refusal has to arrive after writing has started, or there is nothing
 	// to have left behind. Every check that can run before the transaction does
@@ -237,7 +257,7 @@ func TestCreatePatientLeavesNothingBehindWhenItRefuses(t *testing.T) {
 	patient.Specialists = append(patient.Specialists,
 		identity.Assignment{ProviderID: doctorID, CareRole: "nurse"})
 
-	if err := identity.CreatePatient(ctx, pool, actor, patient); !errors.Is(
+	if err := identity.CreatePatient(ctx, pool, patient); !errors.Is(
 		err, identity.ErrAlreadyExists,
 	) {
 		t.Fatalf("CreatePatient = %v, want ErrAlreadyExists", err)
@@ -279,8 +299,8 @@ func mutate(change func(*identity.NewPatient)) identity.NewPatient {
 }
 
 func TestCreatePatientRefusesWhatTheRulesForbid(t *testing.T) {
-	pool, _, actor := stand(t)
-	ctx := t.Context()
+	pool, _ := stand(t)
+	ctx := asTheDoctor(t)
 
 	cases := map[string]struct {
 		patient identity.NewPatient
@@ -323,7 +343,7 @@ func TestCreatePatientRefusesWhatTheRulesForbid(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			if err := identity.CreatePatient(ctx, pool, actor, tc.patient); !errors.Is(err, tc.want) {
+			if err := identity.CreatePatient(ctx, pool, tc.patient); !errors.Is(err, tc.want) {
 				t.Errorf("CreatePatient = %v, want %v", err, tc.want)
 			}
 		})
@@ -334,14 +354,14 @@ func TestCreatePatientRefusesWhatTheRulesForbid(t *testing.T) {
 // speaking: a check-then-insert is two statements with a gap between them, and
 // the gap is where two people adding the same patient both find nothing.
 func TestCreatePatientRefusesWhatIsAlreadyThere(t *testing.T) {
-	pool, _, actor := stand(t)
-	ctx := t.Context()
+	pool, _ := stand(t)
+	ctx := asTheDoctor(t)
 
-	if err := identity.CreatePatient(ctx, pool, actor, newPatient()); err != nil {
+	if err := identity.CreatePatient(ctx, pool, newPatient()); err != nil {
 		t.Fatalf("CreatePatient: %v", err)
 	}
 
-	if err := identity.CreatePatient(ctx, pool, actor, newPatient()); !errors.Is(
+	if err := identity.CreatePatient(ctx, pool, newPatient()); !errors.Is(
 		err, identity.ErrAlreadyExists,
 	) {
 		t.Errorf("creating the same patient twice = %v, want ErrAlreadyExists", err)
@@ -354,7 +374,7 @@ func TestCreatePatientRefusesWhatIsAlreadyThere(t *testing.T) {
 	twice.Specialists = append(twice.Specialists,
 		identity.Assignment{ProviderID: doctorID, CareRole: "dietitian"})
 
-	if err := identity.CreatePatient(ctx, pool, actor, twice); !errors.Is(
+	if err := identity.CreatePatient(ctx, pool, twice); !errors.Is(
 		err, identity.ErrAlreadyExists,
 	) {
 		t.Errorf("naming the same specialist twice = %v, want ErrAlreadyExists", err)
@@ -366,10 +386,10 @@ func TestCreatePatientRefusesWhatIsAlreadyThere(t *testing.T) {
 // protection against forgery — code that can write the row can write the setting
 // — and it is worth exactly that much.
 func TestAnAuditRowNamingSomebodyElseIsRefused(t *testing.T) {
-	pool, _, actor := stand(t)
+	pool, _ := stand(t)
 	ctx := t.Context()
 
-	err := database.WithService(ctx, pool, actor, func(ctx context.Context, tx pgx.Tx) error {
+	err := database.WithServiceJob(ctx, pool, provisioningJob, func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO app.audit_log (actor_job, action, entity)
 			VALUES ('somebody.else', 'patient.create', 'profiles')
@@ -390,8 +410,8 @@ func TestAnAuditRowNamingSomebodyElseIsRefused(t *testing.T) {
 
 	// The control: the same row naming the published actor goes in. Without it
 	// the assertion above would hold against a policy that refuses everything.
-	if err := database.WithService(
-		ctx, pool, actor,
+	if err := database.WithServiceJob(
+		ctx, pool, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
 				INSERT INTO app.audit_log (actor_job, action, entity)
@@ -409,10 +429,10 @@ func TestAnAuditRowNamingSomebodyElseIsRefused(t *testing.T) {
 // UPDATE or DELETE on this table and no policy grants either, so the refusal
 // arrives before row level security is consulted at all.
 func TestTheAuditLogIsAppendOnlyForEverybody(t *testing.T) {
-	pool, db, actor := stand(t)
-	ctx := t.Context()
+	pool, db := stand(t)
+	ctx := asTheDoctor(t)
 
-	if err := identity.CreatePatient(ctx, pool, actor, newPatient()); err != nil {
+	if err := identity.CreatePatient(ctx, pool, newPatient()); err != nil {
 		t.Fatalf("CreatePatient: %v", err)
 	}
 

@@ -339,6 +339,14 @@ func (c *Cluster) exec(ctx context.Context, dsn, statement string) error {
 func MigrationsPath(t *testing.T) string {
 	t.Helper()
 
+	return filepath.Join(ModuleRoot(t), "migrations")
+}
+
+// ModuleRoot is the directory holding go.mod, found by walking up from the
+// package under test. Same reason as MigrationsPath.
+func ModuleRoot(t *testing.T) string {
+	t.Helper()
+
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("reading working directory: %v", err)
@@ -346,7 +354,7 @@ func MigrationsPath(t *testing.T) string {
 
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return filepath.Join(dir, "migrations")
+			return dir
 		}
 
 		parent := filepath.Dir(dir)

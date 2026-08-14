@@ -335,16 +335,32 @@ func TestAlienRolesHoldNothingInTheApplicationSchema(t *testing.T) {
 	ctx := t.Context()
 
 	admin := testsupport.Connect(t, cluster.AdminDSN())
-	if _, err := admin.Exec(ctx, `CREATE ROLE service_role NOLOGIN`); err != nil {
-		t.Fatalf("creating the alien role: %v", err)
+
+	// Roles are cluster objects, and the GoTrue harness creates this same name
+	// for the same reason the local stack does. So the role is planted only when
+	// it is missing, and taken away only by whoever planted it — a bare CREATE
+	// makes this test fail whenever an identity provider ran first in the same
+	// binary, and an unconditional DROP would take the role out from under the
+	// next one.
+	var missing bool
+	if err := admin.QueryRow(
+		ctx, `SELECT NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role')`,
+	).Scan(&missing); err != nil {
+		t.Fatalf("looking for the alien role: %v", err)
 	}
 
-	t.Cleanup(func() {
-		cleanupCtx := context.WithoutCancel(ctx)
-		if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS service_role`); err != nil {
-			t.Errorf("dropping the alien role: %v", err)
+	if missing {
+		if _, err := admin.Exec(ctx, `CREATE ROLE service_role NOLOGIN`); err != nil {
+			t.Fatalf("creating the alien role: %v", err)
 		}
-	})
+
+		t.Cleanup(func() {
+			cleanupCtx := context.WithoutCancel(ctx)
+			if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS service_role`); err != nil {
+				t.Errorf("dropping the alien role: %v", err)
+			}
+		})
+	}
 
 	// Created after the role, so the chain runs in a cluster where the alien
 	// role already exists — which is the order a real deployment has.
@@ -420,11 +436,9 @@ func TestApplicationSchemaIsOwnedByTheOwnerRole(t *testing.T) {
 	}
 }
 
-// The chain has to survive without superuser, because it will never have one:
-// on Supabase the role that applies migrations is `postgres`, which has
-// CREATEROLE and CREATEDB and is not a superuser. Asserted rather than assumed
-// so that a future change to the harness cannot quietly hand the chain rights
-// the deployment does not have.
+// The chain has to survive without superuser, because it will never have one —
+// see bootstrapRole. Asserted rather than assumed so that a future change to the
+// harness cannot quietly hand the chain rights the deployment does not have.
 func TestChainAppliesWithoutSuperuser(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.MigrationURL)
@@ -438,7 +452,7 @@ func TestChainAppliesWithoutSuperuser(t *testing.T) {
 	}
 
 	if super {
-		t.Fatal("the chain was applied by a superuser, so it proves nothing about Supabase")
+		t.Fatal("the chain was applied by a superuser, so it proves nothing about the deployment")
 	}
 }
 
@@ -751,6 +765,44 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 		return objects
 	}
 
+	// The same objects, plus what a policy actually says, plus what the chain's
+	// roles carry as connection defaults. A migration that rewrites a policy
+	// rather than adding one leaves the count where it was — 000006 is the first
+	// of those — and one that only sets a limit on a role touches the schema not
+	// at all, which 000007 is the first of. The witness has to be able to see
+	// both, or an empty down file passes.
+	describeSchema := func() string {
+		t.Helper()
+
+		var description string
+		if err := admin.QueryRow(ctx, `
+			SELECT coalesce(string_agg(line, E'\n' ORDER BY line), '') FROM (
+				SELECT c.relkind::text || ' ' || c.relname AS line
+				FROM pg_class c
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+				UNION ALL
+				SELECT 'f ' || p.proname || ' ' || pg_get_functiondef(p.oid)
+				FROM pg_proc p
+				JOIN pg_namespace n ON n.oid = p.pronamespace
+				WHERE n.nspname = $1
+				UNION ALL
+				SELECT 'p ' || tablename || ' ' || policyname || ' ' || cmd || ' ' ||
+				       coalesce(qual, '-') || ' | ' || coalesce(with_check, '-')
+				FROM pg_policies WHERE schemaname = $1
+				UNION ALL
+				SELECT 'r ' || r.rolname || ' ' || array_to_string(s.setconfig, ',')
+				FROM pg_db_role_setting s
+				JOIN pg_roles r ON r.oid = s.setrole
+				WHERE r.rolname = ANY($2)
+			) AS objects
+		`, testsupport.AppSchema, testsupport.ChainRoles()).Scan(&description); err != nil {
+			t.Fatalf("describing the schema: %v", err)
+		}
+
+		return description
+	}
+
 	before := appliedVersion()
 	if before == nil || *before < 2 {
 		t.Fatal("the chain is one migration long, so stepping through it says nothing")
@@ -759,6 +811,7 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 	if objectsBefore == 0 {
 		t.Fatal("the schema holds nothing, so a rollback has nothing to be seen undoing")
 	}
+	describedBefore := describeSchema()
 
 	if err := database.MigrateDown(db.MigrationURL, path, 1); err != nil {
 		t.Fatalf("rolling back one step: %v", err)
@@ -776,12 +829,20 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 
 	// And the file it ran actually did something. golang-migrate decrements the
 	// version whether or not the SQL inside the down file changed anything, so
-	// without an object-level witness an empty down migration passes — and the
+	// without a schema-level witness an empty down migration passes — and the
 	// whole-chain assertions below cannot supply one, because the base migration
 	// drops the schema CASCADE and sweeps up whatever was left behind.
-	if objectsAfter := countObjects(); objectsAfter >= objectsBefore {
+	//
+	// The witness is the description rather than the count, because a migration
+	// whose whole content is a rewritten policy leaves the count untouched while
+	// changing the schema. The count is still checked in the one direction it
+	// still means something: rolling back does not add.
+	if describeSchema() == describedBefore {
+		t.Error("the schema is unchanged by the rollback; the migration's down file did nothing")
+	}
+	if objectsAfter := countObjects(); objectsAfter > objectsBefore {
 		t.Errorf("the schema held %d objects before the rollback and %d after; the migration's "+
-			"down file removed nothing", objectsBefore, objectsAfter)
+			"down file added to it", objectsBefore, objectsAfter)
 	}
 
 	// It took the base arrangement nothing, though: the operator undoing the last
@@ -800,8 +861,6 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 		}
 	}
 
-	// The end of the road: the base migration goes through this path too, and
-	// its rollback is the one that removes the roles.
 	if remaining := countRoles(); remaining != 0 {
 		t.Errorf("%d of the chain's roles survived unwinding the chain step by step", remaining)
 	}
