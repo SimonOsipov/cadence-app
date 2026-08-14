@@ -328,6 +328,20 @@ A comment on the spot explains why this is a load-bearing control: `POST /recove
 is public, and `auth.users.confirmation_token` is the credential.
 todoist: "6h9JQ3Gp3Vg2xwjH"
 
+> [!deviation] 2026-08-14
+> The step describes only the walk. Two things outside its text were needed to
+> write it, both in the test harness and neither touching the access model:
+> - testsupport.StartGoTrueOn (and the prepareForGoTrue split behind it),
+>   because the chain's roles and GoTrue's relations must be in one catalogue
+>   for "no access to auth" to be a question Postgres can answer. GoTrue in the
+>   harness already existed for step-2.
+> - TestAlienRolesHoldNothingInTheApplicationSchema now plants service_role only
+>   when it is missing and drops it only when it planted it. Roles are cluster
+>   objects and the GoTrue harness creates the same Supabase names, so the bare
+>   CREATE ROLE failed with 42710 once an identity provider ran first in the
+>   same test binary, and an unconditional DROP would take the role out from
+>   under the next one. The assertion is unchanged.
+
 ### step-4: The ban on `role='admin'` from the request path, and the actor from the principal
 
 The service-path policy on `profiles` gains
@@ -340,6 +354,31 @@ Tests: an attempt to write `role='admin'` through the service path is rejected b
 the database; a handler cannot name somebody else's `uuid`; a path with no human
 writes `actor_job`; an audit row on a doctor's behalf names the doctor.
 todoist: "6h9JQ3VvvxJh45jH"
+
+> [!deviation] 2026-08-14
+> The step names no edits to existing tests, unlike step-1. Several were needed.
+> Most are mechanical consequences of the new signature — call sites moving to
+> WithServiceJob, the audit assertion moving from actor_job to actor_id — and
+> are not recorded here. Three are decisions:
+> - TestNoPolicyBodyNamesAProductRole -> TestNoPolicyBodyDecidesTheCallersRole.
+>   000004's header declares "no policy body here contains the literals
+>   'patient', 'doctor' or 'admin' — a test asserts that", and this step's
+>   WITH CHECK contains two of them. The rule that sentence stood for is that the
+>   *caller's* role is never compared against a value; the new check constrains
+>   the row's value instead. The test now says both halves: the two policies
+>   permitted to name a role at all are declared, and no policy may name one in a
+>   body that also reads a claim. Both halves were mutation-tested. The
+>   correction to 000004's header is written into 000006, since 000004 is
+>   immutable.
+> - TestUnwindingTheChainOneStepAtATimeReachesTheBase asserted that a down
+>   migration strictly reduces the object count. 000006 is the first migration
+>   whose whole content is a rewritten policy, so its down file changes the
+>   schema without changing the count. The witness is now a description of the
+>   schema including every policy's predicate; the count is still asserted in the
+>   direction that still means something, that a rollback does not add.
+> - Two fixtures that seeded an admin profile through the service path (stand()
+>   in identity, seedProfiles() in the database package) now write that row with
+>   the superuser. Their assertions are unchanged.
 
 ### step-5: The `provisioner` component
 
@@ -358,6 +397,24 @@ reason separately — and accepted by GoTrue. A probe against the deployed harne
 public name: no route resolves to `provisioner`.
 todoist: "6h9JQ3gPxrhPFMmH"
 
+> [!deviation] 2026-08-14
+> The step asks for "the manifest and the variables, accounting for the App
+> Platform constraints". No manifest was written.
+> docs/specs/deploy-observability.md carries the criterion "today there is
+> neither a Dockerfile nor an App Platform manifest, and no other spec creates
+> them" and claims both artefacts; writing one here would break that spec's
+> acceptance criterion and add a platform artefact this story has no way to
+> verify. What is written instead: the placement provisioner requires — never
+> the first service, a port of its own rather than 80 or 443, no volumes — in
+> cmd/provisioner/main.go's package doc, and the variables in load(), the
+> loader that fails startup without them, per the project's no-.env.example
+> rule.
+> The probe against the deployed harness's public name is written
+> (scripts/probe/provisioner-is-not-proxied.sh) and has not been run: there is
+> no deployment, and standing one up is SKL-06, a manual blocker. That
+> acceptance criterion is open (⏸ Requires SKL-06), not satisfied, and is the
+> one claim about this component that is stated rather than measured.
+
 ### step-6: The `provisioner` client and the time bounds
 
 The interface is declared by the consumer in `internal/identity`, the implementation
@@ -374,6 +431,21 @@ logs, URLs, or the query string, and request dumps are forbidden by a gate rule;
 grep rule forbids mentioning the admin key's variable in `api/cmd/api` and
 `api/internal/**`.
 todoist: "6h9JQ3pfvMFFQ8Xq"
+
+> [!deviation] 2026-08-14
+> Three things outside the step's own text:
+> - `describeSchema` in `TestUnwindingTheChainOneStepAtATimeReachesTheBase`
+>   now also describes `pg_db_role_setting` for the chain's roles. 000007 is
+>   the first migration that touches no object in the app schema, so without
+>   this its down file could be emptied and the rollback witness would stay
+>   green. Measured both ways.
+> - `httpserver.RequestDeadline` and the middleware carrying it are new. The
+>   step names "the request gets a context deadline" and the acceptance
+>   criteria call it the connection-acquisition budget; nothing set one
+>   before, and the incoming request is where it belongs.
+> - `provisioning.LookupBatch` answers an empty list without calling the
+>   component, which refuses one with a 400. A clinic with no patients yet
+>   is an ordinary state rather than a caller's mistake.
 
 ## Открытые вопросы
 
