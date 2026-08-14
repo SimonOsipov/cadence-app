@@ -25,6 +25,7 @@ import app.cadence.screens.dose.DoseWizard
 import app.cadence.screens.inventory.AddVialScreen
 import app.cadence.screens.inventory.VialDetailSheet
 import app.cadence.screens.inventory.VialsScreen
+import app.cadence.screens.nutrition.LogMealScreen
 import app.cadence.screens.schedule.ScheduleScreen
 import app.cadence.screens.schedule.ScheduleState
 import app.cadence.screens.today.TodayScreen
@@ -49,6 +50,7 @@ import app.cadence.shared.domain.VialId
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
 import app.cadence.shared.parsing.MealParseResult
+import app.cadence.shared.parsing.MockMealParser
 import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.MealLogResult
 import app.cadence.shared.repository.MetricDetail
@@ -61,6 +63,7 @@ import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 
 /** Until sign-in says whose app this is — block 7. */
@@ -92,6 +95,66 @@ private fun rememberTrendsState(
     return state
 }
 
+/**
+ * Everything one `reloads` bump re-reads, held together for the same reason [TrendsUiState]
+ * is: eight `remember`s in [CadenceApp] and one effect that assigns them all is one fact —
+ * "what the repositories last said" — spelled eight times.
+ */
+private class DayUiState {
+    var summary by mutableStateOf<TodaySummary?>(null)
+
+    // TodaySummary carries only the count and the fold — this is TodayMeals' own list.
+    var todayMeals by mutableStateOf<List<Meal>>(emptyList())
+    var schedule by mutableStateOf<ScheduleState?>(null)
+    var cabinet by mutableStateOf<InventorySummary?>(null)
+}
+
+@Composable
+private fun rememberDayState(
+    mocks: CadenceMocks,
+    reloads: Int,
+): DayUiState {
+    val state = remember { DayUiState() }
+    LaunchedEffect(reloads) {
+        val today = mocks.today.today()
+        state.summary = today
+        state.schedule = mocks.scheduleFor(today)
+        state.cabinet = mocks.inventory.cabinet()
+        state.todayMeals = mocks.nutrition.day(today.date).meals
+    }
+    return state
+}
+
+/**
+ * The confirmation toast and the counter that restarts its timer, together — they are one
+ * fact and were two `remember`s.
+ *
+ * Keyed on a counter, not the toast itself: [ConfirmToastState] is a data class and
+ * `mutableStateOf` compares structurally, so an equal toast raised inside the window would
+ * be no assignment at all — no restart, and the new confirmation would inherit the old
+ * timer. No UI test reaches the identical-toast case directly (the overlay blocks a second
+ * tap until the first toast clears — `ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp`),
+ * but the counter stays for any future non-tap trigger.
+ */
+internal class ToastUiState {
+    var state by mutableStateOf<ConfirmToastState?>(null)
+        private set
+    var raisedAt by mutableStateOf(0)
+        private set
+
+    fun raise(
+        mealName: String,
+        dayKcal: Int,
+    ) {
+        state = ConfirmToastState(mealName, dayKcal)
+        raisedAt++
+    }
+
+    fun clear() {
+        state = null
+    }
+}
+
 /** The month around [today], in the shape «График» draws. */
 private suspend fun CadenceMocks.scheduleFor(today: TodaySummary): ScheduleState =
     ScheduleState(
@@ -115,37 +178,19 @@ fun CadenceApp(
     mocks: CadenceMocks = remember { CadenceMocks(FixedCadenceClock.at(MockSeed.DEMO_NOW)) },
 ) {
     val scope = rememberCoroutineScope()
-    var summary by remember { mutableStateOf<TodaySummary?>(null) }
-    // TodaySummary carries only the count and the fold — this is TodayMeals' own list.
-    var todayMeals by remember { mutableStateOf<List<Meal>>(emptyList()) }
     // Bumped by every write so the next read goes back to the repository, not a stale snapshot.
     var reloads by remember { mutableStateOf(0) }
 
+    val parser = remember { MockMealParser() }
+    val day = rememberDayState(mocks, reloads)
     val trendsState = rememberTrendsState(mocks, reloads)
+    val summary = day.summary
 
-    var schedule by remember { mutableStateOf<ScheduleState?>(null) }
-    var cabinet by remember { mutableStateOf<InventorySummary?>(null) }
     var openVial by remember { mutableStateOf<VialDetail?>(null) }
-
-    LaunchedEffect(reloads) {
-        val today = mocks.today.today()
-        summary = today
-        schedule = mocks.scheduleFor(today)
-        cabinet = mocks.inventory.cabinet()
-        todayMeals = mocks.nutrition.day(today.date).meals
-    }
-
     var actionsOpen by remember { mutableStateOf(false) }
-    var toast by remember { mutableStateOf<ConfirmToastState?>(null) }
-    // Keyed on a counter, not the toast itself: ConfirmToastState is a data class and
-    // mutableStateOf compares structurally, so an equal toast inside the window would be no
-    // assignment at all — no restart, and the new confirmation inherits the old timer.
-    // No UI test reaches the identical-toast case directly (the overlay blocks a second tap
-    // until the first toast clears — ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp),
-    // but the counter stays for any future non-tap trigger (repository push, recipe add).
-    var raisedAt by remember { mutableStateOf(0) }
+    val toast = remember { ToastUiState() }
 
-    ToastLifetime(raisedAt, toast) { toast = null }
+    ToastLifetime(toast.raisedAt, toast.state, toast::clear)
 
     Box(modifier.fillMaxSize()) {
         CadenceShell(
@@ -153,11 +198,12 @@ fun CadenceApp(
             data =
                 CadenceShellData(
                     summary = summary,
-                    todayMeals = todayMeals,
-                    schedule = schedule,
-                    cabinet = cabinet,
+                    todayMeals = day.todayMeals,
+                    schedule = day.schedule,
+                    cabinet = day.cabinet,
                     trends = trendsState.overview,
                     trendWindow = trendsState.window,
+                    now = mocks.nowLocal(),
                     zone = mocks.zone,
                 ),
             actions =
@@ -177,6 +223,8 @@ fun CadenceApp(
                     },
                     onTrendWindow = { trendsState.window = it },
                     onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
+                    parseMeal = { text -> parser.parse(text) },
+                    onMealLogged = { draft -> logMeal(mocks, toast, draft) { reloads++ } },
                 ),
         )
 
@@ -189,7 +237,7 @@ fun CadenceApp(
             navController.openRoute(CadenceRoute.LogDose(vialId.raw))
         })
 
-        ConfirmToast(state = toast, targetKcal = summary?.targets?.kcal ?: 0)
+        ConfirmToast(state = toast.state, targetKcal = summary?.targets?.kcal ?: 0)
     }
 }
 
@@ -223,6 +271,8 @@ data class CadenceShellData(
     val cabinet: InventorySummary? = null,
     val trends: TrendsOverview? = null,
     val trendWindow: TrendWindow = TrendWindow.THREE_MONTHS,
+    /** The clock's own reading, for the one screen that stamps «сейчас» on what it writes. */
+    val now: LocalDateTime? = null,
     val nutritionDay: NutritionDay? = null,
     val nutritionWeek: NutritionWeek? = null,
     val recipes: RecipeList? = null,
@@ -448,7 +498,7 @@ private fun NavGraphBuilder.modalRoutes(
         )
     }
     modal<CadenceRoute.LogMeal> {
-        PlaceholderScreen(title = "Записать приём пищи", onBack = back)
+        LogMealModal(summary = data.summary, now = data.now, actions = actions, back = back)
     }
     modal<CadenceRoute.AddVial> {
         // Gated on the read like its siblings: substituting MockSeed.cycleStart for a
