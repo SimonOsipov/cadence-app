@@ -314,6 +314,13 @@ into an `hour` that the next line discards with `void hour`.
 **What we do:** port it as it is — four states by meal count
 (`MealHero.kt:63-70`), no dish named.
 
+**What we do differently, and deliberately:** the remaining line is restructured.
+The prototype draws one 13sp paragraph, «{ккал} ккал · {белок} г белка осталось.
+{meta}» (`TodayScreen.tsx:783-800`); we promote the numbers to a 22sp «Осталось …
+ккал · … г белка» and put the suggestion's `meta` on its own body line beneath
+(`MealHero.kt:109-118`). Decided 2026-08-11 in the nutrition spec — the remaining
+figure is what the card is for, and `TodayScreenTest.kt:324` pins the wording.
+
 **Why this is recorded rather than deleted:** the claim survived two ports and
 was cited as the reason a whole card was left unbuilt. The register is read as
 evidence about the prototype; an entry that misdescribes it is worse than a
@@ -379,14 +386,19 @@ None of these is a decision anyone made; they are what a port leaves behind when
 it is measured by tests rather than by a side-by-side run. Step 11 is that run.
 
 **The dropped timestamp, revisited 2026-08-14.** It stays dropped, and now for a
-stated reason rather than by omission. The clock exists, so the time is no longer
-the obstacle; two other things are. `TodaySummary` (`TodayRepository.kt:26-55`)
-carries `suggestedSite` and `doseLoggedToday` but neither the hour of today's
-injection nor its site — that needs a new field in `shared`. And `InjectionSite`
-(`Dosing.kt:18-31`) has ten values with no Russian labels anywhere in
-`app.cadence.format`; half the sites would render as enum names unless the whole
-table is written. Both belong to the dosing surface, not to the nutrition port
-that happened to walk past them.
+stated reason rather than by omission. One thing is missing, and it is a
+contract, not a label: `TodaySummary` (`TodayRepository.kt:22-52`) carries
+`suggestedSite` and `doseLoggedToday` but neither the hour of today's injection
+nor the site it went into, and nothing else in `shared` exposes them — the
+dosing repository submits events and never reads them back. Adding that field
+belongs to the dosing surface, not to the nutrition port that walked past it.
+
+The Russian site names are **not** an obstacle, contrary to what an earlier
+version of this paragraph claimed: `CadenceBodyZone` (`CadenceBodyMap.kt:49-74`)
+carries a `labelRu` for all ten values of `InjectionSite` (`Dosing.kt:14-27`),
+`BodyMapTest` pins the mapping as total against `InjectionSite.entries`, and two
+screens already render a site through it (`DoseSteps.kt:411`,
+`VialDetailSheet.kt:140`).
 
 ## The rotation suggestion is computed, not seeded
 
@@ -998,10 +1010,12 @@ M9 он **неизмерим** — не потому, что порт что-т�
 
 ## Питание: время приёма берётся из часов, а не из двух литералов
 
-**Что делает прототип:** запись приёма из мастера отдаёт `time: '08:42'`
-(`LogMealScreen.tsx:365`), а приём из рецепта — `DAY_STATES[DAY_STATE].now`,
-то есть `'13:14'` для дневного состояния (`AppState.tsx:134`, `meal/data.ts:165`).
-Два разных фальшивых времени в одной сессии.
+**Что делает прототип:** три литерала, не два. Шапка мастера прибита целиком —
+«08:42 · вс 24 мая» (`LogMealScreen.tsx:133`), то есть и время, и дата. Запись
+приёма из мастера отдаёт `time: '08:42'` (`:365`). Приём из рецепта получает
+`DAY_STATES[DAY_STATE].now`, то есть `'13:14'` для дневного состояния
+(`AppState.tsx:134`, `meal/data.ts:165`) — два разных фальшивых времени в одной
+сессии.
 
 **Что делаем мы:** приём штампуется часами (`MockNutritionRepository.log`
 читает `clock.now()` один раз — и для записи, и для дневных итогов), а мастер
@@ -1027,7 +1041,7 @@ totals.kcal]` и такой же массив по белку (`NutritionScreen.
 ## Питание: коуч вычисляется и не рисуется — ни у прототипа, ни у нас
 
 **Что делает прототип:** `appendMeal` зовёт `pickMealCoach(...)` и кладёт
-результат в `mealCoach` на контексте (`AppState.tsx:112`, `:79`, `:185`). Ни
+результат в `mealCoach` на контексте (`AppState.tsx:113`, `:79`, `:185`). Ни
 один экран его не читает: во всём `mobile/src` три упоминания, и все три внутри
 `AppState.tsx`.
 
@@ -1082,9 +1096,11 @@ totals.kcal]` и такой же массив по белку (`NutritionScreen.
 
 **Что делаем мы:** так же — хотя `CadenceSegmented` уже существовал и напрашивался.
 
-**Почему это записано:** замер, а не вкус. При ширине строки 343dp сегмент-контрол
-отводит «Мягкие для желудка» 72dp при естественных 132dp; на 375pt-телефоне
-обрезаются ещё «Завтрак» и «Перекус» — три значения из девяти. Фильтр, чьи
+**Почему это записано:** замер, а не вкус, и с шириной, при которой он взят
+(`RecipesScreen.kt:329-335`). При строке 358dp — это 390pt-телефон минус
+16dp отступов — сегмент-контрол отводит «Мягкие для желудка» 72dp при
+естественных 132dp; при 343dp (375pt, iPhone SE) обрезаются ещё «Завтрак» и
+«Перекус». Три значения из девяти нечитаемы на обычных телефонах. Фильтр, чьи
 значения нельзя прочитать, сломан, а не просто некрасив.
 
 ## Рецепты: граммы сбрасываются только при выборе **другого** продукта
@@ -1147,3 +1163,17 @@ totals.kcal]` и такой же массив по белку (`NutritionScreen.
 переносятся. Отмечено отдельно, потому что «пустая колонка» легко читается как
 намеренная сдержанность вёрстки, и следующий читатель прототипа воспроизведёт
 её обратно.
+
+## Рецепты: калории и белок строки — один текст, а не два цветных
+
+**Что делает прототип:** строка рецепта рисует два мо́но-текста подряд —
+калории в `pal.ink2` и белок в `C.forest700`, между ними точка 3px
+(`RecipesScreen.tsx:107-117`).
+
+**Что делаем мы:** один текст «{ккал} ккал · {белок} г белка» в `palette.ink2`
+(`RecipeRow.kt:221-223`).
+
+**Почему:** цвет здесь ничего не кодирует — он не отличает «хватает» от «мало»,
+это просто акцент на второй половине составного числового предложения. Тот же
+выбор уже сделан на строке остатка `MealHero` и на мета-строке карточки приёма;
+третий способ рисовать одно и то же был бы расхождением внутри порта.
