@@ -29,14 +29,9 @@ func requestOf(t *testing.T, subject string) context.Context {
 }
 
 // The audit actor is the caller the request was verified as, and there is no
-// argument by which it could be anybody else.
-//
-// Forging the actor survived two drafts of the proposal, and it survived them
-// because it was the value of a parameter: every call site looked right, and
-// one that named a different uuid would have looked right too. What closes it
-// is not a check — it is that the subject now has one source, and no exported
-// function of this package takes it. The witness for the second half is
-// TestTheExportedSurfaceIsTheOneDeclared, which needs no database.
+// argument by which it could be anybody else. What closes that is not a check —
+// it is that the subject has one source and no exported function of this package
+// takes it, which TestTheExportedSurfaceIsTheOneDeclared witnesses.
 func TestTheServiceActorIsTheCallerTheRequestWasVerifiedAs(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	pool := servicePool(t, db)
@@ -93,12 +88,10 @@ func TestWithServiceRefusesARequestWithNoVerifiedCaller(t *testing.T) {
 	}
 
 	// A principal is not enough on its own, and the two ways it can be useless
-	// are different errors on purpose. audit_log.actor_id is a uuid column, and a
-	// cast failing inside a policy is a 500 where a refusal belongs — so a subject
-	// that is not UUID-shaped is refused here rather than at the insert. A
-	// principal with no subject at all is not malformed, it is absent, and it
-	// arrives the same way: the verifier refuses a token with no sub, so this is
-	// the branch that holds if it ever stops.
+	// are different errors on purpose: a malformed subject is refused before the
+	// insert can turn it into a 500, and an absent one is not malformed. The
+	// verifier refuses a token with no sub, so the empty branch is what holds if
+	// it ever stops.
 	for _, refusal := range []struct {
 		name    string
 		subject string
@@ -123,15 +116,10 @@ func TestWithServiceRefusesARequestWithNoVerifiedCaller(t *testing.T) {
 	}
 }
 
-// The reminder sweep, the invitation mailer, the push fan-out: real writes with
-// no human behind them. They are a different constructor rather than a different
-// argument, which is what makes "this path has no actor to derive" a decision
-// somebody made once instead of a nil check at every call site.
-//
-// It writes actor_job and leaves actor_id cleared even when a principal happens
-// to be on the context: what is recorded is what the constructor said, and the
-// audit log's "exactly one of the two" is the seam's property rather than the
-// caller's.
+// A job writes actor_job and leaves actor_id cleared even when a principal
+// happens to be on the context: what is recorded is what the constructor said,
+// and the audit log's "exactly one of the two" is the seam's property rather
+// than the caller's.
 func TestAPathWithNoHumanIsAttributedToItsJob(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	pool := servicePool(t, db)

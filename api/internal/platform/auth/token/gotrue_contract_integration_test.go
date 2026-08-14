@@ -70,8 +70,6 @@ func adminClaims() jwt.MapClaims {
 	}
 }
 
-// adminCall calls an admin route with token and returns the status and body.
-//
 // GET /admin/users is the cheapest route behind the admin check that reads the
 // database, so a 200 also says the process is genuinely serving rather than
 // answering out of its router. The body is returned because a refusal that

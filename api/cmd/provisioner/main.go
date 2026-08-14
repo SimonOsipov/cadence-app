@@ -2,11 +2,10 @@
 //
 // Whoever holds that key can set any account's password and then obtain a
 // session token by entirely legitimate means — measured, as a chain of three
-// calls. The consequence is not access to data but the capture of a named
-// doctor's identity, which is the nullification of audit attribution. So the
-// key lives in this process and in no other, behind an exhaustive five
-// operations, and the API talks to those five instead of to GoTrue's admin
-// contract.
+// calls. What it buys is not data but the capture of a named doctor's identity,
+// which is the nullification of audit attribution. So the key lives in this
+// process and in no other, behind an exhaustive five operations, and the API
+// talks to those five instead of to GoTrue's admin contract.
 //
 // It holds no database connection of any kind: TestTheComponentCannotReachTheDatabase
 // asserts that transitively, because the 2026-08-14 decision to keep this
@@ -15,30 +14,22 @@
 //
 // # Deployment
 //
-// The manifest itself is not here. Neither a Dockerfile nor an App Platform
-// manifest exists in this repository yet, and docs/specs/deploy-observability.md
-// claims both — "today there is neither a Dockerfile nor an App Platform
-// manifest, and no other spec creates them". So what this block records is the
-// placement this component requires of whoever writes that manifest.
-//
-// The platform is Timeweb App Platform (ADR-008), and its constraints decide
-// how this process is placed rather than being what protects it:
+// Neither a Dockerfile nor an App Platform manifest exists in this repository
+// yet, so this block is the placement this component requires of whoever writes
+// one. The platform is Timeweb App Platform (ADR-008):
 //
 //   - only the first service in the manifest is proxied outward, so
 //     provisioner is never the first one. That it is unreachable from the
-//     public name is verified by a probe against the deployed harness —
-//     scripts/probe/provisioner-is-not-proxied.sh — because "only the first
-//     service is proxied" is a routing property, and prose is not accepted for
-//     one. The probe has not been run: there is no deployment yet, and
-//     standing it up is SKL-06, which only a human can do. Until it has, this
-//     is the one claim about this component that is stated and not measured.
+//     public name is a routing property, so it is verified by a probe against
+//     the deployed harness — scripts/probe/provisioner-is-not-proxied.sh. The
+//     probe has not been run: standing the deployment up is SKL-06, which only
+//     a human can do. Until it has, this is the one claim about this component
+//     that is stated and not measured.
 //   - ports 80 and 443 are taken, hence PROVISIONER_PORT and its default.
 //   - `volumes` are forbidden, which costs nothing here: this process keeps
 //     no state at all.
 //
-// Its configuration is exactly the variables load() refuses to start without,
-// documented there — the loader that fails startup is the one place that cannot
-// drift out of step with what is actually required.
+// Its configuration is exactly the variables load() refuses to start without.
 package main
 
 import (
@@ -59,9 +50,8 @@ const (
 	writeTimeout      = 30 * time.Second
 	idleTimeout       = 60 * time.Second
 
-	// shutdownGrace is what an in-flight invitation gets to finish. Longer than
-	// one call to the identity provider, so a redeploy does not leave an
-	// account created and an answer nobody received.
+	// shutdownGrace is longer than one call to the identity provider, so a
+	// redeploy does not leave an account created and an answer nobody received.
 	shutdownGrace = 15 * time.Second
 )
 
@@ -74,8 +64,7 @@ func main() {
 	}
 }
 
-// run is the composition root. It lives apart from main so that os.Exit never
-// skips a deferred cleanup.
+// run lives apart from main so that os.Exit never skips a deferred cleanup.
 func run(logger *slog.Logger) error {
 	cfg, err := load()
 	if err != nil {

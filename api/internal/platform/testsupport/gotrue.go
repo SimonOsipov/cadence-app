@@ -55,10 +55,9 @@ BEGIN
     END IF;
 END $$`
 
-// createSupabaseRoles creates the roles GoTrue's own migrations hand grants to.
-// A plain Postgres has none of them and the migration dies on the first GRANT.
-// They are NOLOGIN and hold nothing — they exist so the grants have a target,
-// and none of them is one of ours.
+// createSupabaseRoles creates the roles GoTrue's own migrations hand grants to:
+// a plain Postgres has none of them and the migration dies on the first GRANT.
+// They are NOLOGIN, hold nothing, and none of them is one of ours.
 const createSupabaseRoles = `DO $$
 DECLARE role_name text;
 BEGIN
@@ -76,19 +75,15 @@ END $$`
 // the schema but dies with "schema auth does not exist" if it is missing.
 const createAuthSchema = `CREATE SCHEMA auth AUTHORIZATION cadence_gotrue`
 
-// GoTrue is a running identity provider with a database of its own.
 type GoTrue struct {
 	// URL is where the test process reaches it. Standalone GoTrue serves at the
 	// root — the /auth/v1 prefix seen on Supabase comes from their gateway.
 	URL string
 }
 
-// JWKEntry is one key in GOTRUE_JWT_KEYS and whether it carries the signing
-// marker.
-//
-// The marker is a property of the entry rather than of the key because the two
-// startup behaviours are about how many entries carry it, with the keys
-// themselves unremarkable.
+// JWKEntry is one key in GOTRUE_JWT_KEYS. The signing marker sits on the entry
+// rather than on the key because the two startup behaviours are about how many
+// entries carry it, with the keys themselves unremarkable.
 type JWKEntry struct {
 	Key     *SigningKey
 	Signing bool
@@ -114,8 +109,7 @@ func GoTrueJWKS(t *testing.T, entries ...JWKEntry) string {
 	return string(raw)
 }
 
-// StartGoTrue runs the pinned image against a database of its own and waits
-// until it answers on /health.
+// StartGoTrue runs the pinned image against a database of its own.
 func StartGoTrue(t *testing.T, cluster *Cluster, keys string) *GoTrue {
 	t.Helper()
 
@@ -231,15 +225,12 @@ func gotrueEnv(databaseURL, keys string) map[string]string {
 		"GOTRUE_JWT_SECRET": "contract-tests-only-not-a-secret",
 		"GOTRUE_JWT_KEYS":   keys,
 
-		// Invite-only, as everywhere else. No test here creates an account, and
-		// a harness that quietly allowed signup would be a harness the product
-		// does not have.
+		// Invite-only, as everywhere else: a harness that quietly allowed signup
+		// would be a harness the product does not have.
 		"GOTRUE_DISABLE_SIGNUP": "true",
 	}
 }
 
-// newGoTrueDatabase creates a throwaway database for the identity provider to
-// own, prepares it and returns the connection string.
 func (c *Cluster) newGoTrueDatabase(t *testing.T) string {
 	t.Helper()
 
@@ -265,12 +256,12 @@ func (c *Cluster) newGoTrueDatabase(t *testing.T) string {
 	return c.prepareForGoTrue(t, name)
 }
 
-// prepareForGoTrue gives an existing database the role, the supporting roles and
-// the empty `auth` schema the identity provider's migrator assumes, and returns
-// the connection string as seen from inside a sibling container.
+// prepareForGoTrue gives an existing database the roles and the empty `auth`
+// schema the identity provider's migrator assumes.
 //
-// The address is the Postgres container's own IP rather than the mapped port:
-// the mapped port is on the test host, which a container has no name for.
+// The connection string is the Postgres container's own IP rather than the
+// mapped port: the mapped port is on the test host, which a container has no
+// name for.
 func (c *Cluster) prepareForGoTrue(t *testing.T, name string) string {
 	t.Helper()
 

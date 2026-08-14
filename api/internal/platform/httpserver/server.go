@@ -23,13 +23,8 @@ const shutdownTimeout = 10 * time.Second
 
 // RequestDeadline bounds one request's context, and it is the outermost of the
 // system's time limits: everything a handler waits on has to fire before it, or
-// the reason a request failed is "the deadline", which names nothing.
-//
-// It is also the only budget a connection acquisition has. pgxpool.Acquire
-// blocks until a connection frees up or the context ends — it has no timeout of
-// its own — so without a deadline on the request, a service pool with an
-// explicit MaxConns turns a burst into handlers waiting for as long as the
-// client holds the socket open.
+// the reason a request failed is "the deadline", which names nothing. It is
+// also the only budget a connection acquisition has — see deadline.go.
 //
 // Exported because the ordering against the two database limits and the outward
 // call is asserted rather than described:

@@ -517,10 +517,8 @@ func TestEveryPolicyNamesItsRoles(t *testing.T) {
 // declared policies is the original mistake written inside the one place the
 // literals are permitted.
 func TestNoPolicyBodyDecidesTheCallersRole(t *testing.T) {
-	// Naming a product role is a property of the row being written, so only the
-	// two policies constraining profiles.role may do it. A third name appearing
-	// here is a policy that started deciding something, and it fails until
-	// somebody writes down which.
+	// A third name appearing here is a policy that started deciding something,
+	// and it fails until somebody writes down which.
 	mayNameARole := []string{"profiles_service_insert", "profiles_service_update"}
 
 	// How a policy reaches the caller's identity: the pinned helper, or the
@@ -577,10 +575,8 @@ func TestNoPolicyBodyDecidesTheCallersRole(t *testing.T) {
 	}
 }
 
-// functionRegistry: owner, security, the value of the pinned search_path, and
-// who may execute. A SECURITY DEFINER function with an unpinned search_path is
-// the classic way a schema hands its owner's rights to whoever can create a
-// temporary object.
+// A SECURITY DEFINER function with an unpinned search_path is the classic way a
+// schema hands its owner's rights to whoever can create a temporary object.
 func TestTheFunctionsAreTheOnesDeclared(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.SuperuserURL)

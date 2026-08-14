@@ -1,13 +1,9 @@
-// Package provisioning is how the API asks the provisioner to do something
-// about an account at the identity provider.
+// Package provisioning implements identity.Provisioner: how the API asks the
+// provisioner component to do something about an account at the identity
+// provider.
 //
-// It is the implementation of identity.Provisioner and it lives out here rather
-// than inside that context on purpose: the context declares what it needs and
-// compiles against nothing that speaks HTTP, so replacing the identity provider
-// stays one implementation rather than a sweeping edit. The direction of the
-// import is the whole arrangement — this package knows identity, identity does
-// not know this package, and identity's own boundary test is what keeps it that
-// way.
+// It lives out here so that identity compiles against nothing speaking HTTP;
+// identity's own boundary test is what keeps the import pointing this way.
 //
 // What this package must never hold is the admin key. It holds a shared secret,
 // which bounds who else can reach the component; the key that GoTrue's admin
@@ -31,9 +27,6 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 )
 
-// Compiled here rather than asserted in a test: the interface belongs to the
-// consumer, and a method that stops matching it is a build failure at the place
-// that got it wrong.
 var _ identity.Provisioner = (*Client)(nil)
 
 // callTimeout bounds one call end to end — connection, TLS handshake and
@@ -55,7 +48,6 @@ const callTimeout = 10 * time.Second
 // reads that file and fails when the two stop agreeing.
 const secretHeader = "X-Cadence-Provisioner-Secret"
 
-// The five paths of the component's surface, four of which this client uses.
 const (
 	invitePath      = "/invite"
 	lookupPath      = "/users/lookup"
@@ -63,9 +55,9 @@ const (
 	deletePath      = "/users/delete"
 )
 
-// The keys the component answers under. The struct tags below say them a second
-// time because a tag cannot be a constant; TestTheClientSpeaksTheSurfaceTheComponentServes
-// ties all three spellings — these, the tags, and the component's own — together.
+// The struct tags below say these a second time because a tag cannot be a
+// constant; TestTheClientSpeaksTheSurfaceTheComponentServes ties all three
+// spellings — these, the tags, and the component's own — together.
 const (
 	accountKey  = "account"
 	accountsKey = "accounts"
@@ -80,12 +72,10 @@ const maxAnswer = 1 << 20
 // line, and what a person needs from it is the first sentence.
 const maxRefusalInAnError = 512
 
-// ErrRefused is what a call the provisioner did not accept comes back as. The
-// status and what it said travel inside it, so a handler can tell a refusal from
-// a provisioner that is not answering at all.
+// ErrRefused carries the status and what the provisioner said, so a handler can
+// tell a refusal from a provisioner that is not answering at all.
 var ErrRefused = errors.New("the provisioner refused the call")
 
-// Config is what this client needs to reach the component.
 type Config struct {
 	// BaseURL is where the provisioner listens. An internal address: no route
 	// resolves to this component from outside, which is a property of the
@@ -98,7 +88,6 @@ type Config struct {
 	Secret string
 }
 
-// Client is the provisioner as this process sees it.
 type Client struct {
 	base    string
 	secret  string
@@ -106,11 +95,10 @@ type Client struct {
 	http    *http.Client
 }
 
-// New builds the client, and refuses a configuration that could not work.
-//
-// Refused here rather than at the first call: the first call is a patient being
-// invited, and "the address is unreachable" is not something to discover with a
-// half-written record in front of it.
+// New refuses a configuration that could not work here rather than at the first
+// call: the first call is a patient being invited, and "the address is
+// unreachable" is not something to discover with a half-written record in front
+// of it.
 func New(cfg Config) (*Client, error) {
 	base := strings.TrimSuffix(strings.TrimSpace(cfg.BaseURL), "/")
 
@@ -142,12 +130,10 @@ func (c *Client) Invite(ctx context.Context, email string) (identity.Account, er
 		return identity.Account{}, fmt.Errorf("inviting: %w", err)
 	}
 
-	// An invitation that answers with no account is not a success with a zero
-	// value: the address has been taken at the provider and this process would go
-	// on to write a profile against an empty identifier.
-	// The address is deliberately not in the message. It is in a request body
-	// rather than a URL for exactly this reason, and an error is the one thing on
-	// this path that this process writes to its own log.
+	// Not a success with a zero value: the address has been taken at the provider
+	// and this process would go on to write a profile against an empty identifier.
+	// The address stays out of the message — an error is the one thing on this
+	// path that this process writes to its own log.
 	if answer.Account == nil {
 		return identity.Account{}, fmt.Errorf("inviting: %w: the answer names no account", ErrRefused)
 	}
@@ -179,10 +165,8 @@ func (c *Client) Lookup(ctx context.Context, email string) (*identity.Account, e
 // nobody has is absent from the answer rather than an error for the others: a
 // roster holding one stale row still has to render.
 func (c *Client) LookupBatch(ctx context.Context, ids []string) ([]identity.Account, error) {
-	// A roster of nobody is answered here rather than at the component, which
-	// refuses an empty list — correctly, since a call that asks about nothing is a
-	// caller's mistake. It is not one here: a clinic with no patients yet is an
-	// ordinary state, and the screen still has to render.
+	// Answered here because the component refuses an empty list, and a clinic with
+	// no patients yet is an ordinary state whose screen still has to render.
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -201,11 +185,10 @@ func (c *Client) LookupBatch(ctx context.Context, ids []string) ([]identity.Acco
 	return accounts, nil
 }
 
-// Delete removes an account, stating the proof that removing it is safe.
-//
-// Both halves travel explicitly, including the false one: the component refuses
-// a request that leaves either of them out, and a field omitted by a marshaller
-// would be a proof nobody made.
+// Delete removes an account, stating the proof that removing it is safe. Both
+// halves travel explicitly, including the false one: the component refuses a
+// request that leaves either out, and a field omitted by a marshaller would be a
+// proof nobody made.
 func (c *Client) Delete(ctx context.Context, deletion identity.Deletion) error {
 	body := map[string]any{
 		"id":             deletion.ID,
@@ -220,9 +203,9 @@ func (c *Client) Delete(ctx context.Context, deletion identity.Deletion) error {
 	return nil
 }
 
-// The envelopes the component answers in. Named types rather than a struct
-// declared inside each method, so that the keys they decode by can be compared
-// against the component's own — see the drift test.
+// Named types rather than a struct declared inside each method, so that the
+// keys they decode by can be compared against the component's own — see the
+// drift test.
 type (
 	accountAnswer struct {
 		Account *account `json:"account"`
@@ -233,9 +216,8 @@ type (
 	}
 )
 
-// account is the wire shape of what the component answers with. It is here
-// rather than on identity.Account so that the context's type owes nothing to
-// somebody else's field names.
+// The wire shape, kept off identity.Account so that the context's type owes
+// nothing to somebody else's field names.
 type account struct {
 	ID           string     `json:"id"`
 	ConfirmedAt  *time.Time `json:"confirmed_at"`
@@ -246,18 +228,12 @@ func (a account) asIdentity() identity.Account {
 	return identity.Account{ID: a.ID, ConfirmedAt: a.ConfirmedAt, LastSignInAt: a.LastSignInAt}
 }
 
-// call makes one call to the component.
-//
 // Every operation is a POST carrying a JSON body, including the two that read
 // and the one that deletes: an address or an account identifier in a path or a
 // query string is an address in every access log on the way.
 func (c *Client) call(ctx context.Context, path string, body, into any) error {
-	// A deadline of this client's own, so that a caller who brings a context
-	// without one still makes a bounded call.
-	//
-	// Not for the sake of the error, and not because the transport would leave the
-	// context unbounded: measured on Go 1.26.4, net/http derives a deadline from
-	// Client.Timeout itself and its failure already unwraps to
+	// Not for the sake of the error: measured on Go 1.26.4, net/http derives a
+	// deadline from Client.Timeout itself and its failure already unwraps to
 	// context.DeadlineExceeded. What this adds is that the bound starts here —
 	// covering the encoding below and whatever a later edit puts in front of the
 	// request — rather than at Do.

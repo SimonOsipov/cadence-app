@@ -7,9 +7,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// setRequired puts a complete, valid configuration in the environment. Each
-// case below then breaks exactly one variable, so a failure names the variable
-// rather than the set.
+// setRequired puts a complete configuration in the environment, so that each
+// case below breaks exactly one variable and a failure names it.
 func setRequired(t *testing.T) {
 	t.Helper()
 
@@ -40,8 +39,8 @@ func TestLoadAcceptsACompleteConfiguration(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsBadInput. Every one of these is a way the process could come
-// up holding the admin key and being wrong about who may use it, which is worse
+// TestLoadRejectsBadInput. Each of these is a way the process could come up
+// holding the admin key and being wrong about who may use it, which is worse
 // than not coming up at all.
 func TestLoadRejectsBadInput(t *testing.T) {
 	tests := []struct {
@@ -55,9 +54,8 @@ func TestLoadRejectsBadInput(t *testing.T) {
 			names: "PROVISIONER_ENVIRONMENT",
 		},
 		{
-			// Fail closed: an environment nobody recognises must not be read as
-			// "not production", because that is the reading that mounts
-			// password setting on a typo.
+			// Fail closed: read as "not production", this typo would mount
+			// password setting.
 			name:  "an environment nobody declared",
 			set:   map[string]string{"PROVISIONER_ENVIRONMENT": "prod"},
 			names: "PROVISIONER_ENVIRONMENT",
@@ -83,15 +81,14 @@ func TestLoadRejectsBadInput(t *testing.T) {
 			names: "PROVISIONER_SHARED_SECRET",
 		},
 		{
-			// A short secret is a guessable one, and the guard is the only
-			// thing in front of five operations on the clinic's accounts.
+			// The guard is the only thing in front of five operations on the
+			// clinic's accounts.
 			name:  "a shared secret short enough to guess",
 			set:   map[string]string{"PROVISIONER_SHARED_SECRET": "hunter2"},
 			names: "PROVISIONER_SHARED_SECRET",
 		},
 		{
-			// Two current values whose point is that they differ. Equal ones
-			// look like a rotation that happened and did not.
+			// Equal values look like a rotation that happened and did not.
 			name:  "two current secrets that are the same value",
 			set:   map[string]string{"PROVISIONER_SHARED_SECRET_PREVIOUS": testSecret},
 			names: "PROVISIONER_SHARED_SECRET_PREVIOUS",
@@ -123,9 +120,8 @@ func TestLoadRejectsBadInput(t *testing.T) {
 	}
 }
 
-// TestOneCurrentSecretIsEnough: the previous value is the only optional one.
-// A deployment that has never rotated has one secret, and requiring two would
-// be answered by setting the same string twice.
+// TestOneCurrentSecretIsEnough: a deployment that has never rotated has one
+// secret, and requiring two would be answered by setting the same string twice.
 func TestOneCurrentSecretIsEnough(t *testing.T) {
 	setRequired(t)
 	t.Setenv("PROVISIONER_SHARED_SECRET_PREVIOUS", "")

@@ -12,17 +12,16 @@ import (
 )
 
 const (
-	// adminTokenLifetime is well inside the sixty seconds the spec fixes as the
-	// ceiling. The token is minted per call and travels one hop, so a lifetime
-	// long enough to be worth capturing buys nothing.
+	// Well inside the sixty seconds the spec fixes as the ceiling. The token is
+	// minted per call and travels one hop, so a lifetime long enough to be
+	// worth capturing buys nothing.
 	adminTokenLifetime = 30 * time.Second
 
-	// adminTokenAudience and adminTokenIssuer are foreign to the API on
-	// purpose, and they are free: GoTrue checks neither on its admin routes —
-	// measured, and pinned by the contract tests beside the verifier. So each
-	// is a reason the API's verifier refuses this token that costs nothing to
-	// carry, and they stand behind the `kid` pinning rather than beside it. A
-	// regression that lost the pinning still runs into two more refusals.
+	// Foreign to the API on purpose, and free: GoTrue checks neither on its
+	// admin routes — measured, and pinned by the contract tests beside the
+	// verifier. Each is one more reason the API's verifier refuses this token,
+	// standing behind the `kid` pinning rather than beside it, so a regression
+	// that lost the pinning still runs into two refusals.
 	//
 	// The issuer names a reserved TLD (RFC 2606) so that nothing can ever
 	// resolve it and mistake it for a key source.
@@ -33,20 +32,17 @@ const (
 	adminTokenRole = "service_role"
 )
 
-// tokenSigner mints the admin tokens this component presents to GoTrue. It
-// holds the only copy of the private admin key in the system.
+// tokenSigner holds the only copy of the private admin key in the system.
 type tokenSigner struct {
 	kid    string
 	method jwt.SigningMethod
 	key    crypto.Signer
 }
 
-// newTokenSigner reads the admin key from one JWK.
-//
-// One key in one variable, with its `kid` travelling in the same document as
-// the material it names: the two cannot be rotated apart, which a key here and
-// an id in a second variable would allow. Every way the value can be wrong is
-// an error rather than a signer that produces tokens nothing accepts.
+// newTokenSigner reads one JWK, so that the `kid` travels in the same document
+// as the material it names and the two cannot be rotated apart — which a key
+// here and an id in a second variable would allow. Every way the value can be
+// wrong is an error rather than a signer producing tokens nothing accepts.
 func newTokenSigner(rawJWK string) (*tokenSigner, error) {
 	if strings.TrimSpace(rawJWK) == "" {
 		return nil, errors.New("the admin key is required")
@@ -80,9 +76,7 @@ func newTokenSigner(rawJWK string) (*tokenSigner, error) {
 	return &tokenSigner{kid: marshal.KID, method: method, key: key}, nil
 }
 
-// mint issues one admin token, valid from now.
-//
-// It carries no `sub`. GoTrue does not require one on its admin routes —
+// mint carries no `sub`. GoTrue does not require one on its admin routes —
 // measured — and this token is minted by a process on its own behalf: a subject
 // would be a person's identifier attached to a machine's authority. It is also
 // a fourth reason the API's verifier refuses it, on the same terms as the

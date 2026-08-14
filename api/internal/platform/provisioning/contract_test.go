@@ -79,8 +79,8 @@ func TestTheClientSpeaksTheSurfaceTheComponentServes(t *testing.T) {
 		}
 	}
 
-	// Three spellings of each envelope key: the constant, the struct tag that has
-	// to repeat it because a tag cannot be one, and the component's own.
+	// Three spellings of each envelope key: the constant, the struct tag, and the
+	// component's own.
 	for key, tag := range map[string]string{
 		accountKey:  tagOf(t, reflect.TypeOf(accountAnswer{}), "Account"),
 		accountsKey: tagOf(t, reflect.TypeOf(accountsAnswer{}), "Accounts"),

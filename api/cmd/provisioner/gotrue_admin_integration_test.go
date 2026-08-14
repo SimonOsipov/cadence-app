@@ -2,9 +2,7 @@
 
 // The component against the real identity provider, on the digest-pinned image.
 //
-// Everything else in this package runs against fakeGoTrue, which encodes two
-// measured behaviours — `?filter=` is a substring match and it is
-// case-sensitive, `/invite` stores the address folded — and a fake is only
+// Everything else in this package runs against fakeGoTrue, and a fake is only
 // worth what the claim that it matches is worth. This file is that claim: the
 // same round trip, against the process the deployment runs.
 package main
@@ -45,8 +43,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// liveProvisioner is the component wired to a real GoTrue, configured the way
-// the deployment is: two keys with distinct ids, exactly one of which signs
+// liveProvisioner wires the component to a real GoTrue configured the way the
+// deployment is: two keys with distinct ids, exactly one of which signs
 // sessions, and the other held only here.
 func liveProvisioner(t *testing.T) (*server, *testsupport.GoTrue, *tokenSigner) {
 	t.Helper()
@@ -76,10 +74,9 @@ func liveProvisioner(t *testing.T) (*server, *testsupport.GoTrue, *tokenSigner) 
 // TestTheWholeRoundTripAgainstTheRealIdentityProvider walks the operations in
 // the order the onboarding block will use them, against one account.
 //
-// One test rather than five: each step is the previous one's precondition —
-// there is nothing to look up before an invitation and nothing to delete before
-// a lookup — and five tests would be five GoTrue containers arranging the same
-// state four times over.
+// One test rather than five: each step is the previous one's precondition, and
+// five tests would be five GoTrue containers arranging the same state four
+// times over.
 func TestTheWholeRoundTripAgainstTheRealIdentityProvider(t *testing.T) {
 	srv, _, _ := liveProvisioner(t)
 
@@ -175,9 +172,8 @@ func TestTheWholeRoundTripAgainstTheRealIdentityProvider(t *testing.T) {
 			t.Fatalf("the address still resolves to %s after the account was deleted", answer.Account.ID)
 		}
 
-		// And the address is genuinely reusable, which is the entire reason
-		// this operation exists: /invite answers 422 for an address it still
-		// holds.
+		// And the address is genuinely reusable, which is why this operation
+		// exists: /invite answers 422 for an address it still holds.
 		again := call(t, srv, http.MethodPost, "/invite", `{"email":"`+typed+`"}`)
 		if again.Code != http.StatusOK {
 			t.Fatalf("re-inviting the freed address answered %d; body %s", again.Code, again.Body)
@@ -187,11 +183,9 @@ func TestTheWholeRoundTripAgainstTheRealIdentityProvider(t *testing.T) {
 
 // TestTheProviderFilterIsCaseSensitive is the measurement the lowercasing
 // exists for, taken against the image rather than assumed from the fake.
-//
-// Without it, "mixed case finds an existing account" is a test that would stay
-// green with the lowercasing removed the day GoTrue started folding the filter
-// itself — and the component would keep a step nobody could justify, or lose a
-// step nobody could see was load-bearing.
+// Without it, the day GoTrue started folding the filter itself the component
+// would keep a step nobody could justify, or lose one nobody could see was
+// load-bearing.
 func TestTheProviderFilterIsCaseSensitive(t *testing.T) {
 	srv, gotrue, signer := liveProvisioner(t)
 
@@ -220,9 +214,9 @@ func TestTheProviderFilterIsCaseSensitive(t *testing.T) {
 }
 
 // listUsers calls the admin listing directly, with a token this component
-// minted. It is also what proves the minted token is admitted: everything above
-// reaches GoTrue through the same signer, so a token GoTrue refused would fail
-// every one of them for one reason.
+// minted — which is also what proves the minted token is admitted at all:
+// everything above reaches GoTrue through the same signer, so a token GoTrue
+// refused would fail all of it for one reason.
 func listUsers(t *testing.T, gotrue *testsupport.GoTrue, signer *tokenSigner, filter string) []any {
 	t.Helper()
 

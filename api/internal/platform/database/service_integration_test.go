@@ -22,9 +22,9 @@ import (
 // reach for because what they are about is the transaction rather than the actor.
 const testProbe = "test.probe"
 
-// servicePool opens the pool the system jobs write through: a second connection
-// as a second role, which is what makes the barrier between the paths something
-// the server enforces rather than something the code remembers.
+// servicePool connects as a second role, which is what makes the barrier
+// between the paths something the server enforces rather than something the
+// code remembers.
 func servicePool(t *testing.T, db *testsupport.Database) *pgxpool.Pool {
 	t.Helper()
 
@@ -133,9 +133,6 @@ func TestWithServicePublishesExactlyOneActor(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	pool := servicePool(t, db)
 
-	// One entry point per kind of actor, which is the shape the property now
-	// rests on: there is no value either of them could be handed that would
-	// publish the other's setting.
 	read := func(ctx context.Context, tx pgx.Tx, id, job *string) error {
 		// coalesce, because an unpublished setting reads as NULL rather than as
 		// the empty string — and NULL is exactly what the audit_log constraint
@@ -391,9 +388,7 @@ func TestWithServiceCommitsAndRollsBack(t *testing.T) {
 }
 
 // VerifyPools is what stands between a swapped pair of connection strings and a
-// deployment nobody notices is wrong. Both directions are checked: it passes on
-// the arrangement the chain builds, and refuses each way the arrangement can be
-// broken.
+// deployment nobody notices is wrong.
 func TestVerifyPoolsAcceptsTheArrangementAndRefusesTheRest(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	ctx := t.Context()
@@ -430,10 +425,9 @@ func TestVerifyPoolsAcceptsTheArrangementAndRefusesTheRest(t *testing.T) {
 	}
 }
 
-// Under the simple protocol pgx interpolates arguments into the statement on the
-// client, which would turn the bound parameters both seams rest on into string
-// concatenation performed where neither the authorship gate nor a reviewer would
-// look for it.
+// Under the simple protocol pgx interpolates arguments into the statement on
+// the client, which would turn the bound parameters both seams rest on into
+// string concatenation nobody is looking at.
 func TestPoolsDoNotUseTheSimpleProtocol(t *testing.T) {
 	db := cluster.NewDatabase(t)
 
@@ -497,10 +491,9 @@ func TestThePackageIssuesNoSettingThatOutlivesItsTransaction(t *testing.T) {
 	}
 }
 
-// audit_log wants exactly one of actor_id and actor_job, and "exactly one" is a
-// property of the transaction rather than of the actor value. A leftover on the
-// connection makes it two, at the moment the row is written — so the seam clears
-// the setting it is not publishing, and this is the witness.
+// "Exactly one" is a property of the transaction rather than of the actor
+// value: a leftover on the connection makes it two at the moment the row is
+// written, so the seam clears the setting it is not publishing.
 //
 // The connection is dirtied session-level on a single-connection pool for the
 // same reason as the claims test: on a clean connection the assertion is green
@@ -573,8 +566,6 @@ func TestVerifyPoolsRefusesToGuessWhenTheRolesDoNotExist(t *testing.T) {
 		t.Fatalf("VerifyPools refused the arrangement the chain builds: %v", err)
 	}
 
-	// Now take the target of the probe away, the way a cluster that never had
-	// the chain applied would have it.
 	// Renamed rather than dropped: the role owns grants and a membership, so
 	// dropping it needs a cleanup of its own, and what the probe cares about is
 	// only that the name it asks for is not there.

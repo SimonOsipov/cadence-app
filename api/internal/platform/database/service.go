@@ -98,10 +98,9 @@ func actingAsJob(name string) (actor, error) {
 	return actor{job: trimmed}, nil
 }
 
-// setting returns the connection setting this actor is published under and the
-// value it carries — and the setting that has to be cleared, because "exactly
-// one" is a property of the transaction rather than of this value. The zero
-// actor returns an empty value, which is what the guard in withService reads.
+// setting also names the setting that has to be cleared, because "exactly one"
+// is a property of the transaction rather than of this value. The zero actor
+// returns an empty value, which is what the guard in withService reads.
 func (a actor) setting() (published, value, cleared string) {
 	if a.subject != "" {
 		return ActorIDSetting, a.subject, ActorJobSetting
@@ -211,23 +210,11 @@ func withService(
 		_ = tx.Rollback(rollbackCtx)
 	}()
 
-	// Cleared explicitly rather than relied upon to be absent — the claims and
-	// whichever actor setting this transaction is not publishing. The settings are transaction-scoped and a fresh transaction inherits
-	// nothing — but connections are pooled, and a statement inside somebody's
-	// closure that issues SET without LOCAL leaves its value on the connection
-	// for the next transaction to inherit. A property that holds only because
-	// nobody wrote that statement is a property nobody is checking.
-	//
-	// The other actor setting matters as much as the claims: audit_log requires
-	// exactly one of actor_id and actor_job, and a leftover from an earlier
-	// transaction makes it two — breaking the constraint at the one moment the
-	// row is being written, in the seam whose Actor type exists to make that
-	// impossible.
-	//
-	// Note that clearing sets the value to the empty string, not to NULL:
-	// set_config has no way to unset. Everything reading these settings must go
-	// through nullif — app.jwt_subject() does exactly that, and it is why it
-	// does.
+	// Cleared explicitly rather than relied upon to be absent: a fresh
+	// transaction inherits nothing, but connections are pooled, and a statement
+	// inside somebody's closure that issues SET without LOCAL leaves its value
+	// behind for the next transaction to inherit. A leftover actor setting is
+	// audit_log's "exactly one" broken at the moment the row is written.
 	for _, setting := range []string{claimsSetting, cleared} {
 		if _, err := tx.Exec(ctx, "SELECT set_config($1, '', true)", setting); err != nil {
 			return fmt.Errorf("clearing %s: %w", setting, err)

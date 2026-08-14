@@ -11,10 +11,8 @@ import (
 )
 
 // TestLookupIsAnExactMatchInsideTheComponent. GoTrue's `?filter=` is a
-// substring match — an empty one returns everybody — and exposing it outward
-// would put the clinic's directory behind a component whose whole purpose is
-// that it holds one. So the substring is an implementation detail of the call
-// and the answer is one account or none.
+// substring match — an empty one returns everybody — so it stays an
+// implementation detail of the call and the answer is one account or none.
 func TestLookupIsAnExactMatchInsideTheComponent(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	fake.withUser("11111111-0000-4000-8000-000000000001", "anna@clinic.example")
@@ -36,10 +34,8 @@ func TestLookupIsAnExactMatchInsideTheComponent(t *testing.T) {
 			wantID: "11111111-0000-4000-8000-000000000001",
 		},
 		{
-			name: "a substring of two addresses",
-			// GoTrue would answer with both. Refused before the call is made:
-			// it is not an address, and there is no shape of this API that
-			// returns a list.
+			// GoTrue would answer with both. Refused before the call is made.
+			name:   "a substring of two addresses",
 			body:   `{"email":"anna"}`,
 			status: http.StatusBadRequest,
 		},
@@ -92,16 +88,14 @@ func TestLookupIsAnExactMatchInsideTheComponent(t *testing.T) {
 	}
 }
 
-// TestSomebodyElsesLongerAddressIsNotTheOneAskedFor is what the exact match
-// inside the component is actually for, and it took a surviving mutation to
-// write: replacing the match with `if true` left every other lookup test green,
-// because none of their fixtures could make the provider's filter return a row
-// that was not the row asked for.
+// TestSomebodyElsesLongerAddressIsNotTheOneAskedFor took a surviving mutation
+// to write: replacing the exact match with `if true` left every other lookup
+// test green, because no other fixture could make the provider's filter return
+// a row that was not the row asked for.
 //
-// This one can. `?filter=` is a substring match, so asking for
-// anna@clinic.example returns the account at anna@clinic.example.org — a
-// different person, at an address the caller never named. Without the exact
-// match the caller receives their identifier and writes a profile against it.
+// This one can. Asking for anna@clinic.example matches the account at
+// anna@clinic.example.org — a different person, at an address the caller never
+// named, whose identifier the caller would write a profile against.
 func TestSomebodyElsesLongerAddressIsNotTheOneAskedFor(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	fake.withUser("77777777-0000-4000-8000-000000000001", "anna@clinic.example.org")
@@ -138,10 +132,10 @@ func TestSomebodyElsesLongerAddressIsNotTheOneAskedFor(t *testing.T) {
 // types an address the way a human wrote it finds nothing unless the component
 // lowercases first.
 //
-// Both halves are asserted — the account comes back, and the filter actually
-// sent was the lowercased form. Without the second, a component that lowercased
-// nothing and compared case-insensitively after the fact would pass, and would
-// then fail against real GoTrue, which never returned the row at all.
+// Both halves are asserted — the account comes back, and the filter sent was
+// the lowercased form. Without the second, a component that lowercased nothing
+// and compared case-insensitively afterwards would pass here and fail against
+// real GoTrue, which never returned the row at all.
 func TestMixedCaseFindsAnExistingAccount(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	fake.withUser("22222222-0000-4000-8000-000000000001", "anna@clinic.example")
@@ -167,11 +161,10 @@ func TestMixedCaseFindsAnExistingAccount(t *testing.T) {
 	}
 }
 
-// TestTheAnswerIsNarrowedToThreeFields. The identity provider's user document
-// carries the confirmation token — which is the credential itself — the
-// encrypted password, and whatever user metadata a clinic has written into it.
-// The component answers with three fields, so none of the rest can reach a
-// caller by being forgotten.
+// TestTheAnswerIsNarrowedToThreeFields. The provider's user document carries
+// the confirmation token — the credential itself — the encrypted password, and
+// whatever user metadata a clinic wrote into it. Three fields, so none of the
+// rest can reach a caller by being forgotten.
 func TestTheAnswerIsNarrowedToThreeFields(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	fake.withUser("33333333-0000-4000-8000-000000000001", "anna@clinic.example")
@@ -202,9 +195,8 @@ func TestTheAnswerIsNarrowedToThreeFields(t *testing.T) {
 	}
 }
 
-// TestInviteAnswersWithTheNarrowedAccount: the caller needs the identifier of
-// the account it just created — it is the primary key of the profile it is
-// about to write — and nothing else.
+// TestInviteAnswersWithTheNarrowedAccount: the identifier is the primary key of
+// the profile the caller is about to write, and it needs nothing else.
 func TestInviteAnswersWithTheNarrowedAccount(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	srv := testServer(t, development, fake)
@@ -246,9 +238,8 @@ func TestInviteRefusesSomethingThatIsNotAnAddress(t *testing.T) {
 	}
 }
 
-// TestTheBatchLookupAnswersTheSameThreeFieldsForEach. The dashboard roster
-// needs many accounts at once, and without this it would make one call per row
-// through a component that was never designed for it.
+// TestTheBatchLookupAnswersTheSameThreeFieldsForEach. Without the batch, the
+// dashboard roster would make one call per row across the boundary.
 func TestTheBatchLookupAnswersTheSameThreeFieldsForEach(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	fake.withUser("44444444-0000-4000-8000-000000000001", "one@clinic.example")
@@ -314,11 +305,10 @@ func TestTheBatchLookupRefusesAnythingThatIsNotAnIdentifier(t *testing.T) {
 	}
 }
 
-// TestDeletionNeedsProofFromTheCaller. The component cannot see the `app`
-// schema, so it cannot check the condition itself — and the condition is the
-// only thing standing between "reuse an address that was burned by a rolled
-// back transaction" and "delete any account". The caller states both halves
-// explicitly; neither may be inferred from a missing field.
+// TestDeletionNeedsProofFromTheCaller. The condition is the only thing standing
+// between "reuse an address burned by a rolled back transaction" and "delete
+// any account", and the component cannot check it itself. So the caller states
+// both halves explicitly; neither may be inferred from a missing field.
 func TestDeletionNeedsProofFromTheCaller(t *testing.T) {
 	const id = "55555555-0000-4000-8000-000000000001"
 
@@ -416,12 +406,11 @@ func TestSettingAPasswordReachesTheProviderOutsideProduction(t *testing.T) {
 
 // TestALookupThatCouldNotSeeThePageItNeedsIsAFailureNotAnAbsence.
 //
-// `?filter=` is a substring match, so an address that is a prefix of enough
-// others fills the page and the exact one may sit on a page nobody read.
-// Answering "no account at that address" then is a false negative, and this is
-// the one answer where a false negative does damage: it is what tells the
-// caller an address is free, and /invite refuses an address GoTrue still holds
-// — the dead end deletion exists to clean up. A refusal is recoverable.
+// An address that is a prefix of enough others fills the page, and the exact
+// one may sit on a page nobody read. This is the one answer where a false
+// negative does damage: it tells the caller an address is free, and /invite
+// refuses an address GoTrue still holds — the dead end deletion exists to clean
+// up. A refusal is recoverable.
 func TestALookupThatCouldNotSeeThePageItNeedsIsAFailureNotAnAbsence(t *testing.T) {
 	fake := startFakeGoTrue(t)
 
@@ -441,13 +430,11 @@ func TestALookupThatCouldNotSeeThePageItNeedsIsAFailureNotAnAbsence(t *testing.T
 	}
 }
 
-// TestAWrongProviderAddressIsNotAnEmptyClinic.
-//
-// A 404 means "no such account" only where the account's identifier is in the
-// URL. For the listing and for /invite it means the base address is wrong, and
-// reading it the other way turns a mistyped PROVISIONER_GOTRUE_URL into a
-// roster that answers "this clinic has nobody" — a misconfiguration wearing the
-// clothes of an empty database.
+// TestAWrongProviderAddressIsNotAnEmptyClinic. For the listing and for /invite
+// a 404 means the base address is wrong, and reading it as "no such account"
+// turns a mistyped PROVISIONER_GOTRUE_URL into a roster that answers "this
+// clinic has nobody" — a misconfiguration wearing the clothes of an empty
+// database.
 func TestAWrongProviderAddressIsNotAnEmptyClinic(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	srv := testServer(t, development, fake)
@@ -481,8 +468,7 @@ func TestAWrongProviderAddressIsNotAnEmptyClinic(t *testing.T) {
 // scripts/gate/all.sh skips where there is none.
 //
 // Asserted per operation rather than once: the header is set in one place
-// today, and "one place" is a property of the code as it stands rather than a
-// guarantee about it.
+// today, which is a property of the code as it stands rather than a guarantee.
 func TestEveryCallCarriesAnAdminTokenThisComponentMinted(t *testing.T) {
 	const id = "88888888-0000-4000-8000-000000000001"
 
@@ -524,9 +510,8 @@ func TestEveryCallCarriesAnAdminTokenThisComponentMinted(t *testing.T) {
 }
 
 // TestAProviderFailureIsNotReportedAsSuccess. Every operation here is a write
-// somebody else will act on: an invite the API records a profile for, a
-// deletion that frees an address. A 200 over a provider that refused would make
-// the API's own state a lie.
+// somebody else acts on, so a 200 over a provider that refused would make the
+// API's own state a lie.
 func TestAProviderFailureIsNotReportedAsSuccess(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	srv := testServer(t, development, fake)
@@ -536,16 +521,13 @@ func TestAProviderFailureIsNotReportedAsSuccess(t *testing.T) {
 	rec := call(t, srv, http.MethodPost, "/invite", `{"email":"taken@clinic.example"}`)
 
 	// 502 specifically, not "some 5xx": the difference between "we are broken"
-	// and "the identity provider is" is the first thing an operator needs, and
-	// it is a decision routes.go records rather than an accident of which
-	// branch was written first.
+	// and "the identity provider is" is the first thing an operator needs.
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("a refused invite answered %d, want 502", rec.Code)
 	}
 
-	// And the provider's own words do not reach the caller: they are GoTrue's
-	// vocabulary, not this API's, and they describe accounts the caller may
-	// have no business knowing about.
+	// And the provider's own words do not reach the caller: they describe
+	// accounts the caller may have no business knowing about.
 	if strings.Contains(rec.Body.String(), "refused") {
 		t.Errorf("the provider's message reached the caller: %s", rec.Body)
 	}

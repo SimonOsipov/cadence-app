@@ -17,9 +17,6 @@ import (
 // transaction with it. The recoverable limit has to be the tighter one, or the
 // ordinary answer to a slow query is a dropped connection and the operator
 // learns nothing about which query it was.
-//
-// Asserted rather than written in a comment beside the constants, because a
-// comment does not fail when somebody raises one number.
 func TestTheServicePathLimitsAreOrdered(t *testing.T) {
 	if ServiceStatementTimeout >= ServiceIdleInTransactionTimeout {
 		t.Errorf("statement_timeout is %s and idle_in_transaction_session_timeout is %s: "+
@@ -30,13 +27,8 @@ func TestTheServicePathLimitsAreOrdered(t *testing.T) {
 }
 
 // The connection string and migration 000007 carry the same two numbers, and
-// nothing but this makes them move together.
-//
-// Both are load-bearing and neither replaces the other: the role setting covers
-// every session that logs in as cadence_service_app, including one nobody wrote
-// — a psql session, a job somebody ran by hand — while the connection string
-// covers this pool even on a database the migration never reached, a restored
-// dump among them.
+// nothing but this makes them move together. Why both are load-bearing is at
+// serviceRuntimeParams.
 func TestTheMigrationSetsTheNumbersTheServicePoolConnectsUnder(t *testing.T) {
 	sql, err := os.ReadFile(filepath.Join(migrationsDir(t), "000007_service_path_time_limits.up.sql"))
 	if err != nil {
@@ -76,10 +68,6 @@ func TestTheServicePoolIsBoundedInTimeAndInConnections(t *testing.T) {
 		}
 	}
 
-	// pgx defaults MaxConns to max(4, NumCPU): a number nobody chose, which grows
-	// with whatever machine the process lands on. The service path is the narrow
-	// one — the writes no request may make — and the one whose policies carry no
-	// row predicate, so how many of them run at once is a decision.
 	if cfg.MaxConns != serviceMaxConns {
 		t.Errorf("the service pool holds up to %d connections, want %d", cfg.MaxConns, serviceMaxConns)
 	}

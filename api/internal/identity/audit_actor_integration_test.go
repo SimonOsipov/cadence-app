@@ -24,10 +24,8 @@ const (
 // impersonate them.
 //
 // Two doctors, one patient each, and the rows read back by whose name is on
-// them. One doctor would be satisfied by an actor that is a constant, the first
-// principal the process ever saw, or a value left on a pooled connection — every
-// one of those is UUID-shaped and every one of them is the bug. What has to hold
-// is that the name on the row moves with the caller.
+// them: with one doctor the assertion would hold for any actor of the right
+// shape, and what has to hold is that the name on the row moves with the caller.
 func TestAnAuditRowOnADoctorsBehalfNamesThatDoctor(t *testing.T) {
 	db := cluster.NewDatabase(t)
 

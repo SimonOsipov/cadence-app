@@ -18,19 +18,17 @@ import (
 // on, and a repeated invitation is a second email to a patient.
 const gotrueCallTimeout = 10 * time.Second
 
-// lookupPageSize bounds what a filtered listing may return. The component
-// answers with one account or none, so a page larger than this would only make
-// a substring nobody may send more expensive to answer.
+// lookupPageSize: the component answers with one account or none, so a larger
+// page would only make a substring nobody may send more expensive to answer.
 const lookupPageSize = 50
 
-// errProviderRefused is what an admin call that did not succeed comes back as.
 // The provider's own message travels inside it for the log and never reaches
 // the caller: it is GoTrue's vocabulary, and it describes accounts the caller
 // may have no business knowing about.
 var errProviderRefused = errors.New("the identity provider refused the call")
 
-// refusal is a refusal that still knows its status, so that the one caller for
-// which a 404 is an answer rather than a failure can tell them apart.
+// refusal keeps the status, so that the one caller for which a 404 is an answer
+// rather than a failure can tell them apart.
 type refusal struct {
 	status int
 	method string
@@ -44,12 +42,9 @@ func (r *refusal) Error() string {
 
 func (r *refusal) Unwrap() error { return errProviderRefused }
 
-// noSuchAccount reports whether err is the provider saying it has no account at
-// the identifier in the path.
-//
-// Only the operations that put an identifier in the URL may read a 404 that
-// way. For the listing and for /invite a 404 is the base address being wrong,
-// and reading it as "no such account" would turn a mistyped
+// noSuchAccount may only be asked by the operations that put an identifier in
+// the URL. For the listing and for /invite a 404 is the base address being
+// wrong, and reading it as "no such account" would turn a mistyped
 // PROVISIONER_GOTRUE_URL into a roster that answers "this clinic has nobody" —
 // a misconfiguration that looks exactly like an empty database.
 func noSuchAccount(err error) bool {
@@ -58,16 +53,13 @@ func noSuchAccount(err error) bool {
 	return errors.As(err, &refused) && refused.status == http.StatusNotFound
 }
 
-// account is the whole answer this component gives about a person.
-//
-// Three fields, and the narrowing is the type rather than a filtering step:
-// GoTrue's user document also carries `confirmation_token`, which is the value
-// in the invitation link and therefore the credential itself, the encrypted
-// password, and whatever a clinic has written into the user metadata. None of
-// it can reach a caller by being forgotten, because nothing decodes it.
-//
-// `confirmed_at` and `last_sign_in_at` are here for a reason and not for
-// convenience: the claim rule in the onboarding block rests on both.
+// account is the whole answer this component gives about a person, and the
+// narrowing is the type rather than a filtering step: GoTrue's user document
+// also carries `confirmation_token` — the value in the invitation link, so the
+// credential itself — the encrypted password, and whatever a clinic wrote into
+// the user metadata. None of it can reach a caller by being forgotten, because
+// nothing decodes it. `confirmed_at` and `last_sign_in_at` are here because the
+// claim rule in the onboarding block rests on both.
 type account struct {
 	ID           string     `json:"id"`
 	ConfirmedAt  *time.Time `json:"confirmed_at"`
@@ -96,9 +88,7 @@ func newGoTrueClient(base string, signer *tokenSigner) *gotrueClient {
 	}
 }
 
-// invite creates an account for address and sends the invitation.
-//
-// address is expected lowercased: GoTrue stores it that way, and an account
+// invite expects address lowercased: GoTrue stores it that way, and an account
 // created under one spelling could never be found under another.
 func (c *gotrueClient) invite(ctx context.Context, address string) (account, error) {
 	var user gotrueUser
@@ -111,12 +101,10 @@ func (c *gotrueClient) invite(ctx context.Context, address string) (account, err
 	return user.account, nil
 }
 
-// findByAddress answers with the one account at address, or with nothing.
-//
-// GoTrue's `?filter=` is a substring match — an empty one returns everybody —
-// so the exact match happens here, inside the component. Exposing the filter
-// outward would put the clinic's directory behind the one component whose
-// purpose is that it holds it.
+// findByAddress does the exact match here, inside the component, because
+// GoTrue's `?filter=` is a substring match and an empty one returns everybody.
+// Exposing the filter outward would put the clinic's directory behind the one
+// component whose purpose is that it holds it.
 func (c *gotrueClient) findByAddress(ctx context.Context, address string) (*account, error) {
 	var page struct {
 		Users []gotrueUser `json:"users"`
@@ -140,23 +128,19 @@ func (c *gotrueClient) findByAddress(ctx context.Context, address string) (*acco
 		}
 	}
 
-	// A full page means the substring matched at least as many accounts as the
-	// page holds, so the exact one may be on a page nobody read. Answering "no
-	// account at that address" then sends the caller to /invite, which refuses
-	// an address GoTrue still holds — the dead end deletion exists to clean up.
-	// A refusal is recoverable; a false negative is not.
+	// A full page means the exact account may be on a page nobody read.
+	// Answering "no account at that address" then sends the caller to /invite,
+	// which refuses an address GoTrue still holds — the dead end deletion
+	// exists to clean up. A refusal is recoverable; a false negative is not.
 	if len(page.Users) >= lookupPageSize {
 		return nil, fmt.Errorf("%w: %d accounts match %q, so the exact one may be on a page this lookup did not read",
 			errProviderRefused, len(page.Users), address)
 	}
 
-	// No account at that address is an answer, not a failure: it is what makes
-	// an address free to invite.
+	// An answer, not a failure: it is what makes an address free to invite.
 	return nil, nil
 }
 
-// findByID answers with the account, or with nothing when the provider has no
-// such account.
 func (c *gotrueClient) findByID(ctx context.Context, id string) (*account, error) {
 	var user gotrueUser
 
@@ -164,8 +148,8 @@ func (c *gotrueClient) findByID(ctx context.Context, id string) (*account, error
 
 	switch {
 	case noSuchAccount(err):
-		// An identifier nobody has is an answer, not a failure: a roster
-		// holding one stale row still has to render.
+		// An answer, not a failure: a roster holding one stale row still has to
+		// render.
 		return nil, nil
 	case err != nil:
 		return nil, fmt.Errorf("looking up an identifier: %w", err)
@@ -191,11 +175,9 @@ func (c *gotrueClient) setPassword(ctx context.Context, id, password string) err
 	return nil
 }
 
-// call makes one admin call, minting the token it presents.
-//
-// A token per call rather than a cached one: it lives thirty seconds, so a
-// cache would be a copy of the most dangerous credential in the system kept
-// around for the sake of an allocation.
+// call mints a token per call rather than caching one: it lives thirty seconds,
+// so a cache would be a copy of the most dangerous credential in the system
+// kept around for the sake of an allocation.
 func (c *gotrueClient) call(
 	ctx context.Context, method, path string, query url.Values, body, into any,
 ) error {
@@ -225,9 +207,9 @@ func (c *gotrueClient) call(
 		return err
 	}
 
-	// The Authorization header, and nowhere else. The token is never a query
-	// parameter and never logged: it is admitted by every key GoTrue is
-	// configured with, which is what took it out of the API process.
+	// The Authorization header and nowhere else — never a query parameter,
+	// never logged: this token is admitted by every key GoTrue is configured
+	// with, which is what took it out of the API process.
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 

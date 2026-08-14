@@ -14,24 +14,22 @@ import (
 )
 
 const (
-	// maxBatchLookup bounds the fan-out of one roster call. Without it the size
-	// of a fan-out against the identity provider is decided by whoever writes
-	// the request body.
+	// Without maxBatchLookup, the size of a fan-out against the identity
+	// provider is decided by whoever writes the request body.
 	maxBatchLookup = 100
 
-	// batchBudget bounds that fan-out in time as well as in count. Fifty times
-	// smaller than maxBatchLookup × gotrueCallTimeout, which is what the count
-	// alone would allow, because a roster that has not answered in twenty
-	// seconds is a roster nobody is still waiting for. The ordering is asserted
-	// by TestTheBatchIsBoundedInTimeAndNotOnlyInCount, not left to this comment.
+	// batchBudget bounds that fan-out in time as well: fifty times smaller than
+	// the maxBatchLookup × gotrueCallTimeout the count alone would allow,
+	// because a roster that has not answered in twenty seconds is a roster
+	// nobody is still waiting for. The relationship is asserted by
+	// TestTheBatchIsBoundedInTimeAndNotOnlyInCount, not left to this comment.
 	batchBudget = 20 * time.Second
 
-	// maxRequestBody is generous for five small documents and small enough that
-	// nothing here is a memory sink.
+	// Generous for five small documents, small enough that nothing here is a
+	// memory sink.
 	maxRequestBody = 1 << 16
 )
 
-// server is the component: five operations, one guard, one identity provider.
 type server struct {
 	environment environment
 	secrets     secrets
@@ -39,23 +37,20 @@ type server struct {
 	logger      *slog.Logger
 }
 
-// mux assembles the whole HTTP surface, and is the same function the tests
-// walk. A second assembly written for the tests would prove things about the
-// test rather than about what this process serves.
+// mux is the same function the tests walk; a second assembly written for them
+// would prove things about the test rather than about what this process serves.
 //
-// There is no health route, no metrics route and no profiler. The five
-// operations are exhaustive: a sixth path is a sixth thing reachable by
-// whoever reaches this component, and the platform can probe the port.
-//
-// Every operation is a POST carrying a JSON body, including the two that read
-// and the one that deletes. An address or an account identifier in a path or a
-// query string is an address in every access log between here and the caller.
+// There is no health route, no metrics route and no profiler: a sixth path is a
+// sixth thing reachable by whoever reaches this component, and the platform can
+// probe the port. Every operation is a POST carrying a JSON body, including the
+// two that read and the one that deletes, because an address or an account
+// identifier in a path or a query string is an address in every access log
+// between here and the caller.
 func (s *server) mux() *chi.Mux {
 	mux := chi.NewMux()
 
-	// Registered before any route, which chi requires and which is also the
-	// safe direction: a route mounted before the guard would be served without
-	// it.
+	// Before any route, which chi requires and which is also the safe
+	// direction: a route mounted before the guard would be served without it.
 	mux.Use(s.guard)
 
 	mux.Post("/invite", s.invite)
@@ -63,11 +58,11 @@ func (s *server) mux() *chi.Mux {
 	mux.Post("/users/lookup-batch", s.lookupBatch)
 	mux.Post("/users/delete", s.delete)
 
-	// Absent in production rather than refused inside the handler. The seeds
-	// need a password so a doctor has something to sign in with; production has
-	// no such need, and an operation that sets any account's password is the
-	// identity-capture chain this whole component exists to break. A route that
-	// exists is a route one flag away from serving.
+	// Absent in production rather than refused inside the handler: a route that
+	// exists is a route one flag away from serving, and an operation that sets
+	// any account's password is the identity-capture chain this component
+	// exists to break. Only the seeds need it, so a doctor has something to
+	// sign in with.
 	if s.environment != production {
 		mux.Post("/users/password", s.setPassword)
 	}
@@ -109,7 +104,7 @@ func (s *server) lookup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Refused before the call, not filtered after it: a substring is not an
-	// address, and there is no shape of this operation that answers with a list.
+	// address, and no shape of this operation answers with a list.
 	address, ok := emailAddress(payload.Email)
 	if !ok {
 		s.refuse(w, r, http.StatusBadRequest, "email must be one complete address, not a fragment to search by")
@@ -124,8 +119,7 @@ func (s *server) lookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A null account rather than a 404: no account at that address is a normal
-	// answer to a normal question, and the caller acts on it — it is what makes
+	// A null account rather than a 404: the caller acts on it — it is what makes
 	// an address free to invite.
 	writeJSON(w, http.StatusOK, map[string]any{"account": found})
 }
@@ -152,14 +146,13 @@ func (s *server) lookupBatch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The roster asks once and this component asks the provider once per
-	// account: an N+1 that stays inside the component rather than crossing the
+	// The N+1 below stays inside the component rather than crossing the
 	// boundary, which is the whole reason this operation exists.
 	//
-	// One deadline over the whole fan-out, because the per-call timeout bounds
-	// a call and a hundred of them are a hundred times that: WriteTimeout ends
-	// the response, it does not cancel the handler, so without this the caller
-	// chooses how long a handler runs by choosing how many identifiers to send.
+	// One deadline over the whole fan-out: the per-call timeout bounds a call,
+	// and WriteTimeout ends the response without cancelling the handler — so
+	// without this the caller chooses how long a handler runs by choosing how
+	// many identifiers to send.
 	ctx, cancel := context.WithTimeout(r.Context(), batchBudget)
 	defer cancel()
 
@@ -173,9 +166,8 @@ func (s *server) lookupBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// An identifier nobody has is absent from the answer rather than an
-		// error for the others: a roster holding one stale row would otherwise
-		// stop rendering entirely.
+		// Absent from the answer rather than an error for the others: a roster
+		// holding one stale row would otherwise stop rendering entirely.
 		if found != nil {
 			accounts = append(accounts, *found)
 		}
@@ -184,21 +176,17 @@ func (s *server) lookupBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"accounts": accounts})
 }
 
-// delete removes an account, and only under the one condition that makes it
-// safe.
-//
-// It exists for a single scenario: the invitation went out, the transaction
+// delete exists for a single scenario: the invitation went out, the transaction
 // rolled back, and the person opened the link and set a password. `/invite`
 // then answers 422 forever, there is no address change, and nothing here can
 // reach the `auth` schema — so without this the address is burned for good.
 //
-// The condition is checked by the caller, who passes the proof, because this
-// component cannot see the `app` schema and so cannot check it itself. That is
-// the weak point of the arrangement and it is written down rather than papered
-// over: a compromised API can state whatever proof it likes. What the proof
-// buys is that a mistake — a handler deleting the wrong account — has to be a
-// lie rather than an omission. Both halves are required explicitly; neither may
-// be inferred from a field somebody forgot to send.
+// The proof comes from the caller because this component cannot see the `app`
+// schema. That is the weak point, written down rather than papered over: a
+// compromised API can state whatever proof it likes. What the proof buys is
+// that a mistake — a handler deleting the wrong account — has to be a lie
+// rather than an omission, so both halves are required explicitly and neither
+// may be inferred from a field somebody forgot to send.
 func (s *server) delete(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		ID            string `json:"id"`
@@ -254,21 +242,18 @@ func (s *server) setPassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// identifierShaped is the check that keeps a caller's string out of a path it
-// would otherwise be pasted into.
+// Keeps a caller's string out of the path it would otherwise be pasted into.
 var identifierPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$`)
 
 func identifierShaped(id string) bool {
 	return identifierPattern.MatchString(id)
 }
 
-// emailAddress normalises one address, or reports that it is not one.
-//
-// Lowercased, because GoTrue's `?filter=` is case-sensitive while `/invite`
-// stores the address folded: without this an account that exists is invisible
-// to the spelling a human typed. Refused unless it is a complete address —
-// `mail.ParseAddress` also accepts `Anna <anna@clinic.example>`, and a display
-// name is not what any caller here means.
+// emailAddress lowercases, because GoTrue's `?filter=` is case-sensitive while
+// `/invite` stores the address folded: without this an account that exists is
+// invisible to the spelling a human typed. It refuses anything but a complete
+// address — `mail.ParseAddress` also accepts `Anna <anna@clinic.example>`, and
+// a display name is not what any caller here means.
 func emailAddress(raw string) (string, bool) {
 	address := strings.ToLower(strings.TrimSpace(raw))
 
@@ -295,25 +280,19 @@ func (s *server) decode(w http.ResponseWriter, r *http.Request, into any) bool {
 	return true
 }
 
-// failed answers a provider failure.
-//
-// 502 rather than 500: this component is a narrow front for somebody else's
-// API, and the difference between "we are broken" and "the identity provider
-// is" is the first thing an operator needs. What the provider said goes to the
-// log — see refuse.
+// failed answers 502 rather than 500: this component is a narrow front for
+// somebody else's API, and the difference between "we are broken" and "the
+// identity provider is" is the first thing an operator needs. What the provider
+// said goes to the log — see refuse.
 func (s *server) failed(w http.ResponseWriter, r *http.Request, err error) {
 	s.refuse(w, r, http.StatusBadGateway, err.Error())
 }
 
-// refuse writes the status and a reason, and decides which reasons a caller may
-// read.
-//
-// A 401 says one fixed thing: what the caller learns must not depend on which
-// check failed, or a refusal tells whoever is guessing which half of the guess
-// was right. A 5xx says one fixed thing for a different reason — it would
-// otherwise carry the identity provider's own words about accounts the caller
-// may have no business knowing about. Both are logged in full, where they are
-// useful and private.
+// refuse decides which reasons a caller may read. A 401 says one fixed thing,
+// or a refusal tells whoever is guessing which half of the guess was right; a
+// 5xx says one fixed thing because it would otherwise carry the identity
+// provider's own words about accounts the caller may have no business knowing
+// about. Both are logged in full, where they are useful and private.
 func (s *server) refuse(w http.ResponseWriter, r *http.Request, status int, reason string) {
 	if status == http.StatusUnauthorized || status >= http.StatusInternalServerError {
 		s.logger.WarnContext(r.Context(), "refused",
@@ -335,7 +314,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	// The status line is already on the wire; a failed write means the caller
-	// is gone and there is nothing left to report to it.
+	// The status line is already on the wire, so a failed write leaves nothing
+	// to report it to.
 	_, _ = w.Write(body)
 }

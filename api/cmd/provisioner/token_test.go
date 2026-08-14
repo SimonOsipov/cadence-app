@@ -12,11 +12,9 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// TestTheAdminTokenExpiresWithinAMinute. The token is minted per call and
-// travels one hop; a lifetime long enough to be worth stealing buys nothing.
-// Sixty seconds is the ceiling the spec fixes, and the assertion is on the
-// claim rather than on the constant, so a lifetime taken from somewhere else
-// still has to satisfy it.
+// TestTheAdminTokenExpiresWithinAMinute against the sixty seconds the spec
+// fixes as the ceiling. The assertion is on the claim rather than on the
+// constant, so a lifetime taken from somewhere else still has to satisfy it.
 func TestTheAdminTokenExpiresWithinAMinute(t *testing.T) {
 	signer := testSigner(t, testsupport.NewES256Key(t, "admin-key"))
 
@@ -35,9 +33,9 @@ func TestTheAdminTokenExpiresWithinAMinute(t *testing.T) {
 	}
 }
 
-// TestTheAdminTokenNamesTheServiceRole is what GoTrue actually checks — the
-// only claim on the admin routes that it looks at. Without it the four
-// refusals below would be satisfied by a token nothing accepts.
+// TestTheAdminTokenNamesTheServiceRole is the only claim GoTrue's admin routes
+// look at. Without it the four refusals below would be satisfied by a token
+// nothing accepts.
 func TestTheAdminTokenNamesTheServiceRole(t *testing.T) {
 	signer := testSigner(t, testsupport.NewES256Key(t, "admin-key"))
 
@@ -54,7 +52,7 @@ func TestTheAdminTokenNamesTheServiceRole(t *testing.T) {
 // account's password and then obtain a session token by entirely legitimate
 // means. Pinning the session `kid` is one barrier; GoTrue checks neither `aud`
 // nor `iss` on its admin routes, which makes a foreign audience and a foreign
-// issuer two more barriers that cost nothing.
+// issuer two more that cost nothing.
 //
 // Each is asserted on its own, with the other two neutralised, because three
 // reasons asserted together are one reason with two spares: a regression that
@@ -131,17 +129,15 @@ func TestTheAPIVerifierRefusesTheAdminTokenForEachReasonSeparately(t *testing.T)
 }
 
 // TestTheThreeBarriersAreTheOnlyThingRefusingTheAdminToken is the control the
-// three subtests above need. Each of them asserts a refusal, and a token that
-// was malformed — or signed with a key the fixture does not publish — would
-// produce three refusals for a reason that has nothing to do with the barriers
-// they name.
+// three subtests above need: a token that was malformed — or signed with a key
+// the fixture does not publish — would produce their three refusals for a
+// reason that has nothing to do with the barriers they name.
 //
-// So: a verifier that agrees about the key id, the audience and the issuer gets
-// through all three and past the signature. What stops it there is the fourth
-// barrier, which is free in the same way and was not designed for: the token
-// names no subject, because it stands for no person, and the verifier refuses a
-// principal it cannot name. Asserting that specific refusal is what says the
-// other three were passed rather than merely reordered.
+// So a verifier that agrees about the key id, the audience and the issuer gets
+// through all three and past the signature, and what stops it is the fourth
+// barrier, free in the same way and not designed for: the token names no
+// subject, and the verifier refuses a principal it cannot name. Asserting that
+// refusal is what says the other three were passed rather than reordered.
 func TestTheThreeBarriersAreTheOnlyThingRefusingTheAdminToken(t *testing.T) {
 	admin := testsupport.NewES256Key(t, "admin-key")
 	set := testsupport.StartJWKS(t, admin)
@@ -168,11 +164,10 @@ func TestTheThreeBarriersAreTheOnlyThingRefusingTheAdminToken(t *testing.T) {
 }
 
 // TestTheAdminTokenNamesNoSubject states the fourth barrier as an intention
-// rather than leaving it as an accident of the control above. A subject is the
-// name of a person, and this token is minted by a process on its own behalf; a
-// `sub` here would be a person's identifier attached to a machine's authority,
-// which is the exact confusion the audit actor work in step-4 removed from the
-// other direction.
+// rather than leaving it an accident of the control above. This token is minted
+// by a process on its own behalf, so a `sub` would be a person's identifier
+// attached to a machine's authority — the confusion the audit actor work in
+// step-4 removed from the other direction.
 func TestTheAdminTokenNamesNoSubject(t *testing.T) {
 	claims := parseWithoutVerifying(t, mint(t, testSigner(t, testsupport.NewES256Key(t, "admin-key")), time.Now()))
 
@@ -181,9 +176,9 @@ func TestTheAdminTokenNamesNoSubject(t *testing.T) {
 	}
 }
 
-// TestTheSignerRefusesAKeyItCannotSignWith. The admin key arrives as one line
-// of configuration; every way it can be wrong has to stop the process rather
-// than produce a token nothing accepts and an incident nobody can read.
+// TestTheSignerRefusesAKeyItCannotSignWith. Every way one line of configuration
+// can be wrong has to stop the process, rather than produce a token nothing
+// accepts and an incident nobody can read.
 func TestTheSignerRefusesAKeyItCannotSignWith(t *testing.T) {
 	public := `{"kty":"EC","crv":"P-256","alg":"ES256","use":"sig","kid":"admin-key",` +
 		`"x":"2e9iv7Gxg80pCO61rNEtPEs-mIr1mErwg8vW7QcugY8",` +

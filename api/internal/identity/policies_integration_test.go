@@ -105,8 +105,8 @@ func newClinic(t *testing.T) clinic {
 	return clinic{service: service, request: request}
 }
 
-// as runs fn as one caller through the request seam — the way every request
-// runs, and the only way these policies are ever consulted in production.
+// as runs fn through the request seam — the only way these policies are ever
+// consulted in production.
 func (c clinic) as(t *testing.T, subject, role string, fn func(context.Context, pgx.Tx) error) error {
 	t.Helper()
 
@@ -115,8 +115,6 @@ func (c clinic) as(t *testing.T, subject, role string, fn func(context.Context, 
 	)
 }
 
-// visibleProfiles is the question every policy in this schema is really
-// answering: whose rows come back.
 func (c clinic) visibleProfiles(t *testing.T, subject, role string) []string {
 	t.Helper()
 

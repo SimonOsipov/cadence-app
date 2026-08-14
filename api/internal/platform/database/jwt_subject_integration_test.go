@@ -30,8 +30,6 @@ func asRole(t *testing.T, db *testsupport.Database, role string) *pgx.Conn {
 	return conn
 }
 
-// The function's reason to exist: inside the seam it answers with the subject
-// the seam published, as a uuid.
 func TestJWTSubjectReturnsWhatTheSeamPublished(t *testing.T) {
 	pool, _ := requestPool(t)
 

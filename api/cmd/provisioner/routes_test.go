@@ -21,12 +21,11 @@ const (
 	testPreviousSecret = "provisioner-shared-secret-for-tests-0002"
 )
 
-// theFiveOperations is the whole contract of this component, written out here
-// rather than read from the code that mounts it. A test that asks the router
-// what it mounted agrees with the router by construction; this one disagrees
-// the moment a sixth route appears, which is the entire point — the surface has
-// already grown three times, and an operation nobody declared is an operation
-// nobody reviewed.
+// theFiveOperations is written out here rather than read from the code that
+// mounts it: a test that asks the router what it mounted agrees with it by
+// construction, and this one disagrees the moment a sixth route appears. The
+// surface has already grown three times, and an operation nobody declared is an
+// operation nobody reviewed.
 var theFiveOperations = []string{
 	"POST /invite",
 	"POST /users/lookup",
@@ -36,8 +35,7 @@ var theFiveOperations = []string{
 }
 
 // testServer builds the component the way main does, against a fake identity
-// provider. A second assembly written for the tests would prove things about
-// the test, so mux() below is the same function the composition root calls.
+// provider, so that the mux under test is the one the composition root calls.
 func testServer(t *testing.T, env environment, fake *fakeGoTrue) *server {
 	t.Helper()
 
@@ -61,8 +59,8 @@ func testServer(t *testing.T, env environment, fake *fakeGoTrue) *server {
 	}
 }
 
-// call sends a request carrying the current secret in the header the guard
-// reads, which is the shape every test that is not about the guard needs.
+// call carries the current secret, which is the shape every test that is not
+// about the guard needs.
 func call(t *testing.T, srv *server, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -75,9 +73,8 @@ func call(t *testing.T, srv *server, method, path, body string) *httptest.Respon
 	return rec
 }
 
-// TestTheMuxMountsExactlyTheFiveOperations walks the real mux. What is
-// protected is the list and not its length: a route swapped for another would
-// keep the count and change the contract.
+// TestTheMuxMountsExactlyTheFiveOperations protects the list and not its
+// length: a route swapped for another keeps the count and changes the contract.
 func TestTheMuxMountsExactlyTheFiveOperations(t *testing.T) {
 	var mounted []string
 
@@ -101,10 +98,8 @@ func TestTheMuxMountsExactlyTheFiveOperations(t *testing.T) {
 	}
 }
 
-// TestTheBatchIsBoundedInTimeAndNotOnlyInCount asserts the relationship
-// between the three constants that decide how long one roster call may run,
-// rather than describing it in a comment beside one of them.
-//
+// TestTheBatchIsBoundedInTimeAndNotOnlyInCount asserts the relationship between
+// the three constants rather than leaving it in a comment beside one of them.
 // The count bound alone permits maxBatchLookup × gotrueCallTimeout, and
 // WriteTimeout ends the response without cancelling the handler — so with the
 // budget raised past that product, the caller chooses how long a handler runs
@@ -135,12 +130,10 @@ func TestNoDebugOrMetricsPathIsServed(t *testing.T) {
 	}
 }
 
-// TestSettingAPasswordDoesNotExistInProduction. The seeds need a password so a
-// doctor has something to sign in with; production has no such need, and an
-// operation that can set any account's password is the identity-capture chain
-// the whole story is about. It is absent from the mux rather than refused
-// inside the handler: a route that exists is a route one flag away from
-// serving.
+// TestSettingAPasswordDoesNotExistInProduction. An operation that can set any
+// account's password is the identity-capture chain the whole story is about, so
+// it is absent from the mux rather than refused inside the handler: a route
+// that exists is a route one flag away from serving.
 func TestSettingAPasswordDoesNotExistInProduction(t *testing.T) {
 	srv := testServer(t, production, nil)
 

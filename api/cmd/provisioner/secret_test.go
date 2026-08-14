@@ -10,9 +10,8 @@ import (
 	"testing"
 )
 
-// TestTheGuardRefusesEverythingButACurrentSecret. Two values are current from
-// day one — a shape of configuration rather than a rotation choreography, so
-// that replacing one never needs a moment when neither works.
+// TestTheGuardRefusesEverythingButACurrentSecret — two values are current from
+// day one, so that replacing one never needs a moment when neither works.
 //
 // The wrong-secret case is not the same test as the no-secret case: a guard
 // that only checked for presence would pass the second and fail nothing.
@@ -75,16 +74,13 @@ func TestTheGuardRefusesEverythingButACurrentSecret(t *testing.T) {
 	}
 }
 
-// TestAPathThatIsNotMountedIsAlsoRefusedWithoutASecret. The guard is a
-// middleware on the whole mux, so it runs before the router decides — and an
-// unauthenticated caller probing for operations therefore learns nothing about
-// which ones exist.
+// TestAPathThatIsNotMountedIsAlsoRefusedWithoutASecret.
 //
-// The distinction is worth a test of its own because the alternative shape —
-// the guard wrapped around each route, or around a group — keeps every other
-// test in this package green while answering 404 to a secretless probe. That
-// difference tells whoever is probing whether POST /users/password is mounted,
-// which is to say whether this deployment is production.
+// The alternative shape — the guard wrapped around each route, or around a
+// group — keeps every other test in this package green while answering 404 to a
+// secretless probe. That difference tells whoever is probing whether POST
+// /users/password is mounted, which is to say whether this deployment is
+// production.
 func TestAPathThatIsNotMountedIsAlsoRefusedWithoutASecret(t *testing.T) {
 	srv := testServer(t, development, nil)
 
@@ -102,8 +98,7 @@ func TestAPathThatIsNotMountedIsAlsoRefusedWithoutASecret(t *testing.T) {
 }
 
 // TestTheSecretIsNotAcceptedFromTheQueryString. A secret in a URL is a secret
-// in every access log, every proxy trace and every browser history on the way.
-// The guard reads one place, and this is what says so.
+// in every access log, proxy trace and browser history on the way.
 func TestTheSecretIsNotAcceptedFromTheQueryString(t *testing.T) {
 	srv := testServer(t, development, startFakeGoTrue(t))
 
@@ -148,15 +143,12 @@ func TestARefusalSaysNothingAboutTheSecret(t *testing.T) {
 }
 
 // TestTheSecretIsComparedInConstantTime pins the shape of the comparison rather
-// than its timing.
-//
-// Timing is not measurable in a unit test on a machine that also runs a garbage
-// collector, so a test claiming to measure it would be a test that passes for
-// the wrong reason. What is checkable is that the function does its work
-// through crypto/subtle and contains no equality operator of its own: `==` on a
-// secret returns as soon as two bytes differ, which is the leak. The rule is
-// enforced against the source because it is a property of the code, not of a
-// result — an implementation that quietly went back to `==` would pass every
+// than its timing: timing is not measurable in a unit test on a machine that
+// also runs a garbage collector, so a test claiming to measure it would pass
+// for the wrong reason. What is checkable is that the function works through
+// crypto/subtle and carries no equality operator of its own, `==` on a secret
+// returning as soon as two bytes differ. It is enforced against the source
+// because an implementation that went back to `==` would pass every
 // behavioural test above.
 func TestTheSecretIsComparedInConstantTime(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "secret.go", nil, 0)
@@ -198,9 +190,9 @@ func TestTheSecretIsComparedInConstantTime(t *testing.T) {
 	}
 }
 
-// TestBothCurrentValuesAreConsultedEvenWhenTheFirstMatches is the other half of
-// "two values are current": permits must not short-circuit on the first, or
-// which of the two is offered becomes observable in the time it takes to answer.
+// TestBothCurrentValuesAreConsultedEvenWhenTheFirstMatches: permits must not
+// short-circuit on the first, or which of the two is offered becomes observable
+// in the time it takes to answer.
 func TestBothCurrentValuesAreConsultedEvenWhenTheFirstMatches(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "secret.go", nil, 0)
 	if err != nil {

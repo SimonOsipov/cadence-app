@@ -23,16 +23,11 @@ import (
 // principal on the context, and the actor type is unexported, so no caller can
 // build one.
 //
-// A check would be the wrong shape for it. Forging the actor survived two drafts
-// of the proposal precisely because it was an argument's value: every call site
-// looked right, and one naming a different subject would have looked right too.
-// Removing the argument moves the refusal from run time to compile time, and this
-// list is what makes that removal something a diff has to state out loud rather
-// than something a later signature quietly takes back.
-//
-// WithServiceJob's string is the one string on this surface that reaches the
-// audit log, and it reaches app.actor_job. A uuid passed there names a job called
-// after a uuid; it does not attribute the action to that person.
+// A check would be the wrong shape for it: forging the actor survived two drafts
+// of the proposal precisely because it was an argument's value, where every call
+// site looked right. Removing the argument moves the refusal to compile time, and
+// this list is what makes that removal something a diff has to state out loud
+// rather than something a later signature quietly takes back.
 //
 // What this does not close, and the list says so: WithCaller still takes the
 // caller's subject as a field of Caller, so on the *request* seam a subject is

@@ -11,9 +11,8 @@ import (
 	"time"
 )
 
-// fakeGoTrue is an in-memory stand-in for the identity provider's admin
-// contract, reproducing the two behaviours measured against the real thing on
-// 2026-07-30 that this component exists to contain:
+// fakeGoTrue reproduces the two behaviours measured against the real provider
+// on 2026-07-30 that this component exists to contain:
 //
 //   - `?filter=` is a substring match, and it is case-sensitive
 //   - `/invite` stores the address lowercased, so a mixed-case filter finds
@@ -40,9 +39,9 @@ type fakeUser struct {
 	LastSignInAt *time.Time
 }
 
-// recordedRequest is what the component actually sent. The address it filtered
-// on and the bearer token it presented are both assertions elsewhere, and
-// neither is observable from the answer.
+// recordedRequest is what the component actually sent: the address it filtered
+// on and the token it presented are asserted elsewhere, and neither is
+// observable from the answer.
 type recordedRequest struct {
 	Method string
 	Path   string
@@ -73,8 +72,6 @@ func (f *fakeGoTrue) withUser(id, email string) *fakeUser {
 	return user
 }
 
-// failNext makes the next admin call answer with status, standing in for a
-// provider that is refusing or broken.
 func (f *fakeGoTrue) failNext(status int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -145,8 +142,8 @@ func (f *fakeGoTrue) invite(w http.ResponseWriter, body string) {
 
 	f.mu.Lock()
 	id := "00000000-0000-4000-8000-" + fakeSuffix(len(f.users))
-	// Lowercased on the way in, exactly as GoTrue does: this is why the
-	// component has to lowercase before it filters.
+	// Lowercased exactly as GoTrue does, which is why the component has to
+	// lowercase before it filters.
 	user := &fakeUser{ID: id, Email: strings.ToLower(payload.Email)}
 	f.users[id] = user
 	f.mu.Unlock()
@@ -211,9 +208,9 @@ func (f *fakeGoTrue) user(w http.ResponseWriter, method, id, body string) {
 	}
 }
 
-// writeFakeUser answers with the whole GoTrue user document, not with the three
-// fields the component passes on. That is deliberate: it is what makes the
-// narrowing assertions in handlers_test.go mean something.
+// writeFakeUser answers with the whole GoTrue user document rather than the
+// three fields the component passes on, which is what makes the narrowing
+// assertions in handlers_test.go mean something.
 func writeFakeUser(w http.ResponseWriter, status int, user *fakeUser) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

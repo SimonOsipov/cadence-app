@@ -103,12 +103,9 @@ func (k *SigningKey) SignWithKID(t *testing.T, kid string, claims jwt.MapClaims)
 	return k.sign(t, k.method, claims, map[string]any{"kid": kid})
 }
 
-// PrivateJWK renders the key as one JWK carrying its private half.
-//
-// It is the shape a single key is configured with — one variable, one key, the
-// key id travelling with the material it names so the two cannot drift apart —
-// as opposed to the bare array GOTRUE_JWT_KEYS takes, which GoTrueJWKS builds
-// out of the same rendering.
+// PrivateJWK renders the key as one JWK carrying its private half: the shape a
+// single key is configured with, as opposed to the bare array GOTRUE_JWT_KEYS
+// takes, which GoTrueJWKS builds out of the same rendering.
 func (k *SigningKey) PrivateJWK(t *testing.T) string {
 	t.Helper()
 
@@ -120,9 +117,8 @@ func (k *SigningKey) PrivateJWK(t *testing.T) string {
 	return string(raw)
 }
 
-// privateJWKMarshal renders one key, with the signing marker if signing is set.
-// The marker is what GoTrue reads to pick the key it signs sessions with; every
-// other consumer of a private JWK here wants the key without it.
+// The signing marker is what GoTrue reads to pick the key it signs sessions
+// with; every other consumer of a private JWK here wants the key without it.
 func privateJWKMarshal(t *testing.T, key *SigningKey, signing bool) jwkset.JWKMarshal {
 	t.Helper()
 

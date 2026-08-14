@@ -147,10 +147,9 @@ func TestCreatePatientWritesEverythingThatDescribesThem(t *testing.T) {
 		t.Fatalf("CreatePatient: %v", err)
 	}
 
-	// Counted through the superuser, not through a seam. The service role holds
-	// INSERT on audit_log and not SELECT — the grants matrix says so — and a
-	// test that had to be granted something to see its own result would be
-	// changing the arrangement it is checking.
+	// Counted through the superuser: the service role holds INSERT on audit_log
+	// and not SELECT, and a test that had to be granted something to see its own
+	// result would be changing the arrangement it is checking.
 	observer := testsupport.Connect(t, db.SuperuserURL)
 
 	var profiles, cards, assignments, preferences, audits int
@@ -238,8 +237,6 @@ func TestCreatePatientWritesEverythingThatDescribesThem(t *testing.T) {
 		t.Error("is_primary = false on the only specialist, who was named primary")
 	}
 
-	// joined_at is the moment the invitation is accepted, which has not
-	// happened. profiles.created_at is the moment the clinic created the row.
 	if joined != nil {
 		t.Errorf("joined_at is %q on a patient who has not accepted an invitation", *joined)
 	}

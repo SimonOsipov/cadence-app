@@ -142,8 +142,6 @@ func poolConfig(databaseURL string) (*pgxpool.Config, error) {
 	return cfg, nil
 }
 
-// open is the half both constructors share: create, then prove the connection
-// before handing it back.
 func open(ctx context.Context, cfg *pgxpool.Config) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -272,14 +270,11 @@ func VerifyPools(ctx context.Context, request, service *pgxpool.Pool) error {
 	return nil
 }
 
-// roleChangeIsRefused reports whether the pool's connection role is forbidden to
-// assume the named role.
-//
-// The distinction it draws is the whole value of the check. Any error at all
-// would read as "refused" — including the role not existing, which is exactly
-// the state of a cluster where the migration chain has not been applied, and
-// which would let a process start having measured nothing at all. So only 42501
-// counts as a refusal; anything else is reported as a failure to find out.
+// roleChangeIsRefused counts only 42501 as a refusal, and that distinction is
+// the whole value of the check: any error at all would read as "refused" —
+// including the role not existing, which is exactly the state of a cluster
+// where the migration chain has not been applied, and which would let a process
+// start having measured nothing. Anything else is a failure to find out.
 func roleChangeIsRefused(ctx context.Context, pool *pgxpool.Pool, role string) (bool, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {

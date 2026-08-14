@@ -863,8 +863,6 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 		}
 	}
 
-	// The end of the road: the base migration goes through this path too, and
-	// its rollback is the one that removes the roles.
 	if remaining := countRoles(); remaining != 0 {
 		t.Errorf("%d of the chain's roles survived unwinding the chain step by step", remaining)
 	}

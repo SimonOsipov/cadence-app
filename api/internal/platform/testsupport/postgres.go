@@ -343,8 +343,7 @@ func MigrationsPath(t *testing.T) string {
 }
 
 // ModuleRoot is the directory holding go.mod, found by walking up from the
-// package under test. Same reason as MigrationsPath: a relative path breaks the
-// day the test moves to another package.
+// package under test. Same reason as MigrationsPath.
 func ModuleRoot(t *testing.T) string {
 	t.Helper()
 

@@ -16,9 +16,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 )
 
-// The secret this client is built with in every test here. Long enough to be
-// the real shape and distinctive enough that a substring search for it means
-// something.
+// The secret every client here is built with: distinctive enough that a
+// substring search for it means something.
 const testSecret = "a-shared-secret-nobody-else-holds-0123456789"
 
 // seen is what the fake provisioner saw, so a test can ask where a value
@@ -30,7 +29,6 @@ type seen struct {
 	body   string
 }
 
-// fakeProvisioner answers with reply and records the request.
 func fakeProvisioner(t *testing.T, status int, reply string) (*Client, *seen) {
 	t.Helper()
 
@@ -219,9 +217,6 @@ func TestACallWithNoDeadlineOfItsOwnStillTimesOutAsOne(t *testing.T) {
 	}
 	client.timeout = 100 * time.Millisecond
 
-	// The transport's own bound is left where New put it — a hundred times the
-	// one under test — so a call that comes back quickly came back on the context
-	// deadline and on nothing else.
 	started := time.Now()
 
 	_, err = client.Invite(context.Background(), "anna@clinic.example")
@@ -277,7 +272,6 @@ func TestNewRefusesAConfigurationThatCouldNotWork(t *testing.T) {
 	}
 }
 
-// The answer is what the component gives and nothing more.
 func TestTheAnswerCarriesTheThreeFieldsAndNoOthers(t *testing.T) {
 	confirmed := "2026-08-14T10:00:00Z"
 	client, _ := fakeProvisioner(t, http.StatusOK,
@@ -314,9 +308,6 @@ func TestTheAnswerCarriesTheThreeFieldsAndNoOthers(t *testing.T) {
 	}
 }
 
-// A roster of nobody is answered without asking, because the component refuses
-// an empty list — and a clinic that has not admitted anybody yet is an ordinary
-// state, not a caller's mistake.
 func TestARosterOfNobodyIsNotACallAtAll(t *testing.T) {
 	client, record := fakeProvisioner(t, http.StatusBadRequest,
 		`{"error":"ids must name between one and one hundred accounts"}`)
@@ -337,8 +328,6 @@ func TestARosterOfNobodyIsNotACallAtAll(t *testing.T) {
 	}
 }
 
-// No account at that address is an answer rather than a failure: it is what
-// makes an address free to invite.
 func TestAnAddressNobodyHasIsAnAnswer(t *testing.T) {
 	client, _ := fakeProvisioner(t, http.StatusOK, `{"account":null}`)
 
@@ -351,8 +340,6 @@ func TestAnAddressNobodyHasIsAnAnswer(t *testing.T) {
 	}
 }
 
-// Both halves of the proof are sent as the component requires them: stated, not
-// inferred from a field somebody left out.
 func TestDeletionStatesBothHalvesOfItsProof(t *testing.T) {
 	client, record := fakeProvisioner(t, http.StatusNoContent, "")
 
