@@ -72,7 +72,13 @@ private fun ComposeUiTest.startShell(
     lateinit var nav: NavHostController
     setContent {
         nav = rememberNavController()
-        CadenceTheme { CadenceShell(navController = nav, trends = trends, onLoadMetric = onLoadMetric) }
+        CadenceTheme {
+            CadenceShell(
+                navController = nav,
+                data = CadenceShellData(trends = trends),
+                actions = CadenceShellActions(onLoadMetric = onLoadMetric),
+            )
+        }
     }
     return nav
 }
@@ -90,10 +96,12 @@ private fun ComposeUiTest.startShellSharingItsWindow(): NavHostController {
         CadenceTheme {
             CadenceShell(
                 navController = nav,
-                trends = navOverview(window),
-                trendWindow = window,
-                onTrendWindow = { window = it },
-                onLoadMetric = { metric, chosen -> navDetail(metric, chosen) },
+                data = CadenceShellData(trends = navOverview(window), trendWindow = window),
+                actions =
+                    CadenceShellActions(
+                        onTrendWindow = { window = it },
+                        onLoadMetric = { metric, chosen -> navDetail(metric, chosen) },
+                    ),
             )
         }
     }

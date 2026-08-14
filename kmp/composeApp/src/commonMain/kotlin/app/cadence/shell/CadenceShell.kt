@@ -33,9 +33,11 @@ import app.cadence.screens.trends.TrendsScreen
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseStep
 import app.cadence.shared.domain.FixedCadenceClock
+import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.InventorySummary
 import app.cadence.shared.domain.Meal
+import app.cadence.shared.domain.MealDraft
 import app.cadence.shared.domain.Metric
 import app.cadence.shared.domain.ProtocolCadence
 import app.cadence.shared.domain.ProtocolRow
@@ -46,16 +48,20 @@ import app.cadence.shared.domain.VialDraft
 import app.cadence.shared.domain.VialId
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
+import app.cadence.shared.parsing.MealParseResult
 import app.cadence.shared.repository.DoseLogResult
+import app.cadence.shared.repository.MealLogResult
 import app.cadence.shared.repository.MetricDetail
+import app.cadence.shared.repository.NutritionDay
+import app.cadence.shared.repository.NutritionWeek
+import app.cadence.shared.repository.RecipeDraft
+import app.cadence.shared.repository.RecipeList
+import app.cadence.shared.repository.RecipeSaveResult
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
-
-/** Stand-in until the meal wizard lands (step 8); totals already come from the repository. */
-private const val PLACEHOLDER_MEAL_NAME = "Обед"
 
 /** Until sign-in says whose app this is — block 7. */
 private const val PATIENT_NAME = "Марина"
@@ -144,33 +150,34 @@ fun CadenceApp(
     Box(modifier.fillMaxSize()) {
         CadenceShell(
             navController = navController,
-            onOpenActions = { actionsOpen = true },
-            onDoseLogged = { draft ->
-                val result = mocks.dosing.submit(draft)
-                reloads++
-                result
-            },
-            summary = summary,
-            todayMeals = todayMeals,
-            zone = mocks.zone,
-            schedule = schedule,
-            cabinet = cabinet,
-            onOpenVial = { scope.launch { openVial = mocks.inventory.vial(it) } },
-            onAddVial = { draft ->
-                scope.launch {
-                    mocks.inventory.addVial(draft)
-                    reloads++
-                }
-            },
-            trends = trendsState.overview,
-            trendWindow = trendsState.window,
-            onTrendWindow = { trendsState.window = it },
-            onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
-            onMealLogged = { name ->
-                // §03: the toast shows the day's running total, not the meal's own figure.
-                toast = ConfirmToastState(name, summary?.mealMacros?.kcal ?: 0)
-                raisedAt++
-            },
+            data =
+                CadenceShellData(
+                    summary = summary,
+                    todayMeals = todayMeals,
+                    schedule = schedule,
+                    cabinet = cabinet,
+                    trends = trendsState.overview,
+                    trendWindow = trendsState.window,
+                    zone = mocks.zone,
+                ),
+            actions =
+                CadenceShellActions(
+                    onOpenActions = { actionsOpen = true },
+                    onDoseLogged = { draft ->
+                        val result = mocks.dosing.submit(draft)
+                        reloads++
+                        result
+                    },
+                    onOpenVial = { scope.launch { openVial = mocks.inventory.vial(it) } },
+                    onAddVial = { draft ->
+                        scope.launch {
+                            mocks.inventory.addVial(draft)
+                            reloads++
+                        }
+                    },
+                    onTrendWindow = { trendsState.window = it },
+                    onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
+                ),
         )
 
         Actions(summary, actionsOpen, navController, onDismiss = { actionsOpen = false })
@@ -202,6 +209,52 @@ private fun ToastLifetime(
 }
 
 /**
+ * Everything the shell has been *told*, in one value. Every field defaults to its
+ * "not read yet" state, so a test builds only the field its case turns on.
+ *
+ * A null on any of the nullable fields means the first read has not landed; a route gated
+ * on one draws its placeholder rather than composing a screen out of zeroes, which would
+ * be a false statement about the patient rather than an honest one about the fetch.
+ */
+data class CadenceShellData(
+    val summary: TodaySummary? = null,
+    val todayMeals: List<Meal> = emptyList(),
+    val schedule: ScheduleState? = null,
+    val cabinet: InventorySummary? = null,
+    val trends: TrendsOverview? = null,
+    val trendWindow: TrendWindow = TrendWindow.THREE_MONTHS,
+    val nutritionDay: NutritionDay? = null,
+    val nutritionWeek: NutritionWeek? = null,
+    val recipes: RecipeList? = null,
+    val ingredients: List<Ingredient> = emptyList(),
+    val zone: TimeZone = TimeZone.currentSystemDefault(),
+)
+
+/**
+ * Everything the shell can *do*, in one value — each defaulting to a no-op so a test names
+ * only the event its case asserts on.
+ *
+ * Split from [CadenceShellData] rather than folded in with it: data is replaced on every
+ * `reloads` bump while these stay put for the app's lifetime, and `CadenceNavigationTest`'s
+ * own call sites show the split is the one tests want (three pass neither, one passes a
+ * single lambda). Writes return their repository's own sealed result, like `onDoseLogged`
+ * already does, so a route can tell a written meal from a rejected one without a second
+ * read.
+ */
+data class CadenceShellActions(
+    val onOpenActions: () -> Unit = { },
+    val onDoseLogged: suspend (DoseDraft) -> DoseLogResult = { DoseLogResult.Incomplete },
+    val onMealLogged: suspend (MealDraft) -> MealLogResult = { MealLogResult.Rejected },
+    val onAddVial: (VialDraft) -> Unit = { },
+    val onOpenVial: (VialId) -> Unit = { },
+    val onTrendWindow: (TrendWindow) -> Unit = { },
+    val onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail? = { _, _ -> null },
+    val parseMeal: suspend (String) -> MealParseResult = { MealParseResult.Unavailable },
+    val searchIngredients: suspend (String) -> List<Ingredient> = { emptyList() },
+    val onRecipeSaved: suspend (RecipeDraft) -> RecipeSaveResult = { RecipeSaveResult.Rejected },
+)
+
+/**
  * Screens get named lambdas and never the controller, so each stays testable without a
  * navigator; `onOpenActions` is the one callback that isn't navigation — the `+` opens a sheet.
  * The controller is a parameter so a test can assert on the back stack.
@@ -210,22 +263,8 @@ private fun ToastLifetime(
 fun CadenceShell(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier,
-    onOpenActions: () -> Unit = { },
-    onMealLogged: (String) -> Unit = { },
-    onDoseLogged: suspend (DoseDraft) -> DoseLogResult = { DoseLogResult.Incomplete },
-    onAddVial: (VialDraft) -> Unit = { },
-    onOpenVial: (VialId) -> Unit = { },
-    cabinet: InventorySummary? = null,
-    trends: TrendsOverview? = null,
-    trendWindow: TrendWindow = TrendWindow.THREE_MONTHS,
-    onTrendWindow: (TrendWindow) -> Unit = { },
-    onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail? = { _, _ -> null },
-    // A null summary means the first read hasn't landed; the screen stays unshown rather
-    // than composing a day made of zeroes.
-    summary: TodaySummary? = null,
-    todayMeals: List<Meal> = emptyList(),
-    zone: TimeZone = TimeZone.currentSystemDefault(),
-    schedule: ScheduleState? = null,
+    data: CadenceShellData = CadenceShellData(),
+    actions: CadenceShellActions = CadenceShellActions(),
 ) {
     NavHost(
         navController = navController,
@@ -238,9 +277,9 @@ fun CadenceShell(
         popEnterTransition = { if (initialState.destination.isModal()) modalUnderlayEnter() else popEnter() },
         popExitTransition = { if (initialState.destination.isModal()) modalExit() else popExit() },
     ) {
-        tabRoutes(navController, onOpenActions, summary, todayMeals, zone, cabinet, onOpenVial, trends, onTrendWindow)
-        pushedRoutes(navController, schedule, trendWindow, onTrendWindow, onLoadMetric)
-        modalRoutes(navController, onMealLogged, onDoseLogged, onAddVial, summary, cabinet)
+        tabRoutes(navController, data, actions)
+        pushedRoutes(navController, data, actions)
+        modalRoutes(navController, data, actions)
     }
 }
 
@@ -248,18 +287,13 @@ fun CadenceShell(
  * Written as a `when` over the enum so a fifth destination fails to compile here too, not
  * only in [CadenceDestination.route].
  */
-@Suppress("LongParameterList")
 private fun NavGraphBuilder.tabRoutes(
     nav: NavHostController,
-    onOpenActions: () -> Unit,
-    summary: TodaySummary?,
-    todayMeals: List<Meal>,
-    zone: TimeZone,
-    cabinet: InventorySummary?,
-    onOpenVial: (VialId) -> Unit,
-    trends: TrendsOverview?,
-    onTrendWindow: (TrendWindow) -> Unit,
+    data: CadenceShellData,
+    actions: CadenceShellActions,
 ) {
+    val onOpenActions = actions.onOpenActions
+
     CadenceDestination.entries.forEach { destination ->
         val body: @Composable () -> Unit = {
             PlaceholderScreen(
@@ -275,7 +309,7 @@ private fun NavGraphBuilder.tabRoutes(
         when (destination) {
             CadenceDestination.TODAY -> {
                 composable<CadenceRoute.Today> {
-                    TodayRoute(nav, summary, todayMeals, zone, onOpenActions, body)
+                    TodayRoute(nav, data.summary, data.todayMeals, data.zone, onOpenActions, body)
                 }
             }
 
@@ -283,12 +317,13 @@ private fun NavGraphBuilder.tabRoutes(
                 composable<CadenceRoute.Vials> {
                     // Gated on the read: composed against no data this would draw «0 флаконов», a
                     // false statement about the patient rather than an honest one about the fetch.
+                    val cabinet = data.cabinet
                     if (cabinet == null) {
                         body()
                     } else {
                         VialsScreen(
                             cabinet = cabinet,
-                            onOpenVial = onOpenVial,
+                            onOpenVial = actions.onOpenVial,
                             onAddVial = { nav.openRoute(CadenceRoute.AddVial) },
                             onSelectTab = nav::selectDestination,
                             onOpenActions = onOpenActions,
@@ -300,13 +335,14 @@ private fun NavGraphBuilder.tabRoutes(
             CadenceDestination.TRENDS -> {
                 composable<CadenceRoute.Trends> {
                     // Gated on the read, same reason as Vials above.
+                    val trends = data.trends
                     if (trends == null) {
                         body()
                     } else {
                         TrendsScreen(
                             overview = trends,
                             onOpenMetric = { nav.openRoute(CadenceRoute.TrendDetail(it.code)) },
-                            onWindowChange = onTrendWindow,
+                            onWindowChange = actions.onTrendWindow,
                             onOpenJournal = { nav.openRoute(CadenceRoute.Journal) },
                             onOpenBody = { nav.openRoute(CadenceRoute.Body) },
                             onSelectTab = nav::selectDestination,
@@ -329,15 +365,13 @@ private fun NavGraphBuilder.tabRoutes(
  */
 private fun back(nav: NavHostController): () -> Unit = { nav.popBackStack() }
 
-@Suppress("LongParameterList")
 private fun NavGraphBuilder.pushedRoutes(
     nav: NavHostController,
-    schedule: ScheduleState?,
-    trendWindow: TrendWindow,
-    onTrendWindow: (TrendWindow) -> Unit,
-    onLoadMetric: suspend (Metric, TrendWindow) -> MetricDetail?,
+    data: CadenceShellData,
+    actions: CadenceShellActions,
 ) {
     val back = back(nav)
+    val trendWindow = data.trendWindow
 
     composable<CadenceRoute.TrendDetail> { entry ->
         // The route carries a String; null reaches the screen as «такой метрики нет» —
@@ -352,7 +386,7 @@ private fun NavGraphBuilder.pushedRoutes(
         var scrubIndex by remember(code, trendWindow) { mutableStateOf<Int?>(null) }
 
         LaunchedEffect(code, trendWindow) {
-            detail = metric?.let { onLoadMetric(it, trendWindow) }
+            detail = metric?.let { actions.onLoadMetric(it, trendWindow) }
         }
 
         // A null `detail` here means «ещё не пришло», not «такой метрики нет» (metric == null) —
@@ -363,7 +397,7 @@ private fun NavGraphBuilder.pushedRoutes(
             TrendDetailScreen(
                 detail = detail,
                 window = trendWindow,
-                onWindowChange = onTrendWindow,
+                onWindowChange = actions.onTrendWindow,
                 onBack = back,
                 scrubIndex = scrubIndex,
                 onScrub = { index, _ -> scrubIndex = index },
@@ -371,6 +405,7 @@ private fun NavGraphBuilder.pushedRoutes(
         }
     }
     composable<CadenceRoute.Schedule> {
+        val schedule = data.schedule
         if (schedule == null) {
             PlaceholderScreen("Расписание", onBack = back)
         } else {
@@ -395,38 +430,25 @@ private fun NavGraphBuilder.pushedRoutes(
 }
 
 /** The prototype's `Stack.Group` with `presentation: 'fullScreenModal'`: slides up, not in. */
-@Suppress("LongParameterList")
 private fun NavGraphBuilder.modalRoutes(
     nav: NavHostController,
-    onMealLogged: (String) -> Unit,
-    onDoseLogged: suspend (DoseDraft) -> DoseLogResult,
-    onAddVial: (VialDraft) -> Unit,
-    summary: TodaySummary?,
-    cabinet: InventorySummary?,
+    data: CadenceShellData,
+    actions: CadenceShellActions,
 ) {
     val back = back(nav)
-    val today = summary
+    val today = data.summary
 
     modal<CadenceRoute.LogDose> { entry ->
         LogDoseModal(
-            summary = summary,
-            cabinet = cabinet,
+            summary = data.summary,
+            cabinet = data.cabinet,
             openedVial = entry.toRoute<CadenceRoute.LogDose>().vialId?.let(::VialId),
-            onDoseLogged = onDoseLogged,
+            onDoseLogged = actions.onDoseLogged,
             back = back,
         )
     }
     modal<CadenceRoute.LogMeal> {
-        PlaceholderScreen(
-            title = "Записать приём пищи",
-            onBack = back,
-            // Fixed meal name so the toast is reachable before the wizard is ported.
-            action =
-                "Записать" to {
-                    onMealLogged(PLACEHOLDER_MEAL_NAME)
-                    back()
-                },
-        )
+        PlaceholderScreen(title = "Записать приём пищи", onBack = back)
     }
     modal<CadenceRoute.AddVial> {
         // Gated on the read like its siblings: substituting MockSeed.cycleStart for a
@@ -441,7 +463,7 @@ private fun NavGraphBuilder.modalRoutes(
                 compounds = MockSeed.compounds,
                 today = day,
                 onSave = {
-                    onAddVial(it)
+                    actions.onAddVial(it)
                     back()
                 },
                 onCancel = back,
