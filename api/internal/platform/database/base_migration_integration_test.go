@@ -335,16 +335,32 @@ func TestAlienRolesHoldNothingInTheApplicationSchema(t *testing.T) {
 	ctx := t.Context()
 
 	admin := testsupport.Connect(t, cluster.AdminDSN())
-	if _, err := admin.Exec(ctx, `CREATE ROLE service_role NOLOGIN`); err != nil {
-		t.Fatalf("creating the alien role: %v", err)
+
+	// Roles are cluster objects, and the GoTrue harness creates this same name
+	// for the same reason the local stack does. So the role is planted only when
+	// it is missing, and taken away only by whoever planted it — a bare CREATE
+	// makes this test fail whenever an identity provider ran first in the same
+	// binary, and an unconditional DROP would take the role out from under the
+	// next one.
+	var missing bool
+	if err := admin.QueryRow(
+		ctx, `SELECT NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role')`,
+	).Scan(&missing); err != nil {
+		t.Fatalf("looking for the alien role: %v", err)
 	}
 
-	t.Cleanup(func() {
-		cleanupCtx := context.WithoutCancel(ctx)
-		if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS service_role`); err != nil {
-			t.Errorf("dropping the alien role: %v", err)
+	if missing {
+		if _, err := admin.Exec(ctx, `CREATE ROLE service_role NOLOGIN`); err != nil {
+			t.Fatalf("creating the alien role: %v", err)
 		}
-	})
+
+		t.Cleanup(func() {
+			cleanupCtx := context.WithoutCancel(ctx)
+			if _, err := admin.Exec(cleanupCtx, `DROP ROLE IF EXISTS service_role`); err != nil {
+				t.Errorf("dropping the alien role: %v", err)
+			}
+		})
+	}
 
 	// Created after the role, so the chain runs in a cluster where the alien
 	// role already exists — which is the order a real deployment has.

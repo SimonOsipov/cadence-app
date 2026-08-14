@@ -39,11 +39,11 @@ const gotruePort = "9999/tcp"
 // from empty, which is the slowest thing GoTrue does before it serves.
 const gotrueStartupTimeout = 90 * time.Second
 
-// gotrueRole is the database user GoTrue connects as: not the cluster's
+// GoTrueRole is the database user GoTrue connects as: not the cluster's
 // superuser, exactly as in the deployment. It owns the `auth` schema and
 // nothing else, which is the arrangement the "zero access to auth" walk is
 // written against.
-const gotrueRole = "cadence_gotrue"
+const GoTrueRole = "cadence_gotrue"
 
 // createGoTrueRole converges rather than creates: roles are cluster objects, so
 // the second database in one test binary finds this one already there.
@@ -136,7 +136,27 @@ func GoTrueJWKS(t *testing.T, entries ...JWKEntry) string {
 func StartGoTrue(t *testing.T, cluster *Cluster, keys string) *GoTrue {
 	t.Helper()
 
-	container := runGoTrue(t, cluster, keys,
+	return serveGoTrue(t, cluster.newGoTrueDatabase(t), keys)
+}
+
+// StartGoTrueOn runs the pinned image against a database the migration chain
+// already owns — one database, two schemas, two migrators, which is what a
+// deployment has.
+//
+// It exists for the assertions that need both halves in the same catalogue: the
+// chain's roles and the relations the identity provider created. With GoTrue on
+// a database of its own, "no role of the chain reaches auth" is not a question
+// Postgres can be asked.
+func StartGoTrueOn(t *testing.T, db *Database, keys string) *GoTrue {
+	t.Helper()
+
+	return serveGoTrue(t, db.cluster.prepareForGoTrue(t, db.Name), keys)
+}
+
+func serveGoTrue(t *testing.T, databaseURL, keys string) *GoTrue {
+	t.Helper()
+
+	container := runGoTrue(t, databaseURL, keys,
 		wait.ForHTTP("/health").WithPort(gotruePort).WithStartupTimeout(gotrueStartupTimeout))
 
 	ctx := t.Context()
@@ -162,7 +182,7 @@ func StartGoTrue(t *testing.T, cluster *Cluster, keys string) *GoTrue {
 func StartGoTrueExpectingRefusal(t *testing.T, cluster *Cluster, keys string) string {
 	t.Helper()
 
-	container := runGoTrue(t, cluster, keys,
+	container := runGoTrue(t, cluster.newGoTrueDatabase(t), keys,
 		wait.ForExit().WithExitTimeout(gotrueStartupTimeout))
 
 	logs, err := container.Logs(t.Context())
@@ -179,12 +199,12 @@ func StartGoTrueExpectingRefusal(t *testing.T, cluster *Cluster, keys string) st
 	return string(said)
 }
 
-func runGoTrue(t *testing.T, cluster *Cluster, keys string, ready wait.Strategy) testcontainers.Container {
+func runGoTrue(t *testing.T, databaseURL, keys string, ready wait.Strategy) testcontainers.Container {
 	t.Helper()
 
 	container, err := testcontainers.Run(
 		t.Context(), GoTrueImage,
-		testcontainers.WithEnv(gotrueEnv(cluster.newGoTrueDatabase(t), keys)),
+		testcontainers.WithEnv(gotrueEnv(databaseURL, keys)),
 		testcontainers.WithExposedPorts(gotruePort),
 		testcontainers.WithWaitStrategy(ready),
 	)
@@ -235,12 +255,8 @@ func gotrueEnv(databaseURL, keys string) map[string]string {
 	}
 }
 
-// newGoTrueDatabase creates a database for the identity provider to own, with
-// the auth schema and the roles its migrations assume, and returns the
-// connection string as seen from inside a sibling container.
-//
-// The address is the Postgres container's own IP rather than the mapped port:
-// the mapped port is on the test host, which a container has no name for.
+// newGoTrueDatabase creates a throwaway database for the identity provider to
+// own, prepares it and returns the connection string.
 func (c *Cluster) newGoTrueDatabase(t *testing.T) string {
 	t.Helper()
 
@@ -263,6 +279,20 @@ func (c *Cluster) newGoTrueDatabase(t *testing.T) string {
 		}
 	})
 
+	return c.prepareForGoTrue(t, name)
+}
+
+// prepareForGoTrue gives an existing database the role, the supporting roles and
+// the empty `auth` schema the identity provider's migrator assumes, and returns
+// the connection string as seen from inside a sibling container.
+//
+// The address is the Postgres container's own IP rather than the mapped port:
+// the mapped port is on the test host, which a container has no name for.
+func (c *Cluster) prepareForGoTrue(t *testing.T, name string) string {
+	t.Helper()
+
+	ctx := t.Context()
+
 	adminDSN := c.DSN(superuserRole, superuserPass, name)
 	for _, statement := range []string{createGoTrueRole, createSupabaseRoles, createAuthSchema} {
 		if err := c.exec(ctx, adminDSN, statement); err != nil {
@@ -276,5 +306,5 @@ func (c *Cluster) newGoTrueDatabase(t *testing.T) string {
 	}
 
 	return fmt.Sprintf("postgres://%s:%s@%s:5432/%s?sslmode=disable&search_path=auth,public",
-		gotrueRole, gotrueRole, ip, name)
+		GoTrueRole, GoTrueRole, ip, name)
 }
