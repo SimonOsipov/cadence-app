@@ -1,5 +1,8 @@
 package app.cadence.screens.nutrition
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
@@ -13,6 +16,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import app.cadence.design.CADENCE_STEPPER_MINUS_TAG
 import app.cadence.design.CADENCE_STEPPER_PLUS_TAG
 import app.cadence.design.CadenceTheme
@@ -380,4 +385,74 @@ class LogMealScreenTest {
 
             onNodeWithText("08:05 · Вс 31 мая").assertExists()
         }
+
+    /**
+     * The prototype pins «Сохранить» to the bottom over a gradient and reserves 130dp of
+     * scroll for it (`LogMealScreen.tsx:97-99,344-394`); drawn in flow instead, it sits
+     * below the fold as soon as a parse fills the list, and the screen's own primary action
+     * has to be hunted for.
+     *
+     * Measured on `positionInRoot + size`, never `boundsInRoot`: bounds are clipped by every
+     * parent, so «the footer ends inside the screen» written with them is an identity no
+     * layout can fail. The window is constrained to a phone, or the harness's own 711dp of
+     * height hides the defect.
+     */
+    @Test
+    fun theSaveFooterStaysOnScreenOnceTheParseFillsTheList() =
+        runComposeUiTest {
+            lateinit var density: Density
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    LogMealScreen(
+                        now = NOW,
+                        targets = TARGETS,
+                        parse = queuedParser(LUNCH_PARSE),
+                        modifier = Modifier.size(PHONE_WIDTH, PHONE_HEIGHT),
+                    )
+                }
+            }
+
+            parseAndAwait()
+
+            val footer = saveFooter().fetchSemanticsNode()
+            val bottom = with(density) { (footer.positionInRoot.y + footer.size.height).toDp() }
+
+            assertTrue(
+                bottom <= PHONE_HEIGHT,
+                "the save footer ends at $bottom on a $PHONE_HEIGHT screen — it is below the fold",
+            )
+        }
 }
+
+/**
+ * The column ends in a spacer of [app.cadence.screens.nutrition.FOOTER_CLEARANCE]; a bar
+ * taller than that hides its own last content instead of clearing it. `size`, not
+ * `boundsInRoot`: a clipped height can only ever make this pass.
+ */
+@OptIn(ExperimentalTestApi::class)
+class LogMealFooterClearanceTest {
+    @Test
+    fun theSaveFooterFitsInsideItsOwnClearance() =
+        runComposeUiTest {
+            lateinit var density: Density
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    LogMealScreen(now = NOW, targets = TARGETS, modifier = Modifier.size(PHONE_WIDTH, PHONE_HEIGHT))
+                }
+            }
+
+            val bar = onNodeWithTag(LOG_MEAL_SAVE_TAG).fetchSemanticsNode()
+            val height = with(density) { bar.size.height.toDp() }
+
+            assertTrue(
+                height <= FOOTER_CLEARANCE,
+                "the save bar is $height tall but the column only clears $FOOTER_CLEARANCE",
+            )
+        }
+}
+
+/** An iPhone SE's own box: the narrowest and shortest phone this app targets. */
+private val PHONE_WIDTH = 375.dp
+private val PHONE_HEIGHT = 667.dp

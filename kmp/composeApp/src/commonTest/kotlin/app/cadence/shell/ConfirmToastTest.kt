@@ -162,9 +162,7 @@ private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostControll
     waitForIdle()
     onNodeWithText("Разобрать →").performClick()
     waitForIdle()
-    // Scrolled to first: the footer sits below the fold once the parse fills the list, and a
-    // click on an off-screen node lands on nothing at all.
-    onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
+    onNodeWithTag(LOG_MEAL_SAVE_TAG).performClick()
     val clickedAt = mainClock.currentTime
     waitForIdle()
     // Returned, not assumed: the walk above spends virtual time of its own, and a bracket

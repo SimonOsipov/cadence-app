@@ -119,7 +119,7 @@ class CadenceNutritionWiringTest {
             waitForIdle()
             onNodeWithText("Разобрать →").performClick()
             waitForIdle()
-            onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
+            onNodeWithTag(LOG_MEAL_SAVE_TAG).performClick()
             waitForIdle()
 
             assertTrue(
@@ -333,7 +333,7 @@ class CadenceNutritionWiringTest {
             waitForIdle()
             onNodeWithText("Разобрать →").performClick()
             waitForIdle()
-            onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
+            onNodeWithTag(LOG_MEAL_SAVE_TAG).performClick()
             waitForIdle()
             // The confirmation overlay swallows every touch while it is up
             // (`ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp`), so the tab tap has to
