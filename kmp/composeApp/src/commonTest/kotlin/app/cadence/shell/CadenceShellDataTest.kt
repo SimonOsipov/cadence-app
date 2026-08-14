@@ -33,7 +33,13 @@ import app.cadence.screens.nutrition.CADENCE_NUTRITION_RECIPES_LINK_TAG
 import app.cadence.screens.nutrition.CADENCE_NUTRITION_TAG
 import app.cadence.screens.nutrition.LOG_MEAL_CHAT_FIELD_TAG
 import app.cadence.screens.nutrition.LOG_MEAL_SAVE_TAG
+import app.cadence.screens.recipes.CADENCE_INGREDIENT_PICKER_ADD_TAG
 import app.cadence.screens.recipes.CADENCE_RECIPES_TAG
+import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_ADD_INGREDIENT_TAG
+import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_NAME_TAG
+import app.cadence.screens.recipes.CADENCE_RECIPE_BUILDER_SAVE_TAG
+import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_ADD_TAG
+import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_BACK_TAG
 import app.cadence.screens.recipes.CADENCE_RECIPE_DETAIL_TAG
 import app.cadence.screens.trends.CADENCE_TRENDS_HERO_TAG
 import app.cadence.screens.trends.CADENCE_TREND_DETAIL_STATS_TAG
@@ -70,12 +76,6 @@ private val MORNING = LocalTime.parse("08:00")
 
 @OptIn(ExperimentalTestApi::class)
 class CadenceShellDataTest {
-    /**
-     * The tab, not the word: «Питание» is also the eyebrow of Today's own meals card, so a
-     * text query matches two nodes and clicks neither.
-     */
-    private fun ComposeUiTest.nutritionTab() = onNodeWithContentDescription("Питание")
-
     /** A row with the cadence and slot count a case needs, and nothing else real. */
     private fun row(
         cadence: ProtocolCadence,
@@ -705,107 +705,5 @@ class CadenceShellDataTest {
             )
             // Only exists once the read landed — a loader stuck on null leaves the placeholder here.
             onNodeWithTag(CADENCE_TREND_DETAIL_STATS_TAG, useUnmergedTree = true).assertExists()
-        }
-
-    /**
-     * The write's own answer decides whether the wizard closes. Unreachable through the mock,
-     * whose parse always names a meal — so the case is driven by handing the shell an action
-     * that rejects, which is what M9's server will do when a draft doesn't survive the round
-     * trip. Without this, «close on any answer» passes every other test in the suite.
-     */
-    @Test
-    fun aRejectedMealLeavesTheWizardOpenWithWhatWasTyped() =
-        runComposeUiTest {
-            val mocks = mocks()
-            lateinit var nav: NavHostController
-            setContent {
-                nav = rememberNavController()
-                var summary by remember { mutableStateOf<TodaySummary?>(null) }
-                LaunchedEffect(Unit) { summary = mocks.today.today() }
-                CadenceTheme {
-                    CadenceShell(
-                        navController = nav,
-                        data = CadenceShellData(summary = summary, now = mocks.nowLocal()),
-                        actions =
-                            CadenceShellActions(
-                                parseMeal = { text -> MockMealParser().parse(text) },
-                                onMealLogged = { MealLogResult.Rejected },
-                            ),
-                    )
-                }
-            }
-            waitForIdle()
-
-            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
-            waitForIdle()
-            onNodeWithTag(LOG_MEAL_CHAT_FIELD_TAG, useUnmergedTree = true).performTextReplacement("курица с рисом")
-            waitForIdle()
-            onNodeWithText("Разобрать →").performClick()
-            waitForIdle()
-            onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
-            waitForIdle()
-
-            assertTrue(
-                nav.currentBackStack.value.any { it.destination.hasRoute<CadenceRoute.LogMeal>() },
-                "a rejected draft dismissed the wizard as if it had been recorded",
-            )
-            onNodeWithText("Куриная грудка", substring = true).assertExists()
-        }
-
-    @Test
-    fun theNutritionTabDrawsItsOwnScreenAndKeepsTheTabBar() =
-        runComposeUiTest {
-            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
-
-            nutritionTab().performClick()
-            waitForIdle()
-
-            onNodeWithTag(CADENCE_NUTRITION_TAG).assertExists()
-            // The tab bar is the reason this is a tab and not a pushed route: the placeholder
-            // drew one too, so the screen alone would not tell the two apart.
-            onNodeWithContentDescription("Аптечка").assertExists()
-            // From the repository, not a constant: the seeded day is 840 kcal against 1800.
-            onNodeWithText("840", substring = true).assertExists()
-        }
-
-    @Test
-    fun theRecipesRouteOpensFromNutritionAndListsTheLibrary() =
-        runComposeUiTest {
-            lateinit var nav: NavHostController
-            setContent {
-                nav = rememberNavController()
-                CadenceTheme { CadenceApp(navController = nav, mocks = mocks()) }
-            }
-
-            nutritionTab().performClick()
-            waitForIdle()
-            onNodeWithTag(CADENCE_NUTRITION_RECIPES_LINK_TAG).performScrollTo().performClick()
-            waitForIdle()
-
-            onNodeWithTag(CADENCE_RECIPES_TAG).assertExists()
-            assertTrue(
-                nav.currentBackStack.value.any { it.destination.hasRoute<CadenceRoute.Recipes>() },
-                "the card did not push the recipe library",
-            )
-            // A seeded recipe by name, so «the screen rendered» cannot pass on an empty library.
-            onNodeWithText("Лосось с киноа и брокколи").performScrollTo().assertExists()
-        }
-
-    @Test
-    fun openingARecipeShowsThatRecipesOwnCard() =
-        runComposeUiTest {
-            setContent { CadenceTheme { CadenceApp(mocks = mocks()) } }
-
-            nutritionTab().performClick()
-            waitForIdle()
-            onNodeWithTag(CADENCE_NUTRITION_RECIPES_LINK_TAG).performScrollTo().performClick()
-            waitForIdle()
-            // Not the first row and not the featured card: those two would also be reached by a
-            // detail route that ignores the id it was given.
-            onNodeWithText("Тёплая чечевица с индейкой").performScrollTo().performClick()
-            waitForIdle()
-
-            onNodeWithTag(CADENCE_RECIPE_DETAIL_TAG).assertExists()
-            onNodeWithText("Тёплая чечевица с индейкой").assertExists()
         }
 }

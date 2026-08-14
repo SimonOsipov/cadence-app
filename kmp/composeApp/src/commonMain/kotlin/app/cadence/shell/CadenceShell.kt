@@ -71,113 +71,6 @@ import kotlinx.datetime.TimeZone
 private const val PATIENT_NAME = "Марина"
 private const val PRIMARY_THREAD = "ksenia"
 
-/** §03: `protocols.weeks (12)`. Read from the protocol once one is fetched. */
-private const val CYCLE_WEEKS = 12
-
-/**
- * Held above the trends screen, not inside it: list and detail both read it, so a window
- * remembered in one would reset on return from the other.
- */
-private class TrendsUiState {
-    var window by mutableStateOf(TrendWindow.THREE_MONTHS)
-    var overview by mutableStateOf<TrendsOverview?>(null)
-}
-
-/** Keyed on both [reloads] and the window: keying on [reloads] alone would leave the chips changing nothing. */
-@Composable
-private fun rememberTrendsState(
-    mocks: CadenceMocks,
-    reloads: Int,
-): TrendsUiState {
-    val state = remember { TrendsUiState() }
-    LaunchedEffect(state.window, reloads) {
-        state.overview = mocks.trends.overview(state.window)
-    }
-    return state
-}
-
-/**
- * Everything one `reloads` bump re-reads, held together for the same reason [TrendsUiState]
- * is: eight `remember`s in [CadenceApp] and one effect that assigns them all is one fact —
- * "what the repositories last said" — spelled eight times.
- */
-private class DayUiState {
-    var summary by mutableStateOf<TodaySummary?>(null)
-
-    // TodaySummary carries only the count and the fold — this is TodayMeals' own list.
-    var todayMeals by mutableStateOf<List<Meal>>(emptyList())
-    var schedule by mutableStateOf<ScheduleState?>(null)
-    var cabinet by mutableStateOf<InventorySummary?>(null)
-    var nutritionDay by mutableStateOf<NutritionDay?>(null)
-    var nutritionWeek by mutableStateOf<NutritionWeek?>(null)
-    var recipes by mutableStateOf<RecipeList?>(null)
-    var ingredients by mutableStateOf<List<Ingredient>>(emptyList())
-}
-
-@Composable
-private fun rememberDayState(
-    mocks: CadenceMocks,
-    reloads: Int,
-): DayUiState {
-    val state = remember { DayUiState() }
-    LaunchedEffect(reloads) {
-        val today = mocks.today.today()
-        state.summary = today
-        state.schedule = mocks.scheduleFor(today)
-        state.cabinet = mocks.inventory.cabinet()
-
-        val day = mocks.nutrition.day(today.date)
-        state.nutritionDay = day
-        state.todayMeals = day.meals
-        state.nutritionWeek = mocks.nutrition.week(today.date)
-        state.recipes = mocks.recipes.library(RecipeFilter())
-        // The whole table, once: every row a patient can pick has to be priceable, and the
-        // repository's search is a `contains` over the same list.
-        state.ingredients = mocks.recipes.ingredients("")
-    }
-    return state
-}
-
-/**
- * The confirmation toast and the counter that restarts its timer, together — they are one
- * fact and were two `remember`s.
- *
- * Keyed on a counter, not the toast itself: [ConfirmToastState] is a data class and
- * `mutableStateOf` compares structurally, so an equal toast raised inside the window would
- * be no assignment at all — no restart, and the new confirmation would inherit the old
- * timer. No UI test reaches the identical-toast case directly (the overlay blocks a second
- * tap until the first toast clears — `ConfirmToastTest.theToastSwallowsEveryTouchWhileItIsUp`),
- * but the counter stays for any future non-tap trigger.
- */
-internal class ToastUiState {
-    var state by mutableStateOf<ConfirmToastState?>(null)
-        private set
-    var raisedAt by mutableStateOf(0)
-        private set
-
-    fun raise(
-        mealName: String,
-        dayKcal: Int,
-    ) {
-        state = ConfirmToastState(mealName, dayKcal)
-        raisedAt++
-    }
-
-    fun clear() {
-        state = null
-    }
-}
-
-/** The month around [today], in the shape «График» draws. */
-private suspend fun CadenceMocks.scheduleFor(today: TodaySummary): ScheduleState =
-    ScheduleState(
-        today = today.date,
-        cycleWeek = today.cycleWeek,
-        cycleWeeks = CYCLE_WEEKS,
-        days = schedule.month(today.date),
-        titration = today.nextTitration,
-    )
-
 /**
  * No failure path yet: the mock cannot throw on any reachable path, but the Ktor
  * client can, and this composable — not just the repositories — will need one.
@@ -224,24 +117,15 @@ fun CadenceApp(
                     zone = mocks.zone,
                 ),
             actions =
-                CadenceShellActions(
+                shellActions(
+                    mocks = mocks,
+                    parser = parser,
+                    toast = toast,
+                    scope = scope,
+                    onReload = { reloads++ },
                     onOpenActions = { actionsOpen = true },
-                    onDoseLogged = { draft ->
-                        val result = mocks.dosing.submit(draft)
-                        reloads++
-                        result
-                    },
-                    onOpenVial = { scope.launch { openVial = mocks.inventory.vial(it) } },
-                    onAddVial = { draft ->
-                        scope.launch {
-                            mocks.inventory.addVial(draft)
-                            reloads++
-                        }
-                    },
+                    onOpenVial = { openVial = it },
                     onTrendWindow = { trendsState.window = it },
-                    onLoadMetric = { metric, window -> mocks.trends.metric(metric, window) },
-                    parseMeal = { text -> parser.parse(text) },
-                    onMealLogged = { draft -> logMeal(mocks, toast, draft) { reloads++ } },
                 ),
         )
 
@@ -347,7 +231,7 @@ fun CadenceShell(
         tabRoutes(navController, data, actions)
         pushedRoutes(navController, data, actions)
         modalRoutes(navController, data, actions)
-        recipeRoutes(navController, data)
+        recipeRoutes(navController, data, actions)
     }
 }
 
@@ -534,7 +418,6 @@ private fun NavGraphBuilder.modalRoutes(
             )
         }
     }
-    modal<CadenceRoute.RecipeBuilder> { PlaceholderScreen("Новый рецепт", onBack = back) }
 }
 
 /**
@@ -611,7 +494,7 @@ private fun LogDoseModal(
  * Named so the four modal entries carry the transition by membership, not by each repeating
  * the same overrides — where one omission slides the wrong way with no test to catch it.
  */
-private inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(
+internal inline fun <reified T : CadenceRoute.Modal> NavGraphBuilder.modal(
     noinline content: @Composable (NavBackStackEntry) -> Unit,
 ) {
     // No transition overrides here — those live on the NavHost, the only place that sees

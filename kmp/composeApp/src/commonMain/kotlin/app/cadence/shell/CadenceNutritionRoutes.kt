@@ -6,8 +6,10 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
+import app.cadence.design.CadenceDestination
 import app.cadence.screens.nutrition.LogMealScreen
 import app.cadence.screens.nutrition.NutritionScreen
+import app.cadence.screens.recipes.RecipeBuilderScreen
 import app.cadence.screens.recipes.RecipeDetailScreen
 import app.cadence.screens.recipes.RecipeDetailState
 import app.cadence.screens.recipes.RecipesScreen
@@ -15,6 +17,7 @@ import app.cadence.shared.domain.MealDraft
 import app.cadence.shared.domain.RecipeId
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.repository.MealLogResult
+import app.cadence.shared.repository.RecipeSaveResult
 import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDateTime
@@ -117,6 +120,7 @@ internal fun NutritionRoute(
 internal fun NavGraphBuilder.recipeRoutes(
     nav: NavHostController,
     data: CadenceShellData,
+    actions: CadenceShellActions,
 ) {
     val back = {
         nav.popBackStack()
@@ -143,29 +147,75 @@ internal fun NavGraphBuilder.recipeRoutes(
     }
 
     composable<CadenceRoute.RecipeDetail> { entry ->
-        val id = RecipeId(entry.toRoute<CadenceRoute.RecipeDetail>().recipeId)
-        val library = data.recipes
-
-        // Three states, not two: «библиотека ещё не прочитана» is not «такого рецепта нет»,
-        // and a deep link can carry an id no recipe has.
-        val state =
-            when {
-                library == null -> {
-                    RecipeDetailState.Loading
-                }
-
-                else -> {
-                    library.recipes
-                        .firstOrNull { it.id == id }
-                        ?.let(RecipeDetailState::Found)
-                        ?: RecipeDetailState.NotFound
-                }
-            }
-
-        RecipeDetailScreen(
-            state = state,
-            ingredients = data.ingredients,
-            onBack = back,
+        RecipeDetailRoute(
+            nav = nav,
+            id = RecipeId(entry.toRoute<CadenceRoute.RecipeDetail>().recipeId),
+            data = data,
+            actions = actions,
+            back = back,
         )
     }
+
+    modal<CadenceRoute.RecipeBuilder> {
+        val scope = rememberCoroutineScope()
+
+        RecipeBuilderScreen(
+            search = actions.searchIngredients,
+            onCancel = back,
+            // Replaces the builder rather than stacking on it: the patient came to make a
+            // recipe, and going back from what they made belongs to the library they started
+            // from, not to the form (`CadenceNavigation.kt`'s `replaceRoute` names this case).
+            onSave = { draft ->
+                scope.launch {
+                    val result = actions.onRecipeSaved(draft)
+                    if (result is RecipeSaveResult.Saved) {
+                        nav.replaceRoute(CadenceRoute.RecipeDetail(result.id.raw))
+                    }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * One recipe's card, resolved against the same library the row that opened it was drawn
+ * from — three states, not two: «библиотека ещё не прочитана» is not «такого рецепта нет»,
+ * and a deep link can carry an id no recipe has.
+ */
+@Composable
+private fun RecipeDetailRoute(
+    nav: NavHostController,
+    id: RecipeId,
+    data: CadenceShellData,
+    actions: CadenceShellActions,
+    back: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val library = data.recipes
+    val state =
+        if (library == null) {
+            RecipeDetailState.Loading
+        } else {
+            library.recipes
+                .firstOrNull { it.id == id }
+                ?.let(RecipeDetailState::Found)
+                ?: RecipeDetailState.NotFound
+        }
+
+    RecipeDetailScreen(
+        state = state,
+        ingredients = data.ingredients,
+        onBack = back,
+        // The same write and the same confirmation as the wizard's, and then «Питание» —
+        // where the meal it just wrote is visible. The draft already carries
+        // `source = RECIPE` and the recipe's id (`Recipe.toMealDraft`), so this path cannot
+        // log a recipe as free text.
+        onAddToDay = { draft ->
+            scope.launch {
+                if (actions.onMealLogged(draft) is MealLogResult.Written) {
+                    nav.selectDestination(CadenceDestination.NUTRITION)
+                }
+            }
+        },
+    )
 }
