@@ -17,26 +17,28 @@ fun Ingredient.macrosFor(grams: Int): MacrosTenths {
 }
 
 /**
- * Exact, unrounded sum of every [Recipe.ingredients] row, kept at tenths precision like
- * every other fold in this context. [ingredients] is the caller's table; the arithmetic
- * doesn't know where rows come from.
+ * Exact, unrounded sum of every row, kept at tenths precision like every other fold in this
+ * context. Takes loose rows rather than a [Recipe] because the recipe builder has rows and a
+ * serving count long before it has a recipe to put them in.
  */
-fun Recipe.totals(ingredients: List<Ingredient>): MacrosTenths {
+fun List<RecipeIngredient>.totalsOf(ingredients: List<Ingredient>): MacrosTenths {
     val byId = ingredients.associateBy { it.id }
-    return this.ingredients
-        .map { row ->
-            val ingredient = byId[row.ingredientId] ?: error("no ingredient with id ${row.ingredientId.raw}")
-            ingredient.macrosFor(row.grams)
-        }.sumTenths()
+    return map { row ->
+        val ingredient = byId[row.ingredientId] ?: error("no ingredient with id ${row.ingredientId.raw}")
+        ingredient.macrosFor(row.grams)
+    }.sumTenths()
 }
 
 /**
- * [totals] divided evenly across [Recipe.servings] via [scaleRounded] at `numerator = 1` —
- * the same round-half-up rule [rescaleMealItem] uses, not a second copy of it.
+ * [totalsOf] divided evenly across [servings] via [scaleRounded] at `numerator = 1` — the
+ * same round-half-up rule [rescaleMealItem] uses, not a second copy of it.
  */
-fun Recipe.perServing(ingredients: List<Ingredient>): MacrosTenths {
-    require(servings > 0) { "a recipe with zero servings has no per-serving rate to divide by" }
-    val total = totals(ingredients)
+fun List<RecipeIngredient>.perServingOf(
+    ingredients: List<Ingredient>,
+    servings: Int,
+): MacrosTenths {
+    require(servings > 0) { "zero servings has no per-serving rate to divide by" }
+    val total = totalsOf(ingredients)
     return MacrosTenths(
         kcalTenths = scaleRounded(total.kcalTenths, numerator = 1, denominator = servings),
         proteinGTenths = scaleRounded(total.proteinGTenths, numerator = 1, denominator = servings),
@@ -44,6 +46,11 @@ fun Recipe.perServing(ingredients: List<Ingredient>): MacrosTenths {
         fatGTenths = scaleRounded(total.fatGTenths, numerator = 1, denominator = servings),
     )
 }
+
+fun Recipe.totals(ingredients: List<Ingredient>): MacrosTenths = this.ingredients.totalsOf(ingredients)
+
+fun Recipe.perServing(ingredients: List<Ingredient>): MacrosTenths =
+    this.ingredients.perServingOf(ingredients, servings)
 
 /** Prep plus cook, treating either absent minute count as zero — recipe/data.ts's `totalTime`. */
 fun Recipe.totalTimeMin(): Int = (prepMin ?: 0) + (cookMin ?: 0)

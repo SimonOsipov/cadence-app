@@ -2,6 +2,7 @@ package app.cadence.shared.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -109,6 +110,63 @@ class RecipeMathTest {
         val perServing = bowl.perServing(listOf(tie))
 
         assertEquals(MacrosTenths(826, 156, 101, 46), perServing)
+    }
+
+    // ── totalsOf / perServingOf (rows without a Recipe) ────────────────
+
+    /**
+     * Two rows with different grams *and* different per-100g macros: a single row, or two
+     * rows sharing either number, would let a fold that reads `rows[0]` twice pass.
+     */
+    @Test
+    fun totalsOfSumsLooseRowsTheSameWayARecipeDoes() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+        val rice = ingredient("rice", kcalTenths = 1230, proteinGTenths = 27)
+        val rows = listOf(RecipeIngredient(chicken.id, 300), RecipeIngredient(rice.id, 200))
+
+        assertEquals(MacrosTenths(7410, 984, 0, 0), rows.totalsOf(listOf(chicken, rice)))
+    }
+
+    /**
+     * 300 g over **4** servings, not 3: at 3 the answer is numerically the per-100g row
+     * itself, which a function returning `per100g` and dividing by nothing would also give.
+     */
+    @Test
+    fun perServingOfDividesLooseRowsByServings() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+        val rows = listOf(RecipeIngredient(chicken.id, 300))
+
+        // 300 g is 4950/930 tenths; a quarter of that, rounded half up, is 1238/233.
+        assertEquals(MacrosTenths(1238, 233, 0, 0), rows.perServingOf(listOf(chicken), servings = 4))
+    }
+
+    @Test
+    fun aRecipesOwnPerServingAgreesWithItsRows() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+        val rice = ingredient("rice", kcalTenths = 1230, proteinGTenths = 27)
+        val table = listOf(chicken, rice)
+        val bowl =
+            recipe(
+                "bowl",
+                servings = 4,
+                ingredients = listOf(RecipeIngredient(chicken.id, 250), RecipeIngredient(rice.id, 180)),
+            )
+
+        // A hand-computed expectation as well as the equality: after the delegation both
+        // sides are the same function, so equality alone would hold for any arithmetic.
+        // Chicken 250 g (4125/775) + rice 180 g (2214/48,6 -> 2214/49) over four servings.
+        assertEquals(MacrosTenths(1585, 206, 0, 0), bowl.perServing(table))
+        assertEquals(bowl.perServing(table), bowl.ingredients.perServingOf(table, bowl.servings))
+        assertEquals(bowl.totals(table), bowl.ingredients.totalsOf(table))
+    }
+
+    @Test
+    fun perServingOfRefusesZeroServings() {
+        val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
+
+        assertFailsWith<IllegalArgumentException> {
+            listOf(RecipeIngredient(chicken.id, 100)).perServingOf(listOf(chicken), servings = 0)
+        }
     }
 
     // ── totalTimeMin ───────────────────────────────────────────────────

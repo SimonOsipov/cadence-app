@@ -4,13 +4,18 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import app.cadence.design.CadenceTheme
+import app.cadence.screens.nutrition.LOG_MEAL_CHAT_FIELD_TAG
+import app.cadence.screens.nutrition.LOG_MEAL_SAVE_TAG
 import app.cadence.shared.domain.FixedCadenceClock
 import app.cadence.shared.mock.CadenceMocks
 import kotlinx.datetime.TimeZone
@@ -63,58 +68,53 @@ class ConfirmToastTest {
     @Test
     fun loggingAMealRaisesTheToastAndItLeavesOnItsOwn() =
         runComposeUiTest {
-            mainClock.autoAdvance = false
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
                 CadenceTheme { CadenceApp(navController = nav, mocks = seededDay()) }
             }
 
-            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
-            settle()
-
-            // Measured from the tap: the modal's own dismissal takes 380ms, and letting it run
-            // first would spend a fifth of the toast's life before the first assertion.
-            onNodeWithText("Записать").performClick()
-            mainClock.advanceTimeBy(FRAME_MS)
-            waitForIdle()
+            val raisedAt = logAMeal(nav)
             onNodeWithText("Обед · записано").assertIsDisplayed()
 
-            // Bracketed with literals deliberately, not CADENCE_CONFIRM_TOAST_MS: an assertion
-            // that advances by the constant it's checking passes at 17000ms as happily as 1700 —
-            // a mutation proved that before these two lines replaced one.
-            mainClock.advanceTimeBy(JUST_UNDER_THE_DEADLINE_MS)
+            // Absolute deadlines measured from the raise, so the walk's own virtual time
+            // cannot widen the bracket. Literals deliberately, not CADENCE_CONFIRM_TOAST_MS:
+            // an assertion that advances by the constant it checks passes at 17000ms as
+            // happily as at 1700 — a mutation proved that before these lines replaced one.
+            mainClock.autoAdvance = false
+            mainClock.advanceTimeBy(raisedAt + JUST_UNDER_THE_DEADLINE_MS - mainClock.currentTime)
             onNodeWithText("Обед · записано").assertIsDisplayed()
 
             mainClock.advanceTimeBy(PAST_THE_DEADLINE_MS)
             assertTrue(onAllNodesWithText("Обед · записано").fetchSemanticsNodes().isEmpty())
         }
 
+    /**
+     * The step's own named test: the toast names the day **including** the meal it confirms.
+     * The seeded day is 840 kcal and the canned «Обед» parse is 625, so the correct answer is
+     * 1465 and the pre-write snapshot — what `summary` still holds when the toast is raised,
+     * since `LaunchedEffect(reloads)` has not re-read yet — is 840. Two numbers a mutation
+     * cannot confuse.
+     */
     @Test
-    fun theToastRaisedByTheShellCarriesTheShellsOwnNumbers() =
+    fun theToastNamesTheDayTotalIncludingTheMealJustLogged() =
         runComposeUiTest {
-            mainClock.autoAdvance = false
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
                 CadenceTheme { CadenceApp(navController = nav, mocks = seededDay()) }
             }
 
-            runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
-            settle()
-            onNodeWithText("Записать").performClick()
-            mainClock.advanceTimeBy(FRAME_MS)
-            waitForIdle()
+            logAMeal(nav)
 
-            // The unit tests above supply their own numbers, so nothing pinned what the shell
-            // actually passes — a target of 0 went unnoticed. 840/1800 are the repository's now.
-            onNodeWithText("840 / 1\u00A0800 ккал сегодня").assertIsDisplayed()
+            // The target half also pins what the shell passes, not what a unit test supplies —
+            // a target of 0 went unnoticed until this assertion named 1800.
+            onNodeWithText("1\u00A0465 / 1\u00A0800 ккал сегодня").assertIsDisplayed()
         }
 
     @Test
     fun theToastSwallowsEveryTouchWhileItIsUp() =
         runComposeUiTest {
-            mainClock.autoAdvance = false
             lateinit var nav: NavHostController
             setContent {
                 nav = rememberNavController()
@@ -136,29 +136,39 @@ class ConfirmToastTest {
         }
 }
 
-/** One transition's worth of frames, plus slack. */
-private const val FRAME_MS = 100L
-
 /**
- * Written out rather than derived. With the 100ms already spent above, alive at 1600 and
- * gone at 1800 — a bracket a wrong constant can't slip through either side.
+ * Written out rather than derived from `CADENCE_CONFIRM_TOAST_MS`: an assertion that
+ * advances by the constant it checks passes at 17000ms as happily as at 1700, and a
+ * mutation proved exactly that. Both are absolute offsets from the raise — alive at 1600,
+ * gone at 1800, a 200ms window neither a longer nor a shorter constant fits through.
  */
-private const val JUST_UNDER_THE_DEADLINE_MS = 1500L
+private const val JUST_UNDER_THE_DEADLINE_MS = 1600L
 private const val PAST_THE_DEADLINE_MS = 200L
 
-/** Opens the meal wizard, taps «Записать», and lets the toast appear. */
+/**
+ * Opens the meal wizard, parses «курица с рисом» through the shell's own parser and saves —
+ * the whole path a patient walks, since step-13 replaced the placeholder that used to log a
+ * constant. The canned «Обед» parse is 625 kcal (240+145+60+90+90).
+ */
 @OptIn(ExperimentalTestApi::class)
-private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostController) {
+private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostController): Long {
+    // Driven with the clock free: both the parse and the write are `launch`ed coroutines,
+    // and neither is dispatched while `autoAdvance` is off. The toast's own timer survives
+    // this — a pending `delay` is not what «idle» waits for — so a test that needs to
+    // measure the toast's life turns `autoAdvance` off *after* calling this.
     runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
-    settle()
-    onNodeWithText("Записать").performClick()
-    mainClock.advanceTimeBy(FRAME_MS)
     waitForIdle()
-}
-
-@OptIn(ExperimentalTestApi::class)
-private fun androidx.compose.ui.test.ComposeUiTest.settle() {
-    // autoAdvance is off (toast timer driven by hand), so each transition is walked explicitly.
-    mainClock.advanceTimeBy(CADENCE_PUSH_DURATION_MS.toLong() + FRAME_MS)
+    onNodeWithTag(LOG_MEAL_CHAT_FIELD_TAG, useUnmergedTree = true).performTextReplacement("курица с рисом")
     waitForIdle()
+    onNodeWithText("Разобрать →").performClick()
+    waitForIdle()
+    onNodeWithTag(LOG_MEAL_SAVE_TAG).performClick()
+    val clickedAt = mainClock.currentTime
+    waitForIdle()
+    // Returned, not assumed: the walk above spends virtual time of its own, and a bracket
+    // measured from zero would pin the 1700ms constant only to «somewhere between one and
+    // two seconds». The toast is raised no earlier than this — the write is launched by the
+    // click and the timer starts with it — so the far edge below carries a few frames of
+    // slack and the near edge none.
+    return clickedAt
 }

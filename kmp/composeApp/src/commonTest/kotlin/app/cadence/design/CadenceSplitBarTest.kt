@@ -1,6 +1,8 @@
 package app.cadence.design
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
@@ -10,6 +12,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+
+/**
+ * Summed channel distance, so an antialiased glyph counts as its own colour. Measured, not
+ * picked: the nearest pixel of «Жиры» at this size is 0,08 from pure red, while the default
+ * this test exists to catch — `subtle` — is 1,47 away. The gate sits an order of magnitude
+ * below the confusion it has to prevent.
+ */
+private const val COLOUR_TOLERANCE = 0.15f
 
 @OptIn(ExperimentalTestApi::class)
 class CadenceSplitBarTest {
@@ -70,5 +80,101 @@ class CadenceSplitBarTest {
 
             assertEquals(CadenceColors.forest700, proteinPixel, "protein's own segment is not painted forest700")
             assertNotEquals(proteinPixel, fatPixel, "protein and fat segments paint the same colour")
+        }
+
+    /**
+     * The dark card variant (`MacroBarDark`, `RecipeBuilderScreen.tsx:20-75`): on
+     * `forest800` the default `sunk` (linen) track reads as a *filled* bar rather than an
+     * empty one — the prototype's own is cream at 14% (`:39`) — so the track is a parameter.
+     * Measured on an all-zero split, the one state where the track is not covered by its
+     * own segments, and with `sand300`, which no segment paints: `forest700` here would
+     * also be the answer if a zero share wrongly drew a full-width protein segment.
+     */
+    @Test
+    fun anEmptyTrackPaintsTheTrackColourItWasGiven() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    CadenceSplitBar(proteinG = 0.0, carbsG = 0.0, fatG = 0.0, trackColor = CadenceColors.sand300)
+                }
+            }
+
+            val track = onNodeWithTag(CADENCE_SPLIT_TRACK_TAG, useUnmergedTree = true).captureToImage()
+
+            assertEquals(CadenceColors.sand300, track.toPixelMap()[track.width / 2, track.height / 2])
+        }
+
+    /**
+     * The other two parameters exist for the same dark card, and nothing measured them:
+     * ignoring them and keeping `subtle`/`ink2` left the whole suite green while the legend
+     * stayed unreadable on `forest800`. Glyphs are antialiased, so this asks whether the
+     * colour appears anywhere in the node rather than at one chosen pixel.
+     *
+     * Label and value are probed as separate nodes, and all three entries are probed: a
+     * whole-entry probe stays green when the two colours are swapped, and a protein-only
+     * probe stays green when carbs and fat keep the hardcoded defaults.
+     */
+    @Test
+    fun everyLegendEntryPaintsTheLabelAndValueColoursItWasGiven() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    CadenceSplitBar(
+                        proteinG = 30.0,
+                        carbsG = 20.0,
+                        fatG = 10.0,
+                        labelColor = Color.Red,
+                        valueColor = Color.Blue,
+                    )
+                }
+            }
+
+            listOf("protein", "carbs", "fat").forEach { macro ->
+                assertPaints(splitLegendLabelTag(macro), Color.Red, "$macro's label")
+                assertPaints(splitLegendValueTag(macro), Color.Blue, "$macro's grams")
+            }
+        }
+
+    /**
+     * Nearest painted colour rather than an exact match: glyphs are antialiased, and
+     * whether any pixel lands on the text colour exactly depends on the word — «Белок» and
+     * «Углев» have such a pixel at this size, «Жиры» does not (measured).
+     */
+    private fun ComposeUiTest.assertPaints(
+        tag: String,
+        expected: Color,
+        what: String,
+    ) {
+        val pixels = onNodeWithTag(tag, useUnmergedTree = true).captureToImage().toPixelMap()
+        val distances =
+            buildList {
+                for (x in 0 until pixels.width) {
+                    for (y in 0 until pixels.height) add(pixels[x, y] to distance(pixels[x, y], expected))
+                }
+            }
+        val (closest, gap) = distances.minBy { it.second }
+
+        assertTrue(gap < COLOUR_TOLERANCE, "$what is painted $closest, $gap away from the $expected it was given")
+    }
+
+    private fun distance(
+        a: Color,
+        b: Color,
+    ): Float = abs(a.red - b.red) + abs(a.green - b.green) + abs(a.blue - b.blue)
+
+    @Test
+    fun anEmptyTrackDefaultsToSunk() =
+        runComposeUiTest {
+            var sunk = Color.Unspecified
+            setContent {
+                CadenceTheme {
+                    sunk = Cadence.palette.sunk
+                    CadenceSplitBar(proteinG = 0.0, carbsG = 0.0, fatG = 0.0)
+                }
+            }
+
+            val track = onNodeWithTag(CADENCE_SPLIT_TRACK_TAG, useUnmergedTree = true).captureToImage()
+
+            assertEquals(sunk, track.toPixelMap()[track.width / 2, track.height / 2])
         }
 }
