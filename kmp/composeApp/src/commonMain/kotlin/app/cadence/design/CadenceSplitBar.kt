@@ -29,6 +29,15 @@ fun splitSegmentTag(macro: String) = "cadence-split-segment-$macro"
 /** One legend entry, so a test can bind a macro's grams to *its* label rather than to the row. */
 fun splitLegendTag(macro: String) = "cadence-split-legend-$macro"
 
+/**
+ * The label and the grams *inside* one entry, separately: a probe that reads the whole
+ * entry cannot tell [CadenceSplitBar]'s `labelColor` from its `valueColor` when the two
+ * are swapped, since both colours stay somewhere in the entry either way.
+ */
+fun splitLegendLabelTag(macro: String) = "cadence-split-legend-label-$macro"
+
+fun splitLegendValueTag(macro: String) = "cadence-split-legend-value-$macro"
+
 /** §03's rule of thumb, the prototype's `kp = p*4, kc = c*4, kf = f*9` (`RecipeDetailScreen.tsx:18-20`). */
 private const val KCAL_PER_G_PROTEIN = 4.0
 private const val KCAL_PER_G_CARBS = 4.0
@@ -166,7 +175,11 @@ private fun SplitLegendItem(
                 .clip(RoundedCornerShape(CadenceRadius.xs))
                 .background(color),
         )
-        CadenceMeta(label, color = labelColor)
-        CadenceMeta("${formatDecimal(grams, digits = 0)} г", color = valueColor)
+        CadenceMeta(label, color = labelColor, modifier = Modifier.testTag(splitLegendLabelTag(macro)))
+        CadenceMeta(
+            "${formatDecimal(grams, digits = 0)} г",
+            color = valueColor,
+            modifier = Modifier.testTag(splitLegendValueTag(macro)),
+        )
     }
 }

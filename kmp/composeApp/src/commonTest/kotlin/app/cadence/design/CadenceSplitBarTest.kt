@@ -13,6 +13,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
+/**
+ * Summed channel distance, so an antialiased glyph counts as its own colour. Measured, not
+ * picked: the nearest pixel of «Жиры» at this size is 0,08 from pure red, while the default
+ * this test exists to catch — `subtle` — is 1,47 away. The gate sits an order of magnitude
+ * below the confusion it has to prevent.
+ */
+private const val COLOUR_TOLERANCE = 0.15f
+
 @OptIn(ExperimentalTestApi::class)
 class CadenceSplitBarTest {
     @Test
@@ -100,10 +108,14 @@ class CadenceSplitBarTest {
      * The other two parameters exist for the same dark card, and nothing measured them:
      * ignoring them and keeping `subtle`/`ink2` left the whole suite green while the legend
      * stayed unreadable on `forest800`. Glyphs are antialiased, so this asks whether the
-     * colour appears anywhere in the entry rather than at one chosen pixel.
+     * colour appears anywhere in the node rather than at one chosen pixel.
+     *
+     * Label and value are probed as separate nodes, and all three entries are probed: a
+     * whole-entry probe stays green when the two colours are swapped, and a protein-only
+     * probe stays green when carbs and fat keep the hardcoded defaults.
      */
     @Test
-    fun theLegendPaintsTheLabelAndValueColoursItWasGiven() =
+    fun everyLegendEntryPaintsTheLabelAndValueColoursItWasGiven() =
         runComposeUiTest {
             setContent {
                 CadenceTheme {
@@ -117,20 +129,38 @@ class CadenceSplitBarTest {
                 }
             }
 
-            val painted = paintedColours(splitLegendTag("protein"))
-
-            assertTrue(Color.Red in painted, "the legend's label is not painted in the colour it was given")
-            assertTrue(Color.Blue in painted, "the legend's value is not painted in the colour it was given")
-        }
-
-    private fun ComposeUiTest.paintedColours(tag: String): Set<Color> {
-        val pixels = onNodeWithTag(tag, useUnmergedTree = true).captureToImage().toPixelMap()
-        return buildSet {
-            for (x in 0 until pixels.width) {
-                for (y in 0 until pixels.height) add(pixels[x, y])
+            listOf("protein", "carbs", "fat").forEach { macro ->
+                assertPaints(splitLegendLabelTag(macro), Color.Red, "$macro's label")
+                assertPaints(splitLegendValueTag(macro), Color.Blue, "$macro's grams")
             }
         }
+
+    /**
+     * Nearest painted colour rather than an exact match: glyphs are antialiased, and
+     * whether any pixel lands on the text colour exactly depends on the word — «Белок» and
+     * «Углев» have such a pixel at this size, «Жиры» does not (measured).
+     */
+    private fun ComposeUiTest.assertPaints(
+        tag: String,
+        expected: Color,
+        what: String,
+    ) {
+        val pixels = onNodeWithTag(tag, useUnmergedTree = true).captureToImage().toPixelMap()
+        val distances =
+            buildList {
+                for (x in 0 until pixels.width) {
+                    for (y in 0 until pixels.height) add(pixels[x, y] to distance(pixels[x, y], expected))
+                }
+            }
+        val (closest, gap) = distances.minBy { it.second }
+
+        assertTrue(gap < COLOUR_TOLERANCE, "$what is painted $closest, $gap away from the $expected it was given")
     }
+
+    private fun distance(
+        a: Color,
+        b: Color,
+    ): Float = abs(a.red - b.red) + abs(a.green - b.green) + abs(a.blue - b.blue)
 
     @Test
     fun anEmptyTrackDefaultsToSunk() =

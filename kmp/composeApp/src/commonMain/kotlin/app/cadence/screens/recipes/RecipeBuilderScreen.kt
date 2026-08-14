@@ -6,6 +6,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -114,7 +116,7 @@ private const val RECIPE_BUILDER_DEFAULT_TIME = 20
 
 private val HEADER_TITLE_SIZE = 15.sp
 
-/** `fontSize: 28` on the prototype's own name input (`RecipeBuilderScreen.tsx:502`). */
+/** `fontSize: 28` on the prototype's own name input (`RecipeBuilderScreen.tsx:501`). */
 private val NAME_FIELD_SIZE = 28.sp
 private val CARD_SHAPE = RoundedCornerShape(CadenceRadius.lg)
 private val HAIRLINE = 1.dp
@@ -425,10 +427,12 @@ private fun RecipeBuilderHeader(onCancel: () -> Unit) {
  * handlers (`RecipeBuilderScreen.tsx:529,559`): the type has no "none", so tapping the
  * selected one changes nothing, while a tag toggles off.
  *
- * The tag row scrolls where the prototype wraps (`:553`, `flexWrap: 'wrap'`). Measured
- * rather than assumed: `everyTagChipIsFullyVisibleAt343dp` holds all three chips inside a
- * 343dp screen, so nothing is reachable only by an invisible swipe.
+ * The tag row wraps, like the prototype's own (`:553`, `flexWrap: 'wrap'`), where the type
+ * row above is a scrolling strip in both. Measured, not copied on faith: the three tags
+ * need 343dp of content against the 311dp a 343dp screen leaves, so a scrolling row put
+ * 32dp of «Быстрые» past the edge, reachable only by a swipe with nothing to hint at it.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RecipeBuilderTypeAndTags(
     mealType: MealType,
@@ -452,9 +456,10 @@ private fun RecipeBuilderTypeAndTags(
                 )
             }
         }
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()).testTag(CADENCE_RECIPE_BUILDER_TAGS_TAG),
+        FlowRow(
+            Modifier.fillMaxWidth().testTag(CADENCE_RECIPE_BUILDER_TAGS_TAG),
             horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(CadenceSpacing.sm),
         ) {
             RecipeTag.entries.forEach { tag ->
                 RecipeChip(

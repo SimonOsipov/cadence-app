@@ -542,34 +542,101 @@ class RecipeBuilderScreenTest {
         }
 
     /**
-     * The tag row scrolls where the prototype wraps (`RecipeBuilderScreen.tsx:553`). That is
-     * only harmless while every chip fits: a chip past the right edge is reachable by an
-     * invisible swipe and by nothing else. «Мягкие для желудка» is the widest of the three,
-     * so this measures the whole row's content against the screen it is drawn on.
+     * The three tags need ~343dp of chips against the 311dp a 343dp screen leaves, so the
+     * row wraps like the prototype's (`RecipeBuilderScreen.tsx:553`) instead of scrolling:
+     * a scrolling row put «Быстрые» 32dp past the edge, reachable only by a swipe with
+     * nothing on screen to suggest it.
+     *
+     * Two things are measured, and each catches what the other cannot:
+     *
+     * - every chip ends inside **the screen**, using unclipped `positionInRoot + size`.
+     *   Against the row's own rect this is an identity — `boundsInRoot` is clipped by every
+     *   parent, and a `FlowRow` never places a child past its own edge — but against the
+     *   screen it fails the moment the row goes back to scrolling, which is how the third
+     *   chip left the screen in the first place.
+     * - every chip is as wide as it is unconstrained, so a chip too wide for one line is
+     *   not silently ellipsised by `RecipeChip`'s own `TextOverflow.Ellipsis`.
      */
     @Test
-    fun everyTagChipIsFullyVisibleAt343dp() =
+    fun noTagChipLeavesTheScreenOrIsTruncatedAt343dp() {
+        val natural = mutableMapOf<RecipeTag, Int>()
         runComposeUiTest {
             setContent {
-                CadenceTheme { RecipeBuilderScreen(fakeSearch(), modifier = Modifier.width(343.dp)) }
+                CadenceTheme { RecipeBuilderScreen(fakeSearch(), modifier = Modifier.width(1200.dp)) }
             }
             waitForIdle()
-
-            val rowRight = onNodeWithTag(CADENCE_RECIPE_BUILDER_TAGS_TAG).fetchSemanticsNode().boundsInRoot.right
-
-            RecipeTag.entries.forEach { tag ->
-                val chip = onNodeWithTag(recipeBuilderTagTag(tag)).fetchSemanticsNode().boundsInRoot
-                assertTrue(
-                    chip.right <= rowRight,
-                    "«${tag.code}» ends at ${chip.right}, past the row's own $rowRight — it needs a hidden swipe",
-                )
+            RecipeTag.entries.forEach { entry ->
+                natural[entry] = onNodeWithTag(recipeBuilderTagTag(entry)).fetchSemanticsNode().size.width
             }
         }
 
+        runComposeUiTest {
+            lateinit var density: Density
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    RecipeBuilderScreen(fakeSearch(), modifier = Modifier.width(343.dp))
+                }
+            }
+            waitForIdle()
+
+            val screenRight = with(density) { 343.dp.toPx() }
+            RecipeTag.entries.forEach { entry ->
+                val chip = onNodeWithTag(recipeBuilderTagTag(entry)).fetchSemanticsNode()
+                val right = chip.positionInRoot.x + chip.size.width
+
+                assertTrue(right <= screenRight, "«${entry.code}» ends at $right, past the $screenRight screen")
+                assertEquals(
+                    natural[entry],
+                    chip.size.width,
+                    "«${entry.code}» is ${natural[entry]}px wide unconstrained but ${chip.size.width} at 343dp",
+                )
+            }
+        }
+    }
+
+    /** «Название рецепта» is a named acceptance item, and it is drawn by this screen's own code. */
+    @Test
+    fun theNamePlaceholderShowsUntilThereIsAName() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(fakeSearch()) } }
+            waitForIdle()
+
+            onNodeWithText("Название рецепта").assertExists()
+
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_NAME_TAG, useUnmergedTree = true).performTextReplacement("Плов")
+            waitForIdle()
+
+            onNodeWithText("Название рецепта").assertDoesNotExist()
+            onNodeWithText("Плов").assertExists()
+        }
+
+    /**
+     * The button's own gate and the repository's gate are two statements of one rule, in two
+     * layers. Nothing but this binds them, and a condition added to [RecipeDraft.canSave]
+     * alone would enable a button whose draft the repository then rejects.
+     */
+    @Test
+    fun theButtonsGateAgreesWithTheDraftsOwn() {
+        val form = RecipeBuilderFormState()
+        assertEquals(form.draft().canSave(), form.canSave, "empty form")
+
+        form.addRow(CHICKEN, 100)
+        assertEquals(form.draft().canSave(), form.canSave, "an ingredient but no name")
+
+        form.name = "   "
+        assertEquals(form.draft().canSave(), form.canSave, "a blank-space name")
+
+        form.name = "Плов"
+        assertEquals(form.draft().canSave(), form.canSave, "named, with an ingredient")
+        assertTrue(form.canSave, "a named form with an ingredient must be saveable")
+    }
+
     /**
      * The scrolling column ends in a spacer of [SAVE_BAR_CLEARANCE]; if the bar is taller
-     * than that, its own last content sits under the bar and cannot be reached. Measured
-     * rather than asserted in a comment, because the number was chosen by hand.
+     * than that, its own last content sits under the bar and cannot be reached. `size`, not
+     * `boundsInRoot`, for the reason the test above states: a clipped height can only ever
+     * make this pass.
      */
     @Test
     fun theSaveBarFitsInsideItsOwnClearance() =
@@ -583,8 +650,8 @@ class RecipeBuilderScreenTest {
             }
             waitForIdle()
 
-            val bar = onNodeWithTag(CADENCE_RECIPE_BUILDER_SAVE_BAR_TAG).fetchSemanticsNode().boundsInRoot
-            val barHeight = with(density) { bar.height.toDp() }
+            val bar = onNodeWithTag(CADENCE_RECIPE_BUILDER_SAVE_BAR_TAG).fetchSemanticsNode()
+            val barHeight = with(density) { bar.size.height.toDp() }
 
             assertTrue(
                 barHeight <= SAVE_BAR_CLEARANCE,
