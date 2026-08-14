@@ -244,6 +244,17 @@ class JournalChartsTest {
     }
 
     @Test
+    fun onlyTodayIsMarkedAsToday() {
+        val marks = moodMarks(titrations = listOf(day(28), day(56)), today = day(40))
+
+        assertEquals(listOf(day(28), day(56), day(40)), marks.map { it.date })
+        assertEquals(
+            listOf(MoodMarkKind.TITRATION, MoodMarkKind.TITRATION, MoodMarkKind.TODAY),
+            marks.map { it.kind },
+        )
+    }
+
+    @Test
     fun aTitrationHairlineIsNotDrawnLikeTheDayTheUserStandsOn() {
         val titration = moodMarkStyle(MoodMarkKind.TITRATION)
         val today = moodMarkStyle(MoodMarkKind.TODAY)

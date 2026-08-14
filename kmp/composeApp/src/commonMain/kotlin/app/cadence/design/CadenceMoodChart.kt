@@ -79,8 +79,7 @@ fun CadenceMoodChart(
         Canvas(Modifier.fillMaxSize()) {
             drawFuture(course, today, inset, palette.sunk)
             drawGrid(inset, palette.hairline)
-            drawMarks(titrations, MoodMarkKind.TITRATION, course, inset)
-            drawMarks(listOf(today), MoodMarkKind.TODAY, course, inset)
+            drawMarks(moodMarks(titrations, today), course, inset)
             drawMoodLine(readings, course, inset, palette)
         }
 
@@ -178,16 +177,14 @@ private fun DrawScope.drawGrid(
 }
 
 private fun DrawScope.drawMarks(
-    dates: List<LocalDate>,
-    kind: MoodMarkKind,
+    marks: List<MoodMark>,
     course: TrendRange,
     inset: ChartInset,
 ) {
-    val style = moodMarkStyle(kind)
-    val dash = PathEffect.dashPathEffect(floatArrayOf(style.dashOn.toPx(), DASH_OFF.toPx()))
-
-    dates.filter { it in course }.forEach { date ->
-        val x = plotX(course.middleOf(date), size.width, inset)
+    marks.filter { it.date in course }.forEach { mark ->
+        val style = moodMarkStyle(mark.kind)
+        val dash = PathEffect.dashPathEffect(floatArrayOf(style.dashOn.toPx(), DASH_OFF.toPx()))
+        val x = plotX(course.middleOf(mark.date), size.width, inset)
 
         drawLine(
             color = style.color,

@@ -192,6 +192,23 @@ internal enum class MoodMarkKind {
     TODAY,
 }
 
+internal data class MoodMark(
+    val date: LocalDate,
+    val kind: MoodMarkKind,
+)
+
+/**
+ * Which day gets which hairline, decided here rather than at the two call sites that
+ * would otherwise each pass a kind alongside a list. Passed as an argument, asking for
+ * the titration style while drawing today is a one-word slip that paints correctly-
+ * shaped output and survives every assertion — measured: that mutation was the one
+ * survivor of the round that extracted [moodMarkStyle].
+ */
+internal fun moodMarks(
+    titrations: List<LocalDate>,
+    today: LocalDate,
+): List<MoodMark> = titrations.map { MoodMark(it, MoodMarkKind.TITRATION) } + MoodMark(today, MoodMarkKind.TODAY)
+
 /**
  * The two hairlines drawn differently on purpose (`JournalScreen.tsx:61-81`): the
  * titration carries sand and a cap, today is a fainter forest with a tighter dash and
