@@ -127,13 +127,17 @@ class RecipeMathTest {
         assertEquals(MacrosTenths(7410, 984, 0, 0), rows.totalsOf(listOf(chicken, rice)))
     }
 
-    /** Servings 3, not 2: a halving is also what a stray `/ 2` produces. */
+    /**
+     * 300 g over **4** servings, not 3: at 3 the answer is numerically the per-100g row
+     * itself, which a function returning `per100g` and dividing by nothing would also give.
+     */
     @Test
     fun perServingOfDividesLooseRowsByServings() {
         val chicken = ingredient("chicken", kcalTenths = 1650, proteinGTenths = 310)
         val rows = listOf(RecipeIngredient(chicken.id, 300))
 
-        assertEquals(MacrosTenths(1650, 310, 0, 0), rows.perServingOf(listOf(chicken), servings = 3))
+        // 300 g is 4950/930 tenths; a quarter of that, rounded half up, is 1238/233.
+        assertEquals(MacrosTenths(1238, 233, 0, 0), rows.perServingOf(listOf(chicken), servings = 4))
     }
 
     @Test
@@ -148,6 +152,10 @@ class RecipeMathTest {
                 ingredients = listOf(RecipeIngredient(chicken.id, 250), RecipeIngredient(rice.id, 180)),
             )
 
+        // A hand-computed expectation as well as the equality: after the delegation both
+        // sides are the same function, so equality alone would hold for any arithmetic.
+        // Chicken 250 g (4125/775) + rice 180 g (2214/48,6 -> 2214/49) over four servings.
+        assertEquals(MacrosTenths(1585, 206, 0, 0), bowl.perServing(table))
         assertEquals(bowl.perServing(table), bowl.ingredients.perServingOf(table, bowl.servings))
         assertEquals(bowl.totals(table), bowl.ingredients.totalsOf(table))
     }

@@ -50,14 +50,13 @@ import app.cadence.format.formatInteger
 import app.cadence.format.formatKcalTenths
 import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.MacrosTenths
-import app.cadence.shared.domain.RecipeIngredient
 import app.cadence.shared.domain.macrosFor
 import app.cadence.shared.domain.toMacros
 import kotlin.math.roundToInt
 
 // The builder's three lower sections, split out of `RecipeBuilderScreen.kt` the same reason
-// `RecipeRow.kt` was split out of `RecipesScreen.kt` — one file with all of it crosses
-// detekt's `LargeClass` threshold.
+// `RecipeRow.kt` was split out of `RecipesScreen.kt` — one file holding all of it is simply
+// too long to hold in view.
 
 /** The «Добавьте первый ингредиент» box, which is itself a door to the sheet. */
 const val CADENCE_RECIPE_BUILDER_EMPTY_TAG = "cadence-recipe-builder-empty"
@@ -72,7 +71,6 @@ fun recipeBuilderIngredientTag(index: Int): String = "cadence-recipe-builder-ing
 
 fun recipeBuilderIngredientRemoveTag(index: Int): String = "cadence-recipe-builder-ingredient-remove-$index"
 
-/** One step's editable node. */
 fun recipeBuilderStepTag(index: Int): String = "cadence-recipe-builder-step-$index"
 
 fun recipeBuilderStepRemoveTag(index: Int): String = "cadence-recipe-builder-step-remove-$index"
@@ -81,7 +79,11 @@ private const val EMPTY_MESSAGE = "Добавьте первый ингреди�
 private const val STEP_PLACEHOLDER = "Опишите шаг"
 private const val REMOVE_DESCRIPTION = "Удалить"
 
-/** Same floor, ceiling and rate as the picker sheet's own grams stepper (step-11). */
+/**
+ * Same floor, ceiling and rate as the picker sheet's own grams stepper (step-11). The
+ * ceiling is a deliberate divergence: the prototype's row clamps only `Math.max(5, g)`
+ * (`RecipeBuilderScreen.tsx:383`) and has no upper bound. Registered in the spec's step-15.
+ */
 private const val ROW_GRAMS_MIN = 5.0
 private const val ROW_GRAMS_MAX = 600.0
 private const val ROW_GRAMS_STEP = 10.0
@@ -104,15 +106,13 @@ private val PER_SERVING_KCAL_SIZE = 22.sp
  */
 @Composable
 internal fun RecipeBuilderIngredients(
-    rows: List<RecipeIngredient>,
-    ingredients: List<Ingredient>,
+    rows: List<BuilderRow>,
     onGrams: (Int, Int) -> Unit,
     onRemove: (Int) -> Unit,
     onAdd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val palette = Cadence.palette
-    val byId = ingredients.associateBy { it.id }
 
     Column(modifier.fillMaxWidth()) {
         if (rows.isEmpty()) {
@@ -128,10 +128,9 @@ internal fun RecipeBuilderIngredients(
                 .border(HAIRLINE, palette.hairline, CARD_SHAPE),
         ) {
             rows.forEachIndexed { index, row ->
-                val ingredient = byId[row.ingredientId] ?: error("no ingredient with id ${row.ingredientId.raw}")
                 RecipeBuilderIngredientRow(
                     index = index,
-                    ingredient = ingredient,
+                    ingredient = row.ingredient,
                     grams = row.grams,
                     onGrams = { onGrams(index, it) },
                     onRemove = { onRemove(index) },

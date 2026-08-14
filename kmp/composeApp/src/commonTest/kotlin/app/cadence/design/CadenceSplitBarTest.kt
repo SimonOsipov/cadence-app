@@ -2,6 +2,7 @@ package app.cadence.design
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
@@ -75,23 +76,61 @@ class CadenceSplitBarTest {
 
     /**
      * The dark card variant (`MacroBarDark`, `RecipeBuilderScreen.tsx:20-75`): on
-     * `forest800` the default `sunk` track is invisible, so the track is a parameter.
-     * Measured on an all-zero split, the one state where the track is not covered by
-     * its own segments.
+     * `forest800` the default `sunk` (linen) track reads as a *filled* bar rather than an
+     * empty one — the prototype's own is cream at 14% (`:39`) — so the track is a parameter.
+     * Measured on an all-zero split, the one state where the track is not covered by its
+     * own segments, and with `sand300`, which no segment paints: `forest700` here would
+     * also be the answer if a zero share wrongly drew a full-width protein segment.
      */
     @Test
     fun anEmptyTrackPaintsTheTrackColourItWasGiven() =
         runComposeUiTest {
             setContent {
                 CadenceTheme {
-                    CadenceSplitBar(proteinG = 0.0, carbsG = 0.0, fatG = 0.0, trackColor = CadenceColors.forest700)
+                    CadenceSplitBar(proteinG = 0.0, carbsG = 0.0, fatG = 0.0, trackColor = CadenceColors.sand300)
                 }
             }
 
             val track = onNodeWithTag(CADENCE_SPLIT_TRACK_TAG, useUnmergedTree = true).captureToImage()
 
-            assertEquals(CadenceColors.forest700, track.toPixelMap()[track.width / 2, track.height / 2])
+            assertEquals(CadenceColors.sand300, track.toPixelMap()[track.width / 2, track.height / 2])
         }
+
+    /**
+     * The other two parameters exist for the same dark card, and nothing measured them:
+     * ignoring them and keeping `subtle`/`ink2` left the whole suite green while the legend
+     * stayed unreadable on `forest800`. Glyphs are antialiased, so this asks whether the
+     * colour appears anywhere in the entry rather than at one chosen pixel.
+     */
+    @Test
+    fun theLegendPaintsTheLabelAndValueColoursItWasGiven() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    CadenceSplitBar(
+                        proteinG = 30.0,
+                        carbsG = 20.0,
+                        fatG = 10.0,
+                        labelColor = Color.Red,
+                        valueColor = Color.Blue,
+                    )
+                }
+            }
+
+            val painted = paintedColours(splitLegendTag("protein"))
+
+            assertTrue(Color.Red in painted, "the legend's label is not painted in the colour it was given")
+            assertTrue(Color.Blue in painted, "the legend's value is not painted in the colour it was given")
+        }
+
+    private fun ComposeUiTest.paintedColours(tag: String): Set<Color> {
+        val pixels = onNodeWithTag(tag, useUnmergedTree = true).captureToImage().toPixelMap()
+        return buildSet {
+            for (x in 0 until pixels.width) {
+                for (y in 0 until pixels.height) add(pixels[x, y])
+            }
+        }
+    }
 
     @Test
     fun anEmptyTrackDefaultsToSunk() =

@@ -24,7 +24,6 @@ import app.cadence.design.CadenceTheme
 import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.IngredientId
 import app.cadence.shared.domain.MacrosTenths
-import app.cadence.shared.domain.RecipeIngredient
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.math.roundToInt
 import kotlin.test.Test
@@ -291,13 +290,13 @@ class IngredientPickerSheetTest {
     @Test
     fun addingWritesTheChosenIngredientAtItsGramsAndClosesTheSheet() =
         runComposeUiTest {
-            var added: RecipeIngredient? = null
+            var added: Pair<Ingredient, Int>? = null
             var closed = 0
             setContent {
                 CadenceTheme {
                     IngredientPickerSheet(
                         search = fakeSearch(),
-                        onAdd = { added = it },
+                        onAdd = { ingredient, grams -> added = ingredient to grams },
                         onClose = { closed++ },
                     )
                 }
@@ -315,7 +314,7 @@ class IngredientPickerSheetTest {
             onNodeWithTag(CADENCE_INGREDIENT_PICKER_ADD_TAG).performClick()
             waitForIdle()
 
-            assertEquals(RecipeIngredient(CHICKEN.id, 200), added)
+            assertEquals(CHICKEN to 200, added)
             assertEquals(1, closed, "«Добавить» must close the sheet, not merely add the item")
         }
 
@@ -364,7 +363,7 @@ class IngredientPickerSheetTest {
 
     /**
      * `CadenceStepper` fills whatever width it is given, so a fixed dp guess narrower
-     * than its own content (52 + 24 + «100 г» + 24 + 52) squeezes the plus button below
+     * than its own content (52 + 20 + «100 г» + 20 + 52 — `CadenceSpacing.xl` is 20dp) squeezes the plus button below
      * its 52dp tap target — the idiom `CadenceTextFieldTest.kt`'s `aFieldGivenWeightLeavesRoomForItsRowSibling`
      * and `CadenceSegmentedTest.kt` use to pin exactly this kind of layout bug.
      */

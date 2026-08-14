@@ -26,6 +26,9 @@ const val CADENCE_SPLIT_TRACK_TAG = "cadence-split-track"
 /** One segment's fill, keyed by its macro — three segments share one row. */
 fun splitSegmentTag(macro: String) = "cadence-split-segment-$macro"
 
+/** One legend entry, so a test can bind a macro's grams to *its* label rather than to the row. */
+fun splitLegendTag(macro: String) = "cadence-split-legend-$macro"
+
 /** §03's rule of thumb, the prototype's `kp = p*4, kc = c*4, kf = f*9` (`RecipeDetailScreen.tsx:18-20`). */
 private const val KCAL_PER_G_PROTEIN = 4.0
 private const val KCAL_PER_G_CARBS = 4.0
@@ -135,9 +138,9 @@ fun CadenceSplitBar(
             Modifier.fillMaxWidth().padding(top = CadenceSpacing.sm),
             horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.lg),
         ) {
-            SplitLegendItem("Белок", proteinG, CadenceColors.forest700, labelColor, valueColor)
-            SplitLegendItem("Углев", carbsG, CadenceColors.sand500, labelColor, valueColor)
-            SplitLegendItem("Жиры", fatG, CadenceColors.sand700, labelColor, valueColor)
+            SplitLegendItem("Белок", "protein", proteinG, CadenceColors.forest700, labelColor, valueColor)
+            SplitLegendItem("Углев", "carbs", carbsG, CadenceColors.sand500, labelColor, valueColor)
+            SplitLegendItem("Жиры", "fat", fatG, CadenceColors.sand700, labelColor, valueColor)
         }
     }
 }
@@ -146,12 +149,14 @@ fun CadenceSplitBar(
 @Composable
 private fun SplitLegendItem(
     label: String,
+    macro: String,
     grams: Double,
     color: Color,
     labelColor: Color,
     valueColor: Color,
 ) {
     Row(
+        Modifier.testTag(splitLegendTag(macro)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.xs),
     ) {

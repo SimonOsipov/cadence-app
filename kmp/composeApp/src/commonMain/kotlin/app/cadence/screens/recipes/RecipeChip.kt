@@ -35,8 +35,8 @@ private val CHIP_LABEL_SIZE = 13.sp
  * tone pairs below are this context's, read off its own two screens.
  *
  * [activeBackground]/[activeForeground] default to the filter row's forest/cream; the
- * builder's tag row passes sand — the one thing the prototype varies between the two
- * (`:564,573`).
+ * builder's tag row passes sand — the one thing the prototype varies between its own two
+ * rows (`RecipeBuilderScreen.tsx:564,573`).
  */
 @Composable
 internal fun RecipeChip(

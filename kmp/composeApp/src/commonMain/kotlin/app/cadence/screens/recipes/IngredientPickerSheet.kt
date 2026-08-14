@@ -49,7 +49,6 @@ import app.cadence.format.formatDecimal
 import app.cadence.format.formatKcalTenths
 import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.IngredientId
-import app.cadence.shared.domain.RecipeIngredient
 import app.cadence.shared.domain.macrosFor
 import kotlin.math.roundToInt
 
@@ -98,13 +97,17 @@ private val HEADER_TITLE_SIZE = 24.sp
  * Grams resets to [DEFAULT_GRAMS] whenever a **different** product is picked, but
  * survives re-tapping the one already selected — a deliberate divergence from
  * `RecipeBuilderScreen.tsx:130-132`, whose `pick` resets unconditionally on every tap.
+ *
+ * [onAdd] hands over the whole [Ingredient], not the `RecipeIngredient` row alone: the
+ * caller has to price what was picked, and an id obliges it to find the product again in
+ * a table this sheet's [search] is under no contract to agree with.
  */
 @Composable
 fun IngredientPickerSheet(
     search: suspend (String) -> List<Ingredient>,
     modifier: Modifier = Modifier,
     onClose: () -> Unit = { },
-    onAdd: (RecipeIngredient) -> Unit = { },
+    onAdd: (Ingredient, Int) -> Unit = { _, _ -> },
 ) {
     var query by remember { mutableStateOf("") }
     // Null is "no answer yet" — distinct from an empty answer, so the opening frame
@@ -167,7 +170,7 @@ fun IngredientPickerSheet(
                 grams = grams,
                 onGramsChange = { grams = it },
                 onAdd = {
-                    onAdd(RecipeIngredient(ingredient.id, grams))
+                    onAdd(ingredient, grams)
                     onClose()
                 },
             )
