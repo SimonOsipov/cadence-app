@@ -57,6 +57,7 @@ import app.cadence.shared.repository.MetricDetail
 import app.cadence.shared.repository.NutritionDay
 import app.cadence.shared.repository.NutritionWeek
 import app.cadence.shared.repository.RecipeDraft
+import app.cadence.shared.repository.RecipeFilter
 import app.cadence.shared.repository.RecipeList
 import app.cadence.shared.repository.RecipeSaveResult
 import app.cadence.shared.repository.TodaySummary
@@ -107,6 +108,10 @@ private class DayUiState {
     var todayMeals by mutableStateOf<List<Meal>>(emptyList())
     var schedule by mutableStateOf<ScheduleState?>(null)
     var cabinet by mutableStateOf<InventorySummary?>(null)
+    var nutritionDay by mutableStateOf<NutritionDay?>(null)
+    var nutritionWeek by mutableStateOf<NutritionWeek?>(null)
+    var recipes by mutableStateOf<RecipeList?>(null)
+    var ingredients by mutableStateOf<List<Ingredient>>(emptyList())
 }
 
 @Composable
@@ -120,7 +125,15 @@ private fun rememberDayState(
         state.summary = today
         state.schedule = mocks.scheduleFor(today)
         state.cabinet = mocks.inventory.cabinet()
-        state.todayMeals = mocks.nutrition.day(today.date).meals
+
+        val day = mocks.nutrition.day(today.date)
+        state.nutritionDay = day
+        state.todayMeals = day.meals
+        state.nutritionWeek = mocks.nutrition.week(today.date)
+        state.recipes = mocks.recipes.library(RecipeFilter())
+        // The whole table, once: every row a patient can pick has to be priceable, and the
+        // repository's search is a `contains` over the same list.
+        state.ingredients = mocks.recipes.ingredients("")
     }
     return state
 }
@@ -203,6 +216,10 @@ fun CadenceApp(
                     cabinet = day.cabinet,
                     trends = trendsState.overview,
                     trendWindow = trendsState.window,
+                    nutritionDay = day.nutritionDay,
+                    nutritionWeek = day.nutritionWeek,
+                    recipes = day.recipes,
+                    ingredients = day.ingredients,
                     now = mocks.nowLocal(),
                     zone = mocks.zone,
                 ),
@@ -330,6 +347,7 @@ fun CadenceShell(
         tabRoutes(navController, data, actions)
         pushedRoutes(navController, data, actions)
         modalRoutes(navController, data, actions)
+        recipeRoutes(navController, data)
     }
 }
 
@@ -403,7 +421,7 @@ private fun NavGraphBuilder.tabRoutes(
             }
 
             CadenceDestination.NUTRITION -> {
-                composable<CadenceRoute.Nutrition> { body() }
+                composable<CadenceRoute.Nutrition> { NutritionRoute(nav, data, onOpenActions, body) }
             }
         }
     }
@@ -468,10 +486,6 @@ private fun NavGraphBuilder.pushedRoutes(
     }
     composable<CadenceRoute.Journal> { PlaceholderScreen("Дневник", onBack = back) }
     composable<CadenceRoute.Body> { PlaceholderScreen("Тело", onBack = back) }
-    composable<CadenceRoute.Recipes> { PlaceholderScreen("Рецепты", onBack = back) }
-    composable<CadenceRoute.RecipeDetail> { entry ->
-        PlaceholderScreen("Рецепт · ${entry.toRoute<CadenceRoute.RecipeDetail>().recipeId}", onBack = back)
-    }
     composable<CadenceRoute.Profile> { PlaceholderScreen("Профиль", onBack = back) }
     composable<CadenceRoute.ChatList> { PlaceholderScreen("Чаты", onBack = back) }
     composable<CadenceRoute.ChatThread> { entry ->

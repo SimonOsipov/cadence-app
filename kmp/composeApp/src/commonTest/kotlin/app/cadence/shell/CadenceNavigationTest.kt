@@ -189,6 +189,10 @@ private val PORTED_ROUTES =
         // Draws the metric, «такой метрики нет», or a «Метрика» placeholder, never «Биомаркер ·
         // hrv». `Trends` isn't here — it falls back to its own placeholder, which still matches.
         CadenceRoute.TrendDetail("hrv"),
+        // Since step-13: with no library read this draws «Загрузка…», not a titled
+        // placeholder. `Recipes`, `Nutrition` and `LogMeal` stay out — each is gated on a
+        // read this test supplies none of, so all three still fall back to theirs.
+        CadenceRoute.RecipeDetail("r-1"),
     )
 
 @OptIn(ExperimentalTestApi::class)
