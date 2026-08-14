@@ -47,10 +47,9 @@ internal fun LogMealModal(
     back: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // One write in flight at a time. «Сохранить» stays live until the answer lands (the
-    // footer only knows whether there are items), and on M9's round trip that window is a
-    // whole request — two taps would log the meal twice, each with its own toast. Same
-    // guard, and the same test-harness blind spot, as the recipe card's below.
+    // One write in flight at a time. «Сохранить» stays live until the answer lands — the
+    // footer only knows whether there are items — and on M9's round trip that window is a
+    // whole request, so two taps would log the meal twice, each with its own toast.
     var saving by remember { mutableStateOf(false) }
 
     if (summary == null || now == null) {
@@ -66,8 +65,11 @@ internal fun LogMealModal(
             if (!saving) {
                 saving = true
                 scope.launch {
-                    if (actions.onMealLogged(draft) is MealLogResult.Written) back()
-                    saving = false
+                    try {
+                        if (actions.onMealLogged(draft) is MealLogResult.Written) back()
+                    } finally {
+                        saving = false
+                    }
                 }
             }
         },
@@ -188,11 +190,14 @@ internal fun NavGraphBuilder.recipeRoutes(
                 if (!saving) {
                     saving = true
                     scope.launch {
-                        val result = actions.onRecipeSaved(draft)
-                        if (result is RecipeSaveResult.Saved) {
-                            nav.replaceRoute(CadenceRoute.RecipeDetail(result.id.raw))
+                        try {
+                            val result = actions.onRecipeSaved(draft)
+                            if (result is RecipeSaveResult.Saved) {
+                                nav.replaceRoute(CadenceRoute.RecipeDetail(result.id.raw))
+                            }
+                        } finally {
+                            saving = false
                         }
-                        saving = false
                     }
                 }
             },
@@ -219,20 +224,25 @@ private fun RecipeDetailRoute(
     back: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var state by remember(id) { mutableStateOf<RecipeDetailState>(RecipeDetailState.Loading) }
-    // One write in flight at a time: the button stays live until the answer lands, and two
-    // taps in the same frame would otherwise queue two coroutines and log the meal twice —
-    // the defect `LogDoseModal`'s own `submitting` flag exists for. Unverifiable by test:
-    // each `performClick()` pumps a frame, so the harness cannot deliver two taps inside one.
+    var answer by remember(id) { mutableStateOf<RecipeDetailState>(RecipeDetailState.Loading) }
+    // One write in flight at a time: the button stays live until the answer lands, so a
+    // second tap while the first is still writing would queue a second coroutine and log the
+    // meal twice — the defect `LogDoseModal`'s own `submitting` flag exists for. Reset in
+    // `finally` for the same reason it is there: a throw must not latch the button dead.
     var adding by remember { mutableStateOf(false) }
 
     LaunchedEffect(id) {
-        state = actions.loadRecipe(id)?.let(RecipeDetailState::Found) ?: RecipeDetailState.NotFound
+        answer = actions.loadRecipe(id)?.let(RecipeDetailState::Found) ?: RecipeDetailState.NotFound
     }
 
+    // Two independent reads, and the card needs both: the recipe, and the table that prices
+    // its rows. `orEmpty()` here would hand `RecipeDetailFound` a table that throws on the
+    // first row (`RecipeMath.totalsOf`), so an unread table is «загружается», not «пусто».
+    val table = data.ingredients
+
     RecipeDetailScreen(
-        state = state,
-        ingredients = data.ingredients.orEmpty(),
+        state = if (table == null) RecipeDetailState.Loading else answer,
+        ingredients = table.orEmpty(),
         onBack = back,
         // The same write and the same confirmation as the wizard's, and then «Питание» —
         // where the meal it just wrote is visible. The draft already carries
@@ -242,10 +252,13 @@ private fun RecipeDetailRoute(
             if (!adding) {
                 adding = true
                 scope.launch {
-                    if (actions.onMealLogged(draft) is MealLogResult.Written) {
-                        nav.selectDestination(CadenceDestination.NUTRITION)
+                    try {
+                        if (actions.onMealLogged(draft) is MealLogResult.Written) {
+                            nav.selectDestination(CadenceDestination.NUTRITION)
+                        }
+                    } finally {
+                        adding = false
                     }
-                    adding = false
                 }
             }
         },

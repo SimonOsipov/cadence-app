@@ -38,9 +38,12 @@ import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.IngredientId
 import app.cadence.shared.domain.Macros
 import app.cadence.shared.domain.MacrosTenths
+import app.cadence.shared.domain.MealId
 import app.cadence.shared.domain.NutritionTargets
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
+import app.cadence.shared.mock.ingredients
+import app.cadence.shared.mock.recipes
 import app.cadence.shared.parsing.MockMealParser
 import app.cadence.shared.repository.MealLogResult
 import app.cadence.shared.repository.NutritionDay
@@ -51,6 +54,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 // The nutrition port's wiring, at the level `CadenceApp` composes it — split out of
@@ -391,6 +395,10 @@ class CadenceNutritionWiringTest {
                 CadenceTheme {
                     CadenceShell(
                         navController = nav,
+                        // The table is supplied, so what this test measures is the *recipe*
+                        // read alone: the card waits on both, and an unread table would keep
+                        // it «загружается» whatever `loadRecipe` answered.
+                        data = CadenceShellData(ingredients = MockSeed.ingredients),
                         actions =
                             CadenceShellActions(
                                 loadRecipe = {
@@ -441,10 +449,85 @@ class CadenceNutritionWiringTest {
             runOnUiThread { nav.openRoute(CadenceRoute.Recipes) }
             waitForIdle()
             onNodeWithTag(CADENCE_RECIPES_TAG).assertDoesNotExist()
+        }
+
+    /**
+     * The wizard's own second clause, isolated: the day *has* landed here, so what the
+     * assertion turns on is the clock reading alone. Folded into the test above it would
+     * have passed on `summary == null` and proved nothing about `now`.
+     */
+    @Test
+    fun theWizardWaitsForTheClockReadingAndNotOnlyTheDay() =
+        runComposeUiTest {
+            val mocks = wiringMocks()
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                var summary by remember { mutableStateOf<TodaySummary?>(null) }
+                LaunchedEffect(Unit) { summary = mocks.today.today() }
+                CadenceTheme {
+                    CadenceShell(navController = nav, data = CadenceShellData(summary = summary))
+                }
+            }
+            waitForIdle()
 
             runOnUiThread { nav.openRoute(CadenceRoute.LogMeal) }
             waitForIdle()
-            // The wizard needs the clock reading as well as the day; `now` is still null here.
+
             onNodeWithTag(LOG_MEAL_CHAT_FIELD_TAG, useUnmergedTree = true).assertDoesNotExist()
+        }
+
+    /**
+     * The write is held open, so the second tap lands while the first is still in flight —
+     * which is what the guard is for, and what «two taps in one frame» was the wrong way to
+     * ask for. Without it both taps queue their own coroutine and the day gets the recipe
+     * twice, each with its own toast.
+     */
+    @Test
+    fun asecondTapWhileTheWriteIsInFlightDoesNotWriteAgain() =
+        runComposeUiTest {
+            val gate = CompletableDeferred<Unit>()
+            var writes = 0
+            lateinit var nav: NavHostController
+            setContent {
+                nav = rememberNavController()
+                CadenceTheme {
+                    CadenceShell(
+                        navController = nav,
+                        data = CadenceShellData(ingredients = MockSeed.ingredients),
+                        actions =
+                            CadenceShellActions(
+                                loadRecipe = { MockSeed.recipes.first() },
+                                onMealLogged = {
+                                    writes++
+                                    gate.await()
+                                    MealLogResult.Written(MealId("written"), Macros(0, 0, 0, 0))
+                                },
+                            ),
+                    )
+                }
+            }
+            waitForIdle()
+
+            runOnUiThread {
+                nav.openRoute(
+                    CadenceRoute.RecipeDetail(
+                        MockSeed.recipes
+                            .first()
+                            .id.raw,
+                    ),
+                )
+            }
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_ADD_TAG).performClick()
+            waitForIdle()
+            onNodeWithTag(CADENCE_RECIPE_DETAIL_ADD_TAG).performClick()
+            waitForIdle()
+
+            assertEquals(1, writes, "the second tap queued another write while the first was in flight")
+
+            gate.complete(Unit)
+            waitForIdle()
         }
 }

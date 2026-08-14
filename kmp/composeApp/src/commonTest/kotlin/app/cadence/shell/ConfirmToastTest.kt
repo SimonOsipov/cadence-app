@@ -165,10 +165,12 @@ private fun androidx.compose.ui.test.ComposeUiTest.logAMeal(nav: NavHostControll
     // Scrolled to first: the footer sits below the fold once the parse fills the list, and a
     // click on an off-screen node lands on nothing at all.
     onNodeWithTag(LOG_MEAL_SAVE_TAG).performScrollTo().performClick()
-    val raisedAt = mainClock.currentTime
+    val clickedAt = mainClock.currentTime
     waitForIdle()
-    // Returned, not assumed: the toast's clock starts here, and the walk above spends virtual
-    // time of its own. A bracket measured from zero would pin the 1700ms constant only to
-    // «somewhere between one and two seconds».
-    return raisedAt
+    // Returned, not assumed: the walk above spends virtual time of its own, and a bracket
+    // measured from zero would pin the 1700ms constant only to «somewhere between one and
+    // two seconds». The toast is raised no earlier than this — the write is launched by the
+    // click and the timer starts with it — so the far edge below carries a few frames of
+    // slack and the near edge none.
+    return clickedAt
 }
