@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 )
 
 // serviceRole is the impersonation target of the service path. It is a
@@ -42,56 +44,64 @@ const (
 // that answers "who changed this" with silence.
 var ErrNoActor = errors.New("the service path has no actor")
 
-// Actor is who a service transaction is acting as.
+// ErrNoPrincipal is returned when a service transaction is opened on a context
+// that carries no verified caller.
+//
+// It is a separate error from ErrNoActor because it names a different mistake: a
+// service write reached for on a path the authentication middleware does not
+// cover. Falling back to a job would answer it, and it would answer it by
+// recording a person's action as a machine's.
+var ErrNoPrincipal = errors.New("the service path has no verified caller")
+
+// actor is who a service transaction is acting as.
 //
 // The distinction between a person and a job is made at compile time and kept
-// there. Its fields are unexported and there are exactly two constructors, so a
-// caller has to decide which it is rather than filling in whichever field is at
-// hand — and the audit log's "exactly one of actor_id and actor_job" stops being
-// a rule anybody can forget.
-type Actor struct {
+// there. The type is unexported, and so are its two constructors, so nothing
+// outside this package can produce one — which is what makes "a handler cannot
+// name somebody else's uuid" a property of the surface rather than a rule at
+// every call site. TestTheExportedSurfaceIsTheOneDeclared is its witness.
+type actor struct {
 	subject string
 	job     string
 }
 
-// ActingAsUser attributes the transaction to a person: the subject of the
-// principal that asked for it.
+// actingAsUser attributes the transaction to a person: the subject of the
+// principal the request was verified as.
 //
 // The subject is checked for UUID shape here rather than at the insert, for the
 // same reason the caller's is: audit_log.actor_id is a uuid column, and a cast
 // that fails inside a policy or a constraint is a 500 where a refusal belongs.
-func ActingAsUser(subject string) (Actor, error) {
+func actingAsUser(subject string) (actor, error) {
 	if subject == "" {
-		return Actor{}, fmt.Errorf("acting as a user: %w", ErrNoActor)
+		return actor{}, fmt.Errorf("acting as a user: %w", ErrNoActor)
 	}
 
 	if !IsUUIDShaped(subject) {
-		return Actor{}, fmt.Errorf("acting as %q: %w", subject, ErrInvalidSubject)
+		return actor{}, fmt.Errorf("acting as %q: %w", subject, ErrInvalidSubject)
 	}
 
-	return Actor{subject: subject}, nil
+	return actor{subject: subject}, nil
 }
 
-// ActingAsJob attributes the transaction to a named system job — the reminder
+// actingAsJob attributes the transaction to a named system job — the reminder
 // sweep, the invitation mailer — which has no principal behind it.
 //
 // The name is trimmed and a blank one is refused. It is the key the audit log
 // groups by, and " reminder-sweep" beside "reminder-sweep" is two jobs in every
 // report anybody runs.
-func ActingAsJob(name string) (Actor, error) {
+func actingAsJob(name string) (actor, error) {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
-		return Actor{}, fmt.Errorf("acting as a job: %w", ErrNoActor)
+		return actor{}, fmt.Errorf("acting as a job: %w", ErrNoActor)
 	}
 
-	return Actor{job: trimmed}, nil
+	return actor{job: trimmed}, nil
 }
 
-// setting returns the connection setting this actor is published under and the
-// value it carries — and the setting that has to be cleared, because "exactly
-// one" is a property of the transaction rather than of this value. The zero
-// Actor returns an empty value, which is what the guard in WithService reads.
-func (a Actor) setting() (published, value, cleared string) {
+// setting also names the setting that has to be cleared, because "exactly one"
+// is a property of the transaction rather than of this value. The zero actor
+// returns an empty value, which is what the guard in withService reads.
+func (a actor) setting() (published, value, cleared string) {
 	if a.subject != "" {
 		return ActorIDSetting, a.subject, ActorJobSetting
 	}
@@ -99,14 +109,68 @@ func (a Actor) setting() (published, value, cleared string) {
 	return ActorJobSetting, a.job, ActorIDSetting
 }
 
-// WithService runs fn in a transaction on the service pool, as cadence_service.
+// WithService runs fn on the service pool on behalf of the caller the request
+// was verified as.
+//
+// The actor is derived from auth.PrincipalFrom rather than taken as an argument,
+// and that is the whole point of the shape: forging the actor survived two drafts
+// of the proposal because it was an argument's value, where every call site
+// looked right and one naming a different uuid would have looked right too. There
+// is now nowhere to write one — the actor type is unexported and no exported
+// function of this package takes a subject.
+//
+// A request with no verified caller is refused rather than attributed to a job.
+// The two are the states the audit log cannot tell apart afterwards, and a
+// service write on an unauthenticated path is a wiring mistake, not a fallback.
+//
+// Paths with no human use WithServiceJob.
+func WithService(
+	ctx context.Context, pool *pgxpool.Pool, fn func(context.Context, pgx.Tx) error,
+) error {
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return fmt.Errorf("opening the service seam: %w", ErrNoPrincipal)
+	}
+
+	acting, err := actingAsUser(principal.Subject)
+	if err != nil {
+		return fmt.Errorf("opening the service seam: %w", err)
+	}
+
+	return withService(ctx, pool, acting, fn)
+}
+
+// WithServiceJob runs fn on the service pool on behalf of a named system job —
+// the reminder sweep, the invitation mailer, the push fan-out.
+//
+// A separate function rather than a nil actor, so that "this path has nobody to
+// derive an actor from" is a decision somebody made once, at the one place it is
+// true, instead of a check every call site could forget. The name lands in
+// app.actor_job; a uuid passed here names a job after a uuid and attributes the
+// action to nobody.
+//
+// A principal on the context is ignored, deliberately: what the audit row says is
+// what the constructor said, so "exactly one of actor_id and actor_job" stays the
+// seam's property rather than the caller's.
+func WithServiceJob(
+	ctx context.Context, pool *pgxpool.Pool, job string, fn func(context.Context, pgx.Tx) error,
+) error {
+	acting, err := actingAsJob(job)
+	if err != nil {
+		return fmt.Errorf("opening the service seam: %w", err)
+	}
+
+	return withService(ctx, pool, acting, fn)
+}
+
+// withService runs fn in a transaction on the service pool, as cadence_service.
 //
 // It is the path for what no policy lets a request do: creating a patient,
 // writing another person's clinical fields, recording an invitation. Its
 // authorization lives in Go rather than in a policy — the service-path policies
-// carry no row predicate — and that is written down here rather than implied,
-// because it is the one place in this codebase where the database is not the
-// last word.
+// carry no row predicate, save the one on profiles.role — and that is written
+// down here rather than implied, because it is the one place in this codebase
+// where the database is not the last word.
 //
 // Three things are true inside fn and false outside it. The effective role is
 // cadence_service. The caller's claims are cleared — to the empty string, since
@@ -121,10 +185,10 @@ func (a Actor) setting() (published, value, cleared string) {
 // of that refusal — no single transaction that both checks a caller's rights
 // under RLS and writes through the service path — is real and is deferred, not
 // solved.
-func WithService(
-	ctx context.Context, pool *pgxpool.Pool, actor Actor, fn func(context.Context, pgx.Tx) error,
+func withService(
+	ctx context.Context, pool *pgxpool.Pool, acting actor, fn func(context.Context, pgx.Tx) error,
 ) error {
-	published, value, cleared := actor.setting()
+	published, value, cleared := acting.setting()
 	if value == "" {
 		return fmt.Errorf("opening the service seam: %w", ErrNoActor)
 	}
@@ -146,23 +210,11 @@ func WithService(
 		_ = tx.Rollback(rollbackCtx)
 	}()
 
-	// Cleared explicitly rather than relied upon to be absent — the claims and
-	// whichever actor setting this transaction is not publishing. The settings are transaction-scoped and a fresh transaction inherits
-	// nothing — but connections are pooled, and a statement inside somebody's
-	// closure that issues SET without LOCAL leaves its value on the connection
-	// for the next transaction to inherit. A property that holds only because
-	// nobody wrote that statement is a property nobody is checking.
-	//
-	// The other actor setting matters as much as the claims: audit_log requires
-	// exactly one of actor_id and actor_job, and a leftover from an earlier
-	// transaction makes it two — breaking the constraint at the one moment the
-	// row is being written, in the seam whose Actor type exists to make that
-	// impossible.
-	//
-	// Note that clearing sets the value to the empty string, not to NULL:
-	// set_config has no way to unset. Everything reading these settings must go
-	// through nullif — app.jwt_subject() does exactly that, and it is why it
-	// does.
+	// Cleared explicitly rather than relied upon to be absent: a fresh
+	// transaction inherits nothing, but connections are pooled, and a statement
+	// inside somebody's closure that issues SET without LOCAL leaves its value
+	// behind for the next transaction to inherit. A leftover actor setting is
+	// audit_log's "exactly one" broken at the moment the row is written.
 	for _, setting := range []string{claimsSetting, cleared} {
 		if _, err := tx.Exec(ctx, "SELECT set_config($1, '', true)", setting); err != nil {
 			return fmt.Errorf("clearing %s: %w", setting, err)

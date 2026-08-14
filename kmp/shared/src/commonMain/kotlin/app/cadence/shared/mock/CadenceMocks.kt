@@ -72,6 +72,7 @@ import app.cadence.shared.repository.TodaySummary
 import app.cadence.shared.repository.TrendsRepository
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
@@ -121,6 +122,14 @@ class CadenceMocks(
     val trends: TrendsRepository = MockTrendsRepository()
     val nutrition: NutritionRepository = MockNutritionRepository()
     val recipes: RecipeRepository = MockRecipeRepository()
+
+    /**
+     * The clock's reading in [zone]. Public because a screen that stamps «сейчас» — the meal
+     * wizard's header — must read the same clock the write does, and the composition root has
+     * no other way to reach it. The prototype's own two hardcoded times (`08:42`, `13:14`) are
+     * exactly what having no such reading produced.
+     */
+    fun nowLocal(): LocalDateTime = clock.now().toLocalDateTime(zone)
 
     private fun currentDate(): LocalDate = clock.today(zone)
 

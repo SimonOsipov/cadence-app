@@ -206,5 +206,32 @@ class RecipeRepositoryTest {
             assertNull(cadence.recipes.recipe(RecipeId("no-such-recipe")))
         }
 
+    /**
+     * The shell reads the whole table once (`ingredients("")`) and prices every recipe row
+     * against it, and `RecipeMath.totalsOf` throws on an id it cannot find — so a table that
+     * misses one row is a crash on that recipe's card, not a blank number. Nothing else
+     * measures the two lists against each other: a UI test only ever opens the recipes it
+     * names.
+     */
+    @Test
+    fun everyRecipeRowIsPriceableFromTheWholeIngredientTable() =
+        runTest {
+            val cadence = CadenceMocks()
+            val table =
+                cadence.recipes
+                    .ingredients("")
+                    .map { it.id }
+                    .toSet()
+
+            val missing =
+                cadence.recipes
+                    .library(RecipeFilter())
+                    .recipes
+                    .flatMap { recipe -> recipe.ingredients.map { recipe.id to it.ingredientId } }
+                    .filterNot { (_, ingredientId) -> ingredientId in table }
+
+            assertEquals(emptyList(), missing, "recipes reference ingredients the table does not carry")
+        }
+
     private fun oneIngredient() = listOf(RecipeIngredient(IngredientId("chicken"), 200))
 }

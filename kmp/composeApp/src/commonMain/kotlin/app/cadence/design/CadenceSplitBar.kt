@@ -26,6 +26,18 @@ const val CADENCE_SPLIT_TRACK_TAG = "cadence-split-track"
 /** One segment's fill, keyed by its macro — three segments share one row. */
 fun splitSegmentTag(macro: String) = "cadence-split-segment-$macro"
 
+/** One legend entry, so a test can bind a macro's grams to *its* label rather than to the row. */
+fun splitLegendTag(macro: String) = "cadence-split-legend-$macro"
+
+/**
+ * The label and the grams *inside* one entry, separately: a probe that reads the whole
+ * entry cannot tell [CadenceSplitBar]'s `labelColor` from its `valueColor` when the two
+ * are swapped, since both colours stay somewhere in the entry either way.
+ */
+fun splitLegendLabelTag(macro: String) = "cadence-split-legend-label-$macro"
+
+fun splitLegendValueTag(macro: String) = "cadence-split-legend-value-$macro"
+
 /** §03's rule of thumb, the prototype's `kp = p*4, kc = c*4, kf = f*9` (`RecipeDetailScreen.tsx:18-20`). */
 private const val KCAL_PER_G_PROTEIN = 4.0
 private const val KCAL_PER_G_CARBS = 4.0
@@ -72,6 +84,9 @@ fun splitShares(
  * two, not to the row alone. A zero share is skipped rather than laid out at
  * `weight(0f)`, which Compose rejects.
  *
+ * [trackColor]/[labelColor]/[valueColor] exist for that dark call site: the
+ * defaults (`sunk`, `subtle`, `ink2`) are unreadable on `forest800`.
+ *
  * Carb colour: the nutrition overview's per-macro `MacroBar` hardcodes carbs
  * to `#a5773d` (`NutritionScreen.tsx:518`), with no matching [CadenceColors]
  * token — but this component's own two call sites map carbs to `C.sand500`
@@ -84,6 +99,9 @@ fun CadenceSplitBar(
     carbsG: Double,
     fatG: Double,
     modifier: Modifier = Modifier,
+    trackColor: Color = Cadence.palette.sunk,
+    labelColor: Color = Cadence.palette.subtle,
+    valueColor: Color = Cadence.palette.ink2,
 ) {
     val (proteinShare, carbsShare, fatShare) = splitShares(proteinG, carbsG, fatG)
 
@@ -93,7 +111,7 @@ fun CadenceSplitBar(
                 .fillMaxWidth()
                 .height(SPLIT_BAR_HEIGHT)
                 .clip(RoundedCornerShape(CadenceRadius.pill))
-                .background(Cadence.palette.sunk)
+                .background(trackColor)
                 .testTag(CADENCE_SPLIT_TRACK_TAG),
         ) {
             if (proteinShare > 0f) {
@@ -129,9 +147,9 @@ fun CadenceSplitBar(
             Modifier.fillMaxWidth().padding(top = CadenceSpacing.sm),
             horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.lg),
         ) {
-            SplitLegendItem("Белок", proteinG, CadenceColors.forest700)
-            SplitLegendItem("Углев", carbsG, CadenceColors.sand500)
-            SplitLegendItem("Жиры", fatG, CadenceColors.sand700)
+            SplitLegendItem("Белок", "protein", proteinG, CadenceColors.forest700, labelColor, valueColor)
+            SplitLegendItem("Углев", "carbs", carbsG, CadenceColors.sand500, labelColor, valueColor)
+            SplitLegendItem("Жиры", "fat", fatG, CadenceColors.sand700, labelColor, valueColor)
         }
     }
 }
@@ -140,10 +158,14 @@ fun CadenceSplitBar(
 @Composable
 private fun SplitLegendItem(
     label: String,
+    macro: String,
     grams: Double,
     color: Color,
+    labelColor: Color,
+    valueColor: Color,
 ) {
     Row(
+        Modifier.testTag(splitLegendTag(macro)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CadenceSpacing.xs),
     ) {
@@ -153,7 +175,11 @@ private fun SplitLegendItem(
                 .clip(RoundedCornerShape(CadenceRadius.xs))
                 .background(color),
         )
-        CadenceMeta(label, color = Cadence.palette.subtle)
-        CadenceMeta("${formatDecimal(grams, digits = 0)} г", color = Cadence.palette.ink2)
+        CadenceMeta(label, color = labelColor, modifier = Modifier.testTag(splitLegendLabelTag(macro)))
+        CadenceMeta(
+            "${formatDecimal(grams, digits = 0)} г",
+            color = valueColor,
+            modifier = Modifier.testTag(splitLegendValueTag(macro)),
+        )
     }
 }

@@ -7,8 +7,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -262,40 +265,61 @@ fun LogMealScreen(
         editingIndex = null
     }
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .background(Cadence.palette.bg)
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        LogMealHeader(now, onCancel)
-        LogMealTitleBlock()
+    Box(modifier.fillMaxSize().background(Cadence.palette.bg)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            LogMealHeader(now, onCancel)
+            LogMealTitleBlock()
 
-        LogMealBody(
-            mode = mode,
-            onSwitchMode = ::switchMode,
-            chatText = chatText,
-            onChatTextChange = { chatText = it },
-            placeholder = samples[sampleIndex].placeholder,
-            onCycleSample = {
-                sampleIndex = (sampleIndex + 1) % samples.size
-                chatText = samples[sampleIndex].transcript
-            },
-            onParse = ::runParse,
-            parseState = parseState,
-            targets = targets,
-            currentItems = currentItems,
-            editingIndex = editingIndex,
-            onToggleEdit = ::toggleEdit,
-            onGramsChange = ::changeGrams,
-            onDelete = ::deleteItem,
+            LogMealBody(
+                mode = mode,
+                onSwitchMode = ::switchMode,
+                chatText = chatText,
+                onChatTextChange = { chatText = it },
+                placeholder = samples[sampleIndex].placeholder,
+                onCycleSample = {
+                    sampleIndex = (sampleIndex + 1) % samples.size
+                    chatText = samples[sampleIndex].transcript
+                },
+                onParse = ::runParse,
+                parseState = parseState,
+                targets = targets,
+                currentItems = currentItems,
+                editingIndex = editingIndex,
+                onToggleEdit = ::toggleEdit,
+                onGramsChange = ::changeGrams,
+                onDelete = ::deleteItem,
+            )
+
+            Spacer(
+                Modifier.height(
+                    FOOTER_CLEARANCE + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+                ),
+            )
+        }
+
+        // Fixed over the content, like the prototype's own gradient-backed bar
+        // (`LogMealScreen.tsx:344-394`, with `paddingBottom: 130` reserved at `:99`): drawn
+        // in flow it went below the fold the moment a parse filled the list, and the
+        // screen's primary action had to be scrolled for. The clearance above ends the
+        // column clear of it — `theSaveFooterFitsInsideItsOwnClearance` measures the bar
+        // against this number rather than trusting it.
+        LogMealFooter(
+            items = currentItems,
             onSave = {
                 onSave(MealDraft(name = parseState.mealName, source = MealSource.AI_TEXT, items = currentItems))
             },
+            modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars),
         )
     }
 }
+
+/** Ends the scrolling column clear of the bar overlaid on it. */
+internal val FOOTER_CLEARANCE = 88.dp
 
 /**
  * Everything below the title: mode picker, each mode's content, parse-state
@@ -321,7 +345,6 @@ private fun LogMealBody(
     onToggleEdit: (Int) -> Unit,
     onGramsChange: (Int, Int) -> Unit,
     onDelete: (Int) -> Unit,
-    onSave: () -> Unit,
 ) {
     Column(
         Modifier.padding(horizontal = CadenceSpacing.lg),
@@ -374,11 +397,6 @@ private fun LogMealBody(
                 onDelete = onDelete,
             )
         }
-
-        // Always drawn, even at `idle` — the prototype's footer sits outside
-        // every stage branch (`LogMealScreen.tsx:344-394`), inactive until
-        // there is something to save rather than absent until there is.
-        LogMealFooter(items = currentItems, onSave = onSave)
     }
 }
 

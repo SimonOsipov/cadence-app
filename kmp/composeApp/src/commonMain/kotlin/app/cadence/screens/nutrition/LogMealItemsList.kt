@@ -320,6 +320,7 @@ private fun TotalsColumn(
 internal fun LogMealFooter(
     items: List<MealItem>,
     onSave: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val canSave = items.isNotEmpty()
     val label =
@@ -329,12 +330,16 @@ internal fun LogMealFooter(
             "Добавьте что-нибудь"
         }
 
-    CadenceButton(
-        label = label,
-        onClick = onSave,
-        kind = CadenceButtonKind.PRIMARY,
-        fillWidth = true,
-        enabled = canSave,
-        modifier = Modifier.padding(top = CadenceSpacing.sm).testTag(LOG_MEAL_SAVE_TAG),
-    )
+    // Its own background: the bar is overlaid on the scrolling content, so a transparent
+    // one would let items read through it.
+    Box(modifier.fillMaxWidth().background(Cadence.palette.bg).padding(CadenceSpacing.lg)) {
+        CadenceButton(
+            label = label,
+            onClick = onSave,
+            kind = CadenceButtonKind.PRIMARY,
+            fillWidth = true,
+            enabled = canSave,
+            modifier = Modifier.testTag(LOG_MEAL_SAVE_TAG),
+        )
+    }
 }

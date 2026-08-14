@@ -103,6 +103,45 @@ func (k *SigningKey) SignWithKID(t *testing.T, kid string, claims jwt.MapClaims)
 	return k.sign(t, k.method, claims, map[string]any{"kid": kid})
 }
 
+// PrivateJWK renders the key as one JWK carrying its private half: the shape a
+// single key is configured with, as opposed to the bare array GOTRUE_JWT_KEYS
+// takes, which GoTrueJWKS builds out of the same rendering.
+func (k *SigningKey) PrivateJWK(t *testing.T) string {
+	t.Helper()
+
+	raw, err := json.Marshal(privateJWKMarshal(t, k, false))
+	if err != nil {
+		t.Fatalf("marshalling the private JWK for %q: %v", k.KID, err)
+	}
+
+	return string(raw)
+}
+
+// The signing marker is what GoTrue reads to pick the key it signs sessions
+// with; every other consumer of a private JWK here wants the key without it.
+func privateJWKMarshal(t *testing.T, key *SigningKey, signing bool) jwkset.JWKMarshal {
+	t.Helper()
+
+	metadata := jwkset.JWKMetadataOptions{
+		ALG: jwkset.ALG(key.Alg),
+		KID: key.KID,
+		USE: jwkset.UseSig,
+	}
+	if signing {
+		metadata.KEYOPS = []jwkset.KEYOPS{jwkset.KeyOpsSign}
+	}
+
+	jwk, err := jwkset.NewJWKFromKey(key.private, jwkset.JWKOptions{
+		Marshal:  jwkset.JWKMarshalOptions{Private: true},
+		Metadata: metadata,
+	})
+	if err != nil {
+		t.Fatalf("building the JWK for %q: %v", key.KID, err)
+	}
+
+	return jwk.Marshal()
+}
+
 // PublicKeyPEM returns the PEM-encoded public key.
 //
 // It exists for one test: signing a token with HS256 using the published public

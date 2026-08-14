@@ -96,25 +96,21 @@ type NewPatient struct {
 // team is invisible to every doctor, and a patient created without an audit row
 // is a change nobody signed.
 //
-// It runs on the service path because no policy lets a request do this. The
-// authorization is therefore in Go rather than in the database, and that is
-// written here rather than implied — it is the one place in this system where
-// the database is not the last word. What the database still holds is
-// attribution: the audit policy reconciles the row's actor against the one the
-// seam published, so a write that forgets to name an actor is refused rather
-// than recorded anonymously.
+// It runs on the service path because no policy lets a request do this, so its
+// authorization is in Go. What the database still holds is attribution: the
+// audit policy reconciles the row's actor against the one the seam published,
+// so a write that forgets to name an actor is refused rather than recorded
+// anonymously.
 //
 // There is no HTTP endpoint. Sending the invitation belongs to the same action
 // and does not exist yet, and half of an action behind a URL is worse than none
 // of it: openapi.json is committed and generates two client surfaces.
-func CreatePatient(
-	ctx context.Context, pool *pgxpool.Pool, actor database.Actor, patient NewPatient,
-) error {
+func CreatePatient(ctx context.Context, pool *pgxpool.Pool, patient NewPatient) error {
 	if err := check(patient); err != nil {
 		return fmt.Errorf("creating patient %s: %w", patient.UserID, err)
 	}
 
-	err := database.WithService(ctx, pool, actor, func(ctx context.Context, tx pgx.Tx) error {
+	err := database.WithService(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
 		if err := requireKnownTimezone(ctx, tx, patient.Timezone); err != nil {
 			return err
 		}
@@ -185,10 +181,9 @@ func requireKnownTimezone(ctx context.Context, tx pgx.Tx, timezone string) error
 	return nil
 }
 
-// requireProvider checks that an assignment names a doctor.
-//
-// Inside the transaction, not before it: a check made outside would be answering
-// about a row that can change before the insert lands.
+// requireProvider runs inside the transaction, not before it: a check made
+// outside would be answering about a row that can change before the insert
+// lands.
 func requireProvider(ctx context.Context, tx pgx.Tx, providerID string) error {
 	var role string
 	err := tx.QueryRow(ctx, `SELECT role FROM app.profiles WHERE user_id = $1`, providerID).Scan(&role)
@@ -207,15 +202,13 @@ func requireProvider(ctx context.Context, tx pgx.Tx, providerID string) error {
 }
 
 func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
-	// locale is left to the column default when the caller names none, rather
-	// than defaulted here. The schema already says 'ru', and two copies of a
-	// default drift the first time one of them is edited — the same argument the
-	// preferences row below rests on.
+	// locale is left to the column default when the caller names none: the schema
+	// already says 'ru', and two copies of a default drift the first time one of
+	// them is edited — the same argument the preferences row below rests on.
 	//
 	// Two statements rather than one with a conditional expression, because
 	// DEFAULT is not an expression in Postgres: it may only appear as a whole
-	// value in a VALUES list. Each of them is a constant, which is what the
-	// authorship gate requires.
+	// value in a VALUES list.
 	var err error
 	if patient.Locale == "" {
 		_, err = tx.Exec(ctx, `
@@ -266,13 +259,9 @@ func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
 	// Last, and in the same transaction. A rollback takes the audit row with it,
 	// which is right: there is nothing to have signed.
 	//
-	// The setting names travel as bound parameters rather than being composed
-	// into the statement — current_setting takes its name as an argument, so
-	// there is no identifier to concatenate. That keeps the statement a constant,
-	// which the authorship gate requires, while the names themselves stay the
-	// seam's own constants: a copy of the two strings here would be a contract
-	// with no compile-time link, and renaming them there would leave this package
-	// compiling and failing at runtime.
+	// The setting names travel as bound parameters — current_setting takes its
+	// name as an argument, so there is no identifier to concatenate — which
+	// keeps the statement the constant the authorship gate requires.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO app.audit_log (actor_id, actor_job, action, entity, entity_id, patient_id)
 		VALUES (

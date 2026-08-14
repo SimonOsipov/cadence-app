@@ -72,7 +72,13 @@ private fun ComposeUiTest.startShell(
     lateinit var nav: NavHostController
     setContent {
         nav = rememberNavController()
-        CadenceTheme { CadenceShell(navController = nav, trends = trends, onLoadMetric = onLoadMetric) }
+        CadenceTheme {
+            CadenceShell(
+                navController = nav,
+                data = CadenceShellData(trends = trends),
+                actions = CadenceShellActions(onLoadMetric = onLoadMetric),
+            )
+        }
     }
     return nav
 }
@@ -90,10 +96,12 @@ private fun ComposeUiTest.startShellSharingItsWindow(): NavHostController {
         CadenceTheme {
             CadenceShell(
                 navController = nav,
-                trends = navOverview(window),
-                trendWindow = window,
-                onTrendWindow = { window = it },
-                onLoadMetric = { metric, chosen -> navDetail(metric, chosen) },
+                data = CadenceShellData(trends = navOverview(window), trendWindow = window),
+                actions =
+                    CadenceShellActions(
+                        onTrendWindow = { window = it },
+                        onLoadMetric = { metric, chosen -> navDetail(metric, chosen) },
+                    ),
             )
         }
     }
@@ -181,6 +189,12 @@ private val PORTED_ROUTES =
         // Draws the metric, «такой метрики нет», or a «Метрика» placeholder, never «Биомаркер ·
         // hrv». `Trends` isn't here — it falls back to its own placeholder, which still matches.
         CadenceRoute.TrendDetail("hrv"),
+        // Since step-13 these draw the card's own three states and the builder itself, not a
+        // titled placeholder — with no `loadRecipe` action the card answers «Рецепт не
+        // найден.». `Recipes`, `Nutrition` and `LogMeal` stay out: each is gated on a read
+        // this test supplies none of, so all three still fall back to theirs.
+        CadenceRoute.RecipeDetail("r-1"),
+        CadenceRoute.RecipeBuilder,
     )
 
 @OptIn(ExperimentalTestApi::class)

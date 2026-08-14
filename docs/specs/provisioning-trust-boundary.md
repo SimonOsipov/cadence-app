@@ -8,12 +8,11 @@ todoist_parent: "6h9JPwH5pfVwVmrq"
 components: [provisioner, api, data-layer, identity, audit]
 proposal: "[[20-Projects/cadence/architecture/proposals/invites-and-onboarding|architecture/proposals/invites-and-onboarding]]"
 ---
-
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/provisioning-trust-boundary.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
 # The provisioning trust boundary: the admin key leaves the API
 
-## Summary
+## Описание
 
 The first of the two onboarding blocks. It creates no patients at all — it builds
 the boundary inside which creating them is safe, and closes three escalation paths
@@ -79,7 +78,7 @@ the decision about `POST /recover`. mTLS between the API and `provisioner` — a
 deliberate omission for the pilot. A full rewrite of `architecture/overview.md`,
 made stale by ADR-008.
 
-## What already exists (DONE)
+## Что уже реализовано (DONE)
 
 From the identity block: seven roles, two seams, `app.jwt_subject()`, six tables,
 six policy shapes, three registries over the `app` schema, the separation of `auth`
@@ -112,7 +111,7 @@ registration disabled.
 - The `auth` schema is today owned by the container's superuser — by accident of
   configuration, not by rule.
 
-## Technical detail
+## Технические детали
 
 ### The `provisioner` component
 
@@ -202,7 +201,7 @@ default against forgetfulness, not a barrier, and that is written down.
 The service pool gets its own constructor with an explicit `MaxConns` — today
 `postgres.go` sets neither it, nor a connection timeout, nor an execution mode.
 
-## Architecture decision
+## Архитектурное решение
 
 Whoever holds the GoTrue admin key can reset any user's password and obtain a
 session token by legitimate means — verified with a chain of three calls. The
@@ -221,7 +220,7 @@ process ignores the restriction. The full account of the three measurement round
 is in the
 [[20-Projects/cadence/architecture/proposals/invites-and-onboarding|proposal]].
 
-## Component deltas
+## Дельты компонентов
 
 ### overview.md
 - ADDED: a fifth deployed component, `provisioner` — the sole holder of the GoTrue admin key. It is absent from the partner's document: there that role was played by the key issued by Supabase
@@ -279,6 +278,31 @@ green for a different reason and moves onto the new refusal;
 `TestLoadRejectsBadInput` gains a case for it.
 todoist: "6h9JQ33h8JVfHrGq"
 
+> [!deviation] 2026-08-13
+> Spec said: one new configuration variable — the permitted session `kid` list.
+> Actually done: **two**, `AUTH_JWT_SESSION_KIDS` and `AUTH_JWT_ADMIN_KID`, with
+> three rejection cases in `TestLoadRejectsBadInput` rather than one. Why: the
+> non-intersection check has nothing to compare against without a concrete admin
+> `kid`, and the API cannot derive one. It never sees `GOTRUE_JWT_KEYS`, and the
+> JWKS cannot supply it — measured on the pinned image, GoTrue rewrites
+> `key_ops` to `["verify"]` on **both** published keys, so the signing marker is
+> invisible from outside. A value fetched over the network could not gate
+> startup in any case: `config.Load` does no I/O. That same probe is what shows
+> the check is load-bearing rather than decorative — both `kid`s are genuinely
+> published, so without it an admin-signed token would resolve against a real
+> public key.
+
+> [!deviation] 2026-08-13
+> Spec said: the edits to existing tests are a closed list of five. Actually
+> done: two more — `TestVerifyRateLimitsUnknownKeyIDRefresh` and
+> `TestRateLimitedUnknownKeyIDIsStillTheCallersProblem` had their junk `kid`s
+> added to the permitted list. Why: both exist to exercise the key resolver's
+> rate limiting, and the new check sits **before** resolution, so without
+> pre-permitting they would have gone green without ever reaching the path they
+> are named for — passing for the wrong reason. Confirmed by mutation that each
+> still reaches it: forcing the limiter to `rate.Inf` reddens the first, and
+> forcing `classifyKeyFailure` down the outage branch reddens the second.
+
 ### step-2: Contract tests for GoTrue behaviours
 
 The five measured behaviours are pinned by tests against real GoTrue: the admin
@@ -304,6 +328,20 @@ A comment on the spot explains why this is a load-bearing control: `POST /recove
 is public, and `auth.users.confirmation_token` is the credential.
 todoist: "6h9JQ3Gp3Vg2xwjH"
 
+> [!deviation] 2026-08-14
+> The step describes only the walk. Two things outside its text were needed to
+> write it, both in the test harness and neither touching the access model:
+> - testsupport.StartGoTrueOn (and the prepareForGoTrue split behind it),
+>   because the chain's roles and GoTrue's relations must be in one catalogue
+>   for "no access to auth" to be a question Postgres can answer. GoTrue in the
+>   harness already existed for step-2.
+> - TestAlienRolesHoldNothingInTheApplicationSchema now plants service_role only
+>   when it is missing and drops it only when it planted it. Roles are cluster
+>   objects and the GoTrue harness creates the same Supabase names, so the bare
+>   CREATE ROLE failed with 42710 once an identity provider ran first in the
+>   same test binary, and an unconditional DROP would take the role out from
+>   under the next one. The assertion is unchanged.
+
 ### step-4: The ban on `role='admin'` from the request path, and the actor from the principal
 
 The service-path policy on `profiles` gains
@@ -316,6 +354,31 @@ Tests: an attempt to write `role='admin'` through the service path is rejected b
 the database; a handler cannot name somebody else's `uuid`; a path with no human
 writes `actor_job`; an audit row on a doctor's behalf names the doctor.
 todoist: "6h9JQ3VvvxJh45jH"
+
+> [!deviation] 2026-08-14
+> The step names no edits to existing tests, unlike step-1. Several were needed.
+> Most are mechanical consequences of the new signature — call sites moving to
+> WithServiceJob, the audit assertion moving from actor_job to actor_id — and
+> are not recorded here. Three are decisions:
+> - TestNoPolicyBodyNamesAProductRole -> TestNoPolicyBodyDecidesTheCallersRole.
+>   000004's header declares "no policy body here contains the literals
+>   'patient', 'doctor' or 'admin' — a test asserts that", and this step's
+>   WITH CHECK contains two of them. The rule that sentence stood for is that the
+>   *caller's* role is never compared against a value; the new check constrains
+>   the row's value instead. The test now says both halves: the two policies
+>   permitted to name a role at all are declared, and no policy may name one in a
+>   body that also reads a claim. Both halves were mutation-tested. The
+>   correction to 000004's header is written into 000006, since 000004 is
+>   immutable.
+> - TestUnwindingTheChainOneStepAtATimeReachesTheBase asserted that a down
+>   migration strictly reduces the object count. 000006 is the first migration
+>   whose whole content is a rewritten policy, so its down file changes the
+>   schema without changing the count. The witness is now a description of the
+>   schema including every policy's predicate; the count is still asserted in the
+>   direction that still means something, that a rollback does not add.
+> - Two fixtures that seeded an admin profile through the service path (stand()
+>   in identity, seedProfiles() in the database package) now write that row with
+>   the superuser. Their assertions are unchanged.
 
 ### step-5: The `provisioner` component
 
@@ -334,6 +397,24 @@ reason separately — and accepted by GoTrue. A probe against the deployed harne
 public name: no route resolves to `provisioner`.
 todoist: "6h9JQ3gPxrhPFMmH"
 
+> [!deviation] 2026-08-14
+> The step asks for "the manifest and the variables, accounting for the App
+> Platform constraints". No manifest was written.
+> docs/specs/deploy-observability.md carries the criterion "today there is
+> neither a Dockerfile nor an App Platform manifest, and no other spec creates
+> them" and claims both artefacts; writing one here would break that spec's
+> acceptance criterion and add a platform artefact this story has no way to
+> verify. What is written instead: the placement provisioner requires — never
+> the first service, a port of its own rather than 80 or 443, no volumes — in
+> cmd/provisioner/main.go's package doc, and the variables in load(), the
+> loader that fails startup without them, per the project's no-.env.example
+> rule.
+> The probe against the deployed harness's public name is written
+> (scripts/probe/provisioner-is-not-proxied.sh) and has not been run: there is
+> no deployment, and standing one up is SKL-06, a manual blocker. That
+> acceptance criterion is open (⏸ Requires SKL-06), not satisfied, and is the
+> one claim about this component that is stated rather than measured.
+
 ### step-6: The `provisioner` client and the time bounds
 
 The interface is declared by the consumer in `internal/identity`, the implementation
@@ -351,18 +432,60 @@ grep rule forbids mentioning the admin key's variable in `api/cmd/api` and
 `api/internal/**`.
 todoist: "6h9JQ3pfvMFFQ8Xq"
 
-## Open questions
+> [!deviation] 2026-08-14
+> Three things outside the step's own text:
+> - `describeSchema` in `TestUnwindingTheChainOneStepAtATimeReachesTheBase`
+>   now also describes `pg_db_role_setting` for the chain's roles. 000007 is
+>   the first migration that touches no object in the app schema, so without
+>   this its down file could be emptied and the rollback witness would stay
+>   green. Measured both ways.
+> - `httpserver.RequestDeadline` and the middleware carrying it are new. The
+>   step names "the request gets a context deadline" and the acceptance
+>   criteria call it the connection-acquisition budget; nothing set one
+>   before, and the incoming request is where it belongs.
+> - `provisioning.LookupBatch` answers an empty list without calling the
+>   component, which refuses one with a 400. A clinic with no patients yet
+>   is an ordinary state rather than a caller's mistake.
+
+## Открытые вопросы
+
+> [!decision] 2026-08-14 — **all six steps are implemented and merged** (PR #8,
+> `scripts/gate/all.sh` green including the integration suite). The spec stays
+> `approved` rather than going to `done`, because one acceptance criterion is not
+> satisfied and no code can satisfy it: the probe against the deployed harness's
+> public name has never been run, there being no deployment. It reopens with SKL-06
+> — todoist: `6hGwxFFhF9Grp43q`.
+> The component notes were brought to the implemented state on the same day; the
+> proposal is **not** condensed into an ADR yet, because it covers both blocks and
+> `patient-onboarding` is unbuilt.
+
+> [!question] `LookupBatch` does not bound its list. The component contract says
+> 100 identifiers; the timeout ladder was sized against a different figure. The two
+> do not agree, and which one moves is a design decision rather than a patch.
+> todoist: `6hGwxFMW5WJQM6Fq`.
 
 > [!question] The choreography of shared-secret rotation: two current values
 > overlapping — the shape is accepted, but the replacement order (who goes first,
 > how long both are held) is not chosen. Decided at step 5; affects only a RUNBOOK
 > that does not yet exist.
 
-> [!question] Where `provisioner` lives in the repository: `cmd/provisioner` inside
-> the `api` module, or its own module. The first is simpler and shares the platform
-> wiring; the second is more honest about the boundary — a component that must not
-> be able to reach the database will not compile against `pgx`. Decided at step 5; I
-> lean toward the second precisely because of the dependency graph.
+> [!decision] 2026-08-14. `provisioner` lives at **`cmd/provisioner` inside the
+> `api` module** — as step-5's own text already said, and against the lean recorded
+> below it, which is kept for the record. The two places contradicted each other and
+> would have left the module boundary to be settled by whoever wrote the code first.
+>
+> What is given up: the compiler stops being the thing that proves the component
+> cannot reach the database. What holds the boundary instead is step-6's grep rule
+> (`api/cmd/api` and `api/internal/**` may not mention the admin key's variable) plus
+> the absence of any `pgx` import under `cmd/provisioner` — both checked by the gate,
+> neither by the type system. If the boundary is ever broken in review, the answer is
+> to lift `provisioner` into its own module, not to add a third guard.
+>
+> ~~Where `provisioner` lives in the repository: `cmd/provisioner` inside the `api`
+> module, or its own module. The first is simpler and shares the platform wiring; the
+> second is more honest about the boundary — a component that must not be able to
+> reach the database will not compile against `pgx`. I lean toward the second
+> precisely because of the dependency graph.~~
 
 > [!question] The `USERSET` time limits are called a default rather than a barrier.
 > Whether to additionally forbid lifting them — say, with a separate role lacking

@@ -214,6 +214,16 @@ func policyPredicates() map[string]string {
 		anythingRW  = "true | true"
 		ownRow      = "(user_id = app.jwt_subject()) | -"
 		ownRowWrite = "(user_id = app.jwt_subject()) | (user_id = app.jwt_subject())"
+
+		// The one shape in the schema whose body names a product role, and what
+		// it names is the value in the row rather than the caller: the service
+		// path brings a patient or a doctor into being and not an admin. Written
+		// as IN in 000006 and deparsed by Postgres into = ANY.
+		//
+		// USING stays open on the UPDATE side. The service path may still read
+		// and rewrite an admin's row — correcting the name of one is not the
+		// escalation — it may only not produce the value.
+		noAdmin = "(role = ANY (ARRAY['patient'::text, 'doctor'::text]))"
 	)
 
 	// The care team read in one direction or the other. The table being read
@@ -250,9 +260,9 @@ func policyPredicates() map[string]string {
 		"profiles_of_my_specialists":           through("profiles", "provider_id", "patient_id"),
 		"profiles_own_select":                  ownRow,
 		"profiles_own_update":                  ownRowWrite,
-		"profiles_service_insert":              anyWrite,
+		"profiles_service_insert":              "- | " + noAdmin,
 		"profiles_service_read":                anything,
-		"profiles_service_update":              anythingRW,
+		"profiles_service_update":              "true | " + noAdmin,
 		"provider_profiles_admin":              anythingRW,
 		"provider_profiles_of_my_specialists":  through("provider_profiles", "provider_id", "patient_id"),
 		"provider_profiles_own_select":         ownRow,
@@ -489,11 +499,33 @@ func TestEveryPolicyNamesItsRoles(t *testing.T) {
 	}
 }
 
-// The role decision is made by TO and never by comparing a value. A policy body
-// naming a product role is the shape this whole block was rewritten to remove:
-// privileges in Postgres are bound to a role, so a role read from a claim made
-// the escalation closeable neither by a policy nor by a column.
-func TestNoPolicyBodyNamesAProductRole(t *testing.T) {
+// The *caller's* role is decided by TO and never by comparing a value. A policy
+// body that read a role from a claim is the shape this whole block was rewritten
+// to remove: privileges in Postgres are bound to a role, so an escalation there
+// is closeable neither by a policy nor by a column.
+//
+// The literals are not forbidden outright any more, because 000006 has one
+// legitimate use for them — profiles' service-path WITH CHECK, which names the
+// closed set of roles the service path may write into the row. That is a
+// constraint on the value, not a decision about the caller, and the two are told
+// apart by two rules rather than by an exemption: the policies allowed to name a
+// role at all are declared here, and no policy may name one in the same body
+// that reads a claim.
+//
+// The second rule is what an exemption alone would lose. Adding
+// `AND current_setting('request.jwt.claims') ... = 'doctor'` to one of the two
+// declared policies is the original mistake written inside the one place the
+// literals are permitted.
+func TestNoPolicyBodyDecidesTheCallersRole(t *testing.T) {
+	// A third name appearing here is a policy that started deciding something,
+	// and it fails until somebody writes down which.
+	mayNameARole := []string{"profiles_service_insert", "profiles_service_update"}
+
+	// How a policy reaches the caller's identity: the pinned helper, or the
+	// connection settings it is built on. Either one beside a product-role
+	// literal is a role compared against a claim.
+	claimReaders := []string{"app.jwt_subject()", "current_setting("}
+
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.SuperuserURL)
 
@@ -508,27 +540,43 @@ func TestNoPolicyBodyNamesAProductRole(t *testing.T) {
 	}
 	defer rows.Close()
 
+	var naming []string
 	for rows.Next() {
 		var name, body string
 		if err := rows.Scan(&name, &body); err != nil {
 			t.Fatalf("scanning: %v", err)
 		}
 
+		named := false
 		for _, literal := range []string{"'patient'", "'doctor'", "'admin'"} {
-			if strings.Contains(body, literal) {
-				t.Errorf("policy %s compares against %s; the role is decided by TO", name, literal)
+			if !strings.Contains(body, literal) {
+				continue
 			}
+			named = true
+
+			for _, reader := range claimReaders {
+				if strings.Contains(body, reader) {
+					t.Errorf("policy %s names %s in a body that reads %s; "+
+						"the caller's role is decided by TO", name, literal, reader)
+				}
+			}
+		}
+
+		if named {
+			naming = append(naming, name)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterating: %v", err)
 	}
+
+	if !slices.Equal(naming, mayNameARole) {
+		t.Errorf("the policies naming a product role are %v, want exactly %v", naming, mayNameARole)
+	}
 }
 
-// functionRegistry: owner, security, the value of the pinned search_path, and
-// who may execute. A SECURITY DEFINER function with an unpinned search_path is
-// the classic way a schema hands its owner's rights to whoever can create a
-// temporary object.
+// A SECURITY DEFINER function with an unpinned search_path is the classic way a
+// schema hands its owner's rights to whoever can create a temporary object.
 func TestTheFunctionsAreTheOnesDeclared(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.SuperuserURL)

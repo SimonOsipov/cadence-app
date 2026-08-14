@@ -299,19 +299,34 @@ beside it. This is the same class as the two disconnected vial datasets — two
 parts of one prototype disagreeing — and the resolution is the same: the data
 wins.
 
-## The meal hero arrives without its suggestion
+## ~~The meal hero arrives without its suggestion~~ — the entry was wrong, 2026-08-14
 
-**What the prototype does:** `MealHero` picks a dish from the recipe library via
-`suggestNextMeal(meals, now)` and titles the card with it.
+**What this entry used to claim:** that `MealHero` picks a dish from the recipe
+library via `suggestNextMeal(meals, now)`, and that porting the suggestion would
+mean seeding a parallel set of dishes.
 
-**What we do:** render the half that is arithmetic — «Осталось 960 ккал · 80 г
-белка», computed against the day's targets — plus the two ways out.
+**What the prototype actually does:** `suggestNextMeal`
+(`mobile/src/features/meal/data.ts:244-253`) returns one of four hardcoded
+prompts chosen by `meals.length` — «Начнём день / Завтрак? / Целимся в 35 г
+белка.» and three more. It reads no recipe, and the `now` it takes is parsed
+into an `hour` that the next line discards with `void hour`.
 
-**Why:** the library and the rule that picks from it belong to the nutrition
-section, step 8 of the block. Porting a suggestion with no recipes behind it
-would mean seeding a second, parallel set of dishes — which is exactly the
-prototype mistake §03 spends its reconciliation table undoing. Completed when
-step 8 lands; recorded here so it is not mistaken for an oversight.
+**What we do:** port it as it is — four states by meal count
+(`MealHero.kt:63-70`), no dish named.
+
+**What we do differently, and deliberately:** the remaining line is restructured.
+The prototype draws one 13sp paragraph, «{ккал} ккал · {белок} г белка осталось.
+{meta}» (`TodayScreen.tsx:783-800`); we promote the numbers to a 22sp «Осталось …
+ккал · … г белка» and put the suggestion's `meta` on its own body line beneath
+(`MealHero.kt:109-118`). The promotion came with the first five-section port
+(2026-08-10, `35dfe30`); the nutrition spec's own decision was that it **stays**
+as it is, and step 14 added the `meta` line beneath it. `TodayScreenTest.kt:320`
+pins the wording («Осталось 960 ккал · 80 г белка»).
+
+**Why this is recorded rather than deleted:** the claim survived two ports and
+was cited as the reason a whole card was left unbuilt. The register is read as
+evidence about the prototype; an entry that misdescribes it is worse than a
+missing one, so the correction stays visible.
 
 ## The `:shared`-is-linked proof moves off the placeholder
 
@@ -356,8 +371,11 @@ rather than the prototype's four category dots; the band names the week but not
 is left unwired, so no day is tappable from the app. Closed by a later pass over
 this screen; the day sheet needs the dose wizard (step 5) to have anywhere to go.
 
-**Today.** `TodayMeals` draws totals only — the prototype lists the last three
-meals with name, time, item count and kcal, plus an empty state. The macro legs
+**Today.** ~~`TodayMeals` draws totals only — the prototype lists the last three
+meals with name, time, item count and kcal, plus an empty state.~~ — paid
+2026-08-13 (step 14): `TodayMeals` now draws the last three logged meals with
+name, time, item count and kcal, and the empty invitation when there are none
+(`MealHero.kt:145-164,235`). The macro legs
 are relabelled P/C/F → Б/Ж/У and reordered. `MealHero` uses the paler `sand100`
 and turns two pills into text links, with «Записать приём пищи» shortened to
 «Записать приём» and «Из рецепта» to «Рецепты». The reorder warning sits at the
@@ -368,6 +386,24 @@ site from «Записано · правый живот, ротация.».
 
 None of these is a decision anyone made; they are what a port leaves behind when
 it is measured by tests rather than by a side-by-side run. Step 11 is that run.
+
+**The dropped timestamp, revisited 2026-08-14.** It stays dropped, and now for a
+stated reason rather than by omission. One thing is missing, and it is a
+contract, not a label: `TodaySummary` (`TodayRepository.kt:22-51`) carries
+`suggestedSite` and `doseLoggedToday` but neither the hour of today's injection
+nor the site it went into. No contract the «Сегодня» screen reads returns
+either; the hour is exposed nowhere at all — no repository hands back a
+`DoseEvent` — while a logged site survives only per vial, on `VialDose`
+(`VialDetail.kt:10,42`), which is why the sheet two sentences down has one to
+draw. Adding the field belongs to the dosing surface, not to the nutrition port
+that walked past it.
+
+The Russian site names are **not** an obstacle, contrary to what an earlier
+version of this paragraph claimed: `CadenceBodyZone` (`CadenceBodyMap.kt:49-74`)
+carries a `labelRu` for all ten values of `InjectionSite` (`Dosing.kt:14-27`),
+`BodyMapTest` pins the mapping as total against `InjectionSite.entries`, and two
+screens already render a site through it (`DoseSteps.kt:411`,
+`VialDetailSheet.kt:140`).
 
 ## The rotation suggestion is computed, not seeded
 
@@ -949,3 +985,223 @@ Compose Multiplatform 1.11.1 задаёт его через variant-API AGP дл
 покрытие кириллицы в `cmap` — он ничего не говорит о том, применилось ли
 семейство. И гоняется он только на iOS-таргете: у `composeApp` host-тестов на
 Android нет по решению в `build.gradle.kts`.
+
+## Питание: фото и голос показывают заготовку, а порт — нет
+
+**Что делает прототип:** `onCapture` (`LogMealScreen.tsx:525-529`) и удержание
+кнопки голоса (`:641-646`) через 1100 мс отдают `SAMPLE_PARSES[1]` и
+`SAMPLE_PARSES[2]` — тот же разбор, что и текст, только без текста. Камера и
+микрофон не задействованы.
+
+**Что делаем мы:** оба режима видны и помечены «Скоро», а внутри — одна строка,
+называющая выход: «Распознавание снимка / голоса пока не работает — опишите еду
+текстом».
+
+**Почему:** инвариант nutrition №5 запрещает подставлять заготовленный результат
+вместо распознавания. Прототип рисует успех там, где ничего не произошло; порт
+этого не повторяет. Решение записано в спеке от 2026-08-11.
+
+## Питание: ручного ввода позиции нет ни у прототипа, ни у порта
+
+**Что делает прототип:** позиции появляются только из разбора. Ни одного
+элемента «добавить позицию» в `LogMealScreen.tsx` нет — их можно править
+(граммы) и удалять, но не заводить.
+
+**Что делаем мы:** то же самое.
+
+**Почему это записано:** инвариант nutrition №4 говорит про ручной ввод, и до
+M9 он **неизмерим** — не потому, что порт что-то упустил, а потому, что
+поверхности, на которой это проверяется, не существует ни у одной из сторон.
+
+## Питание: время приёма берётся из часов, а не из трёх литералов
+
+**Что делает прототип:** три литерала, не два. Шапка мастера прибита целиком —
+«08:42 · вс 24 мая» (`LogMealScreen.tsx:133`), то есть и время, и дата. Запись
+приёма из мастера отдаёт `time: '08:42'` (`:365`). Приём из рецепта получает
+`DAY_STATES[DAY_STATE].now`, то есть `'13:14'` для дневного состояния
+(`AppState.tsx:134`, `meal/data.ts:165`) — два разных фальшивых времени в одной
+сессии.
+
+**Что делаем мы:** приём штампуется часами (`MockNutritionRepository.log`
+читает `clock.now()` один раз — и для записи, и для дневных итогов), а мастер
+рисует то же чтение в своей шапке.
+
+**Почему:** дата и время — данные о пациенте; литерал здесь не «косметика для
+демо», а запись, которая переживёт демо. Часы у приложения закреплены отдельно
+(см. «The demo runs on a fixed day»).
+
+## Питание: неделя считается из сида, а не из шести констант
+
+**Что делает прототип:** `weekHistory = [1685, 1742, 1610, 1820, 1455, 1690,
+totals.kcal]` и такой же массив по белку (`NutritionScreen.tsx:407-410`) —
+шесть литералов и седьмой день из настоящих итогов.
+
+**Что делаем мы:** сеем недельную историю приёмов литералами от `DEMO_NOW` и
+считаем колонки из неё (`NutritionRepository.week`).
+
+**Почему:** иначе «средний белок за неделю» — это среднее пяти выдуманных чисел
+и одного настоящего, то есть число, которое нельзя ни проверить, ни объяснить
+пациенту.
+
+## Питание: коуч вычисляется и не рисуется — ни у прототипа, ни у нас
+
+**Что делает прототип:** `appendMeal` зовёт `pickMealCoach(...)` и кладёт
+результат в `mealCoach` на контексте (`AppState.tsx:113`, `:79`, `:185`). Ни
+один экран его не читает: во всём `mobile/src` три упоминания, и все три внутри
+`AppState.tsx`.
+
+**Что делаем мы:** не портируем — переносить нечего.
+
+**Почему это записано:** `MEAL_COACH_LINES` в `meal/data.ts` выглядит как
+готовая фича, и следующий читатель прототипа решит, что порт её потерял.
+
+## Питание: «⋯», «N из 4» и «↑ 6 г к прошлой» — три надписи без источника
+
+**Что делает прототип:**
+
+- `IconBtn name="ellipsis-horizontal"` в шапке «Питания»
+  (`NutritionScreen.tsx:435`) — единственная кнопка в этой строке без
+  `onPress`; соседний шеврон его имеет.
+- `{meals.length} из 4` (`:544`) — четвёрка нигде не задана: ни в целях, ни в
+  протоколе, ни в §03.
+- `<Pill tone="forest">↑ 6 г к прошлой</Pill>` (`:642`) — литерал; сравнения с
+  прошлой неделей у прототипа нет.
+
+**Что делаем мы:** «⋯» не рисуем, «N из 4» не рисуем, пилюлю не рисуем.
+
+**Почему:** каждая из трёх — утверждение о пациенте, за которым нет данных.
+Нарисовать их означало бы придумать четвёртую цель, дельту к прошлой неделе и
+меню, которого нет.
+
+## Рецепты: у строки конструктора появился потолок граммов
+
+**Что делает прототип:** `setGrams` строки ингредиента зажимает только снизу —
+`Math.max(5, g)` (`RecipeBuilderScreen.tsx:383`). Сверху ограничения нет.
+
+**Что делаем мы:** те же 5…600 с шагом 10, что и в листе выбора ингредиента.
+
+**Почему:** лист и строка правят одну и ту же величину; разные границы у двух
+входов в одно поле — это две разные модели одного факта. 600 г взяты из листа,
+где потолок у прототипа есть.
+
+## Рецепты: `cookMin` пишется null, а не нулём
+
+**Что делает прототип:** при сохранении рецепта `cookMin: 0`
+(`RecipeBuilderScreen.tsx:400`), хотя форма спрашивает только одно время.
+
+**Что делаем мы:** `prepMin` = введённое время, `cookMin = null`.
+
+**Почему:** ноль утверждает «готовится ноль минут». Null говорит «не
+спрашивали» — и это правда о форме.
+
+## Рецепты: фильтры — прокручиваемые чипы, а не сегмент-контрол
+
+**Что делает прототип:** два горизонтальных `ScrollView` с пилюлями по ширине
+содержимого (`RecipesScreen.tsx:279-308`).
+
+**Что делаем мы:** так же — хотя `CadenceSegmented` уже существовал и напрашивался.
+
+**Почему это записано:** замер, а не вкус, и с шириной, при которой он взят
+(`RecipesScreen.kt:329-335`). При строке 358dp — это 390pt-телефон минус
+по 16dp с каждой стороны — сегмент-контрол отводит «Мягкие для желудка» 72dp при
+естественных 132dp; при 343dp (375pt, iPhone SE) обрезаются ещё «Завтрак» и
+«Перекус». Три значения из девяти нечитаемы на обычных телефонах. Фильтр, чьи
+значения нельзя прочитать, сломан, а не просто некрасив.
+
+## Рецепты: граммы сбрасываются только при выборе **другого** продукта
+
+**Что делает прототип:** `pick` зовёт `setGrams(100)` безусловно
+(`RecipeBuilderScreen.tsx:130-132`), поэтому повторное нажатие на уже выбранный
+продукт тоже сбрасывает набранные граммы.
+
+**Что делаем мы:** сброс только при смене продукта.
+
+**Почему:** повторное нажатие на выбранную строку — не выбор нового продукта, а
+подтверждение прежнего; терять на нём набранные 250 г нечем оправдать. Обе
+стороны закреплены тестами, чтобы «улучшение» не уехало обратно.
+
+## Рецепты: переключатель «На порцию / Всё» стоит своей строкой
+
+**Что делает прототип:** переключатель сидит справа от надзаголовка «Макросы»
+(`RecipeDetailScreen.tsx:236-272`).
+
+**Что делаем мы:** `CadenceSegmented` во всю ширину под надзаголовком; плитки
+меток героя — `palette.paper` при альфе 0,7 вместо прототипных
+`rgba(255,255,255,.5)`.
+
+**Почему:** спека называет `CadenceSegmented` прямо, а он по построению делит
+ширину поровну; ~52dp по высоте здесь ничего не ломают. Сырой белый не
+переносится по правилу «только токены» — по всему `screens/` `grep "Color(0x"`
+не находит ничего.
+
+## Рецепты: степперы конструктора стоят один под другим
+
+**Что делает прототип:** «Порций» и «Время, мин» — две карточки в ряд
+(`RecipeBuilderScreen.tsx:585-647`), а степпер граммов в строке ингредиента
+стоит рядом с названием и удалением (`:716-763`).
+
+**Что делаем мы:** обе карточки одна под другой, степпер граммов — на своей
+строке под названием. Панель «Сохранить рецепт» — сплошной `palette.bg` без
+градиентной заливки прототипа (`:897-928`).
+
+**Почему:** замер при 343dp. `CadenceStepper` — это две кнопки по 52dp вокруг
+числа с отступами 20dp, то есть ≈150dp минимум; половина экрана даёт карточке
+~130dp, а строка «имя + степпер + удаление» — ещё меньше. В шаге 11 такая же
+раскладка расплющила кнопку «плюс» до 2dp. Градиент не переносится по той же
+причине, что и в карточке рецепта: сплошная подложка уже принята для нижних
+панелей порта.
+
+## Питание: у позиции появилось число калорий — у прототипа оно пустое
+
+**Что делает прототип:** строка разобранной позиции (`ParsedItem`,
+`LogMealScreen.tsx:817-830`) рисует правым столбцом мо́но-текст 16sp, внутри
+которого **только пробелы**, и следом подпись «ккал». Три бейджа макросов и
+граммы у позиции есть, калорий — нет: привязка не написана. Ошибка не видна в
+прототипе, потому что слово «ккал» на месте и колонка выглядит занятой.
+
+**Что делаем мы:** каждая позиция рисует свои калории
+(`LogMealItemsList.kt:192`), и у каждой строки свой тег, чтобы тест мог
+потребовать два разных числа у двух разных позиций
+(`logMealItemKcalTag(0) != logMealItemKcalTag(1)`).
+
+**Почему это записано:** дефект прототипа, а не решение — по §08 такие не
+переносятся. Отмечено отдельно, потому что «пустая колонка» легко читается как
+намеренная сдержанность вёрстки, и следующий читатель прототипа воспроизведёт
+её обратно.
+
+## Рецепты: калории и белок строки — один текст, а не два цветных
+
+**Что делает прототип:** строка рецепта рисует два мо́но-текста подряд —
+калории в `pal.ink2` и белок в `C.forest700`, между ними точка 3px
+(`RecipesScreen.tsx:107-117`).
+
+**Что делаем мы:** один текст «{ккал} ккал · {белок} г белка» в `palette.ink2`
+(`RecipeRow.kt:221-223`).
+
+**Почему:** цвет здесь ничего не кодирует — он не отличает «хватает» от «мало»,
+это просто акцент на второй половине составного числового предложения. Тот же
+выбор уже сделан на строке остатка `MealHero` и на мета-строке карточки приёма;
+третий способ рисовать одно и то же был бы расхождением внутри порта.
+
+## ~~Питание: футер мастера прокручивается~~ — оплачено 2026-08-14
+
+**Что делает прототип:** «Сохранить · {N} ккал» лежит поверх содержимого —
+`position: 'absolute', bottom: 0` внутри `LinearGradient`
+(`LogMealScreen.tsx:344-394`), а прокрутка резервирует под него
+`paddingBottom: 130` (`:99`). Кнопка видна всегда.
+
+**Что делали мы до 14.08:** футер был последним ребёнком прокручиваемой колонки,
+поэтому при разобранном приёме из пяти позиций уходил ниже сгиба — главное
+действие экрана приходилось искать прокруткой. Решения такого никто не принимал;
+нашло ревью шага 15.
+
+**Что делаем теперь:** `Box` с прокруткой под фиксированной панелью, колонка
+кончается зазором `FOOTER_CLEARANCE`, панель красит свой фон — иначе позиции
+читались бы сквозь неё. `theSaveFooterStaysOnScreenOnceTheParseFillsTheList`
+меряет низ панели при экране 375×667 по нескрытой геометрии (`positionInRoot +
+size`): на клипованных `boundsInRoot` такая проверка не может упасть в принципе.
+Второй тест держит высоту панели внутри зазора.
+
+**Что остаётся расхождением:** градиентной заливки под панелью нет — сплошной
+`palette.bg`, как на нижних панелях карточки рецепта и конструктора. Три
+одинаковые роли рисуются одним способом.

@@ -224,8 +224,14 @@ func normalise(t *testing.T, value map[string]any) string {
 	return string(again)
 }
 
-// seedProfiles writes one profile per product role, the only way there is:
-// through the service path.
+// seedProfiles writes one profile per product role, each by the path that
+// actually creates it.
+//
+// A patient and a doctor come through the service path, which is the only way
+// they exist. An admin does not: since 000006 the service policies on profiles
+// refuse the value, so the row is written by the superuser. The hook has to keep
+// answering for admins either way, and where the row came from is not a fact it
+// can see.
 func seedProfiles(t *testing.T, db *testsupport.Database) {
 	t.Helper()
 
@@ -237,8 +243,15 @@ func seedProfiles(t *testing.T, db *testsupport.Database) {
 		t.Fatalf("assuming the service role: %v", err)
 	}
 
+	admin := testsupport.Connect(t, db.SuperuserURL)
+
 	for subject, role := range provisioned {
-		if _, err := service.Exec(t.Context(), `
+		writer := service
+		if role == "admin" {
+			writer = admin
+		}
+
+		if _, err := writer.Exec(t.Context(), `
 			INSERT INTO app.profiles (user_id, role, full_name, timezone)
 			VALUES ($1, $2, 'Марина Крылова', 'Europe/Moscow')
 		`, subject, role); err != nil {

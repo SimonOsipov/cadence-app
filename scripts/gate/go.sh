@@ -35,6 +35,43 @@ go vet ./...
 echo "==> sql authorship"
 go run ./cmd/sqlauthorship -skip testsupport ./internal ./cmd
 
+# The trust boundary, and the only guard left holding it now that provisioner
+# shares this module (2026-08-14). GoTrue accepts an admin token signed by any
+# key it is configured with, so the process holding that key can create, delete
+# and re-password any account — which is why it is a component of its own, and
+# why the API may not so much as read the variable it arrives in.
+#
+# A grep and not a linter: what has to be absent is a string, and it can enter
+# through os.Getenv, a manifest, a comment that invites the next person to add
+# it, or a log line naming the variable.
+#
+# The control below is not optional. If provisioner renames the variable, this
+# check would go on searching for a string nothing spells any more — green, and
+# watching nothing. That failure is silent, which is the one a gate cannot have.
+#
+# It reads the component's source and not its tests, because a rename lands in
+# config.go while a fixture keeps the old spelling for a while: measured, that
+# is exactly the state in which a whole-directory grep stays green and this rule
+# is already watching a dead string.
+echo "==> the admin key stays out of the API"
+admin_key_variable=PROVISIONER_GOTRUE_ADMIN_JWK
+
+if ! grep -rq --include='*.go' --exclude='*_test.go' "$admin_key_variable" cmd/provisioner; then
+    echo "cmd/provisioner does not mention $admin_key_variable: either the component stopped" >&2
+    echo "reading the admin key, or the variable was renamed and the rule below now" >&2
+    echo "searches for a string nothing uses. Fix this check before trusting it." >&2
+    exit 1
+fi
+
+if grep -rn "$admin_key_variable" cmd/api internal; then
+    echo >&2
+    echo "the admin key's variable is named above, inside the API." >&2
+    echo "GoTrue admits an admin token signed by any configured key, so a process that can" >&2
+    echo "read this variable can create, delete and re-password every account in the clinic." >&2
+    echo "It belongs to cmd/provisioner alone; the API asks that component instead." >&2
+    exit 1
+fi
+
 echo "==> golangci-lint"
 if command -v golangci-lint >/dev/null 2>&1; then
     golangci-lint run ./...
