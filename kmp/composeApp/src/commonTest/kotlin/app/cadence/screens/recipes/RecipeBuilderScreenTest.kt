@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -188,15 +189,152 @@ class RecipeBuilderScreenTest {
             onNodeWithTag(recipeBuilderTagTag(RecipeTag.PROTEIN)).assertIsNotSelected()
             onNodeWithTag(recipeBuilderTagTag(RecipeTag.QUICK)).assertIsSelected()
         }
+
+    /** The step's own second named test: the empty state is not the only door to the sheet. */
+    @Test
+    fun theSheetStillOpensOnceTheEmptyStateIsGone() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch()) } }
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_EMPTY_TAG).assertExists()
+            addIngredient(CHICKEN)
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_EMPTY_TAG).assertDoesNotExist()
+
+            openIngredientSheet()
+
+            onNodeWithTag(CADENCE_INGREDIENT_PICKER_TAG).assertExists()
+            addIngredient(RICE, alreadyOpen = true)
+
+            onNodeWithTag(recipeBuilderIngredientTag(1), useUnmergedTree = true)
+                .assert(hasAnyDescendant(hasText("Рис", substring = true)))
+        }
+
+    /** The empty state is itself a door, as the prototype draws it (`:652-671`). */
+    @Test
+    fun theEmptyStateOpensTheSheet() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch()) } }
+            waitForIdle()
+
+            onNodeWithText("Добавьте первый ингредиент").assertExists()
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_EMPTY_TAG).performClick()
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_INGREDIENT_PICKER_TAG).assertExists()
+        }
+
+    @Test
+    fun removingARowLeavesItsNeighbourAlone() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch()) } }
+            waitForIdle()
+
+            addIngredient(CHICKEN)
+            // Rice at 200 g, chicken at 100: a delete that drops the wrong row, or that
+            // keeps the name but re-reads row 0's grams, cannot survive both assertions.
+            addIngredient(RICE, gramsTaps = 10)
+
+            onNodeWithTag(recipeBuilderIngredientRemoveTag(0)).performClick()
+            waitForIdle()
+
+            onNodeWithTag(recipeBuilderIngredientTag(0), useUnmergedTree = true)
+                .assert(hasAnyDescendant(hasText("Рис", substring = true)))
+            onNodeWithTag(recipeBuilderIngredientTag(1), useUnmergedTree = true).assertDoesNotExist()
+            onNodeWithText("Курица").assertDoesNotExist()
+            stepperValue(recipeBuilderIngredientTag(0)).assertShows("200")
+        }
+
+    /**
+     * Three numbers, none of which coincide: 100 g of chicken across 2 servings is 83 kcal,
+     * across 1 serving 165, and 200 g across 1 serving 330. A card that ignores servings, or
+     * ignores grams, or reads the whole-recipe total instead of the per-serving one, lands
+     * on the wrong one of these every time.
+     */
+    @Test
+    fun thePerServingCardFollowsBothGramsAndServings() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch()) } }
+            waitForIdle()
+
+            addIngredient(CHICKEN)
+            perServingCard().assert(hasAnyDescendant(hasText("83")))
+
+            tap(CADENCE_RECIPE_BUILDER_SERVINGS_TAG, CADENCE_STEPPER_MINUS_TAG)
+            perServingCard().assert(hasAnyDescendant(hasText("165")))
+
+            tap(recipeBuilderIngredientTag(0), CADENCE_STEPPER_PLUS_TAG, times = 10)
+            perServingCard().assert(hasAnyDescendant(hasText("330")))
+        }
+
+    /** The card is not drawn at all until there is something to price (`:771`). */
+    @Test
+    fun thereIsNoPerServingCardBeforeTheFirstIngredient() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch()) } }
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_PER_SERVING_TAG).assertDoesNotExist()
+            addIngredient(CHICKEN)
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_PER_SERVING_TAG).assertExists()
+        }
+
+    @Test
+    fun aRowsGramsStepperStopsAt5And600() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch()) } }
+            waitForIdle()
+
+            addIngredient(CHICKEN)
+            val row = recipeBuilderIngredientTag(0)
+            stepperValue(row).assertShows("100")
+
+            tap(row, CADENCE_STEPPER_MINUS_TAG, times = 10)
+            stepperValue(row).assertShows("5")
+            tap(row, CADENCE_STEPPER_MINUS_TAG)
+            stepperValue(row).assertShows("5")
+
+            tap(row, CADENCE_STEPPER_PLUS_TAG, times = 60)
+            stepperValue(row).assertShows("600")
+            tap(row, CADENCE_STEPPER_PLUS_TAG)
+            stepperValue(row).assertShows("600")
+        }
+
+    /** The step's own fourth named test. */
+    @Test
+    fun theLastStepCannotBeRemoved() =
+        runComposeUiTest {
+            setContent { CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch()) } }
+            waitForIdle()
+
+            onNodeWithTag(recipeBuilderStepTag(0), useUnmergedTree = true).assertExists()
+            onNodeWithTag(recipeBuilderStepRemoveTag(0)).assertDoesNotExist()
+
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_ADD_STEP_TAG).performClick()
+            waitForIdle()
+
+            onNodeWithTag(recipeBuilderStepRemoveTag(0)).assertExists()
+            onNodeWithTag(recipeBuilderStepRemoveTag(1)).performClick()
+            waitForIdle()
+
+            onNodeWithTag(recipeBuilderStepTag(1), useUnmergedTree = true).assertDoesNotExist()
+            onNodeWithTag(recipeBuilderStepRemoveTag(0)).assertDoesNotExist()
+        }
 }
 
-/** Opens the picker sheet from whichever control is currently on screen, picks [ingredient], adds it. */
+/**
+ * Opens the picker sheet, picks [ingredient] at `100 + 10 × gramsTaps` grams, adds it — and
+ * asserts the row actually landed. Without that last check every «must not save» test in
+ * this file would pass just as happily against a sheet that added nothing at all.
+ */
 @OptIn(ExperimentalTestApi::class)
 internal fun ComposeUiTest.addIngredient(
     ingredient: Ingredient,
     gramsTaps: Int = 0,
+    alreadyOpen: Boolean = false,
 ) {
-    openIngredientSheet()
+    val rowsBefore = ingredientRowCount()
+    if (!alreadyOpen) openIngredientSheet()
     onNodeWithTag(ingredientPickerRowTag(ingredient.id), useUnmergedTree = true).performClick()
     waitForIdle()
     // Scoped to the sheet's own footer: the builder underneath keeps its steppers
@@ -204,7 +342,30 @@ internal fun ComposeUiTest.addIngredient(
     tap(CADENCE_INGREDIENT_PICKER_FOOTER_TAG, CADENCE_STEPPER_PLUS_TAG, times = gramsTaps)
     onNodeWithTag(CADENCE_INGREDIENT_PICKER_ADD_TAG).performClick()
     waitForIdle()
+
+    assertEquals(
+        rowsBefore + 1,
+        ingredientRowCount(),
+        "«Добавить» did not put ${ingredient.nameRu} into the builder",
+    )
 }
+
+/** Rows are indexed from zero and drawn in order, so the first missing index is the count. */
+@OptIn(ExperimentalTestApi::class)
+internal fun ComposeUiTest.ingredientRowCount(): Int {
+    var count = 0
+    while (onAllNodesWithTag(recipeBuilderIngredientTag(count), useUnmergedTree = true)
+            .fetchSemanticsNodes()
+            .isNotEmpty()
+    ) {
+        count++
+    }
+    return count
+}
+
+@OptIn(ExperimentalTestApi::class)
+internal fun ComposeUiTest.perServingCard() =
+    onNodeWithTag(CADENCE_RECIPE_BUILDER_PER_SERVING_TAG, useUnmergedTree = true)
 
 @OptIn(ExperimentalTestApi::class)
 internal fun ComposeUiTest.openIngredientSheet() {

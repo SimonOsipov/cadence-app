@@ -139,10 +139,12 @@ fun RecipeBuilderScreen(
     var servings by remember { mutableStateOf(DEFAULT_SERVINGS) }
     var timeMin by remember { mutableStateOf(DEFAULT_TIME_MIN) }
     val rows = remember { mutableStateListOf<RecipeIngredient>() }
+    val steps = remember { mutableStateListOf("") }
     var pickerOpen by remember { mutableStateOf(false) }
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    val perServing = rows.toList().perServingOf(ingredients, servings).toMacros()
+    val perServingTenths = rows.toList().perServingOf(ingredients, servings)
+    val perServing = perServingTenths.toMacros()
     val draft =
         RecipeDraft(
             name = name.trim().ifBlank { null },
@@ -199,6 +201,37 @@ fun RecipeBuilderScreen(
                     actionTag = CADENCE_RECIPE_BUILDER_ADD_INGREDIENT_TAG,
                     onAction = { pickerOpen = true },
                     modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(top = CadenceSpacing.md),
+                )
+
+                RecipeBuilderIngredients(
+                    rows = rows,
+                    ingredients = ingredients,
+                    onGrams = { index, grams -> rows[index] = rows[index].copy(grams = grams) },
+                    onRemove = { index -> rows.removeAt(index) },
+                    onAdd = { pickerOpen = true },
+                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+                )
+
+                if (rows.isNotEmpty()) {
+                    RecipeBuilderPerServingCard(
+                        perServing = perServingTenths,
+                        modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(bottom = CadenceSpacing.sm),
+                    )
+                }
+
+                RecipeBuilderSectionHeading(
+                    title = "Приготовление",
+                    action = "Шаг",
+                    actionTag = CADENCE_RECIPE_BUILDER_ADD_STEP_TAG,
+                    onAction = { steps.add("") },
+                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(top = CadenceSpacing.md),
+                )
+
+                RecipeBuilderSteps(
+                    steps = steps,
+                    onStep = { index, text -> steps[index] = text },
+                    onRemove = { index -> if (steps.size > 1) steps.removeAt(index) },
+                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
                 )
 
                 Spacer(Modifier.height(SAVE_BAR_CLEARANCE + navigationBarInset))
