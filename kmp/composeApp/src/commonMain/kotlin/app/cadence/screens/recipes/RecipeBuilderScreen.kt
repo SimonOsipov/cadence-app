@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -132,33 +133,11 @@ fun RecipeBuilderScreen(
     onCancel: () -> Unit = { },
     onSave: (RecipeDraft) -> Unit = { },
 ) {
-    val palette = Cadence.palette
-    var name by remember { mutableStateOf("") }
-    var mealType by remember { mutableStateOf(MealType.LUNCH) }
-    val tags = remember { mutableStateListOf<RecipeTag>() }
-    var servings by remember { mutableStateOf(DEFAULT_SERVINGS) }
-    var timeMin by remember { mutableStateOf(DEFAULT_TIME_MIN) }
-    val rows = remember { mutableStateListOf<RecipeIngredient>() }
-    val steps = remember { mutableStateListOf("") }
+    val form = remember { RecipeBuilderFormState() }
     var pickerOpen by remember { mutableStateOf(false) }
-    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val draft = form.draft(ingredients)
 
-    val perServingTenths = rows.toList().perServingOf(ingredients, servings)
-    val perServing = perServingTenths.toMacros()
-    val draft =
-        RecipeDraft(
-            name = name.trim().ifBlank { null },
-            mealType = mealType,
-            tags = tags.toList(),
-            servings = servings,
-            prepMin = timeMin,
-            cookMin = null,
-            dek = "${formatInteger(perServing.proteinG)} г белка · ${formatInteger(perServing.kcal)} ккал на порцию.",
-            ingredients = rows.toList(),
-            steps = emptyList(),
-        )
-
-    Box(modifier.fillMaxSize().background(palette.bg)) {
+    Box(modifier.fillMaxSize().background(Cadence.palette.bg)) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
             RecipeBuilderHeader(onCancel)
             CadenceHairline()
@@ -170,71 +149,13 @@ fun RecipeBuilderScreen(
                     .verticalScroll(rememberScrollState())
                     .testTag(CADENCE_RECIPE_BUILDER_TAG),
             ) {
-                CadenceTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    placeholder = NAME_PLACEHOLDER,
-                    singleLine = true,
-                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
-                    fieldModifier = Modifier.testTag(CADENCE_RECIPE_BUILDER_NAME_TAG),
+                RecipeBuilderTopFields(form)
+                RecipeBuilderContents(form, ingredients, onAddIngredient = { pickerOpen = true })
+                Spacer(
+                    Modifier.height(
+                        SAVE_BAR_CLEARANCE + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+                    ),
                 )
-
-                RecipeBuilderTypeAndTags(
-                    mealType = mealType,
-                    onMealType = { mealType = it },
-                    tags = tags.toList(),
-                    onToggleTag = { tag -> if (tag in tags) tags.remove(tag) else tags.add(tag) },
-                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
-                )
-
-                RecipeBuilderCounts(
-                    servings = servings,
-                    onServings = { servings = it },
-                    timeMin = timeMin,
-                    onTimeMin = { timeMin = it },
-                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
-                )
-
-                RecipeBuilderSectionHeading(
-                    title = "Ингредиенты",
-                    action = "Добавить",
-                    actionTag = CADENCE_RECIPE_BUILDER_ADD_INGREDIENT_TAG,
-                    onAction = { pickerOpen = true },
-                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(top = CadenceSpacing.md),
-                )
-
-                RecipeBuilderIngredients(
-                    rows = rows,
-                    ingredients = ingredients,
-                    onGrams = { index, grams -> rows[index] = rows[index].copy(grams = grams) },
-                    onRemove = { index -> rows.removeAt(index) },
-                    onAdd = { pickerOpen = true },
-                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
-                )
-
-                if (rows.isNotEmpty()) {
-                    RecipeBuilderPerServingCard(
-                        perServing = perServingTenths,
-                        modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(bottom = CadenceSpacing.sm),
-                    )
-                }
-
-                RecipeBuilderSectionHeading(
-                    title = "Приготовление",
-                    action = "Шаг",
-                    actionTag = CADENCE_RECIPE_BUILDER_ADD_STEP_TAG,
-                    onAction = { steps.add("") },
-                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(top = CadenceSpacing.md),
-                )
-
-                RecipeBuilderSteps(
-                    steps = steps,
-                    onStep = { index, text -> steps[index] = text },
-                    onRemove = { index -> if (steps.size > 1) steps.removeAt(index) },
-                    modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
-                )
-
-                Spacer(Modifier.height(SAVE_BAR_CLEARANCE + navigationBarInset))
             }
         }
 
@@ -248,7 +169,7 @@ fun RecipeBuilderScreen(
             IngredientPickerSheet(
                 search = search,
                 onClose = { pickerOpen = false },
-                onAdd = { row -> rows.add(row) },
+                onAdd = { row -> form.rows.add(row) },
                 modifier = Modifier.fillMaxHeight(SHEET_HEIGHT_FRACTION),
             )
         }
@@ -257,6 +178,135 @@ fun RecipeBuilderScreen(
 
 /** `contentStyle={{ height: '78%' }}` on the prototype's own sheet (`RecipeBuilderScreen.tsx:933`). */
 private const val SHEET_HEIGHT_FRACTION = 0.78f
+
+/**
+ * Everything the form holds, in one object rather than seven `remember`s in the screen —
+ * the two below and [draft] all read the same fields, and passing them one by one is what
+ * pushed the screen composable past detekt's length limit.
+ */
+@Stable
+internal class RecipeBuilderFormState {
+    var name by mutableStateOf("")
+    var mealType by mutableStateOf(MealType.LUNCH)
+    var servings by mutableStateOf(DEFAULT_SERVINGS)
+    var timeMin by mutableStateOf(DEFAULT_TIME_MIN)
+    val tags = mutableStateListOf<RecipeTag>()
+    val rows = mutableStateListOf<RecipeIngredient>()
+
+    /** One empty step from the start, as the prototype opens (`RecipeBuilderScreen.tsx:373`). */
+    val steps = mutableStateListOf("")
+
+    fun toggleTag(tag: RecipeTag) {
+        if (!tags.remove(tag)) tags.add(tag)
+    }
+
+    fun setGrams(
+        index: Int,
+        grams: Int,
+    ) {
+        rows[index] = rows[index].copy(grams = grams)
+    }
+
+    fun removeStep(index: Int) {
+        if (steps.size > 1) steps.removeAt(index)
+    }
+
+    /**
+     * [prepMin] takes the one time the form asks for; `cookMin` stays null. The
+     * description is generated, never typed — the prototype's own `dek` (`:403`).
+     */
+    fun draft(ingredients: List<Ingredient>): RecipeDraft {
+        val perServing = rows.toList().perServingOf(ingredients, servings).toMacros()
+        return RecipeDraft(
+            name = name.trim().ifBlank { null },
+            mealType = mealType,
+            tags = tags.toList(),
+            servings = servings,
+            prepMin = timeMin,
+            cookMin = null,
+            dek = "${formatInteger(perServing.proteinG)} г белка · ${formatInteger(perServing.kcal)} ккал на порцию.",
+            ingredients = rows.toList(),
+            // A blank step is a row the patient added and never filled, not an instruction.
+            steps = steps.mapNotNull { it.trim().ifBlank { null } },
+        )
+    }
+}
+
+/** The name, the type and tag chips, and the two count cards. */
+@Composable
+private fun RecipeBuilderTopFields(form: RecipeBuilderFormState) {
+    CadenceTextField(
+        value = form.name,
+        onValueChange = { form.name = it },
+        placeholder = NAME_PLACEHOLDER,
+        singleLine = true,
+        modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+        fieldModifier = Modifier.testTag(CADENCE_RECIPE_BUILDER_NAME_TAG),
+    )
+
+    RecipeBuilderTypeAndTags(
+        mealType = form.mealType,
+        onMealType = { form.mealType = it },
+        tags = form.tags,
+        onToggleTag = form::toggleTag,
+        modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+    )
+
+    RecipeBuilderCounts(
+        servings = form.servings,
+        onServings = { form.servings = it },
+        timeMin = form.timeMin,
+        onTimeMin = { form.timeMin = it },
+        modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+    )
+}
+
+/** The two headed sections: ingredients with their live per-serving card, and the steps. */
+@Composable
+private fun RecipeBuilderContents(
+    form: RecipeBuilderFormState,
+    ingredients: List<Ingredient>,
+    onAddIngredient: () -> Unit,
+) {
+    RecipeBuilderSectionHeading(
+        title = "Ингредиенты",
+        action = "Добавить",
+        actionTag = CADENCE_RECIPE_BUILDER_ADD_INGREDIENT_TAG,
+        onAction = onAddIngredient,
+        modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(top = CadenceSpacing.md),
+    )
+
+    RecipeBuilderIngredients(
+        rows = form.rows,
+        ingredients = ingredients,
+        onGrams = form::setGrams,
+        onRemove = { index -> form.rows.removeAt(index) },
+        onAdd = onAddIngredient,
+        modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+    )
+
+    if (form.rows.isNotEmpty()) {
+        RecipeBuilderPerServingCard(
+            perServing = form.rows.toList().perServingOf(ingredients, form.servings),
+            modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(bottom = CadenceSpacing.sm),
+        )
+    }
+
+    RecipeBuilderSectionHeading(
+        title = "Приготовление",
+        action = "Шаг",
+        actionTag = CADENCE_RECIPE_BUILDER_ADD_STEP_TAG,
+        onAction = { form.steps.add("") },
+        modifier = Modifier.padding(horizontal = CadenceSpacing.lg).padding(top = CadenceSpacing.md),
+    )
+
+    RecipeBuilderSteps(
+        steps = form.steps,
+        onStep = { index, text -> form.steps[index] = text },
+        onRemove = form::removeStep,
+        modifier = Modifier.padding(horizontal = CadenceSpacing.lg, vertical = CadenceSpacing.sm),
+    )
+}
 
 @Composable
 private fun RecipeBuilderHeader(onCancel: () -> Unit) {

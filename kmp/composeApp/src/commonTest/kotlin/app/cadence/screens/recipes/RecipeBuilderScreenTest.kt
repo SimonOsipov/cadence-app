@@ -1,5 +1,8 @@
 package app.cadence.screens.recipes
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -16,6 +19,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import app.cadence.design.CADENCE_STEPPER_MINUS_TAG
 import app.cadence.design.CADENCE_STEPPER_PLUS_TAG
 import app.cadence.design.CADENCE_STEPPER_VALUE_TAG
@@ -24,8 +29,10 @@ import app.cadence.shared.domain.Ingredient
 import app.cadence.shared.domain.IngredientId
 import app.cadence.shared.domain.MacrosTenths
 import app.cadence.shared.domain.MealType
+import app.cadence.shared.domain.RecipeIngredient
 import app.cadence.shared.domain.RecipeTag
 import app.cadence.shared.repository.RecipeDraft
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -319,6 +326,99 @@ class RecipeBuilderScreenTest {
 
             onNodeWithTag(recipeBuilderStepTag(1), useUnmergedTree = true).assertDoesNotExist()
             onNodeWithTag(recipeBuilderStepRemoveTag(0)).assertDoesNotExist()
+        }
+
+    /**
+     * The positive control for both «must not save» tests above, and the one place every
+     * field is read back. Every value is moved off its default, so a draft assembled from
+     * defaults — or one that forgot a field — fails here rather than passing by coincidence.
+     */
+    @Test
+    fun theSavedDraftCarriesEveryFieldTheFormCollected() =
+        runComposeUiTest {
+            var saved: RecipeDraft? = null
+            setContent {
+                CadenceTheme { RecipeBuilderScreen(TABLE, fakeSearch(), onSave = { saved = it }) }
+            }
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_NAME_TAG, useUnmergedTree = true)
+                .performTextReplacement("  Курица с рисом  ")
+            onNodeWithTag(recipeBuilderMealTypeTag(MealType.DINNER)).performClick()
+            onNodeWithTag(recipeBuilderTagTag(RecipeTag.PROTEIN)).performClick()
+            onNodeWithTag(recipeBuilderTagTag(RecipeTag.QUICK)).performClick()
+            tap(CADENCE_RECIPE_BUILDER_SERVINGS_TAG, CADENCE_STEPPER_PLUS_TAG)
+            tap(CADENCE_RECIPE_BUILDER_TIME_TAG, CADENCE_STEPPER_PLUS_TAG)
+            addIngredient(CHICKEN, gramsTaps = 10)
+            addIngredient(RICE)
+
+            onNodeWithTag(recipeBuilderStepTag(0), useUnmergedTree = true).performTextReplacement("  Отварить рис  ")
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_ADD_STEP_TAG).performClick()
+            waitForIdle()
+            onNodeWithTag(recipeBuilderStepTag(1), useUnmergedTree = true).performTextReplacement("Обжарить курицу")
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_ADD_STEP_TAG).performClick()
+            waitForIdle()
+
+            onNodeWithTag(CADENCE_RECIPE_BUILDER_SAVE_TAG).performClick()
+            waitForIdle()
+
+            // Chicken 200 g (330 kcal, 62 g protein) + rice 100 g (123 kcal, 2,7 g) over
+            // three servings: 151 kcal and 21,6 -> 22 g protein per serving.
+            assertEquals(
+                RecipeDraft(
+                    name = "Курица с рисом",
+                    mealType = MealType.DINNER,
+                    tags = listOf(RecipeTag.PROTEIN, RecipeTag.QUICK),
+                    servings = 3,
+                    prepMin = 25,
+                    cookMin = null,
+                    dek = "22 г белка · 151 ккал на порцию.",
+                    ingredients =
+                        listOf(
+                            RecipeIngredient(CHICKEN.id, 200),
+                            RecipeIngredient(RICE.id, 100),
+                        ),
+                    steps = listOf("Отварить рис", "Обжарить курицу"),
+                ),
+                saved,
+            )
+        }
+
+    /**
+     * The step-11 squeeze, in the two places this screen repeats the shape: `CadenceStepper`
+     * fills the width it is given, and anything narrower than its own content
+     * (52 + 20 + number + 20 + 52) flattens the plus button below its tap target. 343dp is
+     * an iPhone SE, the narrowest phone this app targets.
+     */
+    @Test
+    fun everyPlusButtonStaysA52dpTapTargetAt343dp() =
+        runComposeUiTest {
+            lateinit var density: Density
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    RecipeBuilderScreen(TABLE, fakeSearch(), modifier = Modifier.width(343.dp))
+                }
+            }
+            waitForIdle()
+            addIngredient(CHICKEN)
+
+            listOf(
+                CADENCE_RECIPE_BUILDER_SERVINGS_TAG,
+                CADENCE_RECIPE_BUILDER_TIME_TAG,
+                recipeBuilderIngredientTag(0),
+            ).forEach { container ->
+                val bounds =
+                    onNode(
+                        hasTestTag(CADENCE_STEPPER_PLUS_TAG) and hasAnyAncestor(hasTestTag(container)),
+                        useUnmergedTree = true,
+                    ).fetchSemanticsNode().boundsInRoot
+                val width = with(density) { bounds.width.toDp() }.value.roundToInt()
+                val height = with(density) { bounds.height.toDp() }.value.roundToInt()
+
+                assertEquals(52, width, "$container's plus button is not 52dp wide at 343dp")
+                assertEquals(52, height, "$container's plus button is not 52dp tall at 343dp")
+            }
         }
 }
 
