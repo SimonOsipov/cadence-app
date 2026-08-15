@@ -8,12 +8,11 @@ todoist_parent: "6h9JrRJC22fGwMHH"
 components: [api, identity, audit, data-layer]
 proposal: "[[20-Projects/cadence/architecture/proposals/invites-and-onboarding|architecture/proposals/invites-and-onboarding]]"
 ---
-
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/patient-onboarding.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
 # Patient onboarding: creation, invitation, sign-in by link
 
-## Summary
+## Описание
 
 The second of the two onboarding blocks. The doctor creates a patient, a Russian
 email goes out, the patient signs in via the link and sees exactly their own data.
@@ -91,7 +90,7 @@ transaction and fills it in; the extension point is marked. The SMTP provider �
 manual SKL-01. The screens on both surfaces. Russifying GoTrue's own strings.
 Reconciling `invites.email` with `auth.users.email`.
 
-## What already exists (DONE)
+## Что уже реализовано (DONE)
 
 **Strictly speaking — none of what is listed below.** Both prerequisite blocks are
 `approved` but **not implemented**: today the repository holds only
@@ -122,7 +121,7 @@ Reconciling `invites.email` with `auth.users.email`.
   is created. There is no enumeration oracle.
 - A table owner under `FORCE RLS` with no `INSERT` policy is refused.
 
-## Technical detail
+## Технические детали
 
 ### The harness
 
@@ -213,7 +212,7 @@ detectable rather than preventable.
 
 The chicken-and-egg is described in the build plan as GOL-04, not DEP-02.
 
-## Architecture decision
+## Архитектурное решение
 
 The architecture was accepted by the proposal
 [[20-Projects/cadence/architecture/proposals/invites-and-onboarding|invites-and-onboarding]]. This block implements P4, P7, P10, P11, and the
@@ -229,7 +228,7 @@ only because in the harness the invitee never clicks the link. Real idempotency
 required three things at once — an invite record, a lock on the address, and the
 ability to delete an account.
 
-## Component deltas
+## Дельты компонентов
 
 ### identity.md
 - ADDED: `invites` exists and stores `user_id`, the normalized address, who invited, and when. No `status`, no `payload`, no `gotrue_user_id`; address uniqueness is provided by GoTrue, not by our index
@@ -354,7 +353,7 @@ Also here, a test **asserting** the residual property: after a claim with deleti
 the previous sessions are dead, whereas without deletion they would have been alive.
 todoist: "6h9JrXQq59rcmcCH"
 
-## Open questions
+## Открытые вопросы
 
 > [!question] `patient_profiles.joined_at` stays without a writer: acceptance
 > happens entirely inside GoTrue, and we have no hook on first sign-in. The

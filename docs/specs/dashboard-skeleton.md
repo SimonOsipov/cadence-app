@@ -8,7 +8,6 @@ todoist_parent: "6h8w86HRwchgxPGq"
 components: [web-dashboard]
 proposal: ""
 ---
-
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/dashboard-skeleton.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
 # Dashboard Skeleton
@@ -21,7 +20,7 @@ proposal: ""
 > rather than rewritten because this spec is still `approved` and unbuilt, so
 > the deployment target is settled when the work starts.
 
-## Summary
+## Описание
 
 Stand `web/` up as a real Vite application: port the design tokens from the prototype so they stop diverging, build the Overview page on fixtures, deploy it to Railway dev, and cover it with a smoke test that verifies the deployed build is the one being checked.
 
@@ -89,7 +88,7 @@ The first draft of this spec got NEEDS-REWORK from an independent judge: all thr
 
 **Blocking.** Steps 4 and 5 require a Railway project — the manual task SKL-06. Steps 1–3 do not depend on it. `/implement` will stop at step 4, and that is the correct behaviour.
 
-## What already exists (DONE)
+## Что уже реализовано (DONE)
 
 Verified against the code on 2026-07-28; the first draft's numbers were wrong and are corrected here.
 
@@ -101,7 +100,7 @@ Verified against the code on 2026-07-28; the first draft's numbers were wrong an
 - `.github/workflows/ci.yml` and `scripts/gate/all.sh` contain verbatim comments saying there is no web gate until SKL-09; both are updated here.
 - `.gitignore` **does not contain** `node_modules`.
 
-## Technical detail
+## Технические детали
 
 **Versions and their compatibility** (verified by installing):
 
@@ -152,7 +151,7 @@ web/
 scripts/gate/web.sh
 ```
 
-## Architecture decision
+## Архитектурное решение
 
 The component note already describes Vite + React + TS + React Query + react-router and requires the tokens to be ported verbatim into one typed source — the architecture does not change, so there is no proposal note.
 
@@ -162,7 +161,7 @@ The transport seam under React Query goes in from day one, together with asynchr
 
 **A conflict of invariants, named explicitly.** Invariant 7 of the overview says biomarker thresholds live in a single constants module read by both surfaces; invariant 3 of the component note says they arrive in the API response. Those are two different architectures, not two phrasings of one. Here we follow the component note; on steps 1–3 that costs nothing, because the data is fixtures. The final decision is made in the "API Skeleton" block, where the thresholds are designed, and by the project's rules a system invariant requires a proposal note — the side cannot be chosen silently.
 
-## Component deltas
+## Дельты компонентов
 
 ### web-dashboard.md
 - MODIFIED: "Shape" — React 18 → React 19 (forced: the `react-router` peer); TypeScript 6, not 7 (otherwise linting does not work); tokens live as a CSS source plus a generated typed object, with drift caught by the gate; fonts are linked locally, with no runtime calls to Google Fonts.
@@ -213,7 +212,7 @@ Waiting for the deployment to be ready, reconciling the deployed SHA, checking t
 
 todoist: "6h8w89CJJWM2x3cH"
 
-## Open questions
+## Открытые вопросы
 
 > [!decision] 2026-07-28 — the body text face: **Golos Text** instead of DM Sans, on both surfaces.
 > Reason: DM Sans has no Cyrillic (`latin`, `latin-ext`), and all product copy is Russian. In the prototype this check was done for the display face (Instrument Serif → Cormorant Garamond) and not done for the text face. Golos Text was designed for Cyrillic rather than extended into it, has an open licence, and is close to DM Sans in width and tone — the prototype's layouts will not shift.
