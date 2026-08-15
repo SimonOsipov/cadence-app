@@ -23,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import app.cadence.design.CADENCE_MOOD_LABELS
 import app.cadence.design.Cadence
 import app.cadence.design.CadenceBody
 import app.cadence.design.CadenceBodyMap
@@ -48,6 +47,7 @@ import app.cadence.format.formatDose
 import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.InjectionSite
+import app.cadence.shared.domain.MoodLevel
 import app.cadence.shared.domain.ProtocolItemKind
 import app.cadence.shared.domain.SideEffect
 
@@ -287,7 +287,7 @@ fun ContextStep(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(CadenceSpacing.xxl)) {
         Column(verticalArrangement = Arrangement.spacedBy(CadenceSpacing.sm)) {
-            CadenceEyebrow("Энергия · сегодня")
+            CadenceEyebrow("Самочувствие · сегодня")
             CadenceMoodSlider(value = draft.mood, onChange = { onDraft(draft.copy(mood = it)) })
         }
 
@@ -421,7 +421,7 @@ fun ReviewStep(
                 .background(Cadence.palette.paper)
                 .border(HAIRLINE, Cadence.palette.hairline, RoundedCornerShape(CadenceRadius.lg)),
         ) {
-            ReviewRow("Энергия", draft.mood?.let { CADENCE_MOOD_LABELS.getOrNull(it - 1) } ?: "—")
+            ReviewRow("Самочувствие", MoodLevel.of(draft.mood)?.labelRu ?: "—")
             ReviewRow(
                 "Заметки",
                 draft.sideEffects

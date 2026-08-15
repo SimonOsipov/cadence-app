@@ -1,6 +1,7 @@
 package app.cadence.shared.mock
 
 import app.cadence.shared.domain.CadenceClock
+import app.cadence.shared.domain.CheckInDraft
 import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.DoseEvent
@@ -51,6 +52,7 @@ import app.cadence.shared.repository.DoseLogRepository
 import app.cadence.shared.repository.DoseLogResult
 import app.cadence.shared.repository.InventoryRepository
 import app.cadence.shared.repository.JournalRepository
+import app.cadence.shared.repository.JournalSaveResult
 import app.cadence.shared.repository.MealLogResult
 import app.cadence.shared.repository.MeasurementsRepository
 import app.cadence.shared.repository.MetricDetail
@@ -413,6 +415,13 @@ class CadenceMocks(
 
     private inner class MockJournalRepository : JournalRepository {
         override suspend fun entry(date: LocalDate): JournalEntry? = journalByDate[date]
+
+        override suspend fun save(draft: CheckInDraft): JournalSaveResult =
+            when {
+                draft.saysNothing -> JournalSaveResult.Rejected.Empty
+                !draft.readingsAreOnTheScale -> JournalSaveResult.Rejected.OffTheScale
+                else -> JournalSaveResult.Written(write(draft, JournalSource.MANUAL))
+            }
     }
 
     private inner class MockDoseLogRepository : DoseLogRepository {
@@ -483,7 +492,7 @@ class CadenceMocks(
         events += event
         // From the event, not the draft a second time: reading the draft twice is two
         // chances to carry a different answer.
-        journalByDate[date] = mergedJournalEntry(date, event)
+        write(event.asCheckIn(date), JournalSource.DOSE)
 
         return DoseLogResult.Written(eventId = id, journalDate = date, dose = event.dose, vialId = event.vialId)
     }
@@ -504,31 +513,30 @@ class CadenceMocks(
             .maxByOrNull { remainingDoses(it, events) }
     }
 
-    /**
-     * §03's `UNIQUE(patient, date)` means one entry per day, so a second dose updates rather
-     * than adds. Skipped fields keep what an earlier check-in recorded (step 4 is «всё по
-     * желанию», so unanswered means «пропущено», not "erase the morning's answer"). Tags
-     * accumulate for the same reason.
-     */
-    private fun mergedJournalEntry(
-        date: LocalDate,
-        event: DoseEvent,
-    ): JournalEntry {
-        val existing = journalByDate[date]
+    /** The wizard's step 4 is a check-in like any other; only the path differs. */
+    private fun DoseEvent.asCheckIn(date: LocalDate) =
+        CheckInDraft(entryDate = date, mood = mood, tags = sideEffects, note = note)
 
-        return JournalEntry(
-            patientId = MockSeed.patientId,
-            entryDate = date,
-            mood = event.mood ?: existing?.mood,
-            // Neither is asked by the dose wizard; they belong to step 7's diary check-in.
-            // Kept rather than deleted so that writer's merge is already shaped.
-            energy = existing?.energy,
-            sleep = existing?.sleep,
-            tags = ((existing?.tags ?: emptyList()) + event.sideEffects).distinct(),
-            note = event.note ?: existing?.note,
-            // Deferred, not decided: once step 7 writes a MANUAL entry, a dose check-in
-            // afterwards will relabel its provenance — needs a rule then.
-            source = JournalSource.DOSE,
-        )
+    /** Provenance is set once: [bornAs] applies only to an empty day, so «с дозой» means born of a dose. */
+    private fun write(
+        draft: CheckInDraft,
+        bornAs: JournalSource,
+    ): JournalEntry {
+        val existing = journalByDate[draft.entryDate]
+
+        val merged =
+            JournalEntry(
+                patientId = MockSeed.patientId,
+                entryDate = draft.entryDate,
+                mood = draft.mood ?: existing?.mood,
+                energy = draft.energy ?: existing?.energy,
+                sleep = draft.sleep ?: existing?.sleep,
+                tags = ((existing?.tags ?: emptyList()) + draft.tags).distinct(),
+                note = draft.note?.takeUnless { it.isBlank() } ?: existing?.note,
+                source = existing?.source ?: bornAs,
+            )
+
+        journalByDate[draft.entryDate] = merged
+        return merged
     }
 }
