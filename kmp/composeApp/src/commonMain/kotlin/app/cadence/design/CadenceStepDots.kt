@@ -37,6 +37,25 @@ internal fun stepAccentColor(accent: CadenceStepAccent): Color =
         CadenceStepAccent.SLEEP -> CadenceColors.sand700
     }
 
+/** Cumulative: every bar up to the answer is lit, not the answer's own bar alone. */
+internal fun stepDotFilled(
+    step: Int,
+    value: Int,
+): Boolean = step <= value
+
+/**
+ * What the bar is painted, from the same predicate its semantics carry. One decision
+ * rather than two: written as a second `if` beside the semantics, inverting the paint
+ * left every assertion green and every bar drawn backwards — measured, that mutation
+ * survived the whole gate.
+ */
+internal fun stepDotFill(
+    step: Int,
+    value: Int,
+    accent: CadenceStepAccent,
+    palette: CadencePalette,
+): Color = if (stepDotFilled(step, value)) stepAccentColor(accent) else palette.sunk
+
 internal const val CADENCE_STEP_DOTS = 5
 
 private val DOT_HEIGHT = 38.dp
@@ -59,17 +78,16 @@ fun CadenceStepDots(
     modifier: Modifier = Modifier,
 ) {
     val palette = Cadence.palette
-    val lit = stepAccentColor(accent)
 
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(DOT_GAP)) {
         for (step in 1..CADENCE_STEP_DOTS) {
-            val filled = step <= value
+            val filled = stepDotFilled(step, value)
 
             Box(
                 Modifier
                     .weight(1f)
                     .height(DOT_HEIGHT)
-                    .background(if (filled) lit else palette.sunk, RoundedCornerShape(DOT_CORNER))
+                    .background(stepDotFill(step, value, accent, palette), RoundedCornerShape(DOT_CORNER))
                     .clickable(role = Role.Button) { onChange(step) }
                     .semantics {
                         selected = filled

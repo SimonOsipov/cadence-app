@@ -96,6 +96,17 @@ class BodyAndFeelPrimitivesTest {
     }
 
     @Test
+    fun aLitBarIsPaintedTheAccentAndAnUnlitOneTheGround() {
+        val palette = CadenceLightPalette
+
+        // The paint, not only the semantics: drawn from a second branch of its own,
+        // an inverted fill left every «selected» assertion green.
+        assertEquals(CadenceColors.forest700, stepDotFill(2, value = 3, CadenceStepAccent.ENERGY, palette))
+        assertEquals(palette.sunk, stepDotFill(4, value = 3, CadenceStepAccent.ENERGY, palette))
+        assertEquals(CadenceColors.sand700, stepDotFill(1, value = 1, CadenceStepAccent.SLEEP, palette))
+    }
+
+    @Test
     fun nothingIsFilledBeforeTheFirstAnswer() =
         runComposeUiTest {
             setContent {
