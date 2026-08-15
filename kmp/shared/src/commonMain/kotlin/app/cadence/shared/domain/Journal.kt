@@ -30,14 +30,7 @@ data class JournalEntry(
     val source: JournalSource,
 )
 
-/**
- * What a check-in offers the day — everything optional, because step 4 of the wizard and the
- * diary sheet are both «всё по желанию». An unnamed field means «skipped», never «erase what
- * the morning said»; the merge is what turns that into a stored entry.
- *
- * It carries no source: which of the two a write is comes from the path taken, not from the
- * draft, so a caller cannot label its own write.
- */
+/** A day's check-in. Every field optional — unnamed means «skipped», never «erase the morning's answer». */
 data class CheckInDraft(
     val entryDate: LocalDate,
     val mood: Int? = null,
@@ -46,15 +39,11 @@ data class CheckInDraft(
     val tags: List<JournalTag> = emptyList(),
     val note: String? = null,
 ) {
-    /** Nothing named at all. A written-empty entry would put an unfilled day into the feed and the heatmap. */
+    /** A written-empty entry would put a day the patient never filled into the feed and the heatmap. */
     val saysNothing: Boolean
         get() = mood == null && energy == null && sleep == null && tags.isEmpty() && note.isNullOrBlank()
 
-    /**
-     * Every named reading is on the 1..5 scale. Off it, the value is refused rather than
-     * stored: [MoodLevel.of] answers `null` outside the range, so a stored 7 reads back as
-     * «no answer» and the loss is silent.
-     */
+    /** Off the 1..5 scale the loss is silent: [MoodLevel.of] answers `null`, so a stored 7 reads back as no answer. */
     val readingsAreOnTheScale: Boolean
         get() = listOfNotNull(mood, energy, sleep).all { it in SCALE }
 

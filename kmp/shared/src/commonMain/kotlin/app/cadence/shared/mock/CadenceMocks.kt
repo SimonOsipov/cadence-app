@@ -513,23 +513,11 @@ class CadenceMocks(
             .maxByOrNull { remainingDoses(it, events) }
     }
 
-    /** The wizard's step 4 is a check-in like any other; only the path it arrived by differs. */
+    /** The wizard's step 4 is a check-in like any other; only the path differs. */
     private fun DoseEvent.asCheckIn(date: LocalDate) =
         CheckInDraft(entryDate = date, mood = mood, tags = sideEffects, note = note)
 
-    /**
-     * The one merge, for both paths. §03's `UNIQUE(patient, date)` means one entry per day, so
-     * a second check-in updates rather than adds. A field the draft does not name keeps what an
-     * earlier one recorded — «всё по желанию» makes silence «пропущено», not «erase the
-     * morning's answer» — and tags accumulate for the same reason.
-     *
-     * [bornAs] is the source this write would create the entry with, and it is used **only**
-     * when there is no entry yet: an entry's provenance is set once and never rewritten. The
-     * mark «с дозой» says the entry was born of an injection, not that an injection wrote last.
-     * Both orders break without this — an evening injection would relabel a morning written by
-     * hand, and an evening hand-edit would strip «с дозой» off a morning injection and the link
-     * to it with it.
-     */
+    /** Provenance is set once: [bornAs] applies only to an empty day, so «с дозой» means born of a dose. */
     private fun write(
         draft: CheckInDraft,
         bornAs: JournalSource,
