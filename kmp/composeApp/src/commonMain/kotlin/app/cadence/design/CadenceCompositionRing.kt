@@ -28,10 +28,6 @@ private val RING_STROKE = 14.dp
 /** Twelve o'clock, not three: an arc that starts on the right reads as a gauge rather than a share. */
 private const val ARC_START = -90f
 
-/** Centre and the middle of the stroke — where a probe finds ring rather than hole or air. */
-internal val RING_CENTRE = RING_SIZE / 2
-internal val RING_TRACK_RADIUS = (RING_SIZE - RING_STROKE) / 2
-
 private val WEIGHT_SIZE = 30.sp
 private const val WEIGHT_DIGITS = 1
 
@@ -39,8 +35,8 @@ private const val WEIGHT_DIGITS = 1
  * How far round the fat share reaches, in degrees. A reading outside 0..100 is a bad
  * measurement rather than a bad drawing: 140% would otherwise wind the arc past its
  * own start and draw as though it were 40%. `NaN` is named separately because
- * `coerceIn` returns it untouched — every comparison against it is false — and a `NaN`
- * sweep reaches `drawArc`, where nothing is drawn at all.
+ * `coerceIn` hands it straight back — every comparison against it is false — and a
+ * sweep is a number. Step-11's acceptance allows an undefined reading to reach here.
  */
 internal fun compositionSweep(fatPercent: Double): Float {
     if (fatPercent.isNaN()) return 0f

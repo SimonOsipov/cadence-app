@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
+const val CADENCE_STEP_DOTS_ROW_TAG = "cadence-step-dots"
+
 /** One node per bar, so «tapping the third fills three» is a query rather than a look at pixels. */
 fun cadenceStepDotTag(step: Int): String = "cadence-step-dot-$step"
 
@@ -79,7 +81,10 @@ fun CadenceStepDots(
 ) {
     val palette = Cadence.palette
 
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(DOT_GAP)) {
+    Row(
+        modifier.testTag(CADENCE_STEP_DOTS_ROW_TAG),
+        horizontalArrangement = Arrangement.spacedBy(DOT_GAP),
+    ) {
         for (step in 1..CADENCE_STEP_DOTS) {
             val filled = stepDotFilled(step, value)
 
