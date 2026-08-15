@@ -30,7 +30,7 @@ data class JournalEntry(
     val source: JournalSource,
 )
 
-/** A day's check-in — unnamed means «skipped». No `source`: the path taken decides it, so a caller cannot sign its own write. */
+/** A day's check-in. Unnamed means «skipped»; no `source`, so a caller cannot sign its own write. */
 data class CheckInDraft(
     val entryDate: LocalDate,
     val mood: Int? = null,
