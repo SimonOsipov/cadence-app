@@ -17,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private val ZONE = TimeZone.of("Europe/Moscow")
@@ -45,13 +46,16 @@ class JournalWriteTest {
             val m = mocks()
 
             assertIs<JournalSaveResult.Written>(m.journal.save(checkIn(mood = 4, energy = 3)))
-            assertIs<DoseLogResult.Written>(
-                m.dosing.submit(injectionDraft(MockSeed.semaItemId)),
-            )
+            val dose = assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.semaItemId)))
 
-            // The mark «с дозой» means «this entry was born of an injection», not
-            // «an injection wrote last».
-            assertEquals(JournalSource.MANUAL, assertNotNull(m.journal.entry(DAY)).source)
+            // Same day, or the two writes never met and this proves nothing.
+            assertEquals(DAY, dose.journalDate)
+
+            val entry = assertNotNull(m.journal.entry(DAY))
+
+            // The mark «с дозой» means born of an injection, not written last.
+            assertEquals(JournalSource.MANUAL, entry.source)
+            assertEquals(4, entry.mood, "the morning's mood did not survive the injection")
         }
 
     @Test
@@ -119,7 +123,47 @@ class JournalWriteTest {
             assertEquals(JournalSaveResult.Rejected.OffTheScale, m.journal.save(checkIn(energy = 0)))
             assertEquals(JournalSaveResult.Rejected.OffTheScale, m.journal.save(checkIn(sleep = -1)))
 
-            assertTrue(m.journal.entry(DAY) == null)
+            // Every reading, not any: the sheet always sends a mood, so a bad energy
+            // arrives beside a good mood and `all` collapsing to `any` would let it in.
+            assertEquals(JournalSaveResult.Rejected.OffTheScale, m.journal.save(checkIn(mood = 3, energy = 9)))
+
+            // Both edges of the range, or 1..5 widening to 1..6 or narrowing to 2..5
+            // passes: neither 1 nor 6 is named above.
+            assertEquals(JournalSaveResult.Rejected.OffTheScale, m.journal.save(checkIn(mood = 6)))
+            assertTrue(m.journal.entry(DAY) == null, "a refused check-in still created an entry")
+
+            assertIs<JournalSaveResult.Written>(m.journal.save(checkIn(mood = 1, sleep = 5)))
+        }
+
+    @Test
+    fun aBlankNoteIsSilenceRatherThanAnAnswer() =
+        runTest {
+            val m = mocks()
+
+            m.journal.save(checkIn(note = "тяжело"))
+            m.journal.save(checkIn(mood = 4, note = "   "))
+
+            // `saysNothing` treats a blank note as unnamed, so the merge has to agree:
+            // read as a value it would erase the morning's, which is what step-6's own
+            // trimming makes easy to send.
+            assertEquals("тяжело", assertNotNull(m.journal.entry(DAY)).note)
+        }
+
+    @Test
+    fun anInjectionWithNoContextStillWritesItsDay() =
+        runTest {
+            val m = mocks()
+
+            // The guards belong to the hand-written door: an injection is a fact on its
+            // own, so it writes a day whose fields are all empty. Deliberate, and pinned
+            // so the next reader does not mistake it for the guards leaking.
+            assertIs<DoseLogResult.Written>(m.dosing.submit(injectionDraft(MockSeed.semaItemId)))
+
+            val entry = assertNotNull(m.journal.entry(DAY))
+
+            assertEquals(JournalSource.DOSE, entry.source)
+            assertNull(entry.mood)
+            assertEquals(emptyList(), entry.tags)
         }
 
     @Test

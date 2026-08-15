@@ -532,7 +532,7 @@ class CadenceMocks(
                 energy = draft.energy ?: existing?.energy,
                 sleep = draft.sleep ?: existing?.sleep,
                 tags = ((existing?.tags ?: emptyList()) + draft.tags).distinct(),
-                note = draft.note ?: existing?.note,
+                note = draft.note?.takeUnless { it.isBlank() } ?: existing?.note,
                 source = existing?.source ?: bornAs,
             )
 
