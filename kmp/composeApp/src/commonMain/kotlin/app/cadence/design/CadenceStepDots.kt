@@ -21,9 +21,9 @@ import androidx.compose.ui.unit.dp
 fun cadenceStepDotTag(step: Int): String = "cadence-step-dot-$step"
 
 /**
- * Which scale a row of bars is reading. An enum rather than a raw `Color`, so the two
- * cannot be mixed up at a call site the way [MoodMarkKind] could: measured on the mood
- * chart, an argument passed by hand is a slip no assertion catches.
+ * Which scale a row of bars is reading. A closed type does not stop the sheet handing
+ * the sleep row the energy accent — nothing here can — but it makes the mapping a
+ * function two literals can pin, which a raw `Color` argument would not be.
  */
 enum class CadenceStepAccent {
     ENERGY,

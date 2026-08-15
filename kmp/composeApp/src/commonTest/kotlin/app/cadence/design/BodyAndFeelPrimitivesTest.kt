@@ -1,23 +1,24 @@
 package app.cadence.design
 
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 
 private const val TOLERANCE = 1e-3f
 
@@ -41,18 +42,16 @@ class BodyAndFeelPrimitivesTest {
         // otherwise draw a full ring plus a second arc over its own start.
         assertEquals(0f, compositionSweep(-3.0), TOLERANCE)
         assertEquals(FULL_TURN, compositionSweep(140.0), TOLERANCE)
+        // coerceIn hands NaN straight back: every comparison against it is false.
+        assertEquals(0f, compositionSweep(Double.NaN), TOLERANCE)
     }
 
     @Test
-    fun theRingCarriesTheWeightAtItsCentre() =
+    fun theRingCarriesTheWeightAndItsUnit() =
         runComposeUiTest {
             setContent {
                 CadenceTheme {
-                    CadenceCompositionRing(
-                        weightKg = 84.3,
-                        fatPercent = FAT_PERCENT,
-                        modifier = Modifier.width(343.dp),
-                    )
+                    CadenceCompositionRing(weightKg = 84.3, fatPercent = FAT_PERCENT)
                 }
             }
 
@@ -107,6 +106,26 @@ class BodyAndFeelPrimitivesTest {
     }
 
     @Test
+    fun theSleepRowIsPaintedItsOwnAccentAndNotTheEnergyOne() =
+        runComposeUiTest {
+            // The helper maps both accents; that the composable passes on the accent it
+            // was given is a separate claim, and replacing the argument with a literal
+            // ENERGY left every other test here green.
+            setContent {
+                CadenceTheme {
+                    CadenceStepDots(value = CADENCE_STEP_DOTS, accent = CadenceStepAccent.SLEEP, onChange = {})
+                }
+            }
+
+            val bar =
+                onNodeWithTag(cadenceStepDotTag(1), useUnmergedTree = true)
+                    .captureToImage()
+                    .toPixelMap()
+
+            assertEquals(CadenceColors.sand700, bar[bar.width / 2, bar.height / 2])
+        }
+
+    @Test
     fun nothingIsFilledBeforeTheFirstAnswer() =
         runComposeUiTest {
             setContent {
@@ -119,13 +138,46 @@ class BodyAndFeelPrimitivesTest {
             (1..5).forEach { onNodeWithTag(cadenceStepDotTag(it)).assertIsNotSelected() }
         }
 
+    /**
+     * Nothing above reaches the canvas: `compositionSweep` is pinned as arithmetic, and
+     * arithmetic proves the number was computed, not that it was drawn. Three one-token
+     * mutations survived every other test here — the sweep collapsing to `FULL_TURN`,
+     * the sweep collapsing to `0f`, and the two colours swapped — and under the last of
+     * them step-12's legend would name sand «% жира» while the ring painted lean in sand.
+     *
+     * The probes are the ring's own geometry, read from [RING_CENTRE] and
+     * [RING_TRACK_RADIUS] rather than recomputed here. The arc opens at twelve o'clock,
+     * so at 27.4% it sweeps 98.64° and covers three o'clock but not nine.
+     */
     @Test
-    fun theRingLeavesTheLeanShareToWhatIsUnderTheArc() {
-        // Fat and lean are one circle, so the lean share is never computed twice:
-        // the base ring is drawn whole and the fat arc covers its own part of it.
-        val fat = compositionSweep(FAT_PERCENT)
+    fun theFatArcCoversItsOwnShareAndTheLeanRestIsWhatShowsBeneath() =
+        runComposeUiTest {
+            lateinit var density: Density
 
-        assertTrue(fat < FULL_TURN, "the fat arc covers the whole ring at $fat degrees")
-        assertEquals(FULL_TURN, fat + compositionSweep(100.0 - FAT_PERCENT), TOLERANCE)
-    }
+            setContent {
+                CadenceTheme {
+                    density = LocalDensity.current
+                    CadenceCompositionRing(weightKg = 84.3, fatPercent = FAT_PERCENT)
+                }
+            }
+
+            val pixels =
+                onNodeWithTag(CADENCE_COMPOSITION_RING_TAG, useUnmergedTree = true)
+                    .captureToImage()
+                    .toPixelMap()
+
+            val centre = with(density) { RING_CENTRE.roundToPx() }
+            val radius = with(density) { RING_TRACK_RADIUS.roundToPx() }
+
+            assertEquals(
+                CadenceColors.sand500,
+                pixels[centre + radius, centre],
+                "three o'clock is inside the fat share and is not painted sand",
+            )
+            assertEquals(
+                CadenceColors.forest700,
+                pixels[centre - radius, centre],
+                "nine o'clock is past the fat share and is not the lean the arc leaves showing",
+            )
+        }
 }

@@ -20,24 +20,33 @@ const val CADENCE_COMPOSITION_RING_TAG = "cadence-composition-ring"
 
 internal const val FULL_TURN = 360f
 
+private const val PERCENT_WHOLE = 100.0
+
 private val RING_SIZE = 150.dp
 private val RING_STROKE = 14.dp
 
 /** Twelve o'clock, not three: an arc that starts on the right reads as a gauge rather than a share. */
 private const val ARC_START = -90f
 
+/** Centre and the middle of the stroke — where a probe finds ring rather than hole or air. */
+internal val RING_CENTRE = RING_SIZE / 2
+internal val RING_TRACK_RADIUS = (RING_SIZE - RING_STROKE) / 2
+
 private val WEIGHT_SIZE = 30.sp
 private const val WEIGHT_DIGITS = 1
 
 /**
- * How far round the fat share reaches, in degrees. A percentage outside 0..100 is a
- * bad reading rather than a bad drawing, so it is clamped: 140% would otherwise wind
- * the arc past its own start and draw as though it were 40%.
+ * How far round the fat share reaches, in degrees. A reading outside 0..100 is a bad
+ * measurement rather than a bad drawing: 140% would otherwise wind the arc past its
+ * own start and draw as though it were 40%. `NaN` is named separately because
+ * `coerceIn` returns it untouched — every comparison against it is false — and a `NaN`
+ * sweep reaches `drawArc`, where nothing is drawn at all.
  */
-internal fun compositionSweep(fatPercent: Double): Float =
-    (fatPercent.coerceIn(0.0, PERCENT_WHOLE) / PERCENT_WHOLE * FULL_TURN).toFloat()
+internal fun compositionSweep(fatPercent: Double): Float {
+    if (fatPercent.isNaN()) return 0f
 
-private const val PERCENT_WHOLE = 100.0
+    return (fatPercent.coerceIn(0.0, PERCENT_WHOLE) / PERCENT_WHOLE * FULL_TURN).toFloat()
+}
 
 /**
  * Body composition as one circle: the whole ring is the body, the sand arc is its fat
