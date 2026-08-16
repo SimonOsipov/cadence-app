@@ -18,9 +18,9 @@ import (
 // is two unrelated operations serialising each other under load.
 type LockClass int32
 
-// OnboardingLock covers everything done for one email address while a patient
-// is created: the lookup, the invitation and the two transactions that record
-// them.
+// OnboardingLock covers everything done for one email address while a person is
+// created — a patient or a member of staff: the lookup, the invitation and the
+// two transactions that record them.
 const OnboardingLock LockClass = 1
 
 // unlockTimeout bounds the release of a lock whose context is already finished,

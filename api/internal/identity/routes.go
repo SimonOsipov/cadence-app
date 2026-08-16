@@ -53,4 +53,19 @@ func (s *Service) Register(api huma.API) {
 			"clinic did not invite, and 503 when the provisioner is unreachable.",
 		Tags: []string{"identity"},
 	}, s.createPatient)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-provider",
+		Method:        http.MethodPost,
+		Path:          "/v1/providers",
+		DefaultStatus: http.StatusCreated,
+		Summary:       "Take a doctor on and invite them",
+		Description: "Creates the doctor and sends the invitation as one action, the way a patient " +
+			"is created. Administrators only, and doctors only: the clinic's first administrator " +
+			"comes into being through a one-off command under the migration role, and the database " +
+			"refuses any other role from this path. " +
+			"Answers 409 when the address already belongs to somebody this clinic knows or to an " +
+			"account it did not invite, and 503 when the provisioner is unreachable.",
+		Tags: []string{"identity"},
+	}, s.createProvider)
 }

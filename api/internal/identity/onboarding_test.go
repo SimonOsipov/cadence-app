@@ -210,7 +210,8 @@ func TestARefusedCreationAnswersInRussianWithItsOwnProblemType(t *testing.T) {
 			body := `{"email":"anna@clinic.example","full_name":"Анна Петрова",` +
 				`"specialists":[{"provider_id":"` + theColleague + `","care_role":"endo"}]}`
 
-			answer := post(t, identity.NewOnboarding(nil, nil, &countingProvisioner{}), tc.principal, body)
+			answer := post(t, identity.NewOnboarding(nil, nil, &countingProvisioner{}),
+				tc.principal, patientsPath, body)
 
 			if answer.status != tc.wantStatus {
 				t.Fatalf("status = %d, want %d; body %s", answer.status, tc.wantStatus, answer.body)
@@ -246,7 +247,7 @@ func TestABodyThatChoosesARoleIsRefusedRatherThanIgnored(t *testing.T) {
 		`"specialists":[{"provider_id":"` + theDoctor + `","care_role":"endo"}]}`
 
 	answer := post(t, identity.NewOnboarding(nil, nil, &countingProvisioner{}),
-		auth.Principal{Subject: theDoctor, Role: "doctor"}, body)
+		auth.Principal{Subject: theDoctor, Role: "doctor"}, patientsPath, body)
 
 	if answer.status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body %s", answer.status, answer.body)
@@ -273,6 +274,14 @@ const (
 	theDoctor    = "8a1f3b7c-0000-4000-8000-000000000002"
 	theColleague = "8a1f3b7c-0000-4000-8000-000000000004"
 	thePatient   = "8a1f3b7c-0000-4000-8000-000000000001"
+	theAdmin     = "8a1f3b7c-0000-4000-8000-000000000003"
+)
+
+// The two routes these suites drive. Named rather than spelled at every call
+// site, so that a body meant for one cannot quietly be posted to the other.
+const (
+	patientsPath  = "/v1/patients"
+	providersPath = "/v1/providers"
 )
 
 func asPrincipal(t *testing.T, principal auth.Principal) context.Context {
@@ -320,7 +329,9 @@ type answer struct {
 // post drives the operation through the transport that serves it: huma's
 // validation, the problem documents and the status codes are the thing under
 // test, and a direct call to the handler would skip all three.
-func post(t *testing.T, onboarding *identity.Onboarding, principal auth.Principal, body string) answer {
+func post(
+	t *testing.T, onboarding *identity.Onboarding, principal auth.Principal, path, body string,
+) answer {
 	t.Helper()
 
 	mux := chi.NewRouter()
@@ -332,7 +343,7 @@ func post(t *testing.T, onboarding *identity.Onboarding, principal auth.Principa
 
 	identity.NewService(onboarding).Register(httpserver.NewAPI(mux))
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/patients", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	rec := httptest.NewRecorder()

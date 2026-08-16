@@ -49,7 +49,7 @@ func TestADoubleClickCreatesOnePatientAndSendsOneInvitation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			answers[i] = clinic.create(t, asDoctor, body(address, theDoctor))
+			answers[i] = clinic.create(t, asDoctor, patientsPath, body(address, theDoctor))
 		}()
 	}
 
@@ -102,7 +102,7 @@ func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 
 	stranger := "8a1f3b7c-0000-4000-8000-0000000000ff"
 
-	if refused := clinic.create(t, asDoctor, body(address, theDoctor, stranger)); refused.status !=
+	if refused := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor, stranger)); refused.status !=
 		http.StatusUnprocessableEntity {
 		t.Fatalf("the interrupted creation answered %d, want 422: %s", refused.status, refused.body)
 	}
@@ -135,7 +135,7 @@ func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 		t.Fatalf("the invitation link was refused: %s", location)
 	}
 
-	if cured := clinic.create(t, asDoctor, body(address, theDoctor)); cured.status != http.StatusCreated {
+	if cured := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor)); cured.status != http.StatusCreated {
 		t.Fatalf("the retry answered %d, want 201: %s", cured.status, cured.body)
 	}
 
@@ -151,6 +151,18 @@ func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 	// describing a different event.
 	if signed := clinic.auditRows(t, "account.delete", invited); signed != 1 {
 		t.Errorf("%d account.delete rows name the account that was removed, want 1", signed)
+	}
+
+	// And it is filed under the patient, which is the half of that column the
+	// staff route's own test measures from the other side.
+	var underThePatient int
+	clinic.scan(t, `
+		SELECT count(*) FROM app.audit_log
+		WHERE action = 'account.delete' AND entity_id = $1 AND patient_id = $1
+	`, []any{invited}, &underThePatient)
+
+	if underThePatient != 1 {
+		t.Errorf("%d account.delete rows are filed under the patient, want 1", underThePatient)
 	}
 
 	// The account is a new one, which is what the deletion means: the person the
@@ -185,7 +197,7 @@ func TestAnInvitationWhoseAnswerWasLostIsStillRecorded(t *testing.T) {
 
 	clinic.provider.loseTheAnswer = true
 
-	refused := clinic.create(t, asDoctor, body(address, theDoctor))
+	refused := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor))
 	if refused.status != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", refused.status, refused.body)
 	}
@@ -204,7 +216,7 @@ func TestAnInvitationWhoseAnswerWasLostIsStillRecorded(t *testing.T) {
 
 	clinic.provider.loseTheAnswer = false
 
-	cured := clinic.create(t, asDoctor, body(address, theDoctor))
+	cured := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor))
 	if cured.status != http.StatusCreated {
 		t.Fatalf("the retry answered %d, want 201: %s", cured.status, cured.body)
 	}
@@ -237,7 +249,7 @@ func TestAnAccountSomebodyHasOpenedIsNotClaimedByAFailedInvitation(t *testing.T)
 	clinic.provider.loseTheAnswer = true
 	clinic.provider.openedFirst = true
 
-	if refused := clinic.create(t, asDoctor, body(address, theDoctor)); refused.status !=
+	if refused := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor)); refused.status !=
 		http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", refused.status, refused.body)
 	}
@@ -252,7 +264,7 @@ func TestAnAccountSomebodyHasOpenedIsNotClaimedByAFailedInvitation(t *testing.T)
 	clinic.provider.loseTheAnswer = false
 	clinic.provider.openedFirst = false
 
-	again := clinic.create(t, asDoctor, body(address, theDoctor))
+	again := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor))
 	if again.status != http.StatusConflict {
 		t.Fatalf("the retry answered %d, want 409: %s", again.status, again.body)
 	}
@@ -268,7 +280,7 @@ func TestAnAccountThisClinicDidNotInviteIsRefused(t *testing.T) {
 
 	invite(t, address)
 
-	refused := clinic.create(t, asDoctor, body(address, theDoctor))
+	refused := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor))
 	if refused.status != http.StatusConflict {
 		t.Fatalf("status = %d, want 409: %s", refused.status, refused.body)
 	}
@@ -288,12 +300,12 @@ func TestAnAccountThisClinicDidNotInviteIsRefused(t *testing.T) {
 func TestMixedCaseDoesNotCreateASecondPatient(t *testing.T) {
 	clinic := onboardingStand(t)
 
-	if created := clinic.create(t, asDoctor, body("Anna.Petrova@Clinic.Example", theDoctor)); created.status !=
+	if created := clinic.create(t, asDoctor, patientsPath, body("Anna.Petrova@Clinic.Example", theDoctor)); created.status !=
 		http.StatusCreated {
 		t.Fatalf("the first creation answered %d: %s", created.status, created.body)
 	}
 
-	again := clinic.create(t, asDoctor, body("ANNA.PETROVA@clinic.example", theDoctor))
+	again := clinic.create(t, asDoctor, patientsPath, body("ANNA.PETROVA@clinic.example", theDoctor))
 	if again.status != http.StatusConflict {
 		t.Fatalf("the same address in another case answered %d, want 409: %s", again.status, again.body)
 	}
@@ -341,7 +353,7 @@ func TestTheCareTeamTheCreationWrites(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			clinic := onboardingStand(t)
 
-			created := clinic.create(t, tc.caller, body(tc.address, tc.providers...))
+			created := clinic.create(t, tc.caller, patientsPath, body(tc.address, tc.providers...))
 			if created.status != http.StatusCreated {
 				t.Fatalf("status = %d, want 201: %s", created.status, created.body)
 			}
@@ -368,7 +380,7 @@ func TestBothRowsOfACreationAreSignedByTheDoctor(t *testing.T) {
 
 	const address = "audited@clinic.example"
 
-	if created := clinic.create(t, asDoctor, body(address, theDoctor)); created.status != http.StatusCreated {
+	if created := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor)); created.status != http.StatusCreated {
 		t.Fatalf("status = %d: %s", created.status, created.body)
 	}
 
@@ -402,7 +414,7 @@ func TestACreatedPatientHasNoTimezoneYet(t *testing.T) {
 
 	const address = "no.timezone@clinic.example"
 
-	if created := clinic.create(t, asDoctor, body(address, theDoctor)); created.status != http.StatusCreated {
+	if created := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor)); created.status != http.StatusCreated {
 		t.Fatalf("status = %d: %s", created.status, created.body)
 	}
 
@@ -426,7 +438,7 @@ func TestAnUnreachableProvisionerIsAnsweredAsUnavailable(t *testing.T) {
 	clinic := onboardingStand(t)
 	clinic.provider.unreachable = true
 
-	refused := clinic.create(t, asDoctor, body("unreachable@clinic.example", theDoctor))
+	refused := clinic.create(t, asDoctor, patientsPath, body("unreachable@clinic.example", theDoctor))
 	if refused.status != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", refused.status, refused.body)
 	}
@@ -453,8 +465,6 @@ var (
 	asDoctor = auth.Principal{Subject: theDoctor, Role: "doctor"}
 	asAdmin  = auth.Principal{Subject: theAdmin, Role: "admin"}
 )
-
-const theAdmin = "8a1f3b7c-0000-4000-8000-000000000003"
 
 // onboarding is one test's world: the endpoint mounted the way the router mounts it,
 // the provider behind it, and a connection to look at what was written.
@@ -527,7 +537,7 @@ func seedStaff(t *testing.T, writes *pgxpool.Pool) {
 }
 
 // create drives one request through the transport, the way a dashboard would.
-func (c *onboarding) create(t *testing.T, caller auth.Principal, payload string) answer {
+func (c *onboarding) create(t *testing.T, caller auth.Principal, path, payload string) answer {
 	t.Helper()
 
 	mux := chi.NewRouter()
@@ -540,7 +550,7 @@ func (c *onboarding) create(t *testing.T, caller auth.Principal, payload string)
 	identity.NewService(identity.NewOnboarding(c.requests, c.writes, c.provider)).
 		Register(httpserver.NewAPI(mux))
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/patients", strings.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 
 	rec := httptest.NewRecorder()
@@ -871,7 +881,7 @@ func TestNamingOneSpecialistTwiceIsTheFormsMistakeAndNothingIsSent(t *testing.T)
 
 	const address = "named-twice@clinic.example"
 
-	answered := clinic.create(t, asDoctor, body(address, theDoctor, theDoctor))
+	answered := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor, theDoctor))
 
 	if answered.status != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want 422: a repeated specialist is the form's problem, "+

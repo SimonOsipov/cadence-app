@@ -49,7 +49,37 @@ var (
 	// ErrCallerMayNotCreatePatients means the token's role is one that does not
 	// create people — a patient's, or none at all.
 	ErrCallerMayNotCreatePatients = errors.New("this caller may not create patients")
+
+	// ErrCallerMayNotCreateProviders means somebody other than an administrator
+	// tried to take a doctor on. A doctor who could would be a doctor who can
+	// grow the clinic's staff, and the care team is what every doctor's access
+	// runs through.
+	ErrCallerMayNotCreateProviders = errors.New("only an administrator may create providers")
 )
+
+// creation is the one request the spine is serving: the folded address, the
+// caller who asked, and whether the person being created is a patient.
+//
+// The last is carried for one column. The audit rows this flow writes outside
+// the creating transaction — the invitation, and the deletion of an account
+// being claimed — are the same act for either person, and patient_id is the
+// column a patient's trail is read by: a doctor's identifier in it files the
+// clinic's own hiring inside the trail of whichever patient holds that id.
+type creation struct {
+	address    string
+	invitedBy  string
+	forPatient bool
+}
+
+// patient is the audit row's patient_id: the person when the person is one, and
+// nothing when they are staff.
+func (c creation) patient(userID string) *string {
+	if !c.forPatient {
+		return nil
+	}
+
+	return &userID
+}
 
 // Held is what this clinic's own tables say about an account the provider knows.
 //
@@ -168,11 +198,13 @@ func (o *Onboarding) InvitePatient(ctx context.Context, email string, patient Ne
 		return "", err
 	}
 
+	of := creation{address: address, invitedBy: principal.Subject, forPatient: true}
+
 	var userID string
 
 	err := database.WithAdvisoryLock(ctx, o.requests, database.OnboardingLock, address,
 		func(ctx context.Context) error {
-			account, err := o.settle(ctx, address, principal.Subject)
+			account, err := o.settle(ctx, of)
 			if err != nil {
 				return err
 			}
@@ -180,7 +212,61 @@ func (o *Onboarding) InvitePatient(ctx context.Context, email string, patient Ne
 			patient.UserID = account.ID
 			userID = account.ID
 
-			return o.record(ctx, address, principal.Subject, patient)
+			return o.record(ctx, of, patient)
+		})
+	if err != nil {
+		return "", err
+	}
+
+	return userID, nil
+}
+
+// InviteProvider invites an address and writes the member of staff it belongs
+// to, answering with the identifier the provider assigned.
+//
+// The same spine as InvitePatient — the lock on the folded address, the lookup,
+// the invitation or the claim, then the record of the invitation and the person
+// — with three differences: only an administrator may ask, the person written is
+// a doctor rather than a patient, and the rows this flow signs name no patient.
+func (o *Onboarding) InviteProvider(
+	ctx context.Context, email string, provider NewProvider,
+) (string, error) {
+	address := NormalizeAddress(email)
+	if address == "" {
+		return "", ErrNoAddress
+	}
+
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return "", ErrCallerMayNotCreateProviders
+	}
+
+	if principal.Role != "admin" {
+		return "", fmt.Errorf("the token's role is %q: %w", principal.Role, ErrCallerMayNotCreateProviders)
+	}
+
+	of := creation{address: address, invitedBy: principal.Subject}
+
+	var userID string
+
+	err := database.WithAdvisoryLock(ctx, o.requests, database.OnboardingLock, address,
+		func(ctx context.Context) error {
+			account, err := o.settle(ctx, of)
+			if err != nil {
+				return err
+			}
+
+			provider.UserID = account.ID
+			userID = account.ID
+
+			// The invitation is committed before the person, for the reason
+			// record states: a creation interrupted after the mail has gone out
+			// has to be curable by a retry.
+			if err := o.remember(ctx, account.ID, of); err != nil {
+				return err
+			}
+
+			return CreateProvider(ctx, o.writes, provider)
 		})
 	if err != nil {
 		return "", err
@@ -199,14 +285,14 @@ func (o *Onboarding) InvitePatient(ctx context.Context, email string, patient Ne
 // provider is down". What that costs is one wrong status on a race this lock
 // closes — and the retry that follows it answers 409 through the lookup below,
 // which is the answer the spec asks for by another road.
-func (o *Onboarding) settle(ctx context.Context, address, invitedBy string) (Account, error) {
-	found, err := o.provisioner.Lookup(ctx, address)
+func (o *Onboarding) settle(ctx context.Context, of creation) (Account, error) {
+	found, err := o.provisioner.Lookup(ctx, of.address)
 	if err != nil {
 		return Account{}, fmt.Errorf("looking up the address: %w", ErrProvisionerUnavailable)
 	}
 
 	if found == nil {
-		return o.invite(ctx, address, invitedBy)
+		return o.invite(ctx, of)
 	}
 
 	held, err := o.held(ctx, found.ID)
@@ -235,14 +321,14 @@ func (o *Onboarding) settle(ctx context.Context, address, invitedBy string) (Acc
 		// its own: this is the most destructive thing the clinic does to another
 		// system — an account and every session on it are gone — and the record of
 		// it must not depend on the rest of the creation going through.
-		if err := o.audit(ctx, accountDeleted, found.ID); err != nil {
+		if err := o.audit(ctx, accountDeleted, found.ID, of); err != nil {
 			return Account{}, err
 		}
 
-		return o.invite(ctx, address, invitedBy)
+		return o.invite(ctx, of)
 
 	default:
-		return o.invite(ctx, address, invitedBy)
+		return o.invite(ctx, of)
 	}
 }
 
@@ -266,8 +352,8 @@ func (o *Onboarding) settle(ctx context.Context, address, invitedBy string) (Acc
 // from here, so answering 201 would tell the doctor a link is on its way that
 // may not be; the retry finds the record, invites again, and that invitation is
 // one this side saw succeed.
-func (o *Onboarding) invite(ctx context.Context, address, invitedBy string) (Account, error) {
-	account, err := o.provisioner.Invite(ctx, address)
+func (o *Onboarding) invite(ctx context.Context, of creation) (Account, error) {
+	account, err := o.provisioner.Invite(ctx, of.address)
 	if err == nil {
 		return account, nil
 	}
@@ -282,12 +368,12 @@ func (o *Onboarding) invite(ctx context.Context, address, invitedBy string) (Acc
 	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recoveryBudget)
 	defer cancel()
 
-	orphan, lookupErr := o.provisioner.Lookup(recoveryCtx, address)
+	orphan, lookupErr := o.provisioner.Lookup(recoveryCtx, of.address)
 	if lookupErr != nil || orphan == nil || hasBeenOpened(*orphan) {
 		return Account{}, fmt.Errorf("inviting the address: %w", ErrProvisionerUnavailable)
 	}
 
-	if err := o.remember(recoveryCtx, orphan.ID, address, invitedBy); err != nil {
+	if err := o.remember(recoveryCtx, orphan.ID, of); err != nil {
 		// The address is burned if this write is lost, and there is nothing left
 		// to try — so it travels inside the refusal, where the log keeps it.
 		return Account{}, fmt.Errorf("recording an invitation whose answer was lost: %w: %w",
@@ -347,8 +433,8 @@ func (o *Onboarding) held(ctx context.Context, userID string) (Held, error) {
 // answer 409 forever. The window does not close — the commit always comes after
 // the side effect — it shrinks to the gap between the invitation and this first
 // commit.
-func (o *Onboarding) record(ctx context.Context, address, invitedBy string, patient NewPatient) error {
-	if err := o.remember(ctx, patient.UserID, address, invitedBy); err != nil {
+func (o *Onboarding) record(ctx context.Context, of creation, patient NewPatient) error {
+	if err := o.remember(ctx, patient.UserID, of); err != nil {
 		return err
 	}
 
@@ -356,7 +442,7 @@ func (o *Onboarding) record(ctx context.Context, address, invitedBy string, pati
 }
 
 // remember commits the record of the invitation and the row that signs it.
-func (o *Onboarding) remember(ctx context.Context, userID, address, invitedBy string) error {
+func (o *Onboarding) remember(ctx context.Context, userID string, of creation) error {
 	err := database.WithService(ctx, o.writes, func(ctx context.Context, tx pgx.Tx) error {
 		// DO NOTHING rather than an update: no role holds UPDATE on this table,
 		// and the row says an account was invited by this clinic — which a second
@@ -365,7 +451,7 @@ func (o *Onboarding) remember(ctx context.Context, userID, address, invitedBy st
 			INSERT INTO app.invites (user_id, email, invited_by)
 			VALUES ($1, $2, $3)
 			ON CONFLICT (user_id) DO NOTHING
-		`, userID, address, invitedBy); err != nil {
+		`, userID, of.address, of.invitedBy); err != nil {
 			return fmt.Errorf("writing the invite record: %w", err)
 		}
 
@@ -373,7 +459,7 @@ func (o *Onboarding) remember(ctx context.Context, userID, address, invitedBy st
 		// is a second row. It says asked for rather than sent: delivery is the
 		// provider's and is not reported back, and a request whose answer was lost
 		// records the ask it certainly made.
-		return writeAudit(ctx, tx, invitationAsked, userID)
+		return writeAudit(ctx, tx, invitationAsked, userID, of.patient(userID))
 	})
 	if err != nil {
 		return fmt.Errorf("recording the invitation to %s: %w", userID, classify(err))
@@ -384,9 +470,9 @@ func (o *Onboarding) remember(ctx context.Context, userID, address, invitedBy st
 
 // audit records one act of this flow that stands outside the creation's own
 // transactions.
-func (o *Onboarding) audit(ctx context.Context, action, entityID string) error {
+func (o *Onboarding) audit(ctx context.Context, action, entityID string, of creation) error {
 	err := database.WithService(ctx, o.writes, func(ctx context.Context, tx pgx.Tx) error {
-		return writeAudit(ctx, tx, action, entityID)
+		return writeAudit(ctx, tx, action, entityID, of.patient(entityID))
 	})
 	if err != nil {
 		return fmt.Errorf("recording %s for %s: %w", action, entityID, err)
@@ -422,7 +508,7 @@ func entityOf(action string) string {
 	return invitesEntity
 }
 
-func writeAudit(ctx context.Context, tx pgx.Tx, action, entityID string) error {
+func writeAudit(ctx context.Context, tx pgx.Tx, action, entityID string, patientID *string) error {
 	// The setting names travel as bound parameters — current_setting takes its
 	// name as an argument — which keeps the statement the constant the authorship
 	// gate requires.
@@ -431,10 +517,10 @@ func writeAudit(ctx context.Context, tx pgx.Tx, action, entityID string) error {
 		VALUES (
 			nullif(current_setting($3, true), '')::uuid,
 			nullif(current_setting($4, true), ''),
-			$2, $5, $1, $1
+			$2, $5, $1, $6
 		)
 	`, entityID, action, database.ActorIDSetting, database.ActorJobSetting,
-		entityOf(action)); err != nil {
+		entityOf(action), patientID); err != nil {
 		return fmt.Errorf("writing the audit record: %w", err)
 	}
 

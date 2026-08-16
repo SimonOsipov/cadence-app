@@ -14,6 +14,19 @@
         ],
         "type": "object"
       },
+      "CreatedProvider": {
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "description": "The doctor's id. The same value the invitation link signs them in as.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "type": "object"
+      },
       "Me": {
         "additionalProperties": false,
         "properties": {
@@ -92,6 +105,33 @@
           "email",
           "full_name",
           "specialists"
+        ],
+        "type": "object"
+      },
+      "NewProviderBody": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "description": "Where the invitation is sent. Stored folded to lower case, which is the spelling the identity provider holds.",
+            "format": "email",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "full_name": {
+            "description": "The doctor's name as the clinic writes it.",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title_ru": {
+            "description": "What the clinic calls them, in Russian. Shown to a patient beside the name on their care team.",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "full_name"
         ],
         "type": "object"
       },
@@ -269,6 +309,48 @@
           }
         },
         "summary": "Create a patient and invite them",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/v1/providers": {
+      "post": {
+        "description": "Creates the doctor and sends the invitation as one action, the way a patient is created. Administrators only, and doctors only: the clinic's first administrator comes into being through a one-off command under the migration role, and the database refuses any other role from this path. Answers 409 when the address already belongs to somebody this clinic knows or to an account it did not invite, and 503 when the provisioner is unreachable.",
+        "operationId": "create-provider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewProviderBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedProvider"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Take a doctor on and invite them",
         "tags": [
           "identity"
         ]
