@@ -16,13 +16,15 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// identityTables is the list this migration lays down, stated once so that a
+// identityTables is every table the chain lays down, stated once so that a
 // table added to the schema and forgotten by a test is a missing entry rather
-// than a missing file.
+// than a missing file. Six of them are this migration's; invites arrives with
+// 000008 and joins the same sweeps.
 func identityTables() []string {
 	return []string{
 		"audit_log",
 		"care_team_assignments",
+		"invites",
 		"patient_profiles",
 		"profiles",
 		"provider_profiles",
@@ -33,8 +35,8 @@ func identityTables() []string {
 // The pg_class sweeps have been in the suite since the first migration and have
 // been passing vacuously ever since — there were no tables to walk. This is the
 // step where that stops, and the emptiness is worth asserting against: a sweep
-// over nothing and a sweep over six clean tables are the same green.
-func TestTheSchemaHoldsExactlyTheSixTables(t *testing.T) {
+// over nothing and a sweep over a set of clean tables are the same green.
+func TestTheSchemaHoldsExactlyTheTablesDeclared(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.SuperuserURL)
 
@@ -74,8 +76,9 @@ func TestTheSchemaHoldsExactlyTheSixTables(t *testing.T) {
 // profiles is the sharpest place to measure it. The owner holds every privilege
 // on its own tables by virtue of owning them — the grants registry declares
 // exactly that — so a refused INSERT cannot be a missing grant. What it can be,
-// and is, is FORCE: there is a policy permitting the owner to read, which the
-// token issuance hook needs, and none permitting it to write.
+// and is, is FORCE: the policies permitting the owner anything on this table are
+// the hook's read and, since 000009, an INSERT of an admin, and the row below is
+// a patient.
 func TestForceAppliesToTheOwnerToo(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	ctx := t.Context()
@@ -522,6 +525,13 @@ func TestAuditRowsOutliveTheProfilesTheyName(t *testing.T) {
 			 VALUES ($1, $2, 'endo')`,
 			[]any{patient, doctor},
 		},
+		// invites references profiles through invited_by and not through user_id,
+		// so the row below names the doctor and describes the patient being
+		// deleted.
+		{
+			`INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)`,
+			[]any{patient, "irina@example.test", doctor},
+		},
 	} {
 		if _, err := conn.Exec(ctx, seed.statement, seed.args...); err != nil {
 			t.Fatalf("seeding (%s): %v", seed.statement, err)
@@ -538,13 +548,14 @@ func TestAuditRowsOutliveTheProfilesTheyName(t *testing.T) {
 		t.Fatalf("deleting the profile: %v", err)
 	}
 
-	var cards, preferences, assignments, audits int
+	var cards, preferences, assignments, audits, invitations int
 	if err := conn.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM app.patient_profiles WHERE user_id = $1),
 		       (SELECT count(*) FROM app.user_preferences WHERE user_id = $1),
 		       (SELECT count(*) FROM app.care_team_assignments WHERE patient_id = $1),
-		       (SELECT count(*) FROM app.audit_log WHERE patient_id = $1)
-	`, patient).Scan(&cards, &preferences, &assignments, &audits); err != nil {
+		       (SELECT count(*) FROM app.audit_log WHERE patient_id = $1),
+		       (SELECT count(*) FROM app.invites WHERE user_id = $1)
+	`, patient).Scan(&cards, &preferences, &assignments, &audits, &invitations); err != nil {
 		t.Fatalf("counting what survived: %v", err)
 	}
 
@@ -560,6 +571,12 @@ func TestAuditRowsOutliveTheProfilesTheyName(t *testing.T) {
 	if audits != 1 {
 		t.Error("the audit row went with the profile it names; the evidence of a deletion " +
 			"cannot be deleted by that deletion")
+	}
+	// The invitation outlives the profile it brought into being, for the same
+	// reason and by a different mechanism: there is no reference on user_id to
+	// cascade through, because the row exists before the profile does.
+	if invitations != 1 {
+		t.Error("the invitation went with the profile it created")
 	}
 }
 
@@ -619,6 +636,15 @@ func identityColumns() map[string][]string {
 			"weekly_report boolean NOT NULL DEFAULT true",
 			"team_messages boolean NOT NULL DEFAULT true",
 			"reorder_alerts boolean NOT NULL DEFAULT true",
+		},
+		// No status, no payload, no role: the first is derived, the second lives
+		// in the rows the same transaction writes, and the third is on the profile
+		// beside them. §03 names all three.
+		"invites": {
+			"user_id uuid NOT NULL",
+			"email text NOT NULL",
+			"invited_by uuid NOT NULL",
+			"invited_at timestamp with time zone NOT NULL DEFAULT now()",
 		},
 		"audit_log": {
 			"id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
