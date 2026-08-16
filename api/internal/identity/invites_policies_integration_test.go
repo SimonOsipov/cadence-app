@@ -505,7 +505,7 @@ func TestTheOwnerSignsItsAuditRowWithAJobAndNeverAsAPerson(t *testing.T) {
 
 	tag, err := conn.Exec(ctx, `
 		INSERT INTO app.audit_log (actor_job, action, entity, entity_id)
-		VALUES ('bootstrap-admin', 'provider.create', 'profiles', $1)
+		VALUES ('bootstrap-admin', 'admin.bootstrap', 'profiles', $1)
 	`, adminID)
 	if err != nil {
 		t.Fatalf("signing the audit row: %v", err)
@@ -516,7 +516,7 @@ func TestTheOwnerSignsItsAuditRowWithAJobAndNeverAsAPerson(t *testing.T) {
 
 	_, err = conn.Exec(ctx, `
 		INSERT INTO app.audit_log (actor_id, action, entity, entity_id)
-		VALUES ($1, 'provider.create', 'profiles', $1)
+		VALUES ($1, 'admin.bootstrap', 'profiles', $1)
 	`, adminID)
 	if err == nil {
 		t.Fatal("the owner signed an audit row in a person's name")
