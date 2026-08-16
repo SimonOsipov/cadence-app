@@ -1,18 +1,12 @@
 // Command bootstrap-admin creates the clinic's first administrator.
 //
-// It exists because the clinic's staff are to be created by an administrator and
-// the first one has nobody to create them: the staff route arrives with step-6
-// admitting an admin caller only, and migration 000006 already refuses
-// role='admin' from the service path whoever asks. So the first row is written
-// from outside the request path entirely, under the migration role, once per
-// environment.
+// Staff are created by an administrator and the first one has nobody to create them: migration 000006 refuses
+// role='admin' from the service path whoever asks. So the first row is written from outside the request path
+// entirely, under the migration role, once per environment.
 //
-// It does not invite anybody, and could not record it if it did: app.invites
-// carries no policy for the owner, and its invited_by references a profile. What
-// makes that absence harmless here is that this command never claims an account.
-// The account is created at the provider first — its identifier is the argument —
-// so a run that fails is repeated with the same identifier, and an identifier
-// somebody lost is what the provisioner's lookup answers with.
+// It records no invitation — app.invites carries no policy for the owner — and that is harmless because the command
+// never claims an account. The account exists at the provider first, its identifier is the argument, so a failed run
+// is repeated with the same identifier and one somebody lost is what the provisioner's lookup answers with.
 package main
 
 import (
@@ -46,28 +40,19 @@ Environment:
   DATABASE_MIGRATION_URL  connection string of the migration role (required)
 `
 
-// ownerRole is what the migration role becomes for the two writes, rather than
-// counting on inheriting it: measured, a member that inherits reaches 000009's
-// policies without this, and a NOINHERIT one does not.
+// ownerRole is assumed rather than inherited: a NOINHERIT member of it reaches 000009's policies only after SET ROLE.
 const ownerRole = "cadence_owner"
 
-// auditJob signs the audit row. It is a job and never a person: the role writing
-// it can TRUNCATE the table, and a weaker author must at least not produce a row
-// that reads as somebody's own action.
+// auditJob signs the audit row, and 000009's policy lets the owner sign no other way: a job, never a person.
 const auditJob = "bootstrap-admin"
 
-// auditAction is the bootstrap's own, not the provider.create the staff route
-// will write: this row is about an administrator, who is not a provider, and a
-// series where the two acts share a string can only be split on actor_job.
+// auditAction is the bootstrap's own, not the staff route's provider.create: an administrator is not a provider.
 const auditAction = "admin.bootstrap"
 
-// errArguments is what a usage mistake unwraps to, so that the command can
-// answer one before it asks for a connection string.
+// errArguments lets the command answer a usage mistake before it asks for a connection string.
 var errArguments = errors.New("bootstrap-admin takes an account identifier and a full name")
 
-// errAdministratorExists is the refusal the step asks for. Nothing on
-// app.profiles is unique on role, so this check is the only thing between a
-// second run and a second administrator.
+// errAdministratorExists: nothing on app.profiles is unique on role, so this check is all that stops a second run.
 var errAdministratorExists = errors.New("the clinic already has an administrator")
 
 type administrator struct {
@@ -75,9 +60,7 @@ type administrator struct {
 	fullName string
 }
 
-// writer is the seam the argument handling is tested through: everything below
-// the parse needs a database, and everything above it needs to be provable
-// without one.
+// writer is the seam the argument handling is tested through: everything below the parse needs a database.
 type writer func(ctx context.Context, databaseURL string, person administrator) error
 
 func main() {
@@ -114,8 +97,6 @@ func parse(args []string) (administrator, error) {
 		return administrator{}, fmt.Errorf("%w, got %d argument(s)", errArguments, len(args))
 	}
 
-	// Refused against the definition the seam uses rather than a second one, and
-	// before the database is touched — which is what IsUUIDShaped is exported for.
 	person := administrator{userID: args[0], fullName: strings.TrimSpace(args[1])}
 	if !database.IsUUIDShaped(person.userID) {
 		return administrator{}, fmt.Errorf("%w: %q is not an account identifier", errArguments, person.userID)
@@ -129,9 +110,8 @@ func parse(args []string) (administrator, error) {
 
 // writeTheFirstAdministrator writes the profile and the audit row, or neither.
 //
-// Two simultaneous runs would both find no administrator and both write one:
-// nothing here serialises them, and this is a command a person runs once per
-// environment rather than a path anything calls.
+// Nothing here serialises two simultaneous runs: both would find no administrator and both write one. This is a
+// command a person runs once per environment rather than a path anything calls.
 func writeTheFirstAdministrator(ctx context.Context, databaseURL string, person administrator) error {
 	conn, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {
@@ -145,8 +125,7 @@ func writeTheFirstAdministrator(ctx context.Context, databaseURL string, person 
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
-	// The same spelling the seams use: the statement form takes an identifier,
-	// so the role would have to be concatenated into the SQL.
+	// set_config rather than SET ROLE: the statement form takes an identifier, which would have to be concatenated in.
 	if _, err := tx.Exec(ctx, "SELECT set_config('role', $1, true)", ownerRole); err != nil {
 		return fmt.Errorf("assuming %s: %w", ownerRole, err)
 	}
@@ -161,16 +140,14 @@ func writeTheFirstAdministrator(ctx context.Context, databaseURL string, person 
 		return errAdministratorExists
 	}
 
-	// timezone is left out rather than guessed: it is captured at the person's
-	// first sign-in, and the column accepts its absence until then.
+	// timezone is left out rather than guessed: it is captured at the person's first sign-in.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO app.profiles (user_id, role, full_name) VALUES ($1, 'admin', $2)
 	`, person.userID, person.fullName); err != nil {
 		return fmt.Errorf("writing the administrator's profile: %w", err)
 	}
 
-	// In the profile's own transaction, so that a rollback takes the signature
-	// with the thing signed.
+	// In the profile's own transaction: a rollback takes the signature with the thing signed.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO app.audit_log (actor_job, action, entity, entity_id)
 		VALUES ($1, $2, 'profiles', $3)

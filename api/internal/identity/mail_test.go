@@ -1,18 +1,15 @@
-// What the clinic's mail looks like before it is sent, measured against the
-// files and the deployment rather than against a description of them.
+// What the clinic's mail looks like before it is sent, measured against the files and the
+// deployment rather than against a description of them.
 //
-// Nothing here observes an email, because there is no SMTP provider to send one
-// — that is SKL-01 and it has not been chosen. «The Russian email arrives» is
-// therefore not asserted anywhere and is not done.
+// Nothing here observes an email: there is no SMTP provider to send one — SKL-01, not yet chosen —
+// so «the Russian email arrives» is not asserted anywhere and is not done.
 //
-// What this file used to claim, and what cost it a shipped defect: that the
-// provider renders a template only when it has an SMTP server. It does not.
+// What this file used to claim, and what cost it a shipped defect: that the provider renders a
+// template only when it has an SMTP server. It does not.
 // `templatemailer.FromConfig` substitutes a noop client when SMTP.Host is empty,
 // and `Mailer.mail` fetches and executes the template BEFORE handing anything to
 // that client. So the fetch is observable without a provider, and the fetch is
 // exactly where three review rounds of `file://` URLs were failing silently.
-// TestTheProviderFetchesTheTemplateItIsPointedAt is that measurement; the rest
-// of this file is what can be checked without a container.
 package identity_test
 
 import (
@@ -30,10 +27,9 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// The provider's variable names, read off the config struct of the binary
-// docker-compose.yml pins rather than out of its documentation: envconfig
-// derives the names from field names, and one it does not read is silent — the
-// failure GOTRUE_MAILER_MAX_FREQUENCY produced at step 2.
+// Read off the config struct of the binary docker-compose.yml pins rather than out of its
+// documentation: envconfig derives these names from field names, and one the provider does not read
+// is silent — the failure GOTRUE_MAILER_MAX_FREQUENCY produced at step 2.
 const (
 	inviteSubjectVariable    = "GOTRUE_MAILER_SUBJECTS_INVITE"
 	magicLinkSubjectVariable = "GOTRUE_MAILER_SUBJECTS_MAGIC_LINK"
@@ -46,36 +42,31 @@ const (
 	senderNameVariable = "GOTRUE_SMTP_SENDER_NAME"
 )
 
-// The container path and the repository directory the mount carries there. Both
-// are pinned because a test naming only the URLs stays green with the mount
-// deleted, and the provider then fetches nothing.
+// The container path and the repository directory the mount carries there. Both are pinned because
+// a test naming only the URLs stays green with the mount deleted, and the provider then fetches
+// nothing. templateServerRoot is a path on the serving container, never on the auth one.
 const (
-	// Where the serving container keeps them, and where the deployment points
-	// the provider. Not a path on the auth container: it fetches, never reads.
 	templateServerRoot = "/usr/share/nginx/html"
 	templateOrigin     = "http://mail-templates"
 	templateSource     = "mail-templates"
 )
 
-// The link placeholder, measured out of the pinned image: the provider's own
-// default templates carry this exact string. What a misspelling costs is not
-// known — no mail has ever been sent from here — so it is pinned exactly.
+// The link placeholder, measured out of the pinned image: the provider's own default templates
+// carry this exact string, and what a misspelling costs is unknown — no mail has ever been sent.
 const confirmationURL = "{{ .ConfirmationURL }}"
 
-// The three mails this block causes the provider to send. Confirmation and
-// email-change are absent on purpose: signup is disabled, and changing an
-// address is out of scope and left at the provider's English default.
+// The three mails this block causes the provider to send. Confirmation and email-change are absent
+// on purpose: signup is disabled, and changing an address is out of scope, left at the English default.
 var mails = []struct {
 	name     string
 	subject  string
 	template string
 	file     string
 
-	// says is a phrase belonging to this mail and to no other. Without it the
-	// three files are interchangeable to the suite: all Russian, all carrying
-	// {{ .ConfirmationURL }}, all parsing — so swapping recovery.html and
-	// magic-link.html passes everything while a patient who asked to recover
-	// access is told how to sign in.
+	// says is a phrase belonging to this mail and to no other. Without it the three files are
+	// interchangeable to the suite — all Russian, all carrying the link, all parsing — so swapping
+	// recovery.html and magic-link.html passes while a patient who asked to recover is told how to
+	// sign in.
 	says string
 }{
 	{
@@ -101,9 +92,7 @@ var mails = []struct {
 	},
 }
 
-// Each body says what its own mail is for, and no other body says it. The first
-// half alone would pass on three identical files; the second is what makes a
-// swap fail.
+// The first half alone would pass on three identical files; the second is what makes a swap fail.
 func TestEachTemplateSaysWhatItsOwnMailIsFor(t *testing.T) {
 	for _, mail := range mails {
 		t.Run(mail.name, func(t *testing.T) {
@@ -140,13 +129,10 @@ func TestTheSenderIsNamedInRussian(t *testing.T) {
 	requireRussian(t, deploymentSetting(t, senderNameVariable), "the sender name")
 }
 
-// The templates the deployment names are the files this repository carries, and
-// they reach the provider the only way it accepts them — over HTTP, from the
-// service that serves them.
-//
-// This test used to require the opposite: a `file://` URL and a mount onto the
-// auth container. Both were wrong, and asserting them is what kept the defect
-// alive through three review rounds — the suite was pinning the mistake.
+// The templates the deployment names are the files this repository carries, reaching the provider
+// the only way it accepts them — over HTTP, from the service that serves them. This test used to
+// require the opposite, a `file://` URL and a mount onto the auth container, and asserting that is
+// what kept the defect alive through three review rounds: the suite was pinning the mistake.
 func TestEveryMailIsRenderedFromATemplateInThisRepository(t *testing.T) {
 	if mount := "./" + templateSource + ":" + templateServerRoot; !composeMounts(t, mount) {
 		t.Errorf("no line of docker-compose.yml mounts %s, so the service that serves the "+
@@ -180,10 +166,8 @@ func TestEveryTemplateIsRussianAndCarriesTheLink(t *testing.T) {
 					"to deliver", mail.file, confirmationURL)
 			}
 
-			// A syntax check of the {{ }} dialect the provider's own defaults are
-			// written in, not a claim about which engine renders these. It is here
-			// because an unbalanced action is otherwise observable nowhere: with no
-			// SMTP nothing parses these files, so a broken one waits for SKL-01.
+			// A syntax check of the {{ }} dialect, not a claim about which engine renders these. With
+			// no SMTP nothing else parses these files, so an unbalanced action would wait for SKL-01.
 			if _, err := template.New(mail.file).Parse(body); err != nil {
 				t.Errorf("%s does not parse: %v", mail.file, err)
 			}
@@ -192,16 +176,14 @@ func TestEveryTemplateIsRussianAndCarriesTheLink(t *testing.T) {
 }
 
 func TestTheInvitationStatesTheLifetimeTheProviderEnforces(t *testing.T) {
-	// Truncating to hours would let 90 minutes match copy that says "1 час", so
-	// a lifetime the copy cannot state exactly fails here rather than silently.
+	// Truncating to hours would let 90 minutes match copy that says "1 час".
 	if identity.InviteLinkLifetime%time.Hour != 0 {
 		t.Fatalf("identity.InviteLinkLifetime is %s, which no whole number of hours states; "+
 			"invite.html has to say something this test cannot check",
 			identity.InviteLinkLifetime)
 	}
 
-	// With the unit, so the hour count is read as the window and not matched
-	// against whatever else in the file happens to contain those digits.
+	// With the unit, so the count is not matched against whatever else in the file has those digits.
 	stated := strconv.Itoa(int(identity.InviteLinkLifetime.Hours())) + " час"
 
 	if body := readTemplate(t, "invite.html"); !strings.Contains(body, stated) {
@@ -211,13 +193,10 @@ func TestTheInvitationStatesTheLifetimeTheProviderEnforces(t *testing.T) {
 	}
 }
 
-// Set per environment, and required rather than tuning — the reasoning is at
-// the variable in docker-compose.yml, and that it governs at all is measured by
+// Shape, not merely presence: `**` on its own is non-empty and would satisfy every other assertion
+// here while opening the list to any host a caller names — and the session rides in the fragment of
+// the address the link lands on. That the list governs at all is measured by
 // TestTheAllowListDecidesWhereALinkLands.
-//
-// Shape, not merely presence: `**` on its own is non-empty and satisfies every
-// other assertion here while opening the list to any host a caller names — and
-// the session rides in the fragment of the address it lands on.
 func TestTheDeploymentSetsARedirectAllowList(t *testing.T) {
 	allowed := deploymentSetting(t, testsupport.RedirectAllowListVariable)
 	if allowed == "" {
@@ -247,17 +226,15 @@ func TestTheDeploymentSetsARedirectAllowList(t *testing.T) {
 //
 // The failure is silent and costs more than the body: `load` falls back to
 // `loadEntryDefault`, which returns the provider's English body AND its English
-// subject — so a broken URL here also throws away the SUBJECTS_ lines. A wrong
-// value is worse than no value at all.
+// subject — so a broken URL here also throws away the SUBJECTS_ lines.
 //
-// This is exactly the defect that shipped: all three variables named `file://`
-// paths, and three review rounds passed over them because every assertion in
-// this file compared the deployment's text against constants declared beside it.
+// That is the defect that shipped: all three variables named `file://` paths, and three review
+// rounds passed over them because every assertion in this file compared the deployment's text
+// against constants declared beside it.
 //
-// What this measures is the scheme, which is the class the defect belonged to.
-// What it does NOT measure is reachability — `http://typo/invite.html` passes
-// here and fails in production. That needs a container fetching from a server in
-// the test process, and it is not written; the gap is named rather than implied.
+// This measures the scheme, the class the defect belonged to. It does NOT measure reachability —
+// `http://typo/invite.html` passes here and fails in production. That needs a container fetching
+// from a server in the test process, and it is not written; the gap is named rather than implied.
 func TestEveryMailTemplateIsFetchableByScheme(t *testing.T) {
 	for _, variable := range []string{
 		"GOTRUE_MAILER_TEMPLATES_INVITE",
@@ -307,9 +284,8 @@ func readTemplate(t *testing.T, file string) string {
 	return string(body)
 }
 
-// composeMounts reads the list entry rather than the file's text, for the same
-// reason deploymentSetting reads a whole line up to the name: a commented-out
-// mount still contains the pair of paths.
+// composeMounts reads the list entry rather than the file's text, for the reason deploymentSetting
+// gives: a commented-out mount still contains the pair of paths.
 func composeMounts(t *testing.T, mount string) bool {
 	t.Helper()
 
@@ -328,8 +304,7 @@ func composeMounts(t *testing.T, mount string) bool {
 	return false
 }
 
-// The whole of «it is in Russian» a machine can carry: the copy is a human's,
-// and what this refuses is the provider's English default still being in place.
+// The whole of «it is in Russian» a machine can carry: what it refuses is the English default.
 func requireRussian(t *testing.T, text, what string) {
 	t.Helper()
 

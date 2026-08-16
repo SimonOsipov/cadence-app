@@ -14,10 +14,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
-// The lock is what makes two requests for one address run one after the other,
-// so the property under test is that the second holder does not enter until the
-// first has left. Asserted by order rather than by a duration: a machine under
-// load makes a timing assertion say what the machine was doing.
+// The second holder must not enter until the first has left. Asserted by order rather than by a duration: under load
+// a timing assertion says what the machine was doing.
 func TestTheSecondHolderOfOneKeyWaitsForTheFirst(t *testing.T) {
 	pool := lockPool(t)
 
@@ -68,10 +66,8 @@ func TestTheSecondHolderOfOneKeyWaitsForTheFirst(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		// Bounded well above the 250ms the first holder stays inside, and for
-		// the failure rather than the wait: a lock the first holder never
-		// releases is what this test is against, and unbounded it would take
-		// the whole suite's timeout to report it.
+		// Bounded well above the 250ms the first holder stays inside, and for the failure rather than the wait:
+		// unbounded, a lock the first holder never releases would take the suite's whole timeout to report.
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
@@ -87,11 +83,8 @@ func TestTheSecondHolderOfOneKeyWaitsForTheFirst(t *testing.T) {
 		}
 	}()
 
-	// Long enough that a lock which does not block would have let the second
-	// holder in and short enough not to dominate the suite. It cannot produce a
-	// false failure: the assertion below is on the order, and a slow machine only
-	// makes the second holder arrive later than the first, which is the state the
-	// test wants.
+	// Long enough that a lock which does not block would have let the second holder in. It cannot fail falsely: the
+	// assertion below is on the order, and a slow machine only makes the second holder later.
 	select {
 	case <-second:
 		t.Fatal("the second holder entered while the first was inside")
@@ -113,8 +106,7 @@ func TestTheSecondHolderOfOneKeyWaitsForTheFirst(t *testing.T) {
 	}
 }
 
-// Two addresses are two locks. Without this the test above would also pass
-// against a lock taken on a constant, which would serialise the whole clinic.
+// Two addresses are two locks: without this the test above passes against a lock taken on a constant.
 func TestTwoKeysAreTwoLocks(t *testing.T) {
 	pool := lockPool(t)
 
@@ -137,9 +129,7 @@ func TestTwoKeysAreTwoLocks(t *testing.T) {
 
 	entered := make(chan struct{})
 
-	// Bounded, because the failure this test exists for is a wait rather than a
-	// wrong answer: with both keys hashing to one number the call below never
-	// returns, and an unbounded test would take the suite's whole timeout to say so.
+	// Bounded: with both keys hashing to one number the call below never returns, and a wait is the failure here.
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
@@ -166,16 +156,11 @@ func TestTwoKeysAreTwoLocks(t *testing.T) {
 	}
 }
 
-// A failing closure still releases, and the second holder is on a pool of its
-// own. That is not decoration: an advisory lock belongs to the session, so a
-// session that took it can take it again — measured, and it means a test that
-// re-locks through the same pool passes with the release deleted, since pgxpool
-// hands the connection straight back.
+// A failing closure still releases, and the second holder is on a pool of its own: an advisory lock belongs to the
+// session, so measured, a test that re-locks through the same pool passes with the release deleted.
 //
-// What the release buys is that everybody else can proceed. The failure it
-// prevents shows up in production only: the first patient whose creation is
-// refused leaves the lock behind, and every later request for that address
-// waits on a connection that is back in the pool and never coming out of it.
+// The failure the release prevents shows up in production only: the first patient whose creation is refused leaves
+// the lock behind, and every later request for that address waits on a connection that is back in the pool.
 func TestAFailingHolderReleasesTheLockForEverybodyElse(t *testing.T) {
 	held, others := twoPoolsOnOneDatabase(t)
 
@@ -202,18 +187,14 @@ func TestAFailingHolderReleasesTheLockForEverybodyElse(t *testing.T) {
 	}
 }
 
-// The pool is the request path's, under cadence_app: that is the pool the lock
-// is taken on in production, and the role holds no privilege on the app schema
-// beyond its policies.
+// The request path's pool, under cadence_app: the role the lock is taken as in production.
 func lockPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
 	return poolOn(t, cluster.NewDatabase(t).AppURL)
 }
 
-// Two pools on one database, because advisory locks are scoped to a database:
-// two pools on two databases would never contend, and a test built on them
-// would pass with the lock deleted.
+// Advisory locks are scoped to a database: two pools on two databases never contend and would pass with no lock.
 func twoPoolsOnOneDatabase(t *testing.T) (*pgxpool.Pool, *pgxpool.Pool) {
 	t.Helper()
 

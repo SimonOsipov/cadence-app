@@ -13,9 +13,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// The fold is what makes one address one person. Two spellings of the same
-// mailbox that fold differently are two advisory locks, two invite records and,
-// at the provider, one account the second request cannot find.
+// The fold is what makes one address one person: two spellings that fold differently are two
+// advisory locks, two invite records and, at the provider, one account the second request misses.
 func TestTheAddressIsFoldedToTheSpellingTheProviderStores(t *testing.T) {
 	tests := []struct {
 		name string
@@ -37,9 +36,8 @@ func TestTheAddressIsFoldedToTheSpellingTheProviderStores(t *testing.T) {
 	}
 }
 
-// The limit fires, and the assertion is on the refusal rather than on a count:
-// a limiter that refused everybody would satisfy "the twenty-first is refused"
-// and nothing else here.
+// The assertion is on the refusal rather than on a count: a limiter that refused everybody would
+// satisfy "the twenty-first is refused" and nothing else here.
 func TestTheInviteLimitFires(t *testing.T) {
 	const doctor = "8a1f3b7c-0000-4000-8000-000000000002"
 
@@ -58,8 +56,7 @@ func TestTheInviteLimitFires(t *testing.T) {
 			err, identity.ErrTooManyInvites)
 	}
 
-	// The bound is per doctor: one doctor onboarding a cohort does not stop the
-	// rest of the clinic working.
+	// Per doctor: one of them onboarding a cohort does not stop the rest of the clinic working.
 	if err := limit.Take("8a1f3b7c-0000-4000-8000-000000000003", start.Add(time.Minute)); err != nil {
 		t.Errorf("another doctor's first invitation was refused: %v", err)
 	}
@@ -70,11 +67,8 @@ func TestTheInviteLimitFires(t *testing.T) {
 	}
 }
 
-// A refused attempt does not consume the allowance a moment later.
-//
-// Without this, a limiter that recorded every call — the shortest thing that
-// passes the test above — would keep a doctor refused for a whole window after
-// one burst, however long they waited and however few they then sent.
+// Without this, a limiter that recorded every call — the shortest thing that passes the test above
+// — would keep a doctor refused for a whole window after one burst, however long they waited.
 func TestARefusedInvitationDoesNotExtendTheRefusal(t *testing.T) {
 	const doctor = "8a1f3b7c-0000-4000-8000-000000000002"
 
@@ -100,11 +94,9 @@ func TestARefusedInvitationDoesNotExtendTheRefusal(t *testing.T) {
 	}
 }
 
-// The lifetime this context derives the pending state from is the lifetime the
-// deployment gives the link. Nothing stores an invitation's status, so a reader
-// computes it from invited_at plus this constant; a constant that has drifted
-// from the provider's configuration would show an invitation as pending for
-// three days after the link stopped working.
+// Nothing stores an invitation's status, so a reader computes it from invited_at plus
+// InviteLinkLifetime; a constant that has drifted from the provider's configuration would show an
+// invitation as pending for days after the link stopped working.
 func TestTheDeploymentGivesLinksTheLifetimeThisContextDerivesFrom(t *testing.T) {
 	set := deploymentSetting(t, testsupport.OTPExpiryVariable)
 
@@ -115,13 +107,9 @@ func TestTheDeploymentGivesLinksTheLifetimeThisContextDerivesFrom(t *testing.T) 
 	}
 }
 
-// The gap between two emails to one address is set, and set to something.
-//
-// A gap of zero names the right variable and leaves /recover — the one mail
-// route a stranger can trigger — with no gap at all, so the value is read
-// rather than merely found. Which variable the provider actually reads is
-// measured against a container by
-// TestTheAdminInviteIsNotCoveredByThePerAddressGap; this is the cheap half.
+// The value is read rather than merely found: a gap of zero names the right variable and leaves
+// /recover — the one mail route a stranger can trigger — with no gap at all. That the provider
+// reads this variable at all is measured by TestTheAdminInviteIsNotCoveredByThePerAddressGap.
 func TestTheDeploymentSetsAGapBetweenTwoEmailsToOneAddress(t *testing.T) {
 	set := deploymentSetting(t, testsupport.MailerMaxFrequencyVariable)
 
@@ -137,10 +125,9 @@ func TestTheDeploymentSetsAGapBetweenTwoEmailsToOneAddress(t *testing.T) {
 	}
 }
 
-// The provider's hourly quota is the only limit that reaches /invite, and it
-// counts the whole instance. Below what one doctor is allowed here, the
-// provider refuses invitations this context let through — a limit nobody
-// configured refusing on behalf of one this file did.
+// The provider's hourly quota is the only limit that reaches /invite, and it counts the whole
+// instance. Set below what one doctor is allowed here, it refuses invitations this context let
+// through — a limit nobody configured refusing on behalf of one this file did.
 func TestTheDeploymentAllowsAtLeastOneDoctorsWorthOfInvitations(t *testing.T) {
 	set := deploymentSetting(t, testsupport.EmailsPerHourVariable)
 
@@ -156,11 +143,9 @@ func TestTheDeploymentAllowsAtLeastOneDoctorsWorthOfInvitations(t *testing.T) {
 	}
 }
 
-// deploymentSetting is what docker-compose.yml gives an environment variable.
-//
-// A whole line up to the name, because a commented-out one still contains the
-// text; quotes off, because YAML reads "1m" and 1m the same way and a test that
-// does not would fail on a change that means nothing.
+// deploymentSetting is what docker-compose.yml gives an environment variable. A whole line up to
+// the name, because a commented-out one still contains the text; quotes off, because YAML reads
+// "1m" and 1m the same way and a test that did not would fail on a change that means nothing.
 func deploymentSetting(t *testing.T, variable string) string {
 	t.Helper()
 

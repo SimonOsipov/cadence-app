@@ -14,8 +14,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
-// The staff side of the same flow: an admin names a doctor, the address is
-// invited, and the person is written as a doctor and as nobody's patient.
+// The staff side of the same flow: an admin names a doctor, the address is invited, and the person is written as a
+// doctor and as nobody's patient.
 func TestAnAdminCreatesADoctorAndInvitesThem(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -26,9 +26,8 @@ func TestAnAdminCreatesADoctorAndInvitesThem(t *testing.T) {
 		t.Fatalf("status = %d, want 201: %s", answered.status, answered.body)
 	}
 
-	// The identifier is the provider's, and the answer says which account the
-	// person will sign in as. A locally generated one would leave the token
-	// issuance hook resolving no profile at that moment.
+	// The answer says which account the person will sign in as: a locally generated identifier would leave the
+	// token issuance hook resolving no profile at that moment.
 	invited := accountID(t, address)
 
 	var said struct {
@@ -68,8 +67,7 @@ func TestAnAdminCreatesADoctorAndInvitesThem(t *testing.T) {
 		t.Errorf("title_ru = %q, want the title the clinic typed", title)
 	}
 
-	// The same absence a new patient's profile carries: nothing has reported a
-	// zone until the person's own device does.
+	// The same absence a new patient's profile carries: nothing has reported a zone until the device does.
 	if timezone != nil {
 		t.Errorf("timezone = %q, want none until the doctor signs in", *timezone)
 	}
@@ -83,12 +81,9 @@ func TestAnAdminCreatesADoctorAndInvitesThem(t *testing.T) {
 	}
 }
 
-// Both rows a staff creation signs, and the column that separates them from a
-// patient's.
-//
-// patient_id is what a patient's audit trail is read by, and audit_log carries no
-// foreign key at all — so a doctor's identifier in that column does not fail, it
-// reads as a row about a patient.
+// Both rows a staff creation signs, and the column that separates them from a patient's: patient_id is what a
+// patient's audit trail is read by, and audit_log carries no foreign key at all — so a doctor's identifier in that
+// column does not fail, it reads as a row about a patient.
 func TestTheRowsThatSignAStaffCreationNameTheAdminAndNoPatient(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -123,8 +118,8 @@ func TestTheRowsThatSignAStaffCreationNameTheAdminAndNoPatient(t *testing.T) {
 	}
 }
 
-// A doctor creating doctors is how a clinic acquires staff nobody hired. The
-// refusal costs the address nothing: it is spoken before the provider is asked.
+// A doctor creating doctors is how a clinic acquires staff nobody hired. The refusal costs the address nothing: it
+// is spoken before the provider is asked.
 func TestADoctorMayNotCreateAProvider(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -151,13 +146,11 @@ func TestADoctorMayNotCreateAProvider(t *testing.T) {
 	}
 }
 
-// The rule this route rests on, measured where it lives: the service path is
-// refused an administrator by migration 000006's policy, not by anything in Go.
+// The rule this route rests on, measured where it lives: the service path is refused an administrator by migration
+// 000006's policy, not by anything in Go.
 //
-// Which refusal it was matters. Postgres spells a missing grant and a row a
-// policy would not admit with the same 42501, and only the second is a statement
-// about the role — the first would mean the arrangement is broken, and telling
-// an admin their colleague is an administrator would be a lie they cannot act on.
+// Which refusal it was matters. Postgres spells a missing grant and a row a policy would not admit with the same
+// 42501, and only the second is a statement about the role — the first would mean the arrangement is broken.
 func TestTheServicePathRefusesToWriteAnAdmin(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -185,9 +178,8 @@ func TestTheServicePathRefusesToWriteAnAdmin(t *testing.T) {
 	}
 }
 
-// The same path with the role this route actually passes, so that the test above
-// is measuring the role and not the arrangement around it: everything else about
-// the two calls is identical.
+// The same path with the role this route actually passes, so that the test above measures the role and not the
+// arrangement around it: everything else about the two calls is identical.
 func TestTheServicePathWritesADoctor(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -209,21 +201,16 @@ func TestTheServicePathWritesADoctor(t *testing.T) {
 	}
 }
 
-// unhirableID is the person the two service-path tests write, or fail to. It is
-// nobody the stand seeds, so the count it asserts is about this transaction.
+// Nobody the stand seeds, so the count the two service-path tests assert is about their own transaction.
 const unhirableID = "8a1f3b7c-0000-4000-8000-000000000031"
 
-// A staff creation interrupted after the invitation is curable by a retry, and
-// the retry is measured after the invitee has opened the link.
+// A staff creation interrupted after the invitation is curable by a retry, measured after the invitee has opened
+// the link. This is the ordering the route rests on and the reason the invitation is committed in a transaction of
+// its own: with the person's transaction first, a failure inside it leaves an account nobody has a record of, the
+// next request reads it as somebody else's, and the address answers 409 for good.
 //
-// This is the ordering the route rests on and the reason the invitation is
-// committed in a transaction of its own: with the person's transaction first,
-// a failure inside it leaves an account nobody has a record of, the next request
-// reads it as somebody else's, and the address answers 409 for good.
-//
-// The interruption is the role rule itself, driven through the flow rather than
-// through the handler — the handler passes a constant. It is the one failure of
-// the second transaction this suite can arrange without breaking the pool the
+// The interruption is the role rule itself, driven through the flow rather than through the handler — which passes
+// a constant. It is the one failure of the second transaction this suite can arrange without breaking the pool the
 // first one commits on.
 func TestAStaffCreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 	clinic := onboardingStand(t)
@@ -254,8 +241,8 @@ func TestAStaffCreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T
 		t.Fatalf("%d profiles survived the refused transaction, want 0", written)
 	}
 
-	// The invitee opens the link before the retry, which is what makes the cure
-	// go through the claim that deletes: a password can be set from that session.
+	// The invitee opens the link before the retry, which makes the cure go through the claim that deletes: a
+	// password can be set from that session.
 	if accepted, location := follow(t, inviteToken(t, address), "invite", ""); !accepted {
 		t.Fatalf("the invitation link was refused: %s", location)
 	}
@@ -270,10 +257,8 @@ func TestAStaffCreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T
 			"can have a password set on it", deleted)
 	}
 
-	// The deletion is the second of the two rows the shared spine signs, and the
-	// only place it is signed for staff. Measured here because nothing else
-	// reaches it: without this the patient/staff distinction is pinned at one of
-	// its two call sites.
+	// The only place the shared spine signs a deletion for staff: without this the patient/staff distinction is
+	// pinned at one of its two call sites.
 	var signed int
 	clinic.scan(t, `
 		SELECT count(*) FROM app.audit_log
@@ -296,8 +281,7 @@ func TestAStaffCreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T
 	}
 }
 
-// providerBody is the request the dashboard sends: an address, a name, and what
-// the clinic calls them. An empty title is a title the clinic did not state.
+// providerBody is the request the dashboard sends. An empty title is a title the clinic did not state.
 func providerBody(address, title string) string {
 	if title == "" {
 		return fmt.Sprintf(`{"email":%q,"full_name":"Ольга Тимофеева"}`, address)

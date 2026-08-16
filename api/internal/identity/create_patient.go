@@ -15,15 +15,10 @@ type CreatePatientInput struct {
 	Body NewPatientBody
 }
 
-// NewPatientBody is everything the clinic states when it creates a patient.
-//
-// There is no role and no user id: the server sets the first and the identity
-// provider assigns the second. There is no timezone either — the profile carries
-// none until the person's own device reports one, and that capture is named in
-// the spec as owned by the block that adds first-sign-in handling.
-//
-// The clinical fields are pointers because "not measured yet" and "measured as
-// zero" are different facts about a person.
+// NewPatientBody is everything the clinic states when it creates a patient. No role and no user id: the server sets
+// the first and the identity provider assigns the second; no timezone either, until the block that adds first-sign-in
+// handling captures the one the device reports. The clinical fields are pointers because "not measured yet" and
+// "measured as zero" are different facts about a person.
 type NewPatientBody struct {
 	Email    string `json:"email" format:"email" maxLength:"320" doc:"Where the invitation is sent. Stored folded to lower case, which is the spelling the identity provider holds."`
 	FullName string `json:"full_name" minLength:"1" maxLength:"200" doc:"The patient's name as the clinic writes it."`
@@ -43,21 +38,17 @@ type SpecialistBody struct {
 	Primary    bool   `json:"primary,omitempty" doc:"The one specialist who leads. At most one per patient."`
 }
 
-// CreatePatientOutput answers with the identifier the provider assigned, which
-// is also the patient's profile id everywhere else in the API.
+// CreatePatientOutput answers with the identifier the provider assigned, the patient's profile id everywhere else.
 type CreatePatientOutput struct {
 	Status int
 	Body   CreatedPatient
 }
 
-// CreatedPatient is what a successful creation says.
 type CreatedPatient struct {
 	UserID string `json:"user_id" doc:"The patient's id. The same value the invitation link signs the person in as."`
 }
 
-// The Russian the doctor reads. Together rather than beside the refusals they
-// describe, because what has to hold between them is that each says something
-// different to the person creating the patient.
+// The Russian the doctor reads. Grouped rather than placed beside their refusals: each must say something different.
 const (
 	detailAlreadyOnboarded = "Пациент с этим адресом уже заведён."
 	detailAccountIsNotOurs = "На этот адрес уже есть аккаунт, который клиника не приглашала. " +
@@ -69,21 +60,16 @@ const (
 	detailBusy             = "Сейчас заняты — повторите через минуту."
 )
 
-// createPatient is the doctor's half of onboarding: one request creates the
-// person and sends the invitation, or neither happens.
+// createPatient is the doctor's half of onboarding: one request creates the person and invites them, or neither.
 func (s *Service) createPatient(ctx context.Context, input *CreatePatientInput) (*CreatePatientOutput, error) {
 	if s.onboarding == nil {
-		// The document generator builds this context with no dependencies, so
-		// that openapi.json describes the operation without a database behind
-		// it. Nothing serves from that assembly, and this says so out loud
-		// rather than dereferencing nothing.
+		// The document generator builds this context with no dependencies, so that openapi.json describes the
+		// operation without a database behind it. Nothing serves from that assembly.
 		return nil, huma.Error500InternalServerError("this API was assembled without an onboarding service")
 	}
 
-	// A conversion, which the compiler checks: the wire type stays declared
-	// separately so that renaming a domain field cannot rename a JSON member for
-	// the two generated clients, and the day the two shapes diverge this line
-	// stops building rather than mapping the wrong field.
+	// A conversion the compiler checks: the wire type stays declared separately so that renaming a domain field
+	// cannot rename a JSON member for the two generated clients, and a divergence stops the build here.
 	specialists := make([]Assignment, 0, len(input.Body.Specialists))
 	for _, named := range input.Body.Specialists {
 		specialists = append(specialists, Assignment(named))
@@ -104,16 +90,13 @@ func (s *Service) createPatient(ctx context.Context, input *CreatePatientInput) 
 	return &CreatePatientOutput{Status: http.StatusCreated, Body: CreatedPatient{UserID: userID}}, nil
 }
 
-// refusalFor maps this context's refusals onto the answers the transport gives.
-//
-// Everything not named here keeps its 500, which is the right default: a
-// refusal this function does not recognise is a failure rather than a rule, and
-// the detail of a 5xx never reaches the caller anyway.
+// refusalFor maps this context's refusals onto the answers the transport gives. Everything not named keeps its 500,
+// which is the right default: an unrecognised refusal is a failure rather than a rule, and a 5xx detail never
+// reaches the caller anyway.
 func refusalFor(err error) error {
 	switch {
-	// Two ways to arrive at one answer, and the second is the one no lookup can
-	// prevent: the loser of a double click is refused by the claim rule, and a
-	// creation that raced past it is refused by the profiles primary key.
+	// Two ways to one answer, and the second is what no lookup can prevent: the loser of a double click is
+	// refused by the claim rule, and a creation that raced past it by the profiles primary key.
 	case errors.Is(err, ErrAlreadyOnboarded), errors.Is(err, ErrAlreadyExists):
 		return huma.Error409Conflict(detailAlreadyOnboarded)
 
@@ -126,36 +109,30 @@ func refusalFor(err error) error {
 	case errors.Is(err, ErrCallerMayNotCreatePatients):
 		return huma.Error403Forbidden(detailMayNotCreate)
 
-	// The provisioner is the most likely failure in production, and without this
-	// arm it is a 500 with an invitation that may or may not have gone out.
+	// The most likely failure in production; without this arm it is a 500 over an invitation that may have gone out.
 	case errors.Is(err, ErrProvisionerUnavailable):
 		return huma.Error503ServiceUnavailable("the provisioner did not answer", err)
 
-	// Both of the lock's own failures, and both are ordinary rather than
-	// exceptional: the loser of a double click can burn its deadline waiting on
-	// the winner, and the request pool has no explicit size, so concurrent
-	// creations — each holding a connection for the length of the request — make
-	// the next one wait. Left to the default these answer /problems/internal in
-	// English, which tells a doctor nothing and suggests a bug rather than «try
-	// again».
+	// Both of the lock's own failures, and both are ordinary: the loser of a double click can burn its deadline
+	// waiting on the winner, and the request pool has no explicit size, so concurrent creations — each holding a
+	// connection for the length of the request — make the next one wait. Left to the default they answer
+	// /problems/internal in English, which suggests a bug rather than «try again».
 	case errors.Is(err, database.ErrLockUnavailable):
 		return huma.Error503ServiceUnavailable(detailBusy, err)
 
-	// Its own sentence because it is the one refusal here a doctor can act on
-	// without rereading the form: the identifier came from a picker, and what is
-	// wrong with it is not a typo.
+	// Its own sentence because it is the one refusal here a doctor can act on without rereading the form: the
+	// identifier came from a picker, and what is wrong with it is not a typo.
 	case errors.Is(err, ErrNotAProvider):
 		return huma.Error422UnprocessableEntity(detailNotAProvider)
 
-	// What else a body can say that the schema cannot refuse: two leading
-	// specialists, an unknown timezone, an address that folds to nothing.
+	// What else a body can say that the schema cannot refuse: two leading specialists, an unknown timezone, an
+	// address that folds to nothing.
 	case errors.Is(err, ErrTwoPrimarySpecialists),
 		errors.Is(err, ErrNoSpecialist), errors.Is(err, ErrUnknownTimezone),
 		errors.Is(err, ErrMalformedIdentifier), errors.Is(err, ErrNoAddress),
-		// A repeated specialist and a collided assignment are both the form's
-		// problem. Answered as a conflict they would be reported as a fact about
-		// the address, and the doctor — whose invitation has already gone out —
-		// would have no reason to correct the form and retry.
+		// A repeated specialist and a collided assignment are the form's problem too. Answered as a conflict
+		// they would read as a fact about the address, and the doctor — whose invitation has already gone
+		// out — would have no reason to correct the form and retry.
 		errors.Is(err, ErrSpecialistNamedTwice), errors.Is(err, ErrAssignmentCollided):
 		return huma.Error422UnprocessableEntity(detailUnprocessable)
 

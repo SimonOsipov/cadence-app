@@ -17,11 +17,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
-// The claim rule, which is the decision this whole block exists to make. It is
-// asserted here rather than only through the endpoint because the states it
-// distinguishes are cheap to write down and expensive to arrange: an account
-// that has signed in but is not confirmed takes a provider and a mailbox to
-// produce, and takes one line here.
+// Asserted here rather than only through the endpoint because the states are cheap to write down and expensive to
+// arrange: an account signed in but not confirmed takes a provider and a mailbox to produce, and one line here.
 func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 	opened := time.Date(2026, 8, 16, 10, 0, 0, 0, time.UTC)
 
@@ -43,8 +40,7 @@ func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 			want:    identity.ClaimByDeletingFirst,
 		},
 		{
-			// Two ways to have been inside, and either is enough: a person who
-			// signed in can have set a password from that session.
+			// Either is enough: a person who signed in can have set a password from that session.
 			name:    "signed in",
 			account: identity.Account{LastSignInAt: &opened},
 			held:    identity.Held{Invite: true},
@@ -56,9 +52,8 @@ func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 			want: identity.RefuseAlreadyOnboarded,
 		},
 		{
-			// The profile settles it before the account's state is read: the
-			// loser of a double click must not send a second invitation, and
-			// the winner's patient may well have opened the link by then.
+			// The profile settles it before the account's state is read: the loser of a double click must
+			// not invite, and the winner's patient may well have opened the link by then.
 			name:    "already a patient, and they have opened the link",
 			account: identity.Account{ConfirmedAt: &opened},
 			held:    identity.Held{Invite: true, Profile: true},
@@ -69,9 +64,8 @@ func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 			want: identity.RefuseNotOurs,
 		},
 		{
-			// A person the clinic has a profile for and no invitation of — the
-			// first administrator is exactly this — is not somebody else's
-			// account to refuse, it is a person who already exists.
+			// A person the clinic has a profile for and no invitation of — the first administrator is
+			// exactly this — is not somebody else's account to refuse, but a person who already exists.
 			name: "a profile with no invitation",
 			held: identity.Held{Profile: true},
 			want: identity.RefuseAlreadyOnboarded,
@@ -87,9 +81,8 @@ func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 	}
 }
 
-// A doctor who leaves themselves off the care team is refused, and the refusal
-// costs the patient nothing: no address is invited, so the mailbox stays free
-// for the request that gets it right.
+// The refusal costs the patient nothing: no address is invited, so the mailbox stays free for the request that
+// gets it right.
 func TestADoctorWhoIsNotOnTheCareTeamInvitesNobody(t *testing.T) {
 	provider := &countingProvisioner{}
 
@@ -114,9 +107,8 @@ func TestADoctorWhoIsNotOnTheCareTeamInvitesNobody(t *testing.T) {
 	}
 }
 
-// Everything a request can be refused for before the provider is asked, asserted
-// together with the fact that it was not asked. The order is the property: the
-// address is the one resource a failed attempt can burn.
+// Everything a request can be refused for before the provider is asked, asserted together with the fact that it was
+// not asked. The order is the property: the address is the one resource a failed attempt can burn.
 func TestTheRefusalsThatHappenBeforeAnythingIsInvited(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -131,8 +123,7 @@ func TestTheRefusalsThatHappenBeforeAnythingIsInvited(t *testing.T) {
 			want:      identity.ErrCallerMayNotCreatePatients,
 		},
 		{
-			// The criterion is that this is never a 5xx: a token with no
-			// product role is a person with no profile, which is an ordinary
+			// Never a 5xx: a token with no product role is a person with no profile, which is an ordinary
 			// state between an invitation and its acceptance.
 			name:      "a token carrying no product role",
 			principal: &auth.Principal{Subject: thePatient},
@@ -178,9 +169,8 @@ func TestTheRefusalsThatHappenBeforeAnythingIsInvited(t *testing.T) {
 	}
 }
 
-// The refusals a doctor sees are in Russian and carry the type a client
-// branches on. Asserted over the wire rather than on the error, because what a
-// doctor reads is the document and not the Go value behind it.
+// Asserted over the wire rather than on the error, because what a doctor reads is the problem document and not the
+// Go value behind it.
 func TestARefusedCreationAnswersInRussianWithItsOwnProblemType(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -233,15 +223,12 @@ func TestARefusedCreationAnswersInRussianWithItsOwnProblemType(t *testing.T) {
 	}
 }
 
-// The body says who the patient is, and nothing else. A `role` in it is the one
-// field that must not be quietly ignored: the server sets the role, and a
-// request that tried to choose one has to be told it was not read.
+// A `role` in the body is the one field that must not be quietly ignored: the server sets the role, and a request
+// that tried to choose one has to be told it was not read.
 //
-// Measured against huma v2.39 on 2026-08-16: an unexpected property is a 422
-// rather than the 400 the spec's criterion names — the schema huma generates
-// carries additionalProperties: false, and its validator answers 422 for every
-// violation of it. A malformed body is the 400. Both are the validation problem
-// type, and neither is the 403 the criterion was written to rule out.
+// Measured against huma v2.39 on 2026-08-16: an unexpected property is a 422 rather than the 400 the spec's
+// criterion names — the schema huma generates carries additionalProperties: false, and its validator answers 422 for
+// every violation of it. A malformed body is the 400; neither is the 403 the criterion was written to rule out.
 func TestABodyThatChoosesARoleIsRefusedRatherThanIgnored(t *testing.T) {
 	body := `{"email":"anna@clinic.example","full_name":"Анна Петрова","role":"admin",` +
 		`"specialists":[{"provider_id":"` + theDoctor + `","care_role":"endo"}]}`
@@ -267,9 +254,7 @@ func TestABodyThatChoosesARoleIsRefusedRatherThanIgnored(t *testing.T) {
 	}
 }
 
-// The identifiers the fast tests name. Distinct people, so that "the doctor
-// assigned somebody else" is a different value rather than a different reading
-// of one.
+// Distinct people, so that "the doctor assigned somebody else" is a different value rather than a reading of one.
 const (
 	theDoctor    = "8a1f3b7c-0000-4000-8000-000000000002"
 	theColleague = "8a1f3b7c-0000-4000-8000-000000000004"
@@ -277,8 +262,7 @@ const (
 	theAdmin     = "8a1f3b7c-0000-4000-8000-000000000003"
 )
 
-// The two routes these suites drive. Named rather than spelled at every call
-// site, so that a body meant for one cannot quietly be posted to the other.
+// Named rather than spelled at every call site, so a body meant for one route cannot quietly be posted to the other.
 const (
 	patientsPath  = "/v1/patients"
 	providersPath = "/v1/providers"
@@ -290,9 +274,8 @@ func asPrincipal(t *testing.T, principal auth.Principal) context.Context {
 	return auth.WithPrincipal(t.Context(), principal)
 }
 
-// countingProvisioner answers nothing and counts being asked. Every test that
-// uses it is about a request that must not reach the provider, so answering is
-// not its job — being called at all is the failure.
+// countingProvisioner answers nothing and counts being asked. Every test using it is about a request that must not
+// reach the provider, so being called at all is the failure.
 type countingProvisioner struct {
 	calls int
 }
@@ -326,9 +309,8 @@ type answer struct {
 	body   string
 }
 
-// post drives the operation through the transport that serves it: huma's
-// validation, the problem documents and the status codes are the thing under
-// test, and a direct call to the handler would skip all three.
+// post drives the operation through the transport that serves it: huma's validation, the problem documents and the
+// status codes are the thing under test, and a direct call to the handler would skip all three.
 func post(
 	t *testing.T, onboarding *identity.Onboarding, principal auth.Principal, path, body string,
 ) answer {

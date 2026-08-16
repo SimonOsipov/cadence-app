@@ -12,13 +12,11 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
-// Which 42501 the database spoke, decided on the message because Postgres gives
-// all of them one SQLSTATE.
+// Which 42501 the database spoke, decided on the message because Postgres gives all of them one SQLSTATE.
 //
-// The wrong reading in either direction costs something real: a missing grant
-// read as the role rule tells an admin that the person they typed is an
-// administrator, which is false and unfixable from the form; the role rule read
-// as a failure is the 500 this step exists to remove.
+// The wrong reading in either direction costs something real: a missing grant read as the role rule tells an admin
+// that the person they typed is an administrator, which is false and unfixable from the form; the role rule read as
+// a failure is the 500 this step exists to remove.
 //
 // The messages are the ones Postgres 17 writes, taken from a live refusal by
 // TestTheServicePathRefusesToWriteAnAdmin rather than from the documentation.
@@ -37,9 +35,8 @@ func TestWhichRefusalTheServicePathHeard(t *testing.T) {
 			want: ErrServicePathMakesNoAdmins,
 		},
 		{
-			// The service path holds INSERT on profiles today, so this is the
-			// shape of a grant revoked or a column added without one — a failure
-			// of the arrangement, and nothing an admin can act on.
+			// The service path holds INSERT on profiles today, so this is a grant revoked or a column added
+			// without one — a failure of the arrangement, and nothing an admin can act on.
 			name: "a grant the service path does not hold",
 			refusal: &pgconn.PgError{
 				Code:    insufficientPrivilege,
@@ -47,9 +44,8 @@ func TestWhichRefusalTheServicePathHeard(t *testing.T) {
 			},
 		},
 		{
-			// The audit row's actor is checked by a policy too, and that refusal
-			// is also 42501 on this transaction's path. It says nothing about
-			// which role was written.
+			// The audit row's actor is checked by a policy too, and that refusal is also 42501 on this
+			// transaction's path. It says nothing about which role was written.
 			name: "a policy on another table of the same transaction",
 			refusal: &pgconn.PgError{
 				Code:    insufficientPrivilege,
@@ -57,11 +53,9 @@ func TestWhichRefusalTheServicePathHeard(t *testing.T) {
 			},
 		},
 		{
-			// The third cause, and the only one the table alone does not
-			// separate: this message names profiles too. profiles already
-			// carries a column-list grant, so narrowing the service path's
-			// INSERT to one, or adding a column and forgetting it, is an
-			// ordinary change.
+			// The third cause, and the only one the table alone does not separate: this message names
+			// profiles too. profiles already carries a column-list grant, so narrowing the service path's
+			// INSERT to one, or adding a column and forgetting it, is an ordinary change.
 			name: "a grant on one column the service path does not hold",
 			refusal: &pgconn.PgError{
 				Code:    insufficientPrivilege,
@@ -86,9 +80,8 @@ func TestWhichRefusalTheServicePathHeard(t *testing.T) {
 				t.Fatalf("classified as %v, which no longer carries the database's own error", got)
 			}
 
-			// Asserted as an absence, and it has to be: the database's error
-			// stays in the chain whichever way this goes, so "the refusal is
-			// still reachable" is true of a misreading too.
+			// Asserted as an absence, and it has to be: the database's error stays in the chain whichever
+			// way this goes, so "the refusal is still reachable" is true of a misreading too.
 			if tc.want == nil {
 				for _, named := range []error{ErrServicePathMakesNoAdmins, ErrAlreadyExists} {
 					if errors.Is(got, named) {
@@ -108,11 +101,9 @@ func TestWhichRefusalTheServicePathHeard(t *testing.T) {
 
 // Every refusal this route can answer, and the answer each gets.
 //
-// The two the patient route does not have are the point of the table, but the
-// four it defers are in it for a reason of their own: they are deferred one at a
-// time, and a `case` deleted from that list falls to the new default — the
-// unreachable provisioner, the most likely production failure, answering 500
-// where the operation's own description promises 503.
+// The two the patient route does not have are the point of the table, but the four it defers are in it for a reason
+// of their own: they are deferred one at a time, and a `case` deleted from that list falls to the new default — the
+// unreachable provisioner, the most likely production failure, answering 500 where the operation promises 503.
 func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -120,21 +111,17 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 		wantStatus int
 		wantDetail string
 
-		// notTheSentence is the patient route's answer to the same refusal,
-		// where this route has one of its own. An expectation derived from the
-		// constant under test moves with it — editing the staff sentence back to
-		// the patient's would keep wantDetail green — so the reason the constant
-		// exists is asserted as a difference from the sentence it replaced.
+		// The patient route's answer to the same refusal. An expectation derived from the constant under test
+		// moves with it — editing the staff sentence back to the patient's would keep wantDetail green — so
+		// the reason the constant exists is asserted as a difference from the sentence it replaced.
 		notTheSentence string
 
-		// mustMention is the same property where there is no sentence to differ
-		// from: a substring the answer is worthless without.
+		// The same property where there is no sentence to differ from: a substring the answer is worthless
+		// without.
 		mustMention string
 
-		// mustNotMention is what the inequality above cannot catch. The likely
-		// drift is not a verbatim paste of the patient's sentence but a near
-		// copy of it, and a near copy is unequal to the constant while saying
-		// the same wrong thing to the same reader.
+		// What the inequality above cannot catch: the likely drift is a near copy of the patient's sentence,
+		// unequal to the constant while saying the same wrong thing to the same reader.
 		mustNotMention string
 	}{
 		{
@@ -144,9 +131,8 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			wantDetail: detailOnlyAnAdminCreatesStaff,
 		},
 		{
-			// Its own sentence rather than the patient's: what already exists is
-			// a person, and calling them a patient is the one thing this answer
-			// must not do.
+			// Its own sentence rather than the patient's: what already exists is a person, and calling them
+			// a patient is the one thing this answer must not do.
 			name:           "an address this clinic already knows",
 			refusal:        ErrAlreadyOnboarded,
 			wantStatus:     http.StatusConflict,
@@ -155,8 +141,7 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			mustNotMention: "ациент",
 		},
 		{
-			// The patient route's sentence sends the reader to the
-			// administrator, who is the only caller here.
+			// The patient route's sentence sends the reader to the administrator, the only caller here.
 			name:           "an account this clinic did not invite",
 			refusal:        ErrAccountIsNotOurs,
 			wantStatus:     http.StatusConflict,
@@ -188,17 +173,15 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			wantDetail: detailUnprocessable,
 		},
 		{
-			// Nothing this route can produce — the role it passes is a constant
-			// — and answered anyway, because the day it becomes reachable a
-			// named refusal is a fixable state and a 500 is a bug hunt.
+			// Nothing this route can produce — the role it passes is a constant — and answered anyway; see
+			// the arm in refusalForProvider.
 			name:       "the database refusing the role",
 			refusal:    ErrServicePathMakesNoAdmins,
 			wantStatus: http.StatusForbidden,
 			wantDetail: detailNoAdminThroughTheAPI,
 
-			// No patient-route sentence to differ from, so the property is
-			// stated directly: what makes this answer clear rather than a 500 is
-			// that it names what does create an administrator.
+			// No patient-route sentence to differ from, so the property is stated directly: what makes this
+			// clear rather than a 500 is that it names what does create an administrator.
 			mustMention: "команд",
 		},
 	}
@@ -211,9 +194,8 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 				t.Errorf("status = %d, want %d: %s", answered.Status, tc.wantStatus, answered.Detail)
 			}
 
-			// The provisioner's arm is the one with no constant to name: it is
-			// an inline literal in refusalFor, and what a caller reads there is
-			// httpserver's own sentence anyway.
+			// The provisioner's arm is the one with no constant to name: it is an inline literal in
+			// refusalFor, and what a caller reads there is httpserver's own sentence anyway.
 			if tc.wantDetail != "" && answered.Detail != tc.wantDetail {
 				t.Errorf("detail = %q, want %q", answered.Detail, tc.wantDetail)
 			}

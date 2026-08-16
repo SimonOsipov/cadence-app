@@ -1,8 +1,8 @@
 //go:build integration
 
-// Where a link lands, measured against the pinned image. The allow-list is the
-// one part of the mail configuration reachable without an SMTP server: the
-// address is decided when the link is followed, not when it is rendered.
+// Where a link lands, measured against the pinned image. The allow-list is the one part of the mail
+// configuration reachable without an SMTP server: the address is decided when the link is followed,
+// not when it is rendered.
 package identity_test
 
 import (
@@ -12,18 +12,16 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// Written out rather than built from the harness's pattern: an address derived
-// from the list under test would follow it however it changed.
+// Written out rather than built from the harness's pattern: an address derived from the list under
+// test would follow it however it changed.
 const allowedRedirect = "http://cadence.test/welcome"
 
 const refusedRedirect = "http://not-invited.example/welcome"
 
-// An uncovered redirect_to is not refused: the provider answers it exactly as it
-// answers an allowed one and silently substitutes SITE_URL, so a link still
-// signs the person in — somewhere nobody can use. Hence the pair; neither row
-// alone tells a list that governs from one that is ignored. The mutation both
-// must fail against is a harness list that stops covering allowedRedirect, which
-// collapses the two onto the same answer.
+// An uncovered redirect_to is not refused: the provider answers exactly as it does an allowed one
+// and silently substitutes SITE_URL, so the link still signs the person in — somewhere nobody can
+// use. Hence the pair; neither row alone tells a list that governs from one that is ignored. The
+// mutation both must fail against is a harness list that stops covering allowedRedirect.
 func TestTheAllowListDecidesWhereALinkLands(t *testing.T) {
 	cycle.Reset(t)
 
@@ -32,9 +30,8 @@ func TestTheAllowListDecidesWhereALinkLands(t *testing.T) {
 			"agree for the wrong reason", testsupport.RedirectAllowListVariable)
 	}
 
-	// Read off the container rather than taken from the issuer constant: the two
-	// are one value in the harness and deliberately different in the deployment,
-	// and it is the site URL a refused redirect falls back to.
+	// Read off the container rather than taken from the issuer constant: the two are one value in
+	// the harness and deliberately different in the deployment.
 	siteURL := cycle.ConfiguredWith(t, "GOTRUE_SITE_URL")
 
 	tests := []struct {

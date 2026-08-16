@@ -12,9 +12,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
-// Everything a staff creation is refused for before the provider is asked
-// anything, asserted together with the fact that it was not asked. The address
-// is the resource a failed attempt burns, and only an admin may spend one here.
+// Everything a staff creation is refused for before the provider is asked anything, asserted together with the fact
+// that it was not asked: the address is the resource a failed attempt burns, and only an admin may spend one here.
 func TestTheStaffRefusalsThatHappenBeforeAnythingIsInvited(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -23,8 +22,8 @@ func TestTheStaffRefusalsThatHappenBeforeAnythingIsInvited(t *testing.T) {
 		want      error
 	}{
 		{
-			// The whole authorization rule of this route: a doctor creating
-			// doctors is how a clinic grows a second clinic nobody decided on.
+			// The whole authorization rule of this route: a doctor creating doctors is how a clinic grows a
+			// second clinic nobody decided on.
 			name:      "a doctor's token",
 			principal: &auth.Principal{Subject: theDoctor, Role: "doctor"},
 			email:     "olga@clinic.example",
@@ -37,8 +36,7 @@ func TestTheStaffRefusalsThatHappenBeforeAnythingIsInvited(t *testing.T) {
 			want:      identity.ErrCallerMayNotCreateProviders,
 		},
 		{
-			// Never a 5xx: a token with no product role is a person with no
-			// profile, which is the ordinary state between an invitation and
+			// Never a 5xx: a token with no product role is the ordinary state between an invitation and
 			// its acceptance.
 			name:      "a token carrying no product role",
 			principal: &auth.Principal{Subject: thePatient},
@@ -81,8 +79,7 @@ func TestTheStaffRefusalsThatHappenBeforeAnythingIsInvited(t *testing.T) {
 	}
 }
 
-// What an admin's colleague reads when they try this from the dashboard: their
-// own language, and the type a client branches on rather than a 500.
+// What a doctor reads when they try this from the dashboard: their own language, and a type a client branches on.
 func TestARefusedStaffCreationAnswersInRussianWithItsOwnProblemType(t *testing.T) {
 	answered := post(t, identity.NewOnboarding(nil, nil, &countingProvisioner{}),
 		auth.Principal{Subject: theDoctor, Role: "doctor"}, providersPath, staffBody())
@@ -105,10 +102,8 @@ func TestARefusedStaffCreationAnswersInRussianWithItsOwnProblemType(t *testing.T
 	}
 }
 
-// The body says who the person is and not what they may do. A `role` in it is
-// the field that must not be quietly ignored: this route creates doctors, the
-// first administrator comes into being through a one-off command, and a request
-// that tried to choose has to be told it was not read.
+// A `role` in the body is the field that must not be quietly ignored: this route creates doctors, the first
+// administrator comes into being through a one-off command, and a request that chose has to be told it was not read.
 func TestABodyThatChoosesAStaffRoleIsRefusedRatherThanIgnored(t *testing.T) {
 	body := `{"email":"olga@clinic.example","full_name":"Ольга Тимофеева","role":"admin"}`
 

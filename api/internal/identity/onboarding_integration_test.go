@@ -1,10 +1,8 @@
 //go:build integration
 
-// POST /v1/patients against the identity provider it invites through.
-//
-// Everything here runs on the cycle's database, which is the one GoTrue is
-// connected to: the accounts these tests create and claim are the provider's own
-// rows, and the profiles are written beside them by the endpoint under test.
+// POST /v1/patients against the identity provider it invites through. Everything here runs on the cycle's database,
+// the one GoTrue is connected to: the accounts these tests create and claim are the provider's own rows, and the
+// profiles are written beside them by the endpoint under test.
 package identity_test
 
 import (
@@ -30,9 +28,8 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// A double click is two requests for one address, and the answer to the second
-// one is the whole reason the lock exists: the loser must not invite, because a
-// second invitation rotates the token and kills the link the winner just sent.
+// A double click is two requests for one address, and the answer to the second is the whole reason the lock exists:
+// the loser must not invite, because a second invitation rotates the token and kills the link the winner just sent.
 func TestADoubleClickCreatesOnePatientAndSendsOneInvitation(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -73,8 +70,8 @@ func TestADoubleClickCreatesOnePatientAndSendsOneInvitation(t *testing.T) {
 			created, refused)
 	}
 
-	// The property the lock buys, and the one a serialised-but-inviting
-	// implementation would fail: the loser asked the provider for nothing.
+	// The property the lock buys, which a serialised-but-inviting implementation would fail: the loser asked for
+	// nothing.
 	if sent := clinic.provider.invitations(); sent != 1 {
 		t.Errorf("%d invitations went out for one address, want 1", sent)
 	}
@@ -84,17 +81,14 @@ func TestADoubleClickCreatesOnePatientAndSendsOneInvitation(t *testing.T) {
 	}
 }
 
-// The window between the invitation and the commit is irreducible, and this is
-// the property that makes it survivable: the record of the invitation is
-// committed on its own, so a repeat of the request recognises its own account
-// instead of finding somebody else's.
+// The window between the invitation and the commit is irreducible, and this is what makes it survivable: the record
+// of the invitation is committed on its own, so a repeat of the request recognises its own account instead of
+// finding somebody else's.
 //
-// The interruption is real rather than injected — the first attempt names a
-// specialist who is not a doctor, which is refused inside the transaction, after
-// the mail has gone out. And the retry happens AFTER the invitee has opened the
-// link, which is the state the previous draft of this design was green in and
-// broken in: without the deletion the new patient would inherit whatever
-// password the previous session set.
+// The interruption is real rather than injected — the first attempt names a specialist who is not a doctor, refused
+// inside the transaction after the mail has gone out. The retry happens AFTER the invitee has opened the link, the
+// state the previous draft of this design was green in and broken in: without the deletion the new patient would
+// inherit whatever password the previous session set.
 func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -118,9 +112,8 @@ func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 		t.Fatalf("%d patients exist after a refused creation, want 0", patients)
 	}
 
-	// Which transaction each audit row belongs to, measured where the two come
-	// apart: the mail was asked for and is signed, the patient was not created
-	// and is not. One transaction carrying both would have neither row here.
+	// Which transaction each audit row belongs to, measured where the two come apart: one transaction carrying
+	// both would have neither row here.
 	if signed := clinic.auditRows(t, "invite.send", invited); signed != 1 {
 		t.Errorf("%d invite.send rows survived the refused creation, want 1: a mail was asked "+
 			"for and nothing in the log says so", signed)
@@ -145,16 +138,13 @@ func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 			"new patient", deleted)
 	}
 
-	// The deletion is signed. It is the one act this flow performs against another
-	// system, it destroys an account and every session on it, and a log that shows
-	// a second invitation with nothing removed to make room for it would be
-	// describing a different event.
+	// The deletion is signed: it destroys an account and every session on it, and a log showing a second
+	// invitation with nothing removed to make room for it would be describing a different event.
 	if signed := clinic.auditRows(t, "account.delete", invited); signed != 1 {
 		t.Errorf("%d account.delete rows name the account that was removed, want 1", signed)
 	}
 
-	// And it is filed under the patient, which is the half of that column the
-	// staff route's own test measures from the other side.
+	// And filed under the patient — the half of that column the staff route's own test measures from the other side.
 	var underThePatient int
 	clinic.scan(t, `
 		SELECT count(*) FROM app.audit_log
@@ -165,8 +155,8 @@ func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 		t.Errorf("%d account.delete rows are filed under the patient, want 1", underThePatient)
 	}
 
-	// The account is a new one, which is what the deletion means: the person the
-	// clinic now has is not the account that was opened.
+	// The account is a new one, which is what the deletion means: the person the clinic now has is not the
+	// account that was opened.
 	claimed := accountID(t, address)
 	if claimed == invited {
 		t.Error("the account claimed is the one that was opened, so nothing was deleted")
@@ -176,20 +166,15 @@ func TestACreationInterruptedAfterTheInvitationIsCuredByARetry(t *testing.T) {
 		t.Errorf("%d patients exist after the cure, want 1", patients)
 	}
 
-	// And the person can get in: the link in the second mail works, which is the
-	// end of the cycle this story is about.
+	// And the person can get in: the link in the second mail works, which is the end of the cycle.
 	if accepted, location := follow(t, inviteToken(t, address), "invite", ""); !accepted {
 		t.Errorf("the link of the second invitation was refused: %s", location)
 	}
 }
 
-// The invitation goes out before its answer comes back, so a call that fails on
-// the way home leaves an account nobody here has recorded — and the next request
-// would read it as somebody else's and refuse the address for good.
-//
-// The request is still refused, because whether the mail left is not knowable
-// from here. What must survive it is the record, so that the doctor's retry
-// recognises its own account and invites again.
+// The invitation goes out before its answer comes back, so a call that fails on the way home leaves an account
+// nobody here has recorded — and the next request would read it as somebody else's and refuse the address for good.
+// The request is still refused; what must survive it is the record, so the doctor's retry recognises its own account.
 func TestAnInvitationWhoseAnswerWasLostIsStillRecorded(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -221,8 +206,8 @@ func TestAnInvitationWhoseAnswerWasLostIsStillRecorded(t *testing.T) {
 		t.Fatalf("the retry answered %d, want 201: %s", cured.status, cured.body)
 	}
 
-	// Claimed rather than deleted and recreated: nobody had been inside the
-	// account, so the second invitation went to the one already there.
+	// Claimed rather than deleted and recreated: nobody had been inside, so the second invitation went to the
+	// account already there.
 	if claimed := accountID(t, address); claimed != invited {
 		t.Errorf("the retry landed on account %s and the lost invitation was to %s", claimed, invited)
 	}
@@ -232,15 +217,11 @@ func TestAnInvitationWhoseAnswerWasLostIsStillRecorded(t *testing.T) {
 	}
 }
 
-// The other half of that cure, and the reason it is conditional: an account
-// somebody has already been inside is not recorded as ours on the strength of a
-// failed call.
-//
-// From here the two are the same picture — an account at the address, and no
-// answer saying whose it is. Recording it would let the retry claim it, and
-// claiming deletes: a stranger's account, and every session on it, destroyed
-// because one call to the provisioner timed out. The address stays refused
-// instead, which is the cost of that safety and is recorded as such in the spec.
+// The other half of that cure, and the reason it is conditional: an account somebody has already been inside is not
+// recorded as ours on the strength of a failed call. From here the two are the same picture — an account at the
+// address, and no answer saying whose it is — and claiming deletes: a stranger's account, and every session on it,
+// destroyed because one call to the provisioner timed out. The address stays refused instead, which the spec
+// records as the cost of that safety.
 func TestAnAccountSomebodyHasOpenedIsNotClaimedByAFailedInvitation(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -259,8 +240,7 @@ func TestAnAccountSomebodyHasOpenedIsNotClaimedByAFailedInvitation(t *testing.T)
 			"would delete it and everything signed in on it")
 	}
 
-	// And the refusal that follows says so, rather than answering something a
-	// retry could work around.
+	// And the refusal that follows says so, rather than answering something a retry could work around.
 	clinic.provider.loseTheAnswer = false
 	clinic.provider.openedFirst = false
 
@@ -270,9 +250,7 @@ func TestAnAccountSomebodyHasOpenedIsNotClaimedByAFailedInvitation(t *testing.T)
 	}
 }
 
-// An address with an account nobody here invited is refused, and it is refused
-// without touching the account: it is somebody else's, and claiming it would
-// hand it to a patient.
+// Refused without touching the account: it is somebody else's, and claiming it would hand it to a patient.
 func TestAnAccountThisClinicDidNotInviteIsRefused(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -294,9 +272,8 @@ func TestAnAccountThisClinicDidNotInviteIsRefused(t *testing.T) {
 	}
 }
 
-// The provider's filter is case-sensitive and the provider stores the address
-// folded, so an unfolded lookup would answer "no such account" for an account
-// that exists — and the invitation that followed would kill a live link.
+// The provider's filter is case-sensitive and the provider stores the address folded, so an unfolded lookup would
+// answer "no such account" for an account that exists — and the invitation that followed would kill a live link.
 func TestMixedCaseDoesNotCreateASecondPatient(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -323,8 +300,7 @@ func TestMixedCaseDoesNotCreateASecondPatient(t *testing.T) {
 	}
 }
 
-// Who may be named on the care team, and by whom. The doctor's own refusal is
-// asserted in the fast tests; these are the two branches that write rows.
+// Who may be named on the care team, and by whom: the doctor's own refusal is in the fast tests, these write rows.
 func TestTheCareTeamTheCreationWrites(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -342,8 +318,8 @@ func TestTheCareTeamTheCreationWrites(t *testing.T) {
 			address: "two.specialists@clinic.example", providers: []string{theDoctor, theColleague}, want: 2,
 		},
 		{
-			// An admin is not a provider and can look after nobody, so requiring
-			// them on the team would make the operation unusable for them.
+			// An admin is not a provider and can look after nobody, so requiring them on the team would
+			// make the operation unusable for them.
 			name: "an admin names a doctor and not themselves", caller: asAdmin,
 			address: "assigned.by.admin@clinic.example", providers: []string{theColleague}, want: 1,
 		},
@@ -371,10 +347,8 @@ func TestTheCareTeamTheCreationWrites(t *testing.T) {
 	}
 }
 
-// Both rows of the action are signed by the doctor rather than by a job: the
-// audit log's whole purpose here is that a person created this patient and it
-// says which one. Which transaction each belongs to is measured by the
-// interrupted creation above, where the two come apart.
+// Signed by the doctor rather than by a job: the audit log's whole purpose here is that a person created this
+// patient and it says which one. Which transaction each row belongs to is the interrupted creation's subject.
 func TestBothRowsOfACreationAreSignedByTheDoctor(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -384,8 +358,8 @@ func TestBothRowsOfACreationAreSignedByTheDoctor(t *testing.T) {
 		t.Fatalf("status = %d: %s", created.status, created.body)
 	}
 
-	// The entity travels with the action: unasserted, both rows filed under
-	// `invites` and a deletion read as an invite record having been removed.
+	// The entity travels with the action: unasserted, both rows file under `invites` and a deletion reads as an
+	// invite record having been removed.
 	for action, entity := range map[string]string{
 		"patient.create": "profiles",
 		"invite.send":    "invites",
@@ -406,8 +380,7 @@ func TestBothRowsOfACreationAreSignedByTheDoctor(t *testing.T) {
 	}
 }
 
-// A patient the clinic has just created has no timezone, and the service path
-// accepts that: nobody has signed in, and the device reports its zone when
+// The service path accepts a profile without one: nobody has signed in, and the device reports its zone when
 // somebody does.
 func TestACreatedPatientHasNoTimezoneYet(t *testing.T) {
 	clinic := onboardingStand(t)
@@ -430,10 +403,8 @@ func TestACreatedPatientHasNoTimezoneYet(t *testing.T) {
 	}
 }
 
-// The most likely failure in production, and the one the doctor has to be able
-// to act on: the answer says the invitation was not sent and that repeating the
-// request is the right move, in Russian, under a type of its own rather than
-// the internal-error one.
+// The most likely failure in production, and the one the doctor has to be able to act on: in Russian, telling them
+// to repeat the request, under a type of its own rather than the internal-error one.
 func TestAnUnreachableProvisionerIsAnsweredAsUnavailable(t *testing.T) {
 	clinic := onboardingStand(t)
 	clinic.provider.unreachable = true
@@ -449,33 +420,28 @@ func TestAnUnreachableProvisionerIsAnsweredAsUnavailable(t *testing.T) {
 		t.Errorf("type = %q, want %q", problem.Type, httpserver.ProblemUnavailable)
 	}
 
-	// Russian and actionable, and no more than the transport can know: what the
-	// request was doing is not this document's to say, and a 503 that claimed the
-	// mail had not gone out would be guessing — the invitation is sent before its
-	// answer comes back.
+	// No more than the transport can know: a 503 claiming the mail had not gone out would be guessing, since the
+	// invitation is sent before its answer comes back.
 	if !strings.Contains(problem.Detail, "Повторите запрос") {
 		t.Errorf("detail = %q, which does not tell the doctor to try again", problem.Detail)
 	}
 }
 
-// The people every test here needs. The patient's identifier is never among
-// them: it is the provider's to assign, and a test that chose one would be
+// The patient's identifier is never among them: it is the provider's to assign, and a test that chose one would be
 // measuring a flow this endpoint does not have.
 var (
 	asDoctor = auth.Principal{Subject: theDoctor, Role: "doctor"}
 	asAdmin  = auth.Principal{Subject: theAdmin, Role: "admin"}
 )
 
-// onboarding is one test's world: the endpoint mounted the way the router mounts it,
-// the provider behind it, and a connection to look at what was written.
+// One test's world: the endpoint as the router mounts it, the provider behind it, and a connection to read rows.
 type onboarding struct {
 	provider *harnessProvisioner
 	requests *pgxpool.Pool
 	writes   *pgxpool.Pool
 }
 
-// onboardingStand brings up the endpoint against the cycle's database — the one
-// GoTrue is connected to, because the accounts and the profiles have to be in
+// onboardingStand brings up the endpoint against the cycle's database: the accounts and the profiles have to be in
 // one place for the token issuance hook to resolve anything.
 func onboardingStand(t *testing.T) *onboarding {
 	t.Helper()
@@ -486,9 +452,8 @@ func onboardingStand(t *testing.T) *onboarding {
 	return clinic
 }
 
-// freshClinic is the same arrangement with nobody in it. The cycle suite starts
-// from here: it creates its own staff through the routes, and a seeded doctor
-// would be a person no request created.
+// freshClinic is the same arrangement with nobody in it. The cycle suite starts from here: it creates its own staff
+// through the routes, and a seeded doctor would be a person no request created.
 func freshClinic(t *testing.T) *onboarding {
 	t.Helper()
 
@@ -513,12 +478,9 @@ func freshClinic(t *testing.T) *onboarding {
 	}
 }
 
-// seedStaff writes the two doctors and the admin the tests name.
-//
-// The doctors go through the service seam, which is the only path that writes
-// these tables at all; the admin is written by the superuser because migration
-// 000006 makes the service path refuse role='admin' outright — the same
-// exception the policy tests make, for the same reason.
+// seedStaff writes the two doctors and the admin the tests name. The doctors go through the service seam, the only
+// path that writes these tables at all; the admin is written by the superuser because migration 000006 makes the
+// service path refuse role='admin' outright — the same exception the policy tests make.
 func seedStaff(t *testing.T, writes *pgxpool.Pool) {
 	t.Helper()
 
@@ -569,9 +531,7 @@ func (c *onboarding) create(t *testing.T, caller auth.Principal, path, payload s
 	return answer{status: rec.Code, body: rec.Body.String()}
 }
 
-// countPatients counts the people this clinic has at an address, through the
-// record of the invitation — which is the only place in the app schema an
-// address is written at all.
+// countPatients counts through the record of the invitation, the only place in the app schema an address is written.
 func (c *onboarding) countPatients(t *testing.T, address string) int {
 	t.Helper()
 
@@ -584,11 +544,8 @@ func (c *onboarding) countPatients(t *testing.T, address string) int {
 	return patients
 }
 
-// auditRows counts what the log says about one account under one action.
-// auditRows counts rows of one action against one entity id, and the entity
-// column is part of the question rather than ignored: without it the two actions
-// this flow signs could file under the same entity — a deletion reading as an
-// invite record having been removed, which never happens.
+// auditRows counts rows of one action against one entity id, with the entity column part of the question: without
+// it the two actions this flow signs could file under the same entity.
 func (c *onboarding) auditRows(t *testing.T, action, entityID string) int {
 	t.Helper()
 
@@ -615,9 +572,8 @@ func (c *onboarding) holdsInviteFor(t *testing.T, userID string) bool {
 	return held
 }
 
-// scan reads through the superuser, like the rest of this suite: the service
-// role holds INSERT on audit_log and no SELECT, and granting a test what it
-// needs to see its own result would change the arrangement it is checking.
+// scan reads through the superuser, like the rest of this suite: the service role holds INSERT on audit_log and no
+// SELECT, and granting a test what it needs to see its own result would change the arrangement it is checking.
 func (c *onboarding) scan(t *testing.T, statement string, args []any, into ...any) {
 	t.Helper()
 
@@ -652,8 +608,7 @@ func problemFrom(t *testing.T, got answer) httpserver.Problem {
 	return problem
 }
 
-// accountID is what the provider says the account at an address is, read off its
-// own table the way the harness reads tokens.
+// accountID is what the provider says the account at an address is, read off its own table.
 func accountID(t *testing.T, address string) string {
 	t.Helper()
 
@@ -663,14 +618,10 @@ func accountID(t *testing.T, address string) string {
 	return id
 }
 
-// harnessProvisioner is identity.Provisioner against the container the cycle
-// runs, standing in for the component that holds the admin key.
-//
-// It is a stand-in for one reason and it is worth naming: cmd/provisioner is a
-// package main and cannot be imported, so what these tests exercise is this
-// context's half of the boundary — the order of the calls and what it does with
-// the answers. That the component itself speaks this protocol is its own
-// integration suite's subject.
+// harnessProvisioner is identity.Provisioner against the container the cycle runs, standing in for the component
+// that holds the admin key. A stand-in for one reason worth naming: cmd/provisioner is a package main and cannot be
+// imported, so these tests exercise this context's half of the boundary — the order of the calls and what it does
+// with the answers. That the component itself speaks this protocol is its own integration suite's subject.
 type harnessProvisioner struct {
 	token string
 
@@ -681,20 +632,16 @@ type harnessProvisioner struct {
 	// unreachable makes every call fail, which is the state the 503 exists for.
 	unreachable bool
 
-	// loseTheAnswer does the invitation and then reports a failure, which is what
-	// a timeout looks like from this side: the account exists and the caller was
-	// told nothing.
+	// Invites and then reports a failure, which is what a timeout looks like from this side: the account exists
+	// and the caller was told nothing.
 	loseTheAnswer bool
 
-	// openedFirst confirms the account before the answer is lost, which is how a
-	// test arranges the one state the cure must refuse: an account somebody has
-	// been inside, indistinguishable from a stranger's.
+	// Confirms the account before the answer is lost, arranging the one state the cure must refuse: an account
+	// somebody has been inside, indistinguishable from a stranger's.
 	openedFirst bool
 }
 
-// errUnreachable is what a provisioner that is not answering looks like from
-// here: the client wraps a transport failure and the caller may not read it, so
-// any error at all is the whole signal.
+// The client wraps a transport failure and the caller may not read it, so any error at all is the whole signal.
 var errUnreachable = errors.New("the provisioner is not answering")
 
 func (p *harnessProvisioner) Invite(ctx context.Context, email string) (identity.Account, error) {
@@ -711,9 +658,8 @@ func (p *harnessProvisioner) Invite(ctx context.Context, email string) (identity
 		return identity.Account{}, fmt.Errorf("the provider answered %d: %s", status, said)
 	}
 
-	// Read back rather than decoded from the answer: the three fields the caller
-	// acts on then come from one place, and the invitation's own answer cannot
-	// disagree with the row a later lookup will find.
+	// Read back rather than decoded from the answer: the invitation's own answer then cannot disagree with the
+	// row a later lookup will find.
 	account, err := p.read(ctx, email)
 	if err != nil {
 		return identity.Account{}, err
@@ -736,8 +682,8 @@ func (p *harnessProvisioner) Invite(ctx context.Context, email string) (identity
 	return *account, nil
 }
 
-// confirm marks the account as one somebody has opened, by the same surgery on
-// the provider's own table the rest of this suite uses to age a link.
+// confirm marks the account as one somebody has opened, by the same surgery on the provider's own table the rest of
+// this suite uses to age a link.
 func (p *harnessProvisioner) confirm(ctx context.Context, email string) error {
 	conn, err := pgx.Connect(ctx, cycle.DB.SuperuserURL)
 	if err != nil {
@@ -745,9 +691,8 @@ func (p *harnessProvisioner) confirm(ctx context.Context, email string) error {
 	}
 	defer func() { _ = conn.Close(ctx) }()
 
-	// email_confirmed_at rather than confirmed_at: measured against this image on
-	// 2026-08-16, confirmed_at is GENERATED ALWAYS AS
-	// LEAST(email_confirmed_at, phone_confirmed_at), so an UPDATE of it is refused.
+	// email_confirmed_at rather than confirmed_at: measured against this image on 2026-08-16, confirmed_at is
+	// GENERATED ALWAYS AS LEAST(email_confirmed_at, phone_confirmed_at), so an UPDATE of it is refused.
 	tag, err := conn.Exec(ctx,
 		`UPDATE auth.users SET email_confirmed_at = pg_catalog.now() WHERE email = $1`, email)
 	if err != nil {
@@ -769,10 +714,9 @@ func (p *harnessProvisioner) Lookup(ctx context.Context, email string) (*identit
 	return p.read(ctx, email)
 }
 
-// read is the lookup the component answers from its admin listing, taken off the
-// table that listing reads. Nothing is inferred from the address: the match is
-// exact, on the folded spelling, which is the property this side's fold exists
-// to satisfy.
+// read is the lookup the component answers from its admin listing, taken off the table that listing reads. Nothing
+// is inferred from the address: the match is exact, on the folded spelling, which is the property this side's fold
+// exists to satisfy.
 func (p *harnessProvisioner) read(ctx context.Context, email string) (*identity.Account, error) {
 	conn, err := pgx.Connect(ctx, cycle.DB.SuperuserURL)
 	if err != nil {
@@ -786,8 +730,7 @@ func (p *harnessProvisioner) read(ctx context.Context, email string) (*identity.
 		SELECT id::text, confirmed_at, last_sign_in_at FROM auth.users WHERE email = $1
 	`, email).Scan(&found.ID, &found.ConfirmedAt, &found.LastSignInAt)
 
-	// No account is an answer rather than a failure: it is what makes an address
-	// free to invite.
+	// No account is an answer rather than a failure: it is what makes an address free to invite.
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -808,9 +751,8 @@ func (p *harnessProvisioner) Delete(ctx context.Context, deletion identity.Delet
 		return errUnreachable
 	}
 
-	// The component refuses a deletion whose proof does not say the account is
-	// claimable, and so does this: a caller that got the proof wrong must fail
-	// here rather than take the account with it.
+	// The component refuses a deletion whose proof does not say the account is claimable, and so does this: a
+	// caller that got the proof wrong must fail here rather than take the account with it.
 	if !deletion.InviteExists || deletion.ProfileExists {
 		return fmt.Errorf("only an account with an invite record and no profile may be deleted, "+
 			"asked with invite=%t profile=%t", deletion.InviteExists, deletion.ProfileExists)
@@ -878,14 +820,12 @@ func (p *harnessProvisioner) call(
 	return resp.StatusCode, string(said)
 }
 
-// A specialist named twice is the form's mistake, and it has to be refused
-// before anything leaves the process.
+// A specialist named twice is the form's mistake, and it has to be refused before anything leaves the process.
 //
-// Left to the database it arrives as a UNIQUE violation on the care team, which
-// was answered 409 «этот адрес уже заведён» — measured on the stand. By then the
-// invitation had gone out and the invites row was committed, so the invitee held
-// a link to an account with no profile while the doctor, told the patient
-// already existed, had no reason to correct the form and retry.
+// Left to the database it arrives as a UNIQUE violation on the care team, which was answered 409 «этот адрес уже
+// заведён» — measured on the stand. By then the invitation had gone out and the invites row was committed, so the
+// invitee held a link to an account with no profile while the doctor, told the patient already existed, had no
+// reason to correct the form and retry.
 func TestNamingOneSpecialistTwiceIsTheFormsMistakeAndNothingIsSent(t *testing.T) {
 	clinic := onboardingStand(t)
 
@@ -898,8 +838,8 @@ func TestNamingOneSpecialistTwiceIsTheFormsMistakeAndNothingIsSent(t *testing.T)
 			"not a fact about the address; body was %s", answered.status, answered.body)
 	}
 
-	// Nothing left the process, which is what makes the 422 honest: a retry with
-	// the form corrected is a first attempt, not a second.
+	// Nothing left the process, which is what makes the 422 honest: a retry with the form corrected is a first
+	// attempt, not a second.
 	var invited int
 	clinic.scan(t, `SELECT count(*) FROM app.invites WHERE email = $1`,
 		[]any{address}, &invited)

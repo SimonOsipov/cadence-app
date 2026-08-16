@@ -1,20 +1,17 @@
 //go:build integration
 
-// What the identity provider does with an invitation, measured against the
-// pinned image rather than taken from its documentation.
+// What the identity provider does with an invitation, measured against the pinned image rather than
+// taken from its documentation.
 //
-// Four behaviours the onboarding block rests on, and each of them is a decision
-// somewhere else in this context: the address is folded because the provider
-// stores it folded; the pending state expires with the link because the link
-// expires at all; /recover is accepted as a second way in because it does not
-// disturb a pending invitation; and the invitation limit is ours because the
-// only limit the provider applies to /invite counts the whole clinic and cannot
-// tell one doctor from another.
+// Four behaviours the onboarding block rests on, each of them a decision somewhere else in this
+// context: the address is folded because the provider stores it folded; the pending state expires
+// with the link because the link expires at all; /recover is a second way in because it does not
+// disturb a pending invitation; and the invitation limit is ours because the only limit the
+// provider applies to /invite counts the whole clinic and cannot tell one doctor from another.
 //
-// Not measured here, and recorded rather than asserted: v2.194.0 has no key
-// that disables changing the address through PUT /user. Nothing was found to
-// switch off, so there is no behaviour to pin — the divergence of a recorded
-// address from the provider's is accepted, and reconciliation belongs to
+// Not measured here, and recorded rather than asserted: v2.194.0 has no key that disables changing
+// the address through PUT /user. Nothing was found to switch off, so there is no behaviour to pin —
+// a recorded address diverging from the provider's is accepted, and reconciliation belongs to
 // whoever reads the state.
 package identity_test
 
@@ -32,9 +29,9 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// The provider holds the address folded, which is what makes the fold on this
-// side the identity of a person rather than a tidying step: the advisory lock,
-// the invite record and the lookup all name the same string the provider does.
+// The provider holds the address folded, which is what makes the fold on this side an identity
+// rather than a tidying step: the advisory lock, the invite record and the lookup all name the
+// same string the provider does.
 func TestTheProviderStoresTheAddressThisContextFolds(t *testing.T) {
 	cycle.Reset(t)
 
@@ -50,8 +47,7 @@ func TestTheProviderStoresTheAddressThisContextFolds(t *testing.T) {
 			"and record %q", stored, typed, want)
 	}
 
-	// The other half, and the reason the fold cannot be skipped: the spelling a
-	// human typed matches nothing the provider holds.
+	// The other half: the spelling a human typed matches nothing the provider holds.
 	var underTheTypedSpelling int
 	scanProvider(t, `SELECT count(*) FROM auth.users WHERE email = $1`,
 		[]any{typed}, &underTheTypedSpelling)
@@ -62,13 +58,9 @@ func TestTheProviderStoresTheAddressThisContextFolds(t *testing.T) {
 	}
 }
 
-// A link older than the configured lifetime is refused, and one inside it is
-// not.
-//
-// The lifetime is the harness's, so the case in the middle is what stops this
-// reading "backdating breaks a link": at half the lifetime the same edit leaves
-// the link working. With the override gone the container would run at the
-// provider's default of a day and the expired case would come out accepted.
+// The case in the middle is what stops this reading "backdating breaks a link": at half the
+// lifetime the same edit leaves the link working. With the harness override gone the container
+// would run at the provider's default of a day and the expired case would come out accepted.
 func TestALinkOlderThanTheConfiguredLifetimeIsRefused(t *testing.T) {
 	cycle.Reset(t)
 
@@ -106,11 +98,9 @@ func TestALinkOlderThanTheConfiguredLifetimeIsRefused(t *testing.T) {
 	}
 }
 
-// /recover is the second way in, and it is accepted because it costs the first
-// one nothing: on its own it neither confirms the account nor disturbs the
-// invitation. Following the recovery link does confirm — and extinguishes the
-// invitation, which is why a pending invite cannot be read off the provider and
-// is recorded on our side.
+// /recover costs the first way in nothing: on its own it neither confirms the account nor disturbs
+// the invitation. Following the recovery link does confirm — and extinguishes the invitation, which
+// is why a pending invite cannot be read off the provider and is recorded on our side.
 func TestRecoveryLeavesThePendingInvitationAloneUntilItsLinkIsFollowed(t *testing.T) {
 	cycle.Reset(t)
 
@@ -139,27 +129,20 @@ func TestRecoveryLeavesThePendingInvitationAloneUntilItsLinkIsFollowed(t *testin
 		t.Error("following the recovery link left the account unconfirmed")
 	}
 
-	// The residual property, asserted rather than read off a column: the
-	// invitation is gone, so a doctor whose patient recovered their way in
-	// cannot be told the invitation is still pending by the provider.
+	// The residual property, asserted rather than read off a column: the invitation is gone, so the
+	// provider cannot tell a doctor it is still pending after their patient recovered their way in.
 	if accepted, _ := follow(t, invited, "invite", ""); accepted {
 		t.Error("the invitation link still works after the recovery link was followed; " +
 			"a pending invitation could then be read off the provider")
 	}
 }
 
-// The measurement the invitation limit exists for: the provider's gap between
-// two emails to one address governs /recover, which anybody can ask for, and
-// not the admin /invite, which is the route the clinic uses.
-//
-// Both halves, because either alone is an assumption. Without the second, the
-// limit on our side would be belt and braces; without the first, the gap would
-// look like something nobody has ever seen fire.
-//
-// It is the gap and not every limit: the hourly quota does reach /invite, and
-// counts the whole instance rather than one doctor — which is what the limit on
-// our side is for and what the deployment's quota is compared against in
-// TestTheDeploymentAllowsAtLeastOneDoctorsWorthOfInvitations.
+// The measurement the invitation limit exists for: the provider's gap between two emails to one
+// address governs /recover, which anybody can ask for, and not the admin /invite, which the clinic
+// uses. Both halves, because either alone is an assumption — without the second the limit on our
+// side would be belt and braces, without the first the gap would look like something nobody has
+// seen fire. The gap and not every limit: the hourly quota does reach /invite and counts the whole
+// instance, which is what TestTheDeploymentAllowsAtLeastOneDoctorsWorthOfInvitations compares.
 func TestTheAdminInviteIsNotCoveredByThePerAddressGap(t *testing.T) {
 	cycle.Reset(t)
 
@@ -167,8 +150,7 @@ func TestTheAdminInviteIsNotCoveredByThePerAddressGap(t *testing.T) {
 
 	invite(t, address)
 
-	// Immediately, and it is the same person's mailbox: a gap covering this route
-	// would refuse the second one.
+	// Immediately, and to the same mailbox: a gap covering this route would refuse the second one.
 	invite(t, address)
 
 	if status, said := ask(t, "/recover", "", map[string]string{"email": address}); status != http.StatusOK {
@@ -181,19 +163,15 @@ func TestTheAdminInviteIsNotCoveredByThePerAddressGap(t *testing.T) {
 			cycle.MailerMaxFrequency, status, said)
 	}
 
-	// Which of the provider's refusals it is. The gap and the hourly quota are
-	// both over_email_send_rate_limit — measured on 2026-08-16 by running the
-	// harness at a quota of two, which refused with the same code and the
-	// message "email rate limit exceeded" — so the message is what tells them
-	// apart, and the quota firing here would mean this test had measured the
-	// wrong limit.
+	// Which of the provider's refusals it is: the gap and the hourly quota share
+	// over_email_send_rate_limit and differ only in the message — see EmailsPerHourVariable for
+	// that measurement — and the quota firing here would mean this measured the wrong limit.
 	if !strings.Contains(said, "you can only request this after") {
 		t.Errorf("the refusal is %s, which is not the per-address gap this measures", said)
 	}
 
-	// And the gap is the configured one rather than a permanent refusal. With
-	// the override gone the container would run at the provider's default of a
-	// minute and this would still be refused.
+	// And the gap is the configured one rather than a permanent refusal: with the override gone the
+	// container would run at the provider's default of a minute and this would still be refused.
 	time.Sleep(cycle.MailerMaxFrequency + time.Second)
 
 	if status, said := ask(t, "/recover", "", map[string]string{"email": address}); status != http.StatusOK {
@@ -220,9 +198,8 @@ func askForRecovery(t *testing.T, address string) {
 	}
 }
 
-// ask returns the answer rather than failing on a refusal: two tests here are
-// about which refusal the provider gives, and the provider has more than one
-// reason to answer 429.
+// ask returns the answer rather than failing on a refusal: two tests here are about which refusal
+// the provider gives, and it has more than one reason to answer 429.
 func ask(t *testing.T, path, token string, payload map[string]string) (int, string) {
 	t.Helper()
 
@@ -255,13 +232,11 @@ func ask(t *testing.T, path, token string, payload map[string]string) (int, stri
 	return resp.StatusCode, string(said)
 }
 
-// follow walks a link the way a mail client does, and says whether the provider
-// let it in.
+// follow walks a link the way a mail client does and says whether the provider let it in.
 //
-// The answer is a redirect either way — the session arrives in the fragment and
-// so does the refusal — so the status alone says nothing and the location is
-// what is read. Redirects are not followed: the address it points at is the
-// answer. An empty redirectTo asks for none.
+// The answer is a redirect either way — the session arrives in the fragment and so does the refusal
+// — so the status says nothing and the location is what is read. It is not followed: the address it
+// points at is the answer. An empty redirectTo asks for none.
 func follow(t *testing.T, token, kind, redirectTo string) (accepted bool, location string) {
 	t.Helper()
 
@@ -320,10 +295,8 @@ func recoveryToken(t *testing.T, address string) string {
 	return providerToken(t, address, `SELECT recovery_token FROM auth.users WHERE email = $1`)
 }
 
-// The token is read out of the provider's own table through a harness
-// connection, which is where a mail server would have got it. The alternative —
-// picking it out of the container's log — would rest on a log format nobody
-// promised.
+// The token is read out of the provider's own table, where a mail server would have got it. The
+// alternative — picking it out of the container's log — rests on a format nobody promised.
 func providerToken(t *testing.T, address, statement string) string {
 	t.Helper()
 
@@ -337,15 +310,14 @@ func providerToken(t *testing.T, address, statement string) string {
 	return token
 }
 
-// age moves one of the provider's timestamps back, which is how a lifetime is
-// measured without waiting one out.
+// age moves one of the provider's timestamps back, which is how a lifetime is measured without
+// waiting one out.
 func age(t *testing.T, address, column string, by time.Duration) {
 	t.Helper()
 
 	conn := testsupport.Connect(t, cycle.DB.SuperuserURL)
 
-	// The column is a constant at every call site — the statement is not built
-	// from anything a test received.
+	// The column is a constant at every call site — nothing a test received reaches the statement.
 	statement := `UPDATE auth.users SET ` + column +
 		` = ` + column + ` - make_interval(secs => $1) WHERE email = $2`
 

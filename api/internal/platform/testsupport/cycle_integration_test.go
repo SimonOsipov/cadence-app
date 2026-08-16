@@ -1,13 +1,11 @@
 //go:build integration
 
-// The harness's own test. What it proves is that the arrangement the onboarding
-// cycle needs is real rather than merely configured: the chain applied on the
-// database the identity provider is connected to, the token hook registered and
-// reached, and a reset that empties both schemas.
+// The harness's own test: the arrangement the onboarding cycle needs is real rather than merely
+// configured — the chain applied on the database GoTrue is connected to, the token hook registered
+// and reached, and a reset that empties both schemas.
 //
-// A cycle test written against a harness where the hook was configured but
-// unreachable — the membership ungranted, say — would come out green with every
-// token missing its product role, and the failure would surface as an
+// A cycle test written against a harness whose hook was configured but unreachable would come out
+// green with every token missing its product role, and the failure would surface as an
 // authorization bug in step 5 rather than as a harness fault here.
 package testsupport_test
 
@@ -73,12 +71,10 @@ func TestMain(m *testing.M) {
 
 // The hook is reached, and what it wrote is in the token.
 //
-// Three things at once, and that is deliberate: the chain has to be applied on
-// GoTrue's own database or the hook's SELECT finds no app.profiles, the
-// membership has to be granted or the EXECUTE is refused, and the hook has to be
-// named in the configuration. Any one of them missing produces the same
-// observable — a signed token with no cadence_role — which is why the negative
-// below is a separate test rather than an assumption.
+// Three things at once, deliberately: the chain applied on GoTrue's own database or the hook's
+// SELECT finds no app.profiles, the membership granted or the EXECUTE is refused, and the hook
+// named in the configuration. Any one missing produces the same observable — a signed token with no
+// cadence_role — which is why the negative below is a separate test rather than an assumption.
 func TestTheHarnessIssuesTokensCarryingTheProductRole(t *testing.T) {
 	cycle.Reset(t)
 
@@ -98,9 +94,8 @@ func TestTheHarnessIssuesTokensCarryingTheProductRole(t *testing.T) {
 	}
 }
 
-// The control. Without it the test above would pass on a harness that wrote
-// "doctor" into every token regardless of who asked, and the claim "the hook
-// ran" would rest on the hook having been given nothing else to say.
+// The control: without it the test above would pass on a harness that wrote "doctor" into every
+// token regardless of who asked.
 func TestATokenForAUserWithNoProfileCarriesNoProductRole(t *testing.T) {
 	cycle.Reset(t)
 
@@ -118,8 +113,7 @@ func TestATokenForAUserWithNoProfileCarriesNoProductRole(t *testing.T) {
 	}
 }
 
-// Reset empties both schemas, which is what lets one persistent database serve a
-// whole package. Asserted in both directions: rows exist, then they do not.
+// Asserted in both directions: rows exist, then they do not.
 func TestResetEmptiesBothTheApplicationAndTheAuthSchema(t *testing.T) {
 	cycle.Reset(t)
 
@@ -144,9 +138,8 @@ func TestResetEmptiesBothTheApplicationAndTheAuthSchema(t *testing.T) {
 			profiles, users)
 	}
 
-	// The one table Reset must leave alone, and the mutation it has to fail
-	// against: emptying the identity provider's own bookkeeping tells a restarted
-	// container to migrate a schema that is already there.
+	// The mutation Reset has to fail against: emptying the provider's own bookkeeping tells a
+	// restarted container to migrate a schema that is already there.
 	if survived := appliedGoTrueMigrations(t); survived != applied {
 		t.Errorf("Reset left %d rows in auth.schema_migrations, want the %d it started with",
 			survived, applied)
@@ -168,12 +161,9 @@ func appliedGoTrueMigrations(t *testing.T) int {
 	return applied
 }
 
-// The neighbour did not move in with the existing tenants: a per-test database
-// is still a database of its own, and it is not the one GoTrue is connected to.
-//
-// The identity provider's schema is what tells them apart from the outside — the
-// per-test databases never see it, which is why dropping one WITH (FORCE) does
-// not sever a connection GoTrue is holding open.
+// A per-test database is not the one GoTrue is connected to, and the absent `auth` schema is what
+// tells them apart from the outside — which is why dropping one WITH (FORCE) severs no connection
+// GoTrue is holding open.
 func TestPerTestDatabasesStaySeparateFromTheHarnessDatabase(t *testing.T) {
 	db := cluster.NewDatabase(t)
 
@@ -213,9 +203,8 @@ func counts(t *testing.T) (profiles, users int) {
 	return profiles, users
 }
 
-// A confirmed account with a password, created the way the product creates
-// nothing — the cycle invites instead. It is the cheapest way to get a token out
-// of GoTrue, and a token is what this file is about.
+// A confirmed account with a password, created the way the product creates nothing — the cycle
+// invites instead. It is the cheapest way to get a token out of GoTrue.
 func createUser(t *testing.T, email, password string) string {
 	t.Helper()
 
@@ -312,13 +301,10 @@ func call(t *testing.T, method, url, token string, payload map[string]any) []byt
 	return body
 }
 
-// Guards the harness against a lifetime it cannot outlive: the expiry test of
-// step 2 measures a link against this value, and GoTrue's own default is a day.
-//
-// Read off the running container rather than off the constant that configured
-// it. An assertion on testsupport.HarnessOTPExpiry alone would be green with the
-// line that hands it to GoTrue deleted, which is precisely the failure this has
-// to catch — and it would be caught in step 2, as a test that hangs.
+// Guards the harness against a lifetime it cannot outlive: the expiry test of step 2 measures a
+// link against this value, and GoTrue's own default is a day. Read off the running container for
+// the reason ConfiguredWith gives — an assertion on HarnessOTPExpiry alone stays green with the
+// line that hands it to GoTrue deleted, and the loss surfaces in step 2 as a test that hangs.
 func TestTheHarnessOverridesTheOneTimeTokenLifetime(t *testing.T) {
 	if cycle.OTPExpiry <= 0 || cycle.OTPExpiry > time.Hour {
 		t.Fatalf("the harness is configured for an OTP_EXP of %s; an expiry test "+
@@ -334,14 +320,10 @@ func TestTheHarnessOverridesTheOneTimeTokenLifetime(t *testing.T) {
 	}
 }
 
-// The budget a package has to spend on email, read off the running container
-// for the same reason as the lifetime above.
-//
-// Without this the pin has no witness: the quota only bites after a package has
-// sent more than the provider allows in an hour, so deleting the line that sets
-// it goes unnoticed here and surfaces in another package as a test failing with
-// somebody else's reason — over_email_send_rate_limit on a call that had every
-// right to succeed.
+// The budget a package has to spend on email, read off the running container for the same reason
+// as the lifetime above. Without this the pin has no witness: the quota bites only after a package
+// has sent more than the provider allows in an hour, so deleting the line that sets it surfaces in
+// another package as over_email_send_rate_limit on a call that had every right to succeed.
 func TestTheHarnessGivesThePackageAnEmailBudget(t *testing.T) {
 	configured := cycle.ConfiguredWith(t, testsupport.EmailsPerHourVariable)
 
@@ -352,13 +334,10 @@ func TestTheHarnessGivesThePackageAnEmailBudget(t *testing.T) {
 	}
 }
 
-// The hook the harness proves is the hook the deployment calls.
-//
-// Without this the tests above would go on passing while the deployment called a
-// function at another address, and the harness would be evidence about nothing
-// anyone runs. The same shape as the auth-schema owner and image-digest checks:
-// a whole line of docker-compose.yml, because a commented-out one still contains
-// the text.
+// The hook the harness proves is the hook the deployment calls. Without this the tests above would
+// go on passing while the deployment called a function at another address, and the harness would be
+// evidence about nothing anyone runs. A whole line of compose is matched, because a commented-out
+// one still contains the text.
 func TestTheHarnessCallsTheHookTheDeploymentDoes(t *testing.T) {
 	compose, err := os.ReadFile(filepath.Join(testsupport.ModuleRoot(t), "docker-compose.yml"))
 	if err != nil {

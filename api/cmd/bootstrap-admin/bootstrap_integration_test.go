@@ -1,12 +1,8 @@
 //go:build integration
 
-// The command against a real chain, under the role a deployment runs it as.
-//
-// Everything it does is the arrangement's rather than this package's: the two
-// rows are permitted by 000009's owner policies and by nothing else, and the
-// refusal that keeps a second administrator out is a SELECT the owner is only
-// able to make through profiles_hook_read. None of that is observable against a
-// fake.
+// The command against a real chain, under the role a deployment runs it as: the two rows are permitted by 000009's
+// owner policies and by nothing else, and the check that keeps a second administrator out is a SELECT the owner can
+// only make through profiles_hook_read. None of that is observable against a fake.
 package main
 
 import (
@@ -24,8 +20,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// insufficientPrivilege is what Postgres answers when a role may not do
-// something at all, as opposed to a policy finding no row for it.
+// insufficientPrivilege is what a role that may not act at all is refused with, as against a policy finding no row.
 const insufficientPrivilege = "42501"
 
 var cluster *testsupport.Cluster
@@ -49,8 +44,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// bootstrap runs the command the way an operator does: the real writer, the
-// connection string in the environment, and the arguments a person types.
+// bootstrap runs the command as an operator does: the real writer, the URL in the environment, typed arguments.
 func bootstrap(t *testing.T, db *testsupport.Database, userID, fullName string) error {
 	t.Helper()
 
@@ -59,9 +53,7 @@ func bootstrap(t *testing.T, db *testsupport.Database, userID, fullName string) 
 	return run(t.Context(), []string{userID, fullName}, writeTheFirstAdministrator)
 }
 
-// The witness the command cannot be: the owner reads no audit row at all and
-// sees profiles only through the hook's policy, so what actually landed is
-// asked of a connection outside the access model.
+// The witness the command cannot be: the owner reads no audit row and sees profiles only through the hook's policy.
 func observer(t *testing.T, db *testsupport.Database) *pgx.Conn {
 	t.Helper()
 
@@ -93,8 +85,7 @@ func TestTheCommandCreatesTheClinicsFirstAdministrator(t *testing.T) {
 	if name != adminName {
 		t.Errorf("the profile is named %q, want %q", name, adminName)
 	}
-	// Empty until the first sign-in, which is where the block that captures it
-	// writes it. A value invented here would be a guess at somebody's clock.
+	// Empty until the first sign-in captures it; a value invented here would be a guess at somebody's clock.
 	if timezone != nil {
 		t.Errorf("the profile carries the timezone %q, want none yet", *timezone)
 	}
@@ -103,9 +94,7 @@ func TestTheCommandCreatesTheClinicsFirstAdministrator(t *testing.T) {
 	}
 }
 
-// The row is signed by a job and never by a person. The role that writes it can
-// TRUNCATE the table, and 000009's answer to that weaker author is to keep it
-// from writing a row that reads as a human's.
+// Signed by a job and never by a person — 000009's answer to an author that can TRUNCATE the table.
 func TestTheCommandSignsItsAuditRowAsAJob(t *testing.T) {
 	db := cluster.NewDatabase(t)
 
@@ -129,15 +118,11 @@ func TestTheCommandSignsItsAuditRowAsAJob(t *testing.T) {
 	if actorID != nil {
 		t.Errorf("the audit row names the person %q", *actorID)
 	}
-	// Spelled out rather than compared against the constant that produced it:
-	// an expectation derived from the value under test moves with it, and
-	// measured — renaming auditJob left this test green.
+	// Spelled out rather than compared against the constant that produced it: measured, renaming auditJob left an
+	// expectation derived from it green.
 	if actorJob != "bootstrap-admin" {
 		t.Errorf("the audit row is signed %q, want bootstrap-admin", actorJob)
 	}
-	// The bootstrap's own action rather than the staff route's provider.create:
-	// the row is about an administrator, and step-6 writes that other string for
-	// every doctor.
 	if action != "admin.bootstrap" || entity != "profiles" {
 		t.Errorf("the audit row says %s on %s", action, entity)
 	}
@@ -146,9 +131,7 @@ func TestTheCommandSignsItsAuditRowAsAJob(t *testing.T) {
 	}
 }
 
-// The refusal, and what makes it worth asserting: nothing on this table is
-// unique on role, so a command that skipped the check would answer no error at
-// all and leave a clinic with two administrators.
+// Nothing is unique on role, so a command that skipped the check answers no error and leaves two administrators.
 func TestTheCommandRefusesASecondAdministratorAndWritesNothing(t *testing.T) {
 	db := cluster.NewDatabase(t)
 
@@ -181,11 +164,9 @@ func TestTheCommandRefusesASecondAdministratorAndWritesNothing(t *testing.T) {
 	}
 }
 
-// audit.md's second invariant, measured rather than described: an administrator
-// without the row that signs them must be impossible, and the only thing making
-// it so is that both inserts are one transaction. The audit insert is made to
-// fail by taking its policy away — with the two writes committed separately, the
-// profile survives this and the clinic has an administrator nobody signed for.
+// audit.md's second invariant, measured rather than described: only one transaction over both inserts makes an
+// administrator without the row that signs them impossible. The audit insert is failed by taking its policy away —
+// committed separately, the profile survives and the clinic has an administrator nobody signed for.
 func TestAnAdministratorIsNotCreatedWithoutTheRowThatSignsThem(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	superuser := observer(t, db)
@@ -200,8 +181,7 @@ func TestAnAdministratorIsNotCreatedWithoutTheRowThatSignsThem(t *testing.T) {
 	if err == nil {
 		t.Fatal("the command reported success with no audit row to show for it")
 	}
-	// Where it failed and not merely that it did: without this the test is green
-	// against a command that never reached the audit insert at all.
+	// Where it failed and not merely that it did: without this the test is green on a command that never got that far.
 	if !strings.Contains(err.Error(), "signing the audit row") {
 		t.Fatalf("the run failed with %v, want the audit insert to be what refused", err)
 	}
@@ -217,15 +197,11 @@ func TestAnAdministratorIsNotCreatedWithoutTheRowThatSignsThem(t *testing.T) {
 	}
 }
 
-// noInheritMemberOfTheOwner returns a connection string for a login role that
-// belongs to cadence_owner and inherits nothing from it — the shape a migration
-// role may well be provisioned in, since the chain itself never relies on
-// inheritance and opens every migration with SET ROLE.
+// The shape a migration role may well be provisioned in: the chain never relies on inheritance, opening with SET ROLE.
 func noInheritMemberOfTheOwner(t *testing.T, db *testsupport.Database) string {
 	t.Helper()
 
-	// The database name is unique per test and roles are cluster objects, so
-	// two tests running one after the other do not collide over this one.
+	// Roles are cluster objects, so the per-test database name is what keeps two runs from colliding over this one.
 	role := "cadence_bootstrap_" + db.Name
 	const password = "cadence_bootstrap"
 
@@ -256,10 +232,8 @@ func noInheritMemberOfTheOwner(t *testing.T, db *testsupport.Database) string {
 	return parsed.String()
 }
 
-// Why the command assumes the owner role rather than counting on the migration
-// role's membership carrying it. Measured: with the SET ROLE removed everything
-// else here stays green, because the harness's migration role inherits — and
-// this is the arrangement in which that difference is the whole command.
+// The test that makes the command's SET ROLE load-bearing: measured, removing it leaves every other test here green,
+// because the harness's migration role inherits.
 func TestTheCommandWorksUnderAMigrationRoleThatInheritsNothing(t *testing.T) {
 	db := cluster.NewDatabase(t)
 
@@ -280,10 +254,7 @@ func TestTheCommandWorksUnderAMigrationRoleThatInheritsNothing(t *testing.T) {
 	}
 }
 
-// The command belongs to the migration role. Pointed at the request path's
-// connection string it must refuse rather than write anything, and the refusal
-// has to be the privilege one: cadence_app cannot become the owner, which is the
-// barrier the whole access model rests on.
+// The refusal must be the privilege one: cadence_app cannot become the owner, the barrier the access model rests on.
 func TestTheCommandCannotDoThisFromTheRequestPath(t *testing.T) {
 	db := cluster.NewDatabase(t)
 

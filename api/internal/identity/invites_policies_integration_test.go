@@ -17,14 +17,12 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// The extension of the regression suite that the invites migration owes, and
-// the behaviour of the two policies the one-off command stands on.
+// The regression suite the invites migration owes, and the behaviour of the two policies the one-off command stands
+// on.
 //
-// The registries in the database package declare what the catalogue holds; what
-// is measured here is what the arrangement does to a row, on the paths that
-// carry it in production — the request seam for the three product roles, the
-// service seam for the transaction, and cadence_owner for a command that runs
-// under the migration role and through no seam at all.
+// The registries in the database package declare what the catalogue holds; measured here is what the arrangement does
+// to a row on the paths that carry it in production — the request seam for the three product roles, the service seam
+// for the transaction, and cadence_owner for a command that runs through no seam at all.
 
 const (
 	inviteeID       = "8a1f3b7c-0000-4000-8000-000000000021"
@@ -37,18 +35,14 @@ const (
 	thirdInviteeAddress = "vera@example.test"
 )
 
-// The two refusals Postgres spells 42501. A missing grant and a policy that
-// rejected the row are different claims about the schema — "the patient reaches
-// nothing" is about the grant, "a doctor may not sign for another doctor" is
-// about the policy — and a test that only reads the code cannot tell which one
-// it just proved.
+// The two refusals Postgres spells 42501. A missing grant and a rejected row are different claims about the schema,
+// and a test that reads only the code cannot tell which one it just proved.
 const (
 	grantRefusal  = "the grant"
 	policyRefusal = "the policy"
 )
 
-// foreignKeyViolation is what a reference refuses with when the row it points at
-// is being deleted out from under it.
+// foreignKeyViolation is what a reference refuses with when the row it points at is being deleted.
 const foreignKeyViolation = "23503"
 
 func refusedBy(t *testing.T, err error) string {
@@ -92,9 +86,8 @@ func recordInvitation(t *testing.T, c clinic, userID, address, invitedBy string)
 	}
 }
 
-// §04 gives the doctor create and nothing else on this table. The write is what
-// the endpoint will do on their behalf; the absent read is why a doctor cannot
-// enumerate the clinic's invitations to find out which addresses it knows.
+// §04 gives the doctor create and nothing else: the absent read is why a doctor cannot enumerate which addresses the
+// clinic knows.
 func TestADoctorRecordsAnInvitationAndCannotReadItBack(t *testing.T) {
 	c := newClinic(t)
 
@@ -119,10 +112,7 @@ func TestADoctorRecordsAnInvitationAndCannotReadItBack(t *testing.T) {
 	}
 }
 
-// The row says who invited, and a doctor may only say themselves. Without the
-// predicate the write is still refused to everybody outside the role, and every
-// doctor can attribute an invitation to a colleague — which is what the admin
-// reads when they ask who let this address in.
+// The predicate rather than the grant: without it a doctor signs an invitation in a colleague's name.
 func TestADoctorCannotSignAnInvitationWithAnotherDoctorsName(t *testing.T) {
 	c := newClinic(t)
 
@@ -141,9 +131,8 @@ func TestADoctorCannotSignAnInvitationWithAnotherDoctorsName(t *testing.T) {
 	}
 }
 
-// The admin's side of the same table: every invitation, whoever sent it, and no
-// write at all. Two rows from two authors, because "reads everything" is true of
-// a table holding one row the reader happens to have written.
+// The admin's side: every invitation and no write at all. Two rows from two authors, because "reads everything" is
+// also true of a table holding the one row the reader wrote.
 func TestTheAdminReadsEveryInvitationAndRecordsNone(t *testing.T) {
 	c := newClinic(t)
 
@@ -172,16 +161,13 @@ func TestTheAdminReadsEveryInvitationAndRecordsNone(t *testing.T) {
 	}
 }
 
-// The patient's row on this table is empty in both directions, and empty is
-// stated rather than inferred: the address of every person the clinic ever
-// invited is the one thing on this table, and a patient holds no verb over it.
+// Empty in both directions, stated rather than inferred: a patient holds no verb over the clinic's addresses.
 func TestAPatientReachesNothingOnTheInvitations(t *testing.T) {
 	c := newClinic(t)
 
 	recordInvitation(t, c, inviteeID, inviteeAddress, doctorID)
 
-	// The address is the value a patient must not reach, so the second probe names
-	// it rather than leaving it to a count.
+	// The address is the value a patient must not reach, so the second probe names it rather than counting.
 	for name, probe := range map[string]struct {
 		statement string
 		args      []any
@@ -221,19 +207,15 @@ func TestAPatientReachesNothingOnTheInvitations(t *testing.T) {
 	}
 }
 
-// The path that will actually write the row, and the two verbs it is trusted
-// with. The refusals matter as much as the writes: an invitation the service
-// path could rewrite or delete is a record that cannot witness what it was
-// created to witness — that this account is one of ours to claim.
+// The two verbs the service path is trusted with, and the two it is not: a record it could rewrite witnesses nothing.
 func TestTheServicePathRecordsAndReadsInvitationsAndChangesNone(t *testing.T) {
 	c := newClinic(t)
 
 	recordInvitation(t, c, inviteeID, inviteeAddress, doctorID)
 
-	// The account is the key, and it is the table's only one — addresses are
-	// deliberately not unique. Without it a retried invitation writes a second
-	// row and the lookup that decides invite-versus-claim starts answering with
-	// a set; measured, PRIMARY KEY degraded to NOT NULL passed every other test.
+	// The account is the table's only key — addresses are deliberately not unique — and without it a retried
+	// invitation writes a second row, leaving the invite-versus-claim lookup answering with a set. Measured:
+	// PRIMARY KEY degraded to NOT NULL passed every other test.
 	repeated := database.WithServiceJob(
 		t.Context(), c.service, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
@@ -290,28 +272,22 @@ func TestTheServicePathRecordsAndReadsInvitationsAndChangesNone(t *testing.T) {
 	}
 }
 
-// The constraint at invites.email, measured from both sides: what it refuses,
-// and that it accepts everything identity.NormalizeAddress produces.
+// The constraint at invites.email from both sides: what it refuses, and that it takes what NormalizeAddress produces.
 func TestAnInvitationCarriesTheAddressTheFoldProduces(t *testing.T) {
 	c := newClinic(t)
 
 	const raw = "  Anna@Example.TEST  "
 
-	// An identifier of its own per case: sharing one turns the second refusal
-	// into a duplicate key, which is a different constraint answering a question
-	// nobody asked.
+	// An identifier per case: sharing one turns the second refusal into a duplicate key from a different constraint.
 	for name, unfolded := range map[string]struct {
 		userID, address string
 	}{
 		"a spelling the provider would not store": {inviteeID, strings.TrimSpace(raw)},
 		"an address nobody trimmed":               {otherInviteeID, raw},
-		// The empty string is folded — it is its own lower and its own trim — so
-		// the second half of the constraint is the only thing refusing it, and
-		// without a case of its own that half is untested.
+		// The empty string is its own lower and its own trim, so the constraint's second half is all that refuses it.
 		"no address at all": {thirdInviteeID, ""},
-		// Already lower, differing only by the spaces: the one shape btrim alone
-		// refuses. The two cases above carry capitals, so lower() answers them
-		// both, and dropping btrim from the constraint left the suite green.
+		// The one shape btrim alone refuses: the cases above carry capitals, which lower() answers, and dropping
+		// btrim from the constraint left the suite green.
 		"an address folded in case but not in space": {fourthInviteeID, " anna@example.test "},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -336,16 +312,13 @@ func TestAnInvitationCarriesTheAddressTheFoldProduces(t *testing.T) {
 		})
 	}
 
-	// The control, and the reason this test names the fold rather than a literal:
-	// the constraint has to accept everything NormalizeAddress produces, or the
-	// refusals above hold against a table that stores no address at all.
+	// The control: without it the refusals above hold just as well against a table that stores no address at all.
 	recordInvitation(t, c, inviteeID, identity.NormalizeAddress(raw), doctorID)
 }
 
-// What the absent ON DELETE on invited_by costs the admin, who is the one role
-// holding DELETE on profiles. The reasoning is at the column in 000008; the
-// control is here, because without a doctor nobody invited through, the refusal
-// below is consistent with an admin who cannot delete a profile at all.
+// What the absent ON DELETE on invited_by costs the admin, the one role holding DELETE on profiles. The control
+// matters: without a doctor nobody invited through, the refusal below is equally consistent with an admin who cannot
+// delete a profile at all.
 func TestAnAdminCannotRemoveADoctorWhoseInvitationsStand(t *testing.T) {
 	c := newClinic(t)
 
@@ -366,9 +339,7 @@ func TestAnAdminCannotRemoveADoctorWhoseInvitationsStand(t *testing.T) {
 		t.Fatal("a doctor named by an invitation was removed")
 	}
 
-	// The code and not merely a refusal: cascading answers no error at all and is
-	// caught above, and any other refusal here would be a policy or a grant
-	// saying something else entirely.
+	// The code and not merely a refusal: any other error here would be a policy or a grant saying something else.
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != foreignKeyViolation {
 		t.Fatalf("the removal was refused with %v, want SQLSTATE %s (foreign_key_violation)",
@@ -376,9 +347,7 @@ func TestAnAdminCannotRemoveADoctorWhoseInvitationsStand(t *testing.T) {
 	}
 }
 
-// asTheOwner is the role cmd/bootstrap-admin runs under, reached the way the
-// command reaches it: the migration connection, which is a member of
-// cadence_owner rather than a seam.
+// The role cmd/bootstrap-admin runs under, reached as the command reaches it: the migration connection, not a seam.
 func asTheOwner(t *testing.T) (*pgx.Conn, *testsupport.Database) {
 	t.Helper()
 
@@ -391,8 +360,7 @@ func asTheOwner(t *testing.T) (*pgx.Conn, *testsupport.Database) {
 	return conn, db
 }
 
-// Both halves of 000009's profiles policy: the row it exists to permit, and the
-// two values of the column's closed set it must still refuse.
+// Both halves of 000009's profiles policy: the row it permits, and the column's other two values it must refuse.
 func TestTheOwnerCreatesAnAdminAndNoOtherRole(t *testing.T) {
 	conn, _ := asTheOwner(t)
 	ctx := t.Context()
@@ -408,9 +376,7 @@ func TestTheOwnerCreatesAnAdminAndNoOtherRole(t *testing.T) {
 		t.Fatalf("creating the first admin wrote %d row(s), want 1", tag.RowsAffected())
 	}
 
-	// Read back through profiles_hook_read, which is the owner's only sight of
-	// this table: a row the command cannot see afterwards is a row it cannot
-	// report on.
+	// Read back through profiles_hook_read, the owner's only sight of this table.
 	var role string
 	if err := conn.QueryRow(
 		ctx, `SELECT role FROM app.profiles WHERE user_id = $1`, adminID,
@@ -421,8 +387,6 @@ func TestTheOwnerCreatesAnAdminAndNoOtherRole(t *testing.T) {
 		t.Errorf("the row the owner wrote is a %s", role)
 	}
 
-	// An identifier per case, so that a policy which lets the first one through
-	// does not turn the second refusal into a duplicate key.
 	for id, refused := range map[string]string{
 		otherDoctorID:  "doctor",
 		otherPatientID: "patient",
@@ -442,10 +406,8 @@ func TestTheOwnerCreatesAnAdminAndNoOtherRole(t *testing.T) {
 	}
 }
 
-// The INSERT policy is the whole of what the owner gained, and the two verbs it
-// did not gain answer without an error: with no policy to name them, UPDATE and
-// DELETE see no row to touch. A test asserting err == nil here would be green on
-// a schema where the owner can rewrite every profile in the clinic.
+// The two verbs the owner did not gain answer without an error: with no policy to name them, UPDATE and DELETE see no
+// row to touch. A test asserting err == nil here would be green on a schema where the owner rewrites every profile.
 func TestTheOwnerStillCannotRewriteOrRemoveAProfile(t *testing.T) {
 	conn, db := asTheOwner(t)
 	ctx := t.Context()
@@ -472,9 +434,7 @@ func TestTheOwnerStillCannotRewriteOrRemoveAProfile(t *testing.T) {
 		})
 	}
 
-	// The witness the owner cannot be: it sees the row through the hook policy,
-	// so a superuser is asked instead whether the name is the one it was written
-	// with.
+	// The witness the owner cannot be: it sees this row only through the hook policy, so the superuser is asked.
 	superuser := testsupport.Connect(t, db.SuperuserURL)
 
 	var name string
@@ -488,10 +448,7 @@ func TestTheOwnerStillCannotRewriteOrRemoveAProfile(t *testing.T) {
 	}
 }
 
-// The audit row the command signs, and the signature it may not forge. actor_job
-// is what audit.md already calls a job rather than a person; a role holding
-// TRUNCATE writing a row in somebody's name is a weaker record than the service
-// path's, and the policy is what keeps it from being one at all.
+// The signature the owner may not forge: a role holding TRUNCATE must at least not write a row in a person's name.
 func TestTheOwnerSignsItsAuditRowWithAJobAndNeverAsAPerson(t *testing.T) {
 	conn, db := asTheOwner(t)
 	ctx := t.Context()
@@ -525,9 +482,8 @@ func TestTheOwnerSignsItsAuditRowWithAJobAndNeverAsAPerson(t *testing.T) {
 		t.Errorf("the forged signature was refused by %s, want %s", by, policyRefusal)
 	}
 
-	// The owner writes this table and does not read it: there is no SELECT policy
-	// for it, and no policy means an empty answer rather than a refusal. The
-	// superuser supplies the witness the writer cannot.
+	// No SELECT policy for the owner, and no policy means an empty answer rather than a refusal. The superuser
+	// supplies the witness the writer cannot.
 	var visibleToTheOwner int
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM app.audit_log`).Scan(&visibleToTheOwner); err != nil {
 		t.Fatalf("counting the audit rows as the owner: %v", err)

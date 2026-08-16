@@ -1,14 +1,13 @@
 //go:build integration
 
-// The cycle, end to end: an empty clinic, the one-off command that gives it its
-// first administrator, a doctor taken on, a patient created, both signing in by
-// the link they were sent, and the rows each of them can see afterwards.
+// The cycle, end to end: an empty clinic, the one-off command that gives it its first
+// administrator, a doctor taken on, a patient created, both signing in by the link they were sent,
+// and the rows each of them can see afterwards.
 //
-// What separates this from the route suites beside it is that nothing here hands
-// a handler a principal. Every request carries the token the identity provider
-// minted for the person making it, over the whole surface cmd/api mounts, and
-// the role that decides what happens is the one the token issuance hook wrote
-// from a profile some earlier request created.
+// What separates this from the route suites beside it is that nothing here hands a handler a
+// principal. Every request carries the token the provider minted for the person making it, over the
+// whole surface cmd/api mounts, and the role deciding what happens is the one the issuance hook
+// wrote from a profile some earlier request created.
 package identity_test
 
 import (
@@ -36,14 +35,9 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/router"
 )
 
-// The mailboxes the cycle uses. Addresses of their own, because the harness
-// shares one identity provider across the package and a test that reuses
-// another's address sees the other's account.
-//
-// Two doctors and two patients, assigned crosswise, for the reason the policy
-// suite's own fixture gives: with one of each, every row a doctor could read is
-// one they are entitled to, and «does not see the other one» is a claim about an
-// empty table.
+// The mailboxes the cycle uses, each its own for the reason testsupport.Cycle records. Two doctors
+// and two patients, assigned crosswise: with one of each, every row a doctor could read is one they
+// are entitled to, and «does not see the other one» is a claim about an empty table.
 const (
 	theAdminsAddress = "petr.averin@clinic.example"
 
@@ -54,16 +48,16 @@ const (
 	theOtherPatientsAddress = "anna.lebedeva@clinic.example"
 )
 
-// person is somebody the cycle produced: the account the provider assigned and
-// the session their link landed in.
+// person is somebody the cycle produced: the account the provider assigned and the session their
+// link landed in.
 type person struct {
 	account string
 	access  string
 	refresh string
 }
 
-// cycleClinic is the whole API in front of the cycle's database and identity
-// provider, assembled by the function the composition root assembles it with.
+// cycleClinic is the whole API in front of the cycle's database and provider, assembled by the
+// function the composition root uses.
 type cycleClinic struct {
 	*onboarding
 
@@ -77,10 +71,9 @@ func onlineClinic(t *testing.T) *cycleClinic {
 
 	clinic := freshClinic(t)
 
-	// Pointed at the provider's own key set, which is what a deployment derives
-	// from the issuer. A fixture serving the public half of cycle.SigningKey
-	// would verify the same tokens and leave the moving part — the provider
-	// publishing the key it signs sessions with — unmeasured.
+	// Pointed at the provider's own key set, as a deployment derives it from the issuer. A fixture
+	// serving the public half of cycle.SigningKey would verify the same tokens and leave the moving
+	// part — the provider publishing the key it signs with — unmeasured.
 	verifier, err := token.NewVerifier(t.Context(), token.VerifierConfig{
 		Issuer:      testsupport.GoTrueIssuer,
 		Audience:    testsupport.GoTrueAudience,
@@ -102,8 +95,8 @@ func onlineClinic(t *testing.T) *cycleClinic {
 	return &cycleClinic{onboarding: clinic, mux: mux, verifier: verifier}
 }
 
-// send drives one request the way a client does: the whole surface, a bearer
-// token, and nothing put behind the guard by the test.
+// send drives one request the way a client does: the whole surface, a bearer token, and nothing put
+// behind the guard by the test.
 func (c *cycleClinic) send(t *testing.T, path, bearer, payload string) answer {
 	t.Helper()
 
@@ -117,10 +110,9 @@ func (c *cycleClinic) send(t *testing.T, path, bearer, payload string) answer {
 	return answer{status: rec.Code, body: rec.Body.String()}
 }
 
-// whoTheTokenSays is the API's own verifier reading a session token. It is the
-// one place the role inside one is a value this process can assert on: on the
-// request path the claim is read, turned into a principal and spent, and a
-// handler that saw the wrong role would answer wrongly rather than say so.
+// whoTheTokenSays is the API's own verifier reading a session token — the one place the role
+// inside one is a value this process can assert on, since on the request path the claim is read,
+// turned into a principal and spent, and a handler seeing the wrong role answers wrongly in silence.
 func (c *cycleClinic) whoTheTokenSays(t *testing.T, access string) auth.Principal {
 	t.Helper()
 
@@ -132,11 +124,9 @@ func (c *cycleClinic) whoTheTokenSays(t *testing.T, access string) auth.Principa
 	return principal
 }
 
-// visibleTo reads one relation through the request seam as the caller a token
-// names — the same road every screen of the product reads it by.
-//
-// The statement is a constant at every call site: nothing a request carried
-// reaches it.
+// visibleTo reads one relation through the request seam as the caller a token names — the same road
+// every screen of the product reads it by. The statement is a constant at every call site: nothing
+// a request carried reaches it.
 func (c *cycleClinic) visibleTo(t *testing.T, caller auth.Principal, statement string) []string {
 	t.Helper()
 
@@ -181,8 +171,7 @@ func (c *cycleClinic) refusalReading(
 	)
 }
 
-// cycleWalk is the clinic one walk of the cycle produced: one administrator, and
-// two doctors each looking after a patient of their own.
+// cycleWalk is the clinic one walk produced: an administrator and two doctors, each with a patient.
 type cycleWalk struct {
 	clinic *cycleClinic
 
@@ -195,13 +184,9 @@ type cycleWalk struct {
 	otherPatient person
 }
 
-// walkTheCycle runs the sequence a clinic actually goes through, from a database
-// with nobody in it to patients holding sessions.
-//
-// It asserts only that each step went through; what the result then has to be
-// true of is the tests below, each of which walks it again. That is deliberate —
-// the walk is the arrangement, and an arrangement that quietly half-failed would
-// otherwise be measured as a property.
+// walkTheCycle runs the sequence a clinic actually goes through, from a database with nobody in it
+// to patients holding sessions. It asserts only that each step went through: the walk is the
+// arrangement, and an arrangement that quietly half-failed would otherwise be measured as a property.
 func walkTheCycle(t *testing.T) cycleWalk {
 	t.Helper()
 
@@ -224,8 +209,7 @@ func walkTheCycle(t *testing.T) cycleWalk {
 	}
 }
 
-// hire is the administrator taking a doctor on, through to the doctor holding a
-// session of their own.
+// hire is the administrator taking a doctor on, through to the doctor holding a session.
 func (c *cycleClinic) hire(t *testing.T, admin person, address, title string) person {
 	t.Helper()
 
@@ -237,8 +221,8 @@ func (c *cycleClinic) hire(t *testing.T, admin person, address, title string) pe
 	return signIn(t, address)
 }
 
-// take is a doctor creating a patient and putting themselves on their care team,
-// through to the patient holding a session.
+// take is a doctor creating a patient and putting themselves on their care team, through to the
+// patient holding a session.
 func (c *cycleClinic) take(t *testing.T, doctor person, address string) person {
 	t.Helper()
 
@@ -250,21 +234,16 @@ func (c *cycleClinic) take(t *testing.T, doctor person, address string) person {
 	return signIn(t, address)
 }
 
-// theFirstAdministrator is the sequence a deployment starts with: the account is
-// created at the provider, and the one-off command writes the profile and the
-// audit row under the migration role with the identifier it answered.
-//
-// The command is run rather than imitated. It is a package main and cannot be
-// imported, and a copy of its two statements here would be a second
-// implementation — which this suite would then be measuring instead of the one a
-// deployment runs.
+// theFirstAdministrator is the sequence a deployment starts with: the account is created at the
+// provider, and the one-off command writes the profile and the audit row under the migration role.
+// The command is run rather than imitated — it is a package main, and a copy of its two statements
+// here would be a second implementation, which this suite would then be measuring.
 func theFirstAdministrator(t *testing.T, name string) person {
 	t.Helper()
 
-	// Compiled before the invitation rather than run after it. The link is good
-	// for HarnessOTPExpiry — a minute, budgeted for an invitation and a handful of
-	// local statements — and on a cold build cache a `go run` here would spend it
-	// linking a binary, failing as a link the provider refused.
+	// Compiled before the invitation rather than run after it: the link is good for HarnessOTPExpiry,
+	// and on a cold build cache a `go run` here would spend that minute linking a binary and then
+	// fail as a link the provider refused.
 	command := bootstrapAdminBinary(t)
 
 	invite(t, theAdminsAddress)
@@ -295,9 +274,8 @@ func bootstrapAdminBinary(t *testing.T) string {
 	return binary
 }
 
-// signIn opens the link in somebody's mailbox and comes back with the session it
-// landed in — the access token every later request carries, and the refresh
-// token that outlives it.
+// signIn opens the link in somebody's mailbox and comes back with the session it landed in — the
+// access token every later request carries, and the refresh token that outlives it.
 func signIn(t *testing.T, address string) person {
 	t.Helper()
 
@@ -306,8 +284,7 @@ func signIn(t *testing.T, address string) person {
 		t.Fatalf("the invitation link to %s was refused: %s", address, location)
 	}
 
-	// The session arrives in the fragment, which is where a browser leaves it for
-	// the client to read rather than sending it on to the redirect target.
+	// In the fragment, where a browser leaves it for the client rather than sending it to the target.
 	fragment := location
 	if _, after, found := strings.Cut(location, "#"); found {
 		fragment = after
@@ -331,14 +308,9 @@ func signIn(t *testing.T, address string) person {
 	return who
 }
 
-// Every token the cycle issues names the person it was minted for and carries
-// the role their profile gives them.
-//
-// All three, and not the patient alone: the hook copies app.profiles.role
-// verbatim, so a route writing the wrong role produces a token that is correct
-// about a person the clinic did not mean to create. The administrator's is the
-// one no route wrote — it comes from the one-off command — and a token for a
-// person with no profile carries no role at all.
+// All three roles, not the patient alone: the hook copies app.profiles.role verbatim, so a route
+// writing the wrong role produces a token that is correct about a person the clinic did not mean to
+// create. The administrator's is the one no route wrote — it comes from the one-off command.
 func TestEveryTokenTheCycleIssuesCarriesThatPersonsOwnRole(t *testing.T) {
 	walked := walkTheCycle(t)
 
@@ -368,19 +340,13 @@ func TestEveryTokenTheCycleIssuesCarriesThatPersonsOwnRole(t *testing.T) {
 	}
 }
 
-// The relations the cycle writes people into, read back as themselves.
+// The care team is read directly rather than left to the tables whose visibility derives from it:
+// RLS on a referenced table only removes rows from an EXISTS subquery, and each of those predicates
+// carries its own `= app.jwt_subject()`, so a care-team policy widened to `USING (true)` leaves
+// every derived set below unchanged and a doctor could read the clinic's whole care graph unnoticed.
 //
-// The care team is read directly rather than left to the tables whose visibility
-// is derived from it: row level security on a referenced table only ever removes
-// rows from an EXISTS subquery, and each of those predicates carries its own
-// `= app.jwt_subject()`, so a care-team policy widened to `USING (true)` leaves
-// every derived set below unchanged. Nothing here would notice a doctor reading
-// the clinic's whole care graph unless this asks for it.
-//
-// `user_preferences` is the fifth and is measured on its own, because a doctor
-// is stopped there by a missing grant rather than by a policy —
-// TestADoctorIsNotEvenGrantedTheReminderSettings, which compares the patient's
-// set the way this loop does and asserts the doctor's refusal.
+// `user_preferences` is the fifth and is measured by TestADoctorIsNotEvenGrantedTheReminderSettings,
+// because a doctor is stopped there by a missing grant rather than by a policy.
 const (
 	everyProfile        = `SELECT user_id::text FROM app.profiles`
 	everyPatientProfile = `SELECT user_id::text FROM app.patient_profiles`
@@ -389,17 +355,13 @@ const (
 	everyPreference     = `SELECT user_id::text FROM app.user_preferences`
 )
 
-// Visibility at the end of the cycle is the policy suite's result reached by
-// another road. There the caller was a value a test constructed; here it is the
-// subject and the role of a token the provider minted for somebody the routes
-// created, and these five people are all the clinic has.
+// The policy suite's result reached by another road: there the caller was a value a test
+// constructed, here it is the subject and role of a token the provider minted for somebody the
+// routes created, and these five people are all the clinic has.
 //
-// The whole set rather than a membership check, because the failure this is here
-// to catch adds rows instead of removing them: a doctor policy written as
-// «role = 'doctor'» rather than through the care team passes every «can see»
-// assertion and hands one doctor every patient in the clinic. That is also why
-// the walk hires a second doctor and takes a second patient on — with one of
-// each, every row a doctor could read is one they are entitled to.
+// The whole set rather than a membership check, because the failure this catches adds rows instead
+// of removing them: a doctor policy written as «role = 'doctor'» rather than through the care team
+// passes every «can see» assertion and hands one doctor every patient in the clinic.
 func TestVisibilityAtTheEndOfTheCycleIsWhatThePolicySuiteProved(t *testing.T) {
 	walked := walkTheCycle(t)
 
@@ -469,12 +431,9 @@ func TestVisibilityAtTheEndOfTheCycleIsWhatThePolicySuiteProved(t *testing.T) {
 	}
 }
 
-// The refusals of the cycle, driven by the tokens of the people it created
-// rather than by principals a test wrote down.
-//
-// That is the difference worth the second measurement: the route suites prove
-// each rule against a caller they constructed, and these prove the rule is
-// reached by the role the provider actually put in somebody's token.
+// The refusals, driven by the tokens of the people the cycle created rather than by principals a
+// test wrote down: the route suites prove each rule against a caller they constructed, and these
+// prove the rule is reached by the role the provider actually put in somebody's token.
 func TestWhatTheCycleRefuses(t *testing.T) {
 	walked := walkTheCycle(t)
 	clinic := walked.clinic
@@ -493,10 +452,9 @@ func TestWhatTheCycleRefuses(t *testing.T) {
 		requireRefusal(t, refused, http.StatusForbidden, "нет прав заводить пациентов")
 	})
 
-	// The administrator is the one caller the staff route admits, so this is where
-	// a body naming a role would be read if anything read it. Nothing does — the
-	// route passes a constant — and what the refusal has to cost is nothing: the
-	// address must still be free afterwards.
+	// The administrator is the one caller the staff route admits, so this is where a body naming a
+	// role would be read if anything read it. Nothing does, and the refusal must cost nothing: the
+	// address has to still be free afterwards.
 	t.Run("not even an administrator creates an administrator", func(t *testing.T) {
 		const address = "second.admin@clinic.example"
 
@@ -507,9 +465,8 @@ func TestWhatTheCycleRefuses(t *testing.T) {
 			t.Fatalf("status = %d, want 422: %s", refused.status, refused.body)
 		}
 
-		// Which 422 it is. The schema answers the same status for every violation
-		// of it, so a body refused for its name or its address would satisfy the
-		// check above while saying nothing about the role having been read.
+		// Which 422 it is: the schema answers the same status for every violation, so a body refused
+		// for its name or its address would satisfy the check above and say nothing about the role.
 		problem := problemFrom(t, refused)
 		if !slices.ContainsFunc(problem.Errors, func(refusal httpserver.ProblemDetail) bool {
 			return strings.Contains(refusal.Location, "role")
@@ -526,13 +483,11 @@ func TestWhatTheCycleRefuses(t *testing.T) {
 		}
 	})
 
-	// An account at the address and no record of it here is somebody else's, and
-	// claiming deletes — so the refusal is what stands between a stranger's
-	// account and a new patient.
+	// An account at the address with no record of it here is somebody else's, and claiming deletes —
+	// so the refusal is what stands between a stranger's account and a new patient.
 	t.Run("an account this clinic did not invite", func(t *testing.T) {
-		// An address of its own, like every other in this file: the one
-		// TestAnAccountThisClinicDidNotInviteIsRefused uses is free only because
-		// nothing in this package runs in parallel.
+		// TestAnAccountThisClinicDidNotInviteIsRefused's address is free only because nothing in this
+		// package runs in parallel.
 		const address = "stranger.account@clinic.example"
 
 		invite(t, address)
@@ -544,18 +499,15 @@ func TestWhatTheCycleRefuses(t *testing.T) {
 	})
 }
 
-// There is no public registration: the invariant the whole block rests on, and
-// the one nothing else in this package measures.
-//
-// Both routes a stranger can reach without a token, and the account count after
-// each — a 422 that created an unconfirmed user anyway would leave an address
-// this clinic can then never invite, which is the same permanent 409 the claim
-// rule exists to avoid.
+// The invariant the whole block rests on, and the one nothing else in this package measures. Both
+// routes a stranger can reach without a token, and the account count after each: a 422 that created
+// an unconfirmed user anyway would leave an address this clinic can never invite — the same
+// permanent 409 the claim rule exists to avoid.
 func TestThereIsNoPublicRegistration(t *testing.T) {
 	cycle.Reset(t)
 
-	// An address per route: with one between them, a /signup that created an
-	// account would fail the /otp case as well, for a reason that is not /otp's.
+	// An address per route: with one between them, a /signup that created an account would fail the
+	// /otp case too, for a reason that is not /otp's.
 	for path, stranger := range map[string]string{
 		"/signup": "walked.in@clinic.example",
 		"/otp":    "asked.for.a.code@clinic.example",
@@ -569,8 +521,7 @@ func TestThereIsNoPublicRegistration(t *testing.T) {
 				t.Errorf("%s answered %d, want 422: %s", path, status, said)
 			}
 
-			// Which refusal it was. A 422 for a malformed body would pass the check
-			// above while saying nothing about whether signup is open.
+			// Which refusal it was: a 422 for a malformed body would pass the check above.
 			if !strings.Contains(said, "signup_disabled") {
 				t.Errorf("%s was refused with %s, which is not signup being disabled", path, said)
 			}
@@ -586,17 +537,13 @@ func TestThereIsNoPublicRegistration(t *testing.T) {
 	}
 }
 
-// The one relation of the five a doctor does not reach at all: 000004 grants
-// SELECT on it to the patient, the service path and the administrator, and to
-// nobody else.
+// The one relation of the five a doctor does not reach at all: 000004 grants SELECT on it to the
+// patient, the service path and the administrator, and to nobody else.
 //
-// The witness is that the read fails rather than comes back empty, and that is
-// the whole of why it is not a set beside the others. A policy filters a SELECT
-// instead of raising, so a table a doctor were merely un-admitted to would answer
-// zero rows — indistinguishable from a clinic whose patients have no settings,
-// and green on the day somebody grants the read «to show a reminder time».
-// refusedBy pins that the failure is the privilege error and not a renamed table
-// or a lost connection.
+// The witness is that the read fails rather than comes back empty, which is why it is not a set
+// beside the others: a policy filters a SELECT instead of raising, so zero rows are
+// indistinguishable from a clinic whose patients have no settings, and green on the day somebody
+// grants the read «to show a reminder time». refusedBy pins the privilege error specifically.
 func TestADoctorIsNotEvenGrantedTheReminderSettings(t *testing.T) {
 	walked := walkTheCycle(t)
 
@@ -619,15 +566,10 @@ func TestADoctorIsNotEvenGrantedTheReminderSettings(t *testing.T) {
 	}
 }
 
-// The refusals above are the harness's own configuration until something pairs
-// it with the stack this repository ships, which is the only other place the
-// provider is configured at all.
-//
-// Without the pair, deleting the line from docker-compose.yml opens public
-// registration for every local run while the test above goes on passing — and
-// its subject is invariant 3 of the identity note rather than a convenience of
-// this file. Read through deploymentSetting, which the fast tests in this
-// package already compare compose against.
+// The refusals above are the harness's own configuration until something pairs them with the stack
+// this repository ships. Without the pair, deleting the line from docker-compose.yml opens public
+// registration for every local run while the test above goes on passing — and its subject is
+// invariant 3 of the identity note rather than a convenience of this file.
 func TestTheStackThisRepositoryShipsDisablesSignupToo(t *testing.T) {
 	running := cycle.ConfiguredWith(t, testsupport.DisableSignupVariable)
 	if running != testsupport.SignupDisabled {
@@ -642,25 +584,21 @@ func TestTheStackThisRepositoryShipsDisablesSignupToo(t *testing.T) {
 	}
 }
 
-// The property the deletion exists for, and the reason claiming is not simply
-// «invite again»: a permanent password can be set from the link's session, so an
-// account handed to a new patient would hand them whoever held it before.
+// Why claiming is not simply «invite again»: a permanent password can be set from the link's
+// session, so an account handed to a new patient would hand them whoever held it before.
 //
-// The mutation this must fail against is a claim that clears the account's
-// confirmation instead of deleting it — plausible, less destructive, and enough
-// to make the retry answer 201 all the same. Under it the identifier survives,
-// the session survives, and every assertion below except the status of the retry
-// goes red. The control comes first for the reverse reason: a session that was
-// never alive is dead for the wrong reason, and both refusals below are also
-// what a token that never worked answers.
+// The mutation this must fail against is a claim that clears the account's confirmation instead of
+// deleting it — plausible, less destructive, and enough to make the retry answer 201 all the same.
+// The control comes first for the reverse reason: both refusals below are also what a token that
+// never worked answers.
 func TestAClaimWithDeletionKillsTheSessionsOfTheAccountItTakesOver(t *testing.T) {
 	walked := walkTheCycle(t)
 	clinic := walked.clinic
 
 	const address = "opened.then.claimed@clinic.example"
 
-	// The interruption is the route suite's: a specialist who is not a doctor,
-	// refused inside the transaction and therefore after the mail has gone out.
+	// The route suite's interruption: a specialist who is not a doctor, refused inside the
+	// transaction and therefore after the mail has gone out.
 	const notADoctor = "8a1f3b7c-0000-4000-8000-0000000000ff"
 
 	interrupted := clinic.send(t, patientsPath, walked.doctor.access,
@@ -670,17 +608,15 @@ func TestAClaimWithDeletionKillsTheSessionsOfTheAccountItTakesOver(t *testing.T)
 			interrupted.status, interrupted.body)
 	}
 
-	// Somebody opens the link. From here they hold a session on an account the
-	// clinic is about to hand to somebody else.
+	// From here somebody holds a session on an account the clinic is about to hand to someone else.
 	opened := signIn(t, address)
 
 	if status, said := whoIsSignedIn(t, opened.access); status != http.StatusOK {
 		t.Fatalf("the session was already dead before the claim: %d %s", status, said)
 	}
 
-	// Exchanged once rather than merely held: the grant rotates the token, so the
-	// live half of the session after this control is the one it answered with, and
-	// that is the half the claim has to take away.
+	// Exchanged once rather than merely held: the grant rotates the token, so the half the claim has
+	// to take away is the one this control was answered with.
 	status, live := exchangeRefreshToken(t, opened.refresh)
 	if status != http.StatusOK || live == "" {
 		t.Fatalf("the refresh grant answered %d before the claim, want a session: %s", status, live)
@@ -692,10 +628,9 @@ func TestAClaimWithDeletionKillsTheSessionsOfTheAccountItTakesOver(t *testing.T)
 		t.Fatalf("the retry answered %d, want 201: %s", cured.status, cured.body)
 	}
 
-	// Reported rather than fatal, so that the two assertions below are measured
-	// on the same run: they are what this test exists for, and a claim that took
-	// the account over without deleting it has to be shown to leave the session
-	// alive rather than merely to leave the identifier alone.
+	// Reported rather than fatal, so the two assertions below are measured on the same run: a claim
+	// that took the account over without deleting it has to be shown to leave the session alive,
+	// not merely the identifier.
 	if claimed := accountID(t, address); claimed == opened.account {
 		t.Error("the account after the claim is the one that was opened, so nothing was deleted")
 	}
@@ -712,9 +647,8 @@ func TestAClaimWithDeletionKillsTheSessionsOfTheAccountItTakesOver(t *testing.T)
 	}
 }
 
-// whoIsSignedIn asks the provider who a session token belongs to. An account
-// that has been deleted answers this differently from one that has not, which is
-// the whole of the measurement.
+// whoIsSignedIn asks the provider who a session token belongs to: a deleted account answers this
+// differently from one that has not been deleted, which is the whole of the measurement.
 func whoIsSignedIn(t *testing.T, access string) (int, string) {
 	t.Helper()
 
@@ -738,10 +672,9 @@ func whoIsSignedIn(t *testing.T, access string) (int, string) {
 	return resp.StatusCode, string(said)
 }
 
-// exchangeRefreshToken spends a refresh token and returns the one that replaces
-// it. The access token expires on its own within the hour; the refresh token is
-// the half of a session that outlives it and that a deleted account takes with
-// it, so it is the half worth measuring.
+// exchangeRefreshToken spends a refresh token and returns the one that replaces it. The access
+// token expires on its own within the hour; the refresh token outlives it and is what a deleted
+// account takes with it, so it is the half worth measuring.
 func exchangeRefreshToken(t *testing.T, refresh string) (int, string) {
 	t.Helper()
 
