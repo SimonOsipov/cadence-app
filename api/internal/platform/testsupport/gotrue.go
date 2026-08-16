@@ -265,7 +265,7 @@ func gotrueEnv(databaseURL, keys string) map[string]string {
 
 		// Invite-only, as everywhere else: a harness that quietly allowed signup
 		// would be a harness the product does not have.
-		"GOTRUE_DISABLE_SIGNUP": "true",
+		DisableSignupVariable: SignupDisabled,
 	}
 }
 

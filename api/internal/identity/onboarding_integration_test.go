@@ -480,6 +480,18 @@ type onboarding struct {
 func onboardingStand(t *testing.T) *onboarding {
 	t.Helper()
 
+	clinic := freshClinic(t)
+	seedStaff(t, clinic.writes)
+
+	return clinic
+}
+
+// freshClinic is the same arrangement with nobody in it. The cycle suite starts
+// from here: it creates its own staff through the routes, and a seeded doctor
+// would be a person no request created.
+func freshClinic(t *testing.T) *onboarding {
+	t.Helper()
+
 	cycle.Reset(t)
 
 	requests, err := database.NewPool(t.Context(), cycle.DB.AppURL)
@@ -493,8 +505,6 @@ func onboardingStand(t *testing.T) *onboarding {
 		t.Fatalf("opening the service pool: %v", err)
 	}
 	t.Cleanup(writes.Close)
-
-	seedStaff(t, writes)
 
 	return &onboarding{
 		provider: &harnessProvisioner{token: cycle.AdminToken(t)},

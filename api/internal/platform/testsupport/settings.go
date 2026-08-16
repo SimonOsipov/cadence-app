@@ -1,6 +1,6 @@
 package testsupport
 
-// The identity provider's mail settings, by the names it actually reads.
+// The identity provider's settings this codebase names, by the names it reads.
 //
 // They are here rather than beside the harness that sets them because two
 // gates need them: the integration suite configures a container with them, and
@@ -31,6 +31,17 @@ const RedirectAllowListVariable = "GOTRUE_URI_ALLOW_LIST"
 // SITE_URL and then GET-ted, which cannot parse. A fetch that fails is silent,
 // and it costs the subject as well as the body — both fall back to English.
 const InviteTemplateVariable = "GOTRUE_MAILER_TEMPLATES_INVITE"
+
+// DisableSignupVariable closes the provider's public registration routes, which
+// is the identity block's third invariant enforced somewhere this codebase does
+// not compile: an account appears only by the clinic's invitation.
+//
+// Unlike the settings above, this pair is read only under the integration tag: the
+// harness is configured from it, and the deployment is compared against what the
+// container is then actually running.
+const DisableSignupVariable = "GOTRUE_DISABLE_SIGNUP"
+
+const SignupDisabled = "true"
 
 // EmailsPerHourVariable is a quota for the whole instance rather than a gap per
 // person, and it is the one limit that reaches the admin /invite. Measured
