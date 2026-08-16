@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -70,12 +71,23 @@ func NewRS256Key(t *testing.T, kid string) *SigningKey {
 func NewES256Key(t *testing.T, kid string) *SigningKey {
 	t.Helper()
 
-	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := newES256Key(kid)
 	if err != nil {
 		t.Fatalf("generating ECDSA key: %v", err)
 	}
 
-	return &SigningKey{KID: kid, Alg: "ES256", method: jwt.SigningMethodES256, private: private}
+	return key
+}
+
+// newES256Key is the same generation reached from TestMain, where there is no
+// *testing.T to fail on.
+func newES256Key(kid string) (*SigningKey, error) {
+	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generating ECDSA key: %w", err)
+	}
+
+	return &SigningKey{KID: kid, Alg: "ES256", method: jwt.SigningMethodES256, private: private}, nil
 }
 
 // Sign mints a token carrying claims, with this key's kid in the header.
@@ -122,6 +134,15 @@ func (k *SigningKey) PrivateJWK(t *testing.T) string {
 func privateJWKMarshal(t *testing.T, key *SigningKey, signing bool) jwkset.JWKMarshal {
 	t.Helper()
 
+	marshalled, err := privateJWKMarshalFor(key, signing)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return marshalled
+}
+
+func privateJWKMarshalFor(key *SigningKey, signing bool) (jwkset.JWKMarshal, error) {
 	metadata := jwkset.JWKMetadataOptions{
 		ALG: jwkset.ALG(key.Alg),
 		KID: key.KID,
@@ -136,10 +157,10 @@ func privateJWKMarshal(t *testing.T, key *SigningKey, signing bool) jwkset.JWKMa
 		Metadata: metadata,
 	})
 	if err != nil {
-		t.Fatalf("building the JWK for %q: %v", key.KID, err)
+		return jwkset.JWKMarshal{}, fmt.Errorf("building the JWK for %q: %w", key.KID, err)
 	}
 
-	return jwk.Marshal()
+	return jwk.Marshal(), nil
 }
 
 // PublicKeyPEM returns the PEM-encoded public key.

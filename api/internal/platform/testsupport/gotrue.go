@@ -95,18 +95,34 @@ type JWKEntry struct {
 func GoTrueJWKS(t *testing.T, entries ...JWKEntry) string {
 	t.Helper()
 
+	rendered, err := gotrueJWKS(entries...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return rendered
+}
+
+// gotrueJWKS is the same rendering reached from TestMain, where there is no
+// *testing.T to fail on.
+func gotrueJWKS(entries ...JWKEntry) (string, error) {
 	keys := make([]jwkset.JWKMarshal, 0, len(entries))
 
 	for _, entry := range entries {
-		keys = append(keys, privateJWKMarshal(t, entry.Key, entry.Signing))
+		marshalled, err := privateJWKMarshalFor(entry.Key, entry.Signing)
+		if err != nil {
+			return "", err
+		}
+
+		keys = append(keys, marshalled)
 	}
 
 	raw, err := json.Marshal(keys)
 	if err != nil {
-		t.Fatalf("marshalling the key set: %v", err)
+		return "", fmt.Errorf("marshalling the key set: %w", err)
 	}
 
-	return string(raw)
+	return string(raw), nil
 }
 
 // StartGoTrue runs the pinned image against a database of its own.
@@ -136,19 +152,12 @@ func serveGoTrue(t *testing.T, databaseURL, keys string) *GoTrue {
 	container := runGoTrue(t, databaseURL, keys,
 		wait.ForHTTP("/health").WithPort(gotruePort).WithStartupTimeout(gotrueStartupTimeout))
 
-	ctx := t.Context()
-
-	host, err := container.Host(ctx)
+	url, err := endpoint(t.Context(), container)
 	if err != nil {
-		t.Fatalf("reading the GoTrue host: %v", err)
+		t.Fatal(err)
 	}
 
-	port, err := container.MappedPort(ctx, gotruePort)
-	if err != nil {
-		t.Fatalf("reading the GoTrue port: %v", err)
-	}
-
-	return &GoTrue{URL: fmt.Sprintf("http://%s:%s", host, port.Port())}
+	return &GoTrue{URL: url}
 }
 
 // StartGoTrueExpectingRefusal runs the pinned image expecting the process to
@@ -179,12 +188,7 @@ func StartGoTrueExpectingRefusal(t *testing.T, cluster *Cluster, keys string) st
 func runGoTrue(t *testing.T, databaseURL, keys string, ready wait.Strategy) testcontainers.Container {
 	t.Helper()
 
-	container, err := testcontainers.Run(
-		t.Context(), GoTrueImage,
-		testcontainers.WithEnv(gotrueEnv(databaseURL, keys)),
-		testcontainers.WithExposedPorts(gotruePort),
-		testcontainers.WithWaitStrategy(ready),
-	)
+	container, err := runGoTrueContainer(t.Context(), gotrueEnv(databaseURL, keys), ready)
 
 	// Registered before the error is checked: a wait strategy that times out —
 	// the likeliest failure here — leaves a started container behind, and the
@@ -197,10 +201,44 @@ func runGoTrue(t *testing.T, databaseURL, keys string, ready wait.Strategy) test
 	})
 
 	if err != nil {
-		t.Fatalf("starting GoTrue: %v", err)
+		t.Fatal(err)
 	}
 
 	return container
+}
+
+// runGoTrueContainer returns the container alongside the error for the same
+// reason StartCluster does: a wait strategy that times out leaves a started
+// container behind, and the caller has to be able to reap it.
+func runGoTrueContainer(
+	ctx context.Context, env map[string]string, ready wait.Strategy,
+) (testcontainers.Container, error) {
+	container, err := testcontainers.Run(
+		ctx, GoTrueImage,
+		testcontainers.WithEnv(env),
+		testcontainers.WithExposedPorts(gotruePort),
+		testcontainers.WithWaitStrategy(ready),
+	)
+	if err != nil {
+		return container, fmt.Errorf("starting GoTrue: %w", err)
+	}
+
+	return container, nil
+}
+
+// endpoint is where the test process reaches a running container.
+func endpoint(ctx context.Context, container testcontainers.Container) (string, error) {
+	host, err := container.Host(ctx)
+	if err != nil {
+		return "", fmt.Errorf("reading the GoTrue host: %w", err)
+	}
+
+	port, err := container.MappedPort(ctx, gotruePort)
+	if err != nil {
+		return "", fmt.Errorf("reading the GoTrue port: %w", err)
+	}
+
+	return fmt.Sprintf("http://%s:%s", host, port.Port()), nil
 }
 
 func gotrueEnv(databaseURL, keys string) map[string]string {
@@ -234,24 +272,12 @@ func gotrueEnv(databaseURL, keys string) map[string]string {
 func (c *Cluster) newGoTrueDatabase(t *testing.T) string {
 	t.Helper()
 
-	ctx := t.Context()
 	name := fmt.Sprintf("cadence_gotrue_%d", databaseCounter.Add(1))
 
-	bootstrapDSN := c.DSN(bootstrapRole, bootstrapPass, "postgres")
-	if err := c.exec(ctx, bootstrapDSN, fmt.Sprintf("CREATE DATABASE %s", pgIdent(name))); err != nil {
-		t.Fatalf("creating database %s: %v", name, err)
+	if err := c.createDatabase(t.Context(), name); err != nil {
+		t.Fatal(err)
 	}
-
-	t.Cleanup(func() {
-		cleanupCtx := context.WithoutCancel(ctx)
-		adminDSN := c.DSN(superuserRole, superuserPass, "postgres")
-		if err := c.exec(
-			cleanupCtx, adminDSN,
-			fmt.Sprintf("DROP DATABASE %s WITH (FORCE)", pgIdent(name)),
-		); err != nil {
-			t.Errorf("dropping database %s: %v", name, err)
-		}
-	})
+	c.dropWhenTheTestEnds(t, name)
 
 	return c.prepareForGoTrue(t, name)
 }
@@ -265,20 +291,27 @@ func (c *Cluster) newGoTrueDatabase(t *testing.T) string {
 func (c *Cluster) prepareForGoTrue(t *testing.T, name string) string {
 	t.Helper()
 
-	ctx := t.Context()
+	dsn, err := c.prepareForGoTrueContext(t.Context(), name)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	return dsn
+}
+
+func (c *Cluster) prepareForGoTrueContext(ctx context.Context, name string) (string, error) {
 	adminDSN := c.DSN(superuserRole, superuserPass, name)
 	for _, statement := range []string{createGoTrueRole, createSupabaseRoles, createAuthSchema} {
 		if err := c.exec(ctx, adminDSN, statement); err != nil {
-			t.Fatalf("preparing database %s for GoTrue: %v", name, err)
+			return "", fmt.Errorf("preparing database %s for GoTrue: %w", name, err)
 		}
 	}
 
 	ip, err := c.container.ContainerIP(ctx)
 	if err != nil {
-		t.Fatalf("reading the Postgres container address: %v", err)
+		return "", fmt.Errorf("reading the Postgres container address: %w", err)
 	}
 
 	return fmt.Sprintf("postgres://%s:%s@%s:5432/%s?sslmode=disable&search_path=auth,public",
-		GoTrueRole, GoTrueRole, ip, name)
+		GoTrueRole, GoTrueRole, ip, name), nil
 }

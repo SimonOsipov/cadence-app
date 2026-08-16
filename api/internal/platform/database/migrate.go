@@ -89,8 +89,8 @@ func MigrateForce(databaseURL, migrationsPath string, version int) error {
 // migrationsTable is where this chain records what it has applied.
 //
 // Not golang-migrate's default `schema_migrations`, and the reason is a
-// collision rather than a preference: GoTrue shares this database — its `auth`
-// schema is what `profiles` references, so the two cannot be separated — and it
+// collision rather than a preference: GoTrue shares this database — the token
+// issuance hook resolves `app.profiles` over GoTrue's own connection — and it
 // brings its own migrator, which claims exactly that name with a single
 // `version` column. golang-migrate then reads it and fails with
 // `column "dirty" does not exist`, and which of the two wins depends on the

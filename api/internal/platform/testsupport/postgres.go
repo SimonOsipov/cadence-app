@@ -222,26 +222,51 @@ var databaseCounter atomic.Uint64
 func (c *Cluster) NewEmptyDatabase(t *testing.T) string {
 	t.Helper()
 
-	ctx := t.Context()
 	name := fmt.Sprintf("cadence_empty_%d", databaseCounter.Add(1))
 
-	bootstrapDSN := c.DSN(bootstrapRole, bootstrapPass, "postgres")
-	if err := c.exec(ctx, bootstrapDSN, fmt.Sprintf("CREATE DATABASE %s", pgIdent(name))); err != nil {
-		t.Fatalf("creating database %s: %v", name, err)
+	if err := c.createDatabase(t.Context(), name); err != nil {
+		t.Fatal(err)
 	}
-
-	t.Cleanup(func() {
-		cleanupCtx := context.WithoutCancel(ctx)
-		adminDSN := c.DSN(superuserRole, superuserPass, "postgres")
-		if err := c.exec(
-			cleanupCtx, adminDSN,
-			fmt.Sprintf("DROP DATABASE %s WITH (FORCE)", pgIdent(name)),
-		); err != nil {
-			t.Errorf("dropping database %s: %v", name, err)
-		}
-	})
+	c.dropWhenTheTestEnds(t, name)
 
 	return c.DSN(bootstrapRole, bootstrapPass, name)
+}
+
+// createDatabase creates one under the bootstrap role, which is the role that
+// owns everything the chain will put in it.
+func (c *Cluster) createDatabase(ctx context.Context, name string) error {
+	bootstrapDSN := c.DSN(bootstrapRole, bootstrapPass, "postgres")
+	if err := c.exec(ctx, bootstrapDSN, fmt.Sprintf("CREATE DATABASE %s", pgIdent(name))); err != nil {
+		return fmt.Errorf("creating database %s: %w", name, err)
+	}
+
+	return nil
+}
+
+// dropDatabase runs as the superuser rather than as the creator: WITH (FORCE)
+// terminates other backends, which the bootstrap role may not do.
+func (c *Cluster) dropDatabase(ctx context.Context, name string) error {
+	adminDSN := c.DSN(superuserRole, superuserPass, "postgres")
+	if err := c.exec(
+		ctx, adminDSN, fmt.Sprintf("DROP DATABASE %s WITH (FORCE)", pgIdent(name)),
+	); err != nil {
+		return fmt.Errorf("dropping database %s: %w", name, err)
+	}
+
+	return nil
+}
+
+// dropWhenTheTestEnds is registered immediately after the create and before
+// anything that can fail, so a database whose migrations died is still dropped.
+func (c *Cluster) dropWhenTheTestEnds(t *testing.T, name string) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		// t.Context is already cancelled by the time cleanup runs.
+		if err := c.dropDatabase(context.WithoutCancel(t.Context()), name); err != nil {
+			t.Error(err)
+		}
+	})
 }
 
 // NewDatabase creates a database, applies the whole migration chain under the
@@ -254,27 +279,28 @@ func (c *Cluster) NewEmptyDatabase(t *testing.T) string {
 func (c *Cluster) NewDatabase(t *testing.T) *Database {
 	t.Helper()
 
-	ctx := t.Context()
 	name := fmt.Sprintf("cadence_test_%d", databaseCounter.Add(1))
 
-	adminDSN := c.DSN(superuserRole, superuserPass, "postgres")
-	bootstrapDSN := c.DSN(bootstrapRole, bootstrapPass, "postgres")
+	if err := c.createDatabase(t.Context(), name); err != nil {
+		t.Fatal(err)
+	}
+	c.dropWhenTheTestEnds(t, name)
 
-	if err := c.exec(ctx, bootstrapDSN, fmt.Sprintf("CREATE DATABASE %s", pgIdent(name))); err != nil {
-		t.Fatalf("creating database %s: %v", name, err)
+	db, err := c.migrate(t.Context(), name, MigrationsPath(t))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	t.Cleanup(func() {
-		// t.Context is already cancelled by the time cleanup runs.
-		cleanupCtx := context.WithoutCancel(ctx)
-		if err := c.exec(
-			cleanupCtx, adminDSN,
-			fmt.Sprintf("DROP DATABASE %s WITH (FORCE)", pgIdent(name)),
-		); err != nil {
-			t.Errorf("dropping database %s: %v", name, err)
-		}
-	})
+	return db
+}
 
+// migrate applies the whole chain to an existing database and gives both LOGIN
+// roles a password.
+//
+// The migrations path is a parameter rather than looked up here: finding it
+// walks up from the working directory, which needs a *testing.T, and this is
+// also reached from TestMain.
+func (c *Cluster) migrate(ctx context.Context, name, migrationsPath string) (*Database, error) {
 	db := &Database{
 		Name:          name,
 		MigrationURL:  c.DSN(bootstrapRole, bootstrapPass, name),
@@ -284,23 +310,24 @@ func (c *Cluster) NewDatabase(t *testing.T) *Database {
 		cluster:       c,
 	}
 
-	if err := database.RunMigrations(db.MigrationURL, MigrationsPath(t)); err != nil {
-		t.Fatalf("applying migration chain: %v", err)
+	if err := database.RunMigrations(db.MigrationURL, migrationsPath); err != nil {
+		return nil, fmt.Errorf("applying migration chain: %w", err)
 	}
 
 	// The chain creates both LOGIN roles without a password on purpose — the
 	// credential is provisioned outside the repository. The harness plays that
 	// part so a test can connect as either path.
+	bootstrapDSN := c.DSN(bootstrapRole, bootstrapPass, "postgres")
 	for role, password := range map[string]string{AppRole: appPass, ServiceAppRole: serviceAppPass} {
 		if err := c.exec(
 			ctx, bootstrapDSN,
 			fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pgIdent(role), password),
 		); err != nil {
-			t.Fatalf("setting the %s password: %v", role, err)
+			return nil, fmt.Errorf("setting the %s password: %w", role, err)
 		}
 	}
 
-	return db
+	return db, nil
 }
 
 // Connect opens a connection and closes it when the test ends.
@@ -342,24 +369,44 @@ func MigrationsPath(t *testing.T) string {
 	return filepath.Join(ModuleRoot(t), "migrations")
 }
 
+// migrationsPath is the same location reached from TestMain, where there is no
+// *testing.T to fail on.
+func migrationsPath() (string, error) {
+	root, err := moduleRoot()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(root, "migrations"), nil
+}
+
 // ModuleRoot is the directory holding go.mod, found by walking up from the
 // package under test. Same reason as MigrationsPath.
 func ModuleRoot(t *testing.T) string {
 	t.Helper()
 
+	root, err := moduleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return root
+}
+
+func moduleRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("reading working directory: %v", err)
+		return "", fmt.Errorf("reading working directory: %w", err)
 	}
 
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
+			return dir, nil
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("no go.mod found above the working directory")
+			return "", errors.New("no go.mod found above the working directory")
 		}
 		dir = parent
 	}

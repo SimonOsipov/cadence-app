@@ -1,7 +1,8 @@
 // Package testsupport is the test harness: a Postgres container with a
-// throwaway database per test and the migration chain applied, and the signing
-// keys, local JWK Set and token minting the authentication tests are written
-// against.
+// throwaway database per test and the migration chain applied, a Cycle — one
+// database per package with the identity provider connected to it — and the
+// signing keys, local JWK Set and token minting the authentication tests are
+// written against.
 //
 // The two halves are gated differently, on purpose. The Postgres side is behind
 // the `integration` build tag, because it needs a Docker daemon and belongs to
