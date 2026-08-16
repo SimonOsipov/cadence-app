@@ -150,6 +150,10 @@ services:
         condition: service_healthy
       auth-schema:
         condition: service_completed_successfully
+      # Not decoration: a template fetched before nginx answers falls back to the
+      # English default for that entry, and the fallback is silent.
+      mail-templates:
+        condition: service_healthy
     ports:
       - "9999:9999"
     environment:
@@ -258,11 +262,70 @@ services:
       # the sending domain.
       GOTRUE_RATE_LIMIT_EMAIL_SENT: "200"
 
+      # The clinic's own mail, in the product's language. Left unset every one
+      # of these is the provider's English default, and the defaults are what a
+      # patient would receive.
+      #
+      # These are HTTP URLs because v2.194.0 fetches a template and cannot read
+      # one off disk: `loadEntryBody` prepends SITE_URL to anything not starting
+      # with "http" and then issues a GET, so `file:///…` becomes
+      # `http://localhost:8080file:///…` and fails to parse. Read out of the
+      # pinned image's own source, after a first version of this block shipped
+      # `file://` paths and three review rounds passed over them.
+      #
+      # A failed fetch is silent at startup and costs more than the body: `load`
+      # falls back to `loadEntryDefault`, which returns the provider's English
+      # body AND its English subject, so a broken URL here also throws away the
+      # SUBJECTS_ lines above. Unset would keep them; wrong is worse than absent.
+      # TestTheProviderFetchesTheTemplateItIsPointedAt is what measures it.
+      #
+      # This covers the mail and nothing else: the provider's own error strings
+      # and the page a refused link lands on stay English, with no key to
+      # translate them. Deferred to the client surfaces, which read the error
+      # code rather than the sentence and write their own copy.
+      GOTRUE_SMTP_SENDER_NAME: Клиника Cadence
+      GOTRUE_MAILER_SUBJECTS_INVITE: Приглашение в Cadence
+      GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: Вход в Cadence
+      GOTRUE_MAILER_SUBJECTS_RECOVERY: Восстановление доступа к Cadence
+      GOTRUE_MAILER_TEMPLATES_INVITE: http://mail-templates/invite.html
+      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: http://mail-templates/magic-link.html
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://mail-templates/recovery.html
+
+      # Where a link is allowed to land, per environment: the addresses the
+      # patient app and the dashboard answer on differ per deployment, and the
+      # real instance is provisioned outside this repository exactly as the mail
+      # settings above are. What an uncovered address costs is named at
+      # TestTheAllowListDecidesWhereALinkLands.
+      #
+      # The value below opens nothing: it is SITE_URL's own origin, so locally
+      # the list is the fallback. That is not a choice — this machine has no
+      # surface to land on yet. The dashboard in web/ is still a prototype with
+      # no dev server, and the app's deep-link scheme is not chosen. Whoever
+      # adds either owns replacing this line.
+      GOTRUE_URI_ALLOW_LIST: http://localhost:8080/**
+      # A bare `**` would open this to any host the caller names, and the
+      # session rides in the landing address's fragment. Asserted in shape,
+      # not merely in non-emptiness — see TestTheDeploymentSetsARedirectAllowList.
+
       # No mail server locally. Invitation and recovery links are written to the
       # log instead of sent, so `docker compose logs auth` is where you pick the
       # link up and the whole flow walks end to end without an SMTP account.
       GOTRUE_MAILER_AUTOCONFIRM: "true"
       GOTRUE_LOG_LEVEL: debug
+
+  # The templates GoTrue renders, served over HTTP because that is the only way
+  # it will take them. Not proxied outward and holding nothing: it answers three
+  # static files on the compose network. The same shape the deployment needs —
+  # an internal service, never the first one in the manifest.
+  mail-templates:
+    image: nginx:1.29-alpine
+    volumes:
+      - ./mail-templates:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/invite.html"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
 
 volumes:
   cadence-pgdata:

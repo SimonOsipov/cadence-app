@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func TestALinkOlderThanTheConfiguredLifetimeIsRefused(t *testing.T) {
 				age(t, tc.address, "confirmation_sent_at", tc.aged)
 			}
 
-			accepted, location := follow(t, inviteToken(t, tc.address), "invite")
+			accepted, location := follow(t, inviteToken(t, tc.address), "invite", "")
 			if accepted != tc.want {
 				t.Errorf("the provider answered %q for a link %s old, want it %s",
 					location, tc.aged, outcome(tc.want))
@@ -130,7 +131,7 @@ func TestRecoveryLeavesThePendingInvitationAloneUntilItsLinkIsFollowed(t *testin
 			"in the patient's mailbox is dead", invited, still)
 	}
 
-	if accepted, location := follow(t, recoveryToken(t, address), "recovery"); !accepted {
+	if accepted, location := follow(t, recoveryToken(t, address), "recovery", ""); !accepted {
 		t.Fatalf("the recovery link was refused: %s", location)
 	}
 
@@ -141,7 +142,7 @@ func TestRecoveryLeavesThePendingInvitationAloneUntilItsLinkIsFollowed(t *testin
 	// The residual property, asserted rather than read off a column: the
 	// invitation is gone, so a doctor whose patient recovered their way in
 	// cannot be told the invitation is still pending by the provider.
-	if accepted, _ := follow(t, invited, "invite"); accepted {
+	if accepted, _ := follow(t, invited, "invite", ""); accepted {
 		t.Error("the invitation link still works after the recovery link was followed; " +
 			"a pending invitation could then be read off the provider")
 	}
@@ -260,12 +261,16 @@ func ask(t *testing.T, path, token string, payload map[string]string) (int, stri
 // The answer is a redirect either way — the session arrives in the fragment and
 // so does the refusal — so the status alone says nothing and the location is
 // what is read. Redirects are not followed: the address it points at is the
-// answer.
-func follow(t *testing.T, token, kind string) (accepted bool, location string) {
+// answer. An empty redirectTo asks for none.
+func follow(t *testing.T, token, kind, redirectTo string) (accepted bool, location string) {
 	t.Helper()
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
-		cycle.GoTrue.URL+"/verify?type="+kind+"&token="+token, nil)
+	asked := cycle.GoTrue.URL + "/verify?type=" + kind + "&token=" + token
+	if redirectTo != "" {
+		asked += "&redirect_to=" + url.QueryEscape(redirectTo)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, asked, nil)
 	if err != nil {
 		t.Fatalf("building the request: %v", err)
 	}

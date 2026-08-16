@@ -35,6 +35,12 @@ const HarnessMailerMaxFrequency = 2 * time.Second
 // reason.
 const HarnessEmailsPerHour = "1000"
 
+// HarnessRedirectAllowList is a surface nothing serves and no name resolves:
+// the provider decides where a link lands without fetching the address, so one
+// that existed would only make the measurement slower. The deployment's own
+// list is the environment's and is not this.
+const HarnessRedirectAllowList = "http://cadence.test/**"
+
 // HookURIVariable names the hook GoTrue calls while minting a token.
 const HookURIVariable = "GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI"
 
@@ -169,6 +175,7 @@ func StartCycle(ctx context.Context, c *Cluster) (*Cycle, error) {
 	env[OTPExpiryVariable] = strconv.Itoa(int(cycle.OTPExpiry.Seconds()))
 	env[MailerMaxFrequencyVariable] = cycle.MailerMaxFrequency.String()
 	env[EmailsPerHourVariable] = HarnessEmailsPerHour
+	env[RedirectAllowListVariable] = HarnessRedirectAllowList
 
 	container, err := runGoTrueContainer(ctx, env,
 		wait.ForHTTP("/health").WithPort(gotruePort).WithStartupTimeout(gotrueStartupTimeout))

@@ -22,6 +22,16 @@ const OTPExpiryVariable = "GOTRUE_MAILER_OTP_EXP"
 // refused for the two seconds it was given.
 const MailerMaxFrequencyVariable = "GOTRUE_SMTP_MAX_FREQUENCY"
 
+// RedirectAllowListVariable is where a link is allowed to land — see
+// TestTheAllowListDecidesWhereALinkLands for what an uncovered address costs.
+const RedirectAllowListVariable = "GOTRUE_URI_ALLOW_LIST"
+
+// InviteTemplateVariable names the invitation template. The provider fetches it
+// over HTTP and never reads one off disk: a `file://` value is prefixed with
+// SITE_URL and then GET-ted, which cannot parse. A fetch that fails is silent,
+// and it costs the subject as well as the body — both fall back to English.
+const InviteTemplateVariable = "GOTRUE_MAILER_TEMPLATES_INVITE"
+
 // EmailsPerHourVariable is a quota for the whole instance rather than a gap per
 // person, and it is the one limit that reaches the admin /invite. Measured
 // against v2.194.0 on 2026-08-16 by running the harness at a quota of two,
