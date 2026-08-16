@@ -17,10 +17,23 @@ import (
 
 // Config is the fully resolved configuration of one API process.
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	CORS     CORSConfig
-	Auth     AuthConfig
+	Server      ServerConfig
+	Database    DatabaseConfig
+	CORS        CORSConfig
+	Auth        AuthConfig
+	Provisioner ProvisionerConfig
+}
+
+// ProvisionerConfig is how the API reaches the component that holds the admin
+// key: an internal address and the shared secret that bounds who else can.
+//
+// The secret is not a defence against a compromised API — this process is its
+// legitimate holder — and it is not the admin key. Creating, deleting and
+// re-passwording accounts stays behind that component, which is the whole
+// arrangement of the trust boundary.
+type ProvisionerConfig struct {
+	BaseURL string
+	Secret  string
 }
 
 // ServerConfig holds the HTTP listener settings.
@@ -139,6 +152,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	provisioner, err := loadProvisioner()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Server: ServerConfig{
 			Port:         getEnv("SERVER_PORT", "8080"),
@@ -153,8 +171,43 @@ func Load() (*Config, error) {
 		CORS: CORSConfig{
 			AllowedOrigins: allowedOrigins,
 		},
-		Auth: *auth,
+		Auth:        *auth,
+		Provisioner: *provisioner,
 	}, nil
+}
+
+// loadProvisioner reads where the provisioner component listens and the secret
+// that reaches it.
+//
+// Both are required, and the secret is required in every environment: the
+// component refuses a request without it, so an API started without one invites
+// nobody — and would discover that at the first patient a doctor creates rather
+// than at startup.
+//
+// What is deliberately absent is the admin key. It belongs to that component
+// alone, and a gate rule fails the build when its variable is so much as named
+// inside the API.
+func loadProvisioner() (*ProvisionerConfig, error) {
+	baseURL := strings.TrimSpace(getEnv("PROVISIONER_URL", ""))
+	if baseURL == "" {
+		return nil, errors.New("PROVISIONER_URL is required")
+	}
+
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("PROVISIONER_URL is not a URL: %w", err)
+	}
+
+	if parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("PROVISIONER_URL must be an absolute http(s) address, got %q", baseURL)
+	}
+
+	secret := getEnv("PROVISIONER_SHARED_SECRET", "")
+	if secret == "" {
+		return nil, errors.New("PROVISIONER_SHARED_SECRET is required")
+	}
+
+	return &ProvisionerConfig{BaseURL: baseURL, Secret: secret}, nil
 }
 
 // loadAuth reads the authentication variables and derives the JWKS address

@@ -15,6 +15,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/config"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/provisioning"
 	"github.com/SimonOsipov/cadence-app/api/internal/router"
 )
 
@@ -85,6 +86,14 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("building the token verifier: %w", err)
 	}
 
+	provisioner, err := provisioning.New(provisioning.Config{
+		BaseURL: cfg.Provisioner.BaseURL,
+		Secret:  cfg.Provisioner.Secret,
+	})
+	if err != nil {
+		return fmt.Errorf("building the provisioner client: %w", err)
+	}
+
 	srv := httpserver.New(httpserver.Config{
 		Port:           cfg.Server.Port,
 		ReadTimeout:    cfg.Server.ReadTimeout,
@@ -97,7 +106,10 @@ func run(logger *slog.Logger) error {
 	// guarded unless it is on the exemption list, and the list lives with the
 	// transport paths it names.
 	router.Mount(srv.Router, router.Options{
-		Verifier: verifier,
+		Verifier:    verifier,
+		Pool:        pool,
+		ServicePool: servicePool,
+		Provisioner: provisioner,
 		Probe: func(ctx context.Context) error {
 			ctx, cancel := context.WithTimeout(ctx, healthProbeTimeout)
 			defer cancel()

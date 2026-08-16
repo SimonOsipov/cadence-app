@@ -96,6 +96,29 @@ func TestServerErrorDetailIsFixed(t *testing.T) {
 	}
 }
 
+// The one 5xx that says something else still says only what this package
+// decided. What it replaces is a driver error naming a table, exactly as above —
+// the type chooses the sentence, it does not license the caller's words.
+func TestAnUnavailableDependencyGetsItsOwnFixedDetail(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/v1/patients", nil)
+
+	WriteProblem(w, r, Problem{
+		Status: http.StatusServiceUnavailable,
+		Type:   ProblemUnavailable,
+		Detail: `Post "http://provisioner.internal:8081/invite": context deadline exceeded`,
+	})
+
+	body := decodeProblem(t, w)
+	if detail, _ := body["detail"].(string); detail != unavailableDetail {
+		t.Errorf("detail = %q, want the fixed unavailable string", detail)
+	}
+
+	if strings.Contains(w.Body.String(), "provisioner.internal") {
+		t.Errorf("the response carries the underlying error: %s", w.Body.String())
+	}
+}
+
 // Below 500 the detail is the point: it tells the caller what to change.
 func TestClientErrorKeepsItsDetail(t *testing.T) {
 	w := httptest.NewRecorder()

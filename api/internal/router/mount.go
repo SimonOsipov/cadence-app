@@ -5,7 +5,9 @@ import (
 	"log/slog"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth/token"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
@@ -14,6 +16,20 @@ import (
 type Options struct {
 	// Verifier checks the bearer token on every guarded request.
 	Verifier *token.Verifier
+
+	// Pool is the request path. The operations that read under the caller's own
+	// identity run on it, and so does the advisory lock that serialises two
+	// creations of one address — which is why it is not the service pool: a
+	// lock holder waiting for a second connection from the pool it locked on
+	// waits for one only another holder can release.
+	Pool *pgxpool.Pool
+
+	// ServicePool is the service path: the writes no policy lets a request make.
+	ServicePool *pgxpool.Pool
+
+	// Provisioner is the account lifecycle at the identity provider. The API
+	// never speaks to it directly — the component that holds the admin key does.
+	Provisioner identity.Provisioner
 
 	// Probe reports whether the API's dependencies are reachable, for
 	// /healthz. A nil probe answers for the process alone.
@@ -50,5 +66,5 @@ func Mount(mux *chi.Mux, opts Options) {
 	// Operations register their full /v1/... paths on the root mux, so the
 	// document describes the paths it actually serves and stays reachable
 	// without a token.
-	Register(httpserver.NewAPI(mux))
+	Register(httpserver.NewAPI(mux), opts)
 }

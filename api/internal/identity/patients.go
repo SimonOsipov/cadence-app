@@ -27,10 +27,28 @@ var (
 	// profiles, and a CHECK against another table is not a thing Postgres has.
 	ErrNotAProvider = errors.New("the assigned specialist is not a provider")
 
-	// ErrAlreadyExists means the patient, or one of the assignments, is already
-	// there. It is the database's UNIQUE speaking, not a lookup this code did:
-	// a check-then-insert is two statements with a gap between them.
-	ErrAlreadyExists = errors.New("the patient or an assignment already exists")
+	// ErrSpecialistNamedTwice is a form mistake, and it has to be caught before
+	// anything leaves the process. Left to the database it arrives as a UNIQUE
+	// violation on care_team_assignments, which is indistinguishable from the
+	// patient already existing — and by then the invitation has gone out, so the
+	// doctor is told the patient exists and stops, while the invitee holds a
+	// link to an account with no profile.
+	ErrSpecialistNamedTwice = errors.New("the same specialist is named twice")
+
+	// ErrAlreadyExists means the patient is already there — the profiles primary
+	// key speaking, not a lookup this code did, because a check-then-insert is
+	// two statements with a gap between them.
+	//
+	// Only that key. An assignment colliding is a different fact with a different
+	// answer, and check() refuses it before the transaction opens; classify names
+	// the constraint so the two cannot be confused again.
+	ErrAlreadyExists = errors.New("the patient already exists")
+
+	// ErrAssignmentCollided is the care team's UNIQUE speaking. It should be
+	// unreachable — check() refuses a repeated specialist first — so reaching it
+	// means a caller found a shape that check does not model, and the answer is
+	// the form's, not the address's.
+	ErrAssignmentCollided = errors.New("an assignment already exists")
 
 	// ErrNoSpecialist means nobody was named to look after the patient. A
 	// patient with no care team is invisible to every doctor, which is a state
@@ -102,9 +120,9 @@ type NewPatient struct {
 // so a write that forgets to name an actor is refused rather than recorded
 // anonymously.
 //
-// There is no HTTP endpoint. Sending the invitation belongs to the same action
-// and does not exist yet, and half of an action behind a URL is worse than none
-// of it: openapi.json is committed and generates two client surfaces.
+// It is the second of the two transactions of a creation and not an operation
+// anybody calls on its own: the invitation goes out first, under the lock
+// Onboarding.InvitePatient takes, and this writes the person it was sent to.
 func CreatePatient(ctx context.Context, pool *pgxpool.Pool, patient NewPatient) error {
 	if err := check(patient); err != nil {
 		return fmt.Errorf("creating patient %s: %w", patient.UserID, err)
@@ -138,6 +156,17 @@ func check(patient NewPatient) error {
 		return fmt.Errorf("%q: %w", patient.UserID, ErrMalformedIdentifier)
 	}
 
+	return checkBody(patient)
+}
+
+// checkBody is the half of check that does not need the account to exist yet.
+//
+// Split out because the onboarding flow has to refuse a malformed body BEFORE it
+// invites: run only inside CreatePatient, every form mistake costs an address —
+// the invitation has gone out, the invites row is committed, and the invitee
+// holds a link to an account that will never get a profile. The other half is
+// the identifier, which the flow does not know until the provisioner answers.
+func checkBody(patient NewPatient) error {
 	if len(patient.Specialists) == 0 {
 		return ErrNoSpecialist
 	}
@@ -159,10 +188,43 @@ func check(patient NewPatient) error {
 	return nil
 }
 
+// refuseRepeatedSpecialist is the care team's UNIQUE, asked before the write
+// rather than after it.
+//
+// CreatePatient does not call it, and that is deliberate: the constraint is the
+// authority, a check-then-insert has a gap, and the database refusing late is
+// correct for every caller that can afford a late refusal. The onboarding flow
+// cannot. By the time its transaction opens the invitation has gone out and the
+// invites row is committed, so a refusal there spends the address — the invitee
+// holds a link to an account that will never get a profile, and the doctor is
+// told the address is taken rather than that the form names one specialist
+// twice. This is that one caller's early guard, not a replacement for the key.
+func refuseRepeatedSpecialist(patient NewPatient) error {
+	named := make(map[string]struct{}, len(patient.Specialists))
+
+	for _, assignment := range patient.Specialists {
+		if _, twice := named[assignment.ProviderID]; twice {
+			return fmt.Errorf("%q: %w", assignment.ProviderID, ErrSpecialistNamedTwice)
+		}
+		named[assignment.ProviderID] = struct{}{}
+	}
+
+	return nil
+}
+
 // requireKnownTimezone asks the server rather than a list. The set is the
 // server's, it changes with the tzdata it was built against, and a copy of it
 // here would be a second source of truth that drifts silently.
+//
+// Absence is accepted, and it is the ordinary state of a patient the clinic has
+// just created: nobody has signed in yet and nothing has reported a zone. The
+// column is nullable and the guard below would refuse an empty string as an
+// unknown zone, so the amendment is here rather than at the insert.
 func requireKnownTimezone(ctx context.Context, tx pgx.Tx, timezone string) error {
+	if timezone == "" {
+		return nil
+	}
+
 	var known bool
 	if err := tx.QueryRow(
 		// Qualified, like every other relation this package names. With the
@@ -209,16 +271,21 @@ func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
 	// Two statements rather than one with a conditional expression, because
 	// DEFAULT is not an expression in Postgres: it may only appear as a whole
 	// value in a VALUES list.
+	//
+	// nullif on the timezone for the same reason in the other direction: the
+	// column is nullable and empty is how a patient is created, and an empty
+	// string stored there is a zone nothing can read and nothing reports as
+	// missing.
 	var err error
 	if patient.Locale == "" {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO app.profiles (user_id, role, full_name, timezone)
-			VALUES ($1, 'patient', $2, $3)
+			VALUES ($1, 'patient', $2, nullif($3, ''))
 		`, patient.UserID, patient.FullName, patient.Timezone)
 	} else {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO app.profiles (user_id, role, full_name, timezone, locale)
-			VALUES ($1, 'patient', $2, $3, $4)
+			VALUES ($1, 'patient', $2, nullif($3, ''), $4)
 		`, patient.UserID, patient.FullName, patient.Timezone, patient.Locale)
 	}
 	if err != nil {
@@ -246,6 +313,10 @@ func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
 			return fmt.Errorf("assigning %s: %w", assignment.ProviderID, err)
 		}
 	}
+
+	// NUT-01 extends this transaction with the patient's nutrition_targets row:
+	// the targets are part of creating a patient, not a second action, so they
+	// belong inside this commit rather than behind an endpoint of their own.
 
 	// The defaults are the product's answer to "what should a new patient's
 	// reminders be", and they live in the schema. Inserting the row with none of
@@ -286,9 +357,21 @@ func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
 // than a rule.
 func classify(err error) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
-		return fmt.Errorf("%w: %s", ErrAlreadyExists, pgErr.ConstraintName)
+	if !errors.As(err, &pgErr) || pgErr.Code != uniqueViolation {
+		return err
 	}
 
-	return err
+	// Which key spoke decides which answer the caller gets: the patient's own,
+	// or the care team's. Collapsed into one error they collapse into one answer,
+	// and the wrong one is «this address is taken» told to a doctor whose
+	// invitation has already gone out.
+	if pgErr.ConstraintName == careTeamPairKey {
+		return fmt.Errorf("%w: %s", ErrAssignmentCollided, pgErr.ConstraintName)
+	}
+
+	return fmt.Errorf("%w: %s", ErrAlreadyExists, pgErr.ConstraintName)
 }
+
+// careTeamPairKey is the constraint that fires when one specialist is named
+// twice for one patient.
+const careTeamPairKey = "care_team_assignments_unique_pair"

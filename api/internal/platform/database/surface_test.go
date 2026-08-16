@@ -46,6 +46,10 @@ func exportedSurface() []string {
 		"NewServicePool(context.Context, string) (*pgxpool.Pool, error)",
 		"RunMigrations(string, string) error",
 		"VerifyPools(context.Context, *pgxpool.Pool, *pgxpool.Pool) error",
+		// A lock and not a seam: it takes no actor, opens no transaction and
+		// publishes no claims, which is why it can hand its closure a bare
+		// context instead of a pgx.Tx.
+		"WithAdvisoryLock(context.Context, *pgxpool.Pool, LockClass, string, func(context.Context) error) error",
 		"WithCaller(context.Context, *pgxpool.Pool, Caller, func(context.Context, pgx.Tx) error) error",
 		"WithService(context.Context, *pgxpool.Pool, func(context.Context, pgx.Tx) error) error",
 		"WithServiceJob(context.Context, *pgxpool.Pool, string, func(context.Context, pgx.Tx) error) error",

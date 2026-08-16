@@ -282,9 +282,9 @@ func TestCreatePatientLeavesNothingBehindWhenItRefuses(t *testing.T) {
 		identity.Assignment{ProviderID: doctorID, CareRole: "nurse"})
 
 	if err := identity.CreatePatient(ctx, pool, patient); !errors.Is(
-		err, identity.ErrAlreadyExists,
+		err, identity.ErrAssignmentCollided,
 	) {
-		t.Fatalf("CreatePatient = %v, want ErrAlreadyExists", err)
+		t.Fatalf("CreatePatient = %v, want ErrAssignmentCollided", err)
 	}
 
 	observer := testsupport.Connect(t, db.SuperuserURL)
@@ -391,17 +391,20 @@ func TestCreatePatientRefusesWhatIsAlreadyThere(t *testing.T) {
 		t.Errorf("creating the same patient twice = %v, want ErrAlreadyExists", err)
 	}
 
-	// The same specialist named twice on one patient, which the unique pair
-	// refuses rather than the profile's primary key.
+	// The same specialist named twice, which the care team's unique pair refuses
+	// rather than the profile's primary key — and they are different facts with
+	// different answers. Collapsed onto one error they became one answer, and the
+	// onboarding flow reported a repeated specialist as «this address already
+	// belongs to a patient», after the invitation had gone out.
 	twice := newPatient()
 	twice.UserID = "8a1f3b7c-0000-4000-8000-000000000009"
 	twice.Specialists = append(twice.Specialists,
 		identity.Assignment{ProviderID: doctorID, CareRole: "dietitian"})
 
 	if err := identity.CreatePatient(ctx, pool, twice); !errors.Is(
-		err, identity.ErrAlreadyExists,
+		err, identity.ErrAssignmentCollided,
 	) {
-		t.Errorf("naming the same specialist twice = %v, want ErrAlreadyExists", err)
+		t.Errorf("naming the same specialist twice = %v, want ErrAssignmentCollided", err)
 	}
 }
 

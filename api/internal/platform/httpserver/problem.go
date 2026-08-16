@@ -23,8 +23,11 @@ const (
 	ProblemNotFound         = "/problems/not-found"
 	ProblemMethodNotAllowed = "/problems/method-not-allowed"
 	ProblemUnauthorized     = "/problems/unauthorized"
+	ProblemForbidden        = "/problems/forbidden"
+	ProblemConflict         = "/problems/conflict"
 	ProblemValidation       = "/problems/validation"
 	ProblemInternal         = "/problems/internal"
+	ProblemUnavailable      = "/problems/unavailable"
 	ProblemUnhealthy        = "/problems/unhealthy"
 )
 
@@ -37,6 +40,13 @@ const internalDetail = "The request could not be completed. Quote the request id
 // in a different direction: what the caller learns must not depend on which
 // check failed.
 const unauthorizedDetail = "The request was not authenticated."
+
+// unavailableDetail is what a 5xx of type ProblemUnavailable says instead of
+// internalDetail. Russian, because the people who read a refusal in this product
+// read Russian, and it says only what this package can know: a dependency did
+// not answer, and repeating the request is the move. What the request was doing
+// belongs to the context that knows — this one is on every 503 the API gives.
+const unavailableDetail = "Сервис временно недоступен. Повторите запрос через несколько минут."
 
 // problemFallbackBody is the pre-rendered document used when a payload cannot
 // be marshalled. A literal, so that writing it cannot fail for the same reason
@@ -236,7 +246,15 @@ func (p *Problem) normalise() {
 
 	switch {
 	case p.Status >= http.StatusInternalServerError:
+		// Still a constant of this package rather than the caller's words —
+		// which is the whole rule — but which constant depends on the type. A
+		// caller refused because a dependency is down has something to do about
+		// it, and "quote the request id when reporting this" is not it.
 		p.Detail = internalDetail
+		if p.Type == ProblemUnavailable {
+			p.Detail = unavailableDetail
+		}
+
 		p.Errors = nil
 
 	case p.Status == http.StatusUnauthorized:
