@@ -286,6 +286,12 @@ Tests: mixed case finds an existing account; an expired link is rejected (agains
 the overridden lifetime); the invite limit fires; `/recover` on an unconfirmed
 account does not itself confirm, while following the recovery link confirms and
 extinguishes the invite — the properties are **asserted**.
+
+> [!deviation] 2026-08-16 — the gap between two emails is `GOTRUE_SMTP_MAX_FREQUENCY`, not `GOTRUE_MAILER_MAX_FREQUENCY`
+> Spec said: the production `GOTRUE_MAILER_MAX_FREQUENCY`, and, in the acceptance criteria and the `data-layer.md` delta, that `/recover` hits the per-user `GOTRUE_MAILER_MAX_FREQUENCY`. Actually done: the deployment and the harness set `GOTRUE_SMTP_MAX_FREQUENCY`. Why: measured against v2.194.0 on 2026-08-16 — with `GOTRUE_MAILER_MAX_FREQUENCY` set to 2s the provider still refused a second `/recover` "after 56 seconds", its one-minute default; with the `SMTP_` name it refused for the two seconds it was given. The name the spec carries is one GoTrue reads and ignores, which looks exactly like a limit in force.
+> **This has to be corrected in the criteria and in the delta, not only here**: the `data-layer.md` delta line is copied into `architecture/components/data-layer.md` on finalization, and a component note naming a variable the provider ignores is how the next deployment gets no limit at all.
+> A second limit on the same route was measured at the same time, and it changes what the spec says about `/invite`: `GOTRUE_RATE_LIMIT_EMAIL_SENT` is a quota per hour for the whole instance, and it **does** cover the admin `/invite` — measured by running the harness at a quota of two, where the third email of a run, an invitation, was refused. Both limits answer `over_email_send_rate_limit` and differ only in the message, so a test asserting the code alone cannot say which one it saw.
+> So the sentence to carry forward is narrower than the spec's: the **gap** does not cover `/invite`; the **quota** does, and it counts the clinic rather than the doctor — which is why the invitation limit is still ours, per doctor and per window. Because the quota can refuse what our own limiter allowed, the deployment now sets it (200/hour) and a test requires it to be at least `identity.InvitesPerWindow`. The ceiling that actually matters is the SMTP provider's and is not known: SKL-01 has not been chosen.
 todoist: "6h9JrX7CJxQHVPGH"
 
 ### step-3: The `invites` migration and the owner policies

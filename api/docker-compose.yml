@@ -219,6 +219,45 @@ services:
       # an account exists because a clinic invited it.
       GOTRUE_DISABLE_SIGNUP: "true"
 
+      # How long an invitation link works. Chosen to survive a weekend, and read
+      # back by identity.InviteLinkLifetime, which is what the pending state is
+      # derived from — nothing stores an invitation's status. A test fails when
+      # the two stop agreeing.
+      #
+      # The three mail settings here are the exception to the header: they are
+      # the product's choice rather than this machine's, and the real instance is
+      # provisioned outside this repository. What a test can reach is this file,
+      # so this is where the choice is recorded — and a deployment left on the
+      # provider's defaults is a gap nothing here can see.
+      GOTRUE_MAILER_OTP_EXP: "259200"
+
+      # The shortest gap between two emails to one person. It covers /recover,
+      # which is public and therefore the one mail route a stranger can ask for;
+      # the admin /invite is not covered by it at all — measured, see
+      # TestTheAdminInviteIsNotCoveredByThePerAddressGap — which is why the
+      # invitation limit is imposed on our side, per doctor and per window.
+      #
+      # SMTP_, not MAILER_. Measured against v2.194.0 on 2026-08-16: with
+      # GOTRUE_MAILER_MAX_FREQUENCY set to 2s the provider still refused a
+      # second /recover "after 56 seconds", its one-minute default; with this
+      # name it refused for the two seconds it was given. A variable it ignores
+      # looks exactly like a limit that works, which is why a test reads this
+      # line.
+      GOTRUE_SMTP_MAX_FREQUENCY: 1m
+
+      # Emails per hour for the whole instance, and the limit that does reach
+      # /invite: measured on 2026-08-16 by running the harness at a quota of two,
+      # where the third email of a run — an invitation — was refused. The gap
+      # above and this one both answer over_email_send_rate_limit and differ only
+      # in the message.
+      #
+      # It has to be at least identity.InvitesPerWindow, or the provider refuses
+      # what our own limiter allowed one doctor; a test compares the two. The
+      # ceiling is somebody else's and is not known here: the SMTP provider is
+      # SKL-01 and has not been chosen, so this number bounds the clinic and not
+      # the sending domain.
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: "200"
+
       # No mail server locally. Invitation and recovery links are written to the
       # log instead of sent, so `docker compose logs auth` is where you pick the
       # link up and the whole flow walks end to end without an SMTP account.

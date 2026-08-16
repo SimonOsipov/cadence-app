@@ -334,6 +334,24 @@ func TestTheHarnessOverridesTheOneTimeTokenLifetime(t *testing.T) {
 	}
 }
 
+// The budget a package has to spend on email, read off the running container
+// for the same reason as the lifetime above.
+//
+// Without this the pin has no witness: the quota only bites after a package has
+// sent more than the provider allows in an hour, so deleting the line that sets
+// it goes unnoticed here and surfaces in another package as a test failing with
+// somebody else's reason — over_email_send_rate_limit on a call that had every
+// right to succeed.
+func TestTheHarnessGivesThePackageAnEmailBudget(t *testing.T) {
+	configured := cycle.ConfiguredWith(t, testsupport.EmailsPerHourVariable)
+
+	if configured != testsupport.HarnessEmailsPerHour {
+		t.Errorf("the container runs with %s=%q, want %q — the packages sharing it spend "+
+			"whatever the provider defaults to",
+			testsupport.EmailsPerHourVariable, configured, testsupport.HarnessEmailsPerHour)
+	}
+}
+
 // The hook the harness proves is the hook the deployment calls.
 //
 // Without this the tests above would go on passing while the deployment called a

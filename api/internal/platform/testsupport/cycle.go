@@ -16,15 +16,24 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// OTPExpiryVariable is the lifetime of a one-time link. Named because the
-// harness both sets it and reads it back off the running container.
-const OTPExpiryVariable = "GOTRUE_MAILER_OTP_EXP"
-
 // HarnessOTPExpiry is what the harness runs OTPExpiryVariable at, against a
 // GoTrue default of a day: an expiry test cannot wait that out, and a link the
 // harness itself needs must survive an invite and a handful of local
 // statements. The production value is chosen at step 2 and is not this one.
 const HarnessOTPExpiry = time.Minute
+
+// HarnessMailerMaxFrequency is what the harness runs MailerMaxFrequencyVariable
+// at, against a GoTrue default of a minute: a test measuring that the gap ends
+// has to wait it out. The production value is chosen at step 2 and is not this
+// one.
+const HarnessMailerMaxFrequency = 2 * time.Second
+
+// HarnessEmailsPerHour is a budget no package is going to spend. The container
+// is shared by a whole binary, and what its tests may send between them belongs
+// in this file rather than in whatever the provider defaults to — a quota that
+// runs out mid-run fails the test that happens to be next, for somebody else's
+// reason.
+const HarnessEmailsPerHour = "1000"
 
 // HookURIVariable names the hook GoTrue calls while minting a token.
 const HookURIVariable = "GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI"
@@ -97,6 +106,10 @@ type Cycle struct {
 	// against a constant that has drifted from it.
 	OTPExpiry time.Duration
 
+	// MailerMaxFrequency is the gap the container was configured with, for the
+	// same reason.
+	MailerMaxFrequency time.Duration
+
 	container testcontainers.Container
 }
 
@@ -112,7 +125,7 @@ func StartCycle(ctx context.Context, c *Cluster) (*Cycle, error) {
 	// From here on every failure has a database to drop, and after the container
 	// starts it has a container to reap as well. The suite runs with Ryuk
 	// disabled, so nothing else would.
-	cycle := &Cycle{OTPExpiry: HarnessOTPExpiry}
+	cycle := &Cycle{OTPExpiry: HarnessOTPExpiry, MailerMaxFrequency: HarnessMailerMaxFrequency}
 	abort := func(cause error) (*Cycle, error) {
 		return nil, errors.Join(cause, cycle.terminate(ctx, c, name))
 	}
@@ -154,6 +167,8 @@ func StartCycle(ctx context.Context, c *Cluster) (*Cycle, error) {
 	env["GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED"] = "true"
 	env[HookURIVariable] = accessTokenHookURI
 	env[OTPExpiryVariable] = strconv.Itoa(int(cycle.OTPExpiry.Seconds()))
+	env[MailerMaxFrequencyVariable] = cycle.MailerMaxFrequency.String()
+	env[EmailsPerHourVariable] = HarnessEmailsPerHour
 
 	container, err := runGoTrueContainer(ctx, env,
 		wait.ForHTTP("/health").WithPort(gotruePort).WithStartupTimeout(gotrueStartupTimeout))

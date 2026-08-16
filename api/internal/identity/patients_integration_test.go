@@ -20,7 +20,15 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-var cluster *testsupport.Cluster
+var (
+	cluster *testsupport.Cluster
+
+	// cycle is the identity provider beside the chain, shared by the whole
+	// binary: this context is the one that invites, claims and deletes accounts,
+	// so the container it costs is paid for. Started from TestMain because that
+	// is where it can also be torn down, after m.Run rather than after a test.
+	cycle *testsupport.Cycle
+)
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
@@ -32,7 +40,23 @@ func TestMain(m *testing.M) {
 	}
 	cluster = c
 
+	cy, err := testsupport.StartCycle(ctx, cluster)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "starting the cycle harness: %v\n", err)
+
+		if terminateErr := cluster.Terminate(ctx); terminateErr != nil {
+			fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", terminateErr)
+		}
+
+		os.Exit(1)
+	}
+	cycle = cy
+
 	code := m.Run()
+
+	if err := cycle.Terminate(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "terminating the cycle harness: %v\n", err)
+	}
 
 	if err := cluster.Terminate(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", err)
