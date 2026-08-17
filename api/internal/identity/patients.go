@@ -258,19 +258,7 @@ func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
 	}
 
 	// Last, and in the same transaction: a rollback takes the audit row with it, and there is nothing to have signed.
-	// The setting names travel as bound parameters, which keeps the statement the constant the authorship gate wants.
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO app.audit_log (actor_id, actor_job, action, entity, entity_id, patient_id)
-		VALUES (
-			nullif(current_setting($2, true), '')::uuid,
-			nullif(current_setting($3, true), ''),
-			'patient.create', 'profiles', $1, $1
-		)
-	`, patient.UserID, database.ActorIDSetting, database.ActorJobSetting); err != nil {
-		return fmt.Errorf("writing the audit record: %w", err)
-	}
-
-	return nil
+	return writeAudit(ctx, tx, patientCreated, patient.UserID, &patient.UserID)
 }
 
 // classify turns the database's answer into one of this package's refusals, where there is one to turn it into.

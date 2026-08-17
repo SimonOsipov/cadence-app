@@ -79,20 +79,9 @@ func writeProvider(ctx context.Context, tx pgx.Tx, provider NewProvider) error {
 		return fmt.Errorf("writing the provider card: %w", err)
 	}
 
-	// patient_id is left out, the one difference from the patient's row: this action concerns no patient, and a
-	// doctor's identifier in that column reads as an action inside the trail of a patient with that id.
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO app.audit_log (actor_id, actor_job, action, entity, entity_id)
-		VALUES (
-			nullif(current_setting($2, true), '')::uuid,
-			nullif(current_setting($3, true), ''),
-			'provider.create', 'profiles', $1
-		)
-	`, provider.UserID, database.ActorIDSetting, database.ActorJobSetting); err != nil {
-		return fmt.Errorf("writing the audit record: %w", err)
-	}
-
-	return nil
+	// No patient: the one difference from the patient's row, and see writeAudit for what that column costs when it
+	// is filled in anyway.
+	return writeAudit(ctx, tx, providerCreated, provider.UserID, nil)
 }
 
 // classifyStaff turns the database's answer into one of this package's refusals, where there is one to turn it into.

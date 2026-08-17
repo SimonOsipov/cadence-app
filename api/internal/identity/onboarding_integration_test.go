@@ -649,9 +649,17 @@ func (c *onboarding) countPatients(t *testing.T, address string) int {
 func (c *onboarding) auditRows(t *testing.T, action, entityID string) int {
 	t.Helper()
 
-	entity := "invites"
-	if action == "account.delete" {
-		entity = "auth.account"
+	// Spelled out here rather than asked of the package, so that a pair changed on one side is a failure and not a
+	// silent agreement. It also has to be right: asking for patient.create under `invites` counts zero rows
+	// whatever the flow wrote, which is what «no patient.create row survived» used to measure.
+	entity, known := map[string]string{
+		"invite.send":     "invites",
+		"account.delete":  "auth.account",
+		"patient.create":  "profiles",
+		"provider.create": "profiles",
+	}[action]
+	if !known {
+		t.Fatalf("no entity is written down here for %q, so this counts rows of nothing", action)
 	}
 
 	var rows int

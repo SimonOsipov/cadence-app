@@ -426,21 +426,34 @@ func (o *Onboarding) audit(ctx context.Context, action, entityID string, of crea
 const (
 	invitationAsked = "invite.send"
 	accountDeleted  = "account.delete"
+	patientCreated  = "patient.create"
+	providerCreated = "provider.create"
 
-	invitesEntity = "invites"
-	accountEntity = "auth.account"
+	invitesEntity  = "invites"
+	accountEntity  = "auth.account"
+	profilesEntity = "profiles"
 )
 
-// entityOf is the one place the pairing lives, so the two columns cannot drift.
-func entityOf(action string) string {
-	if action == accountDeleted {
-		return accountEntity
-	}
-
-	return invitesEntity
+// The action and the entity are one fact, and this is where it is held: an action absent from here writes no row at
+// all, so a fifth one cannot arrive as a pair spelled out at its own call site — which is how the two columns drifted
+// while a comment claimed they could not.
+var auditEntities = map[string]string{
+	invitationAsked: invitesEntity,
+	accountDeleted:  accountEntity,
+	patientCreated:  profilesEntity,
+	providerCreated: profilesEntity,
 }
 
+// writeAudit signs one act inside the caller's transaction. Every audit row this context writes goes through here.
+//
+// patientID is nil for anything that concerns no patient: a doctor's identifier in that column reads as an action
+// inside the trail of whichever patient holds that id.
 func writeAudit(ctx context.Context, tx pgx.Tx, action, entityID string, patientID *string) error {
+	entity, known := auditEntities[action]
+	if !known {
+		return fmt.Errorf("no entity is registered for audit action %q", action)
+	}
+
 	// The setting names travel as bound parameters — current_setting takes its name as an argument — which keeps
 	// the statement the constant the authorship gate requires.
 	if _, err := tx.Exec(ctx, `
@@ -451,7 +464,7 @@ func writeAudit(ctx context.Context, tx pgx.Tx, action, entityID string, patient
 			$2, $5, $1, $6
 		)
 	`, entityID, action, database.ActorIDSetting, database.ActorJobSetting,
-		entityOf(action), patientID); err != nil {
+		entity, patientID); err != nil {
 		return fmt.Errorf("writing the audit record: %w", err)
 	}
 
