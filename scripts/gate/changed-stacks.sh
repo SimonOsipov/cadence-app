@@ -20,7 +20,19 @@ changed=$(cat)
 # Reproduced at 50KB of matching paths, which is the size `git ls-files` reaches
 # on a push to main.
 count() { echo "$changed" | grep -cE "$1" || true; }
-truth() { [ "$1" -gt 0 ] && echo true || echo false; }
+truth() {
+    # A non-numeric counter means the count never happened, and answering false to
+    # that is the failure this file's header calls the dangerous one: «measured
+    # nothing» would be indistinguishable from «did not match».
+    case $1 in
+        '' | *[!0-9]*)
+            echo "the counter produced '$1', so nothing was measured" >&2
+            exit 1
+            ;;
+    esac
+
+    [ "$1" -gt 0 ] && echo true || echo false
+}
 
 matches() { truth "$(count "$1")"; }
 

@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The entry point is imported for its side effect, which is why both branches are reached by importing
@@ -18,10 +19,10 @@ describe('the entry point', () => {
 
     await import('./main')
 
-    // React 19 renders through a scheduler, so the assertion waits a macrotask rather than reading
-    // straight after the import.
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    expect(document.querySelector('#root h1')?.textContent).toBe('Cadence')
+    // Waited for rather than slept through: React 19 renders on a scheduler of its own, and a single
+    // macrotask is an assumption about MessageChannel delivery beating timers, not a signal.
+    await waitFor(() => {
+      expect(document.querySelector('#root h1')?.textContent).toBe('Cadence')
+    })
   })
 })

@@ -44,6 +44,12 @@ check "go source"                       true  api     "api/internal/identity/onb
 check "go untouched"                    false api     "web/src/app.tsx"
 check "kmp source"                      true  kmp     "kmp/shared/src/Foo.kt"
 check "a ruleset edit reaches the gate" true  scripts ".github/rulesets/main.json"
+# The gate scripts themselves, and the mutant this closes is the sharp one: drop
+# `scripts/` from that pattern and a pull request touching only scripts/ skips the
+# Shell gate — which is where shellcheck, ruleset.sh and this very test run. The
+# filter's own guard, switched off by the filter's own error.
+check "a gate script edit reaches the gate" true  scripts "scripts/gate/go.sh"
+check "nothing of the scripts'"          false scripts "web/src/app.tsx"
 
 # The regression the shape of this script exists for. A whole tree's worth of
 # matching paths after the first non-prototype line: with an early-exiting

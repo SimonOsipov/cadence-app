@@ -52,7 +52,11 @@ if [ -z "$typescript_files" ]; then
     echo "tsc listed no files at all, so this check measured nothing" >&2
     exit 1
 fi
-if echo "$typescript_files" | grep -q '/web/prototype/'; then
+# grep -c and not grep -q, for the reason the paragraph above gives: -q exits on
+# the first hit, the writer takes SIGPIPE, and pipefail turns that into a status
+# the `if` reads as «found nothing». Measured on this list: detected at 58KB,
+# missed at 64KB, and the list is already 35KB.
+if [ "$(echo "$typescript_files" | grep -cE '/web/prototype/' || true)" -gt 0 ]; then
     echo "tsconfig.json reaches web/prototype — it is frozen and must not compile" >&2
     exit 1
 fi

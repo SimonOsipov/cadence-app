@@ -18,6 +18,11 @@ skipped=()
 "$here/ruleset.sh"
 ran+=("ruleset")
 
+# Cheap, and about the same thing one layer down: which gates run at all. A filter
+# answering false skips a job, and a skipped job satisfies a required check.
+"$here/changed-stacks_test.sh"
+ran+=("changed-stacks")
+
 "$here/go.sh"
 ran+=("go")
 
