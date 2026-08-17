@@ -42,7 +42,7 @@ func servedBy(principal *auth.Principal, sessions *identity.Sessions) http.Handl
 		})
 	})
 
-	identity.NewService(nil, sessions).Register(httpserver.NewAPI(router))
+	identity.NewService(nil, sessions, nil).Register(httpserver.NewAPI(router))
 
 	return router
 }
@@ -105,7 +105,7 @@ func TestSessionRefusesAnAccountWithNoRole(t *testing.T) {
 func TestSessionIsInTheContract(t *testing.T) {
 	router := chi.NewRouter()
 	api := httpserver.NewAPI(router)
-	identity.NewService(nil, nil).Register(api)
+	identity.NewService(nil, nil, nil).Register(api)
 
 	document, err := api.OpenAPI().MarshalJSON()
 	if err != nil {

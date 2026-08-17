@@ -135,6 +135,29 @@
         ],
         "type": "object"
       },
+      "Page": {
+        "additionalProperties": false,
+        "properties": {
+          "next_cursor": {
+            "description": "Pass as cursor for the following page. Absent on the last one.",
+            "type": "string"
+          },
+          "patients": {
+            "description": "The patients this caller may see, ordered by name.",
+            "items": {
+              "$ref": "#/components/schemas/RosterRow"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "patients"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "additionalProperties": false,
         "properties": {
@@ -198,6 +221,33 @@
         ],
         "type": "object"
       },
+      "RosterRow": {
+        "additionalProperties": false,
+        "properties": {
+          "age": {
+            "description": "Years, worked out by the server. Absent when the clinic has not entered a date of birth.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "full_name": {
+            "description": "The patient's name as the clinic wrote it.",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "The patient's id, and the key every later request about them is made on.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "full_name",
+          "age"
+        ],
+        "type": "object"
+      },
       "SessionBody": {
         "additionalProperties": false,
         "properties": {
@@ -255,6 +305,115 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/dashboard/overview": {
+      "get": {
+        "description": "The doctor's registry, on the route §11 names and the one M6 extends rather than replaces. A doctor is answered their assigned patients and an administrator everyone; the selection is the database's, so reassigning a patient changes the answer with no query edit. Paging is by cursor rather than by offset, because the set changes underneath a doctor as assignments do. Answers 400 for a cursor this server did not issue, 403 to a patient, and 503 when the database could not serve the request.",
+        "operationId": "dashboard-overview",
+        "parameters": [
+          {
+            "description": "Where to continue from, as the previous page's next_cursor. Absent asks for the first page.",
+            "explode": false,
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "Where to continue from, as the previous page's next_cursor. Absent asks for the first page.",
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "description": "How many patients the page carries.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 8,
+              "description": "How many patients the page carries.",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "The patients this member of staff may see",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/v1/me": {
       "get": {
         "description": "Returns the identity carried by the presented token. It reads no database: a role changed there takes effect when the token expires.",

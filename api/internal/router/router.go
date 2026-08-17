@@ -54,12 +54,13 @@ func contexts(opts Options) []boundedContext {
 	// caller's own identity, so it needs neither the service path nor the
 	// identity provider. A nil pool yields a nil service.
 	sessions := identity.NewSessions(opts.Pool)
+	roster := identity.NewRoster(opts.Pool)
 
 	return []boundedContext{
 		{"audit", audit.Register},
 		{"content", content.Register},
 		{"dosing", dosing.Register},
-		{"identity", identity.NewService(onboarding, sessions).Register},
+		{"identity", identity.NewService(onboarding, sessions, roster).Register},
 		{"inventory", inventory.Register},
 		{"journal", journal.Register},
 		{"measurements", measurements.Register},

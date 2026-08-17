@@ -619,7 +619,7 @@ func (c *onboarding) create(t *testing.T, caller auth.Principal, path, payload s
 		})
 	})
 
-	identity.NewService(identity.NewOnboarding(c.requests, c.writes, c.provider), nil).
+	identity.NewService(identity.NewOnboarding(c.requests, c.writes, c.provider), nil, nil).
 		Register(httpserver.NewAPI(mux))
 
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))

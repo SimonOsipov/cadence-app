@@ -818,6 +818,14 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 				JOIN pg_namespace n ON n.oid = con.connamespace
 				WHERE n.nspname = $1
 				UNION ALL
+				-- Indexes, for the same reason again and the case after that: a
+				-- migration whose whole content is CREATE INDEX moves neither the
+				-- relation list, nor the columns, nor the constraints. Measured on
+				-- 000011, which adds one index and nothing else.
+				SELECT 'i ' || i.indexname || ' ' || i.indexdef
+				FROM pg_indexes i
+				WHERE i.schemaname = $1
+				UNION ALL
 				SELECT 'p ' || tablename || ' ' || policyname || ' ' || cmd || ' ' ||
 				       coalesce(qual, '-') || ' | ' || coalesce(with_check, '-')
 				FROM pg_policies WHERE schemaname = $1

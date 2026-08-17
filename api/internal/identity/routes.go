@@ -14,6 +14,7 @@ import (
 type Service struct {
 	onboarding *Onboarding
 	sessions   *Sessions
+	roster     *Roster
 }
 
 // NewService builds the context around the flows its operations serve.
@@ -21,8 +22,8 @@ type Service struct {
 // A nil dependency is legitimate and has exactly one caller: the generator that
 // renders openapi.json needs the operations declared and nothing behind them.
 // An operation reached in that state refuses rather than dereferences.
-func NewService(onboarding *Onboarding, sessions *Sessions) *Service {
-	return &Service{onboarding: onboarding, sessions: sessions}
+func NewService(onboarding *Onboarding, sessions *Sessions, roster *Roster) *Service {
+	return &Service{onboarding: onboarding, sessions: sessions, roster: roster}
 }
 
 // Register mounts this context's operations on the API.
@@ -63,6 +64,26 @@ func (s *Service) Register(api huma.API) {
 			http.StatusServiceUnavailable,
 		},
 	}, s.recordSession)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "dashboard-overview",
+		Method:      http.MethodGet,
+		Path:        "/v1/dashboard/overview",
+		Summary:     "The patients this member of staff may see",
+		Description: "The doctor's registry, on the route §11 names and the one M6 extends rather than replaces. " +
+			"A doctor is answered their assigned patients and an administrator everyone; the selection is the " +
+			"database's, so reassigning a patient changes the answer with no query edit. Paging is by cursor " +
+			"rather than by offset, because the set changes underneath a doctor as assignments do. " +
+			"Answers 400 for a cursor this server did not issue, 403 to a patient, and 503 when the database " +
+			"could not serve the request.",
+		Tags: []string{"identity"},
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusServiceUnavailable,
+		},
+	}, s.overview)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-patient",
