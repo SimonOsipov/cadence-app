@@ -112,11 +112,11 @@ What green does and does not cover:
 
 ## CI status
 
-CI is committed but has never executed. `.github/` is not on `main`, GitHub
-reports zero registered workflows, and no ruleset is applied — so **`main` is
-currently unprotected and `ci.yml` has never been validated against a real
-runner.** Applying the ruleset needs admin; the command and the ordering
-dependency are in `.github/rulesets/README.md`.
+`ci.yml` is on `main`, registered, and runs — on every pull request and on every
+push to `main`. What is still missing is the half that makes it a gate: **no
+ruleset and no branch protection are applied, so `main` takes a push whatever CI
+said, and a red PR can be merged.** Applying the ruleset needs admin; the command
+and the ordering dependency are in `.github/rulesets/README.md`.
 
 Until that changes, `scripts/gate/all.sh` on your own machine is the only gate
 there is. Run it.
