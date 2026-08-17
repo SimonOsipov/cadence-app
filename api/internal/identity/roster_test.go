@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -12,8 +13,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
@@ -98,7 +101,7 @@ func TestWhichRefusalTheRosterHeard(t *testing.T) {
 	}{
 		{"a patient asking for the roster", ErrNotForPatients, 403, detailRosterIsNotForPatients},
 		{"an account provisioning has not reached", ErrNoRole, 403, detailNoRole},
-		{"a page of no rows", ErrNotAPageSize, 400, detailNotACursor},
+		{"a page of no rows", ErrNotAPageSize, 400, detailNotAPageSize},
 		{"a cursor that is not one", ErrNotACursor, 400, detailNotACursor},
 		{"the database did not answer", ErrDatabaseUnavailable, 503, detailUnavailableOnTheWire},
 		{"a refusal this package does not name", errors.New("boom"), 500, detailInternalOnTheWire},
@@ -202,7 +205,9 @@ func TestTheOverviewIsInTheContract(t *testing.T) {
 		t.Fatalf("the document does not describe /v1/dashboard/overview; it has %v", spec.Paths)
 	}
 
-	for _, status := range []string{"200", "400", "401", "403", "503"} {
+	// 422 and 500 alongside the declared ones, as the session route asserts them: both are reachable
+	// here — 422 from the query tags, 500 from an assembly with no roster.
+	for _, status := range []string{"200", "400", "401", "403", "422", "500", "503"} {
 		if _, declared := operation.Get.Responses[status]; !declared {
 			t.Errorf("the operation does not declare %s; it declares %v", status, operation.Get.Responses)
 		}
@@ -214,8 +219,8 @@ func TestTheDeclaredCursorBoundCoversTheLongestOneThisServerCanIssue(t *testing.
 	// The column allows 200 characters, and a character in this product's copy is up to four bytes.
 	longest := makeCursor(strings.Repeat("𝛑", 200), "8a1f3b7c-0000-4000-8000-000000000001")
 
-	if len(longest) > MaxCursorLength {
-		t.Errorf("the longest cursor is %d characters, and the bound is %d", len(longest), MaxCursorLength)
+	if len(longest) > maxCursorLength {
+		t.Errorf("the longest cursor is %d characters, and the bound is %d", len(longest), maxCursorLength)
 	}
 
 	declared := reflect.TypeOf(OverviewInput{})
@@ -224,8 +229,8 @@ func TestTheDeclaredCursorBoundCoversTheLongestOneThisServerCanIssue(t *testing.
 		t.Fatal("OverviewInput has no Cursor field")
 	}
 
-	if got := field.Tag.Get("maxLength"); got != strconv.Itoa(MaxCursorLength) {
-		t.Errorf("the route declares maxLength %q, and MaxCursorLength is %d", got, MaxCursorLength)
+	if got := field.Tag.Get("maxLength"); got != strconv.Itoa(maxCursorLength) {
+		t.Errorf("the route declares maxLength %q, and maxCursorLength is %d", got, maxCursorLength)
 	}
 }
 
@@ -280,5 +285,108 @@ func TestAnAccountWithNoRoleIsRefusedTheRoster(t *testing.T) {
 
 	if problem.Detail != detailNoRole {
 		t.Errorf("detail = %q, want %q", problem.Detail, detailNoRole)
+	}
+}
+
+// The administrator's arm of the role switch, which nothing drove through the route: the integration
+// tests call Patients directly, below it. Dropping adminRole from the case answers the clinic's
+// administrator 403 «this account is not in the clinic yet», and every other test stays green.
+func TestAnAdministratorReachesTheRoster(t *testing.T) {
+	rec := askForTheRoster(t, auth.Principal{
+		Subject: "8a1f3b7c-0000-4000-8000-000000000003",
+		Role:    adminRole,
+	})
+
+	// 500 and not 200: the service is nil, so getting this far is the whole of what is asserted — the
+	// administrator passed the role switch rather than being refused by it.
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body %s", rec.Code, rec.Body)
+	}
+}
+
+// A caller the middleware would never have let through. Unreachable in the assembled router, and
+// asserted for the reason GET /v1/me asserts its own: «unreachable» is a property of the wiring, and
+// without it a lost principal is answered 403 «not in the clinic yet» rather than 401.
+func TestTheRosterRefusesWithoutAPrincipal(t *testing.T) {
+	router := chi.NewRouter()
+	NewService(Deps{}).Register(httpserver.NewAPI(router))
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body %s", rec.Code, rec.Body)
+	}
+}
+
+// The constructor's whole content, pinned as NewSessions' is: without it a nil pool builds a service
+// whose nil check in the handler is false, and the answer is a dereference rather than a 500.
+func TestNoPoolBuildsNoRoster(t *testing.T) {
+	if roster := NewRoster(nil); roster != nil {
+		t.Errorf("NewRoster(nil) = %v, want nil", roster)
+	}
+}
+
+// askForTheRoster drives the route with principal standing in for the middleware.
+func askForTheRoster(t *testing.T, principal auth.Principal) *httptest.ResponseRecorder {
+	t.Helper()
+
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
+		})
+	})
+	NewService(Deps{}).Register(httpserver.NewAPI(router))
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))
+
+	return rec
+}
+
+// The join between the query and database.IsUnavailable, which neither end's own test reaches: the
+// classifier is measured in platform/database and the 503 mapping in the refusal table, and between
+// them sits one call. A port the kernel handed out and nothing listens on is the cheapest database
+// that is down.
+func TestARosterReadAgainstADatabaseThatIsDownIsUnavailable(t *testing.T) {
+	var config net.ListenConfig
+
+	listener, err := config.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserving a port: %v", err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("closing the listener: %v", err)
+	}
+
+	pool, err := pgxpool.New(t.Context(), "postgres://nobody:nothing@"+address+"/none?sslmode=disable")
+	if err != nil {
+		t.Fatalf("building the pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	caller := database.Caller{Subject: "8a1f3b7c-0000-4000-8000-000000000002", Role: providerRole}
+
+	_, err = NewRoster(pool).Patients(t.Context(), caller, "", 8)
+	if !errors.Is(err, ErrDatabaseUnavailable) {
+		t.Fatalf("reading against a dead database answered %v, want ErrDatabaseUnavailable", err)
+	}
+}
+
+// A page of none. Reachable only past the route's schema, which is the point: the method is exported,
+// and without the guard the arithmetic below it indexes at -1.
+func TestAPageOfNoRowsIsRefusedRatherThanIndexed(t *testing.T) {
+	for _, limit := range []int{0, -1} {
+		t.Run(strconv.Itoa(limit), func(t *testing.T) {
+			// The pool is never reached: the guard is above it, and a nil pool would panic if it were not.
+			caller := database.Caller{Subject: "8a1f3b7c-0000-4000-8000-000000000002", Role: providerRole}
+
+			_, err := (&Roster{}).Patients(t.Context(), caller, "", limit)
+			if !errors.Is(err, ErrNotAPageSize) {
+				t.Fatalf("a page of %d answered %v, want ErrNotAPageSize", limit, err)
+			}
+		})
 	}
 }

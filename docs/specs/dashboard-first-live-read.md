@@ -245,6 +245,24 @@ sets from the same code; an admin sees everyone; reassignment changes the output
 paging neither skips nor duplicates when assignments change between pages.
 todoist: "6h9MFwrWRf4v4JVq"
 
+> [!deviation] 2026-08-18
+> Spec said: nothing about a token carrying no product role, and nothing about a
+> page size. Actually done: an account the invitation reached and provisioning
+> did not is answered `403` — the same refusal the session route gives it —
+> rather than falling into the seam and coming back a `500`; and a page of no
+> rows is refused rather than indexed, because the method is exported past the
+> schema that pins the route's minimum. Why: both are states the code can reach
+> and the step did not name.
+
+> [!deviation] 2026-08-18
+> Spec said: a patient token gets `403` **with its own problem type**. Actually
+> done: `403` with `/problems/forbidden`, which `httpserver.problemTypeFor`
+> derives from the status alone and every other `403` in the API therefore
+> shares; what distinguishes this refusal is its Russian sentence. Why: a type
+> per refusal is a change to the platform's closed set of problem types, which
+> is `api.md`'s to decide rather than this step's. Recorded here rather than
+> read as satisfied.
+
 ### step-3: Invite state from `provisioner`
 
 Batch lookup by the page's identifiers, derivation of the three states, "unknown"

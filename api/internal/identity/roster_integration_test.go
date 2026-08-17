@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ import (
 // Against the alphabet on purpose: a roster ordered by id is then a different sequence.
 const (
 	annaID  = "8a1f3b7c-0000-4000-8000-00000000000c"
+	galyaID = "8a1f3b7c-0000-4000-8000-00000000000d"
 	borisID = "8a1f3b7c-0000-4000-8000-00000000000b"
 	veraID  = "8a1f3b7c-0000-4000-8000-00000000000a"
 )
@@ -194,14 +196,19 @@ func TestAReassignmentChangesWhatADoctorReads(t *testing.T) {
 
 // Age is the server's arithmetic, and absent when the clinic has not entered a date of birth.
 func TestAgeIsWorkedOutByTheServer(t *testing.T) {
-	born40YearsAgo := time.Now().UTC().AddDate(-40, 0, 1)
-	born40YearsAgoToday := time.Now().UTC().AddDate(-40, 0, 0)
+	// Three points around one boundary, and the expectations computed by Go rather than written down:
+	// a literal 39 is only a discriminator on the days of the year when it happens to be one, and on
+	// 31 December the day-before-birthday row agrees with a naive difference of years.
+	tomorrow := time.Now().UTC().AddDate(-40, 0, 1)
+	today := time.Now().UTC().AddDate(-40, 0, 0)
+	yesterday := time.Now().UTC().AddDate(-40, 0, -1)
 
 	roster, _ := rosterStand(
 		t,
-		seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID, dob: &born40YearsAgo},
+		seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID, dob: &tomorrow},
 		seededPatient{id: borisID, name: "Борис Ким", assignedTo: doctorID},
-		seededPatient{id: veraID, name: "Вера Ильина", assignedTo: doctorID, dob: &born40YearsAgoToday},
+		seededPatient{id: veraID, name: "Вера Ильина", assignedTo: doctorID, dob: &today},
+		seededPatient{id: galyaID, name: "Галина Русу", assignedTo: doctorID, dob: &yesterday},
 	)
 
 	page, err := roster.Patients(t.Context(), database.Caller{Subject: doctorID, Role: "doctor"}, "", 10)
@@ -214,17 +221,23 @@ func TestAgeIsWorkedOutByTheServer(t *testing.T) {
 		byName[patient.FullName] = patient.Age
 	}
 
-	if len(page.Patients) != 3 {
-		t.Fatalf("the roster is %v, want all three: an absent row makes every assertion below vacuous", page.Patients)
+	if len(page.Patients) != 4 {
+		t.Fatalf("the roster is %v, want all four: an absent row makes every assertion below vacuous", page.Patients)
 	}
 
-	if got := byName["Анна Петрова"]; got == nil || *got != 39 {
-		t.Errorf("Анна's age is %v, want 39 — a birthday one day away has not happened yet", got)
-	}
-	// The other side of the boundary. Without it a query counting from dob + 1 day passes: it is only
-	// wrong on the birthday itself, which the row above never reaches.
-	if got := byName["Вера Ильина"]; got == nil || *got != 40 {
-		t.Errorf("Вера's age is %v, want 40 — today is her birthday", got)
+	for _, expected := range []struct {
+		name string
+		dob  time.Time
+	}{
+		{"Анна Петрова", tomorrow},
+		{"Вера Ильина", today},
+		{"Галина Русу", yesterday},
+	} {
+		want := yearsSince(expected.dob)
+
+		if got := byName[expected.name]; got == nil || *got != want {
+			t.Errorf("%s's age is %v, want %d", expected.name, got, want)
+		}
 	}
 	if got := byName["Борис Ким"]; got != nil {
 		t.Errorf("Борис has age %v, want none: the clinic entered no date of birth", *got)
@@ -430,12 +443,6 @@ func TestTheMountedRouteAnswersTheDoctorsOwnRoster(t *testing.T) {
 	if page.Patients[0].UserID != walked.patient.account {
 		t.Errorf("the roster carries %q, want %q", page.Patients[0].UserID, walked.patient.account)
 	}
-
-	// The wire, not the struct: an empty roster reaching a browser as null is what the tag on Patients
-	// exists to prevent, and only the bytes can say whether it worked.
-	if body := rec.Body.String(); strings.Contains(body, `"patients":null`) {
-		t.Errorf("the page reached the wire as %s", body)
-	}
 }
 
 // A patient's own token against the mounted route, so the refusal is measured where a device meets it
@@ -472,4 +479,82 @@ func TestAPatientWithNoCardIsStillOnTheRoster(t *testing.T) {
 	if page.Patients[0].Age != nil {
 		t.Errorf("the age is %v, want none: there is no card to read a date of birth from", *page.Patients[0].Age)
 	}
+}
+
+// yearsSince is Go's own date arithmetic standing against Postgres': two implementations of the same
+// rule, which is what makes the age assertions above discriminating on every day of the year rather
+// than on the days a written-down number happens to be right.
+func yearsSince(dob time.Time) int {
+	now := time.Now().UTC()
+
+	years := now.Year() - dob.Year()
+	if now.YearDay() < dob.YearDay() {
+		years--
+	}
+
+	return years
+}
+
+// The query parameters, which nothing drove through the route: every other paging test calls Patients
+// directly, so replacing input.Cursor with "" at the call site — every «show more» silently reopening
+// the first page — survives them all.
+func TestTheMountedRoutePagesByItsOwnParameters(t *testing.T) {
+	walked := walkTheCycle(t)
+	walked.clinic.take(t, walked.doctor, "second.patient@clinic.example")
+
+	first := rosterThrough(t, walked, walked.doctor.access, "?limit=1")
+	if len(first.Patients) != 1 || first.Next == "" {
+		t.Fatalf("the first page is %v with cursor %q, want one row and a cursor", first.Patients, first.Next)
+	}
+
+	second := rosterThrough(t, walked, walked.doctor.access, "?limit=1&cursor="+url.QueryEscape(first.Next))
+	if len(second.Patients) != 1 {
+		t.Fatalf("the second page is %v, want the other patient", second.Patients)
+	}
+
+	if second.Patients[0].UserID == first.Patients[0].UserID {
+		t.Error("the second page repeats the first one's patient, so the cursor did not reach the query")
+	}
+}
+
+// The empty roster on the wire rather than in the struct: a doctor hired and not yet given anybody is
+// the only caller that produces it, and the encoding is what a browser then calls .map on.
+func TestTheMountedRouteAnswersAnEmptyRosterAsAnArray(t *testing.T) {
+	walked := walkTheCycle(t)
+	newcomer := walked.clinic.hire(t, walked.admin, "newcomer@clinic.example", "Эндокринолог")
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	request.Header.Set("Authorization", "Bearer "+newcomer.access)
+
+	rec := httptest.NewRecorder()
+	walked.clinic.mux.ServeHTTP(rec, request)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body)
+	}
+
+	if body := strings.TrimSpace(rec.Body.String()); !strings.Contains(body, `"patients":[]`) {
+		t.Errorf("the empty roster reached the wire as %s", body)
+	}
+}
+
+func rosterThrough(t *testing.T, walked cycleWalk, bearer, query string) identity.RosterPage {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview"+query, nil)
+	request.Header.Set("Authorization", "Bearer "+bearer)
+
+	rec := httptest.NewRecorder()
+	walked.clinic.mux.ServeHTTP(rec, request)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body)
+	}
+
+	var page identity.RosterPage
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decoding the page: %v", err)
+	}
+
+	return page
 }

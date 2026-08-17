@@ -26,14 +26,15 @@ var ErrNotForPatients = errors.New("the roster is not a patient's to read")
 const (
 	detailRosterIsNotForPatients = "Реестр пациентов доступен только сотрудникам клиники."
 	detailNotACursor             = "Страница не найдена. Откройте реестр заново."
+	detailNotAPageSize           = "Размер страницы должен быть больше нуля."
 )
 
 // Encoded, not signed: a client can assemble one, and RLS is what keeps a forged start harmless.
 const cursorSeparator = "\x00"
 
-// MaxCursorLength is the longest makeCursor can emit — 200 four-byte characters, a separator and a
+// maxCursorLength is the longest makeCursor can emit — 200 four-byte characters, a separator and a
 // UUID, base64 — and the number the route's schema pins: a smaller bound refuses this server's own cursor.
-const MaxCursorLength = 1116
+const maxCursorLength = 1116
 
 func makeCursor(fullName, userID string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(fullName + cursorSeparator + userID))
@@ -118,13 +119,15 @@ func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor st
 
 	err = database.WithCaller(ctx, r.pool, caller, func(ctx context.Context, tx pgx.Tx) error {
 		// The parameter is cast to uuid and not the column to text: measured with EXPLAIN, the latter
-		// drops the second key out of the index condition. nullif is the first page's empty pair.
+		// drops the second key out of the index condition. The first page's empty pair becomes the
+		// smallest uuid rather than NULL — a NULL second element answers NULL for any row whose name
+		// ties with '', and that row would leave the first page with no error to show for it.
 		rows, err := tx.Query(ctx, `
 			SELECT p.user_id, p.full_name,
 			       date_part('year', pg_catalog.age(pp.dob))::int AS age
 			FROM app.profiles p
 			LEFT JOIN app.patient_profiles pp ON pp.user_id = p.user_id
-			WHERE p.role = 'patient' AND (p.full_name, p.user_id) > ($1, nullif($2, '')::uuid)
+			WHERE p.role = 'patient' AND (p.full_name, p.user_id) > ($1, coalesce(nullif($2, '')::uuid, '00000000-0000-0000-0000-000000000000'::uuid))
 			ORDER BY p.full_name, p.user_id
 			LIMIT $3
 		`, afterName, afterID, limit+1)

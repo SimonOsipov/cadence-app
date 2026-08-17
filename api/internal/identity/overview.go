@@ -63,8 +63,13 @@ func refusalForRoster(err error) error {
 	case errors.Is(err, ErrNoRole):
 		return huma.Error403Forbidden(detailNoRole)
 
-	case errors.Is(err, ErrNotACursor), errors.Is(err, ErrNotAPageSize):
+	case errors.Is(err, ErrNotACursor):
 		return huma.Error400BadRequest(detailNotACursor)
+
+	// Unreachable through the route, whose schema pins a minimum of one, and its own sentence anyway:
+	// a caller past that schema is not a person who lost their place in a list.
+	case errors.Is(err, ErrNotAPageSize):
+		return huma.Error400BadRequest(detailNotAPageSize)
 
 	case errors.Is(err, ErrDatabaseUnavailable):
 		return huma.Error503ServiceUnavailable("the database could not serve the request", err)
