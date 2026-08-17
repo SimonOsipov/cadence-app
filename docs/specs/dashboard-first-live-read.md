@@ -39,7 +39,7 @@ corrections are in the proposal.
 - [ ] A patient token on this route gets `403` with its own problem type, not `200` with zero rows: an empty response is indistinguishable from a breakage
 - [ ] Age and every aggregate are computed by the server; the rule "do not derive them in components" carries over from the fixture stage to live data through the same mechanism already in place — through the source, not through arithmetic
 - [ ] The roster pages with **keyset** pagination over a stable ordering: `LIMIT/OFFSET` over a policy-filtered set skips and duplicates rows precisely when assignments change between pages — that is, in the scenario another criterion requires us to support
-- [ ] `POST /v1/me/session` accepts a timezone, validates it against `pg_timezone_names`, and updates `profiles.timezone`. **For the patient only**: doctors and admins have no rights on the column, and a call from them yields `204` without a write rather than a refusal
+- [ ] `POST /v1/me/session` accepts a timezone, validates it against `pg_timezone_names`, and updates `profiles.timezone`. **For the patient only**, and the barrier is the statement rather than the absence of a grant: `cadence_admin` holds a table-wide `UPDATE` and `profiles_admin` is `USING (true)`, so the write carries its own `WHERE user_id = $2` and the handler answers doctors and admins `204` without a write rather than a refusal
 - [ ] `cmd/seed` creates accounts through `provisioner`, **sets their passwords** with the dev operation, and writes the data — all in one command, because the identifiers exist only after the call. Seeds are not a migration: skipping one in production tears the sequential chain
 - [ ] `cmd/seed` refuses to run against a production environment, and the refusal is covered by a test
 - [ ] The TS client is generated from the committed `openapi.json`, the generated output is committed, and the gate fails on drift — the same technique as KMP's
@@ -112,11 +112,14 @@ The ordering is stable and the index is named.
 ### `POST /v1/me/session`
 
 Accepts an IANA timezone, validates it against `pg_timezone_names`, writes
-`profiles.timezone`. The column is writable **by the patient only**; for doctors
-and admins it is decorative, and the service path is closed to admins by the
-policy `WITH CHECK (role IN ('patient','doctor'))`. Hence a call from a doctor is
-`204` without a write rather than a refusal: there is one client for both roles
-and it should not branch.
+`profiles.timezone`. The column is writable **by the patient only** — and by the
+administrator, which the first draft of this spec had wrong: `cadence_doctor`
+holds no `UPDATE` on `profiles`, but `cadence_admin` holds a table-wide one and
+`profiles_admin` is `USING (true)`, and `cadence_app` is a member of that role.
+So the row is chosen by the statement's own predicate and not only by
+`profiles_own_update`, and the handler refuses to write for anyone but a patient.
+A call from a doctor or an administrator is `204` without a write rather than a
+refusal: there is one client for every role and it should not branch.
 
 This operation does **not** record the moment of invite acceptance — the source
 for that is GoTrue. `joined_at` stays what it was: the moment of first app launch.
@@ -188,7 +191,8 @@ The analysis and the remaining decisions are in the
 ### api.md
 - ADDED: to "Contracts" — `GET /v1/dashboard/overview` on the final §11 route, in the `identity` context; `POST /v1/me/session` (timezone only)
 - ADDED: invariant — patient selection in the overview is done by policies, not by a condition in the query
-- ADDED: known limitation — the timezone is written for patients only: doctors and admins have no rights on the column, and the service path is closed to admins by policy
+- ADDED: known limitation — the timezone is written for patients only, and that is held by the handler's role switch plus the statement's own `WHERE user_id = $2`, **not** by the absence of a grant: `cadence_admin` holds a table-wide `UPDATE` on `profiles` under a `USING (true)` policy
+- ADDED: to "Contracts" — `database.IsUnavailable` is the one definition of «the database did not answer»; a route that means «repeat the request» answers 503 through it
 - ADDED: to the error shape — a patient token on the overview route yields `403`, not `200` with zero rows
 
 ### identity.md
@@ -206,6 +210,30 @@ Timezone validated against `pg_timezone_names`, written for the patient only,
 `204` without a write for doctors and admins. Tests: an unknown timezone yields
 `400`; a doctor's call neither writes nor fails; a changed timezone gets through.
 todoist: "6h9MFwp6MxhMp5qq"
+
+> [!deviation] 2026-08-17
+> Spec said: doctors and admins have no rights on the column, so the absence of a
+> grant is the barrier. Measured: `cadence_admin` holds `GRANT SELECT, INSERT,
+> UPDATE, DELETE ON app.profiles` (000004:219) under `profiles_admin FOR ALL
+> USING (true)` (000004:62), and `cadence_app` is a member of `cadence_admin`
+> (000001:218). An `UPDATE` bounded only by `profiles_own_update` would therefore
+> have rewritten every profile in the clinic for a caller holding an admin token,
+> and answered 204. Actually done: the statement carries `WHERE user_id = $2` and
+> asserts it matched exactly one row, and the handler answers staff without
+> reaching the database. Why: the policy narrows the statement for
+> `cadence_patient` only, and `RecordTimezone` is exported and takes whatever
+> caller it is given.
+
+> [!deviation] 2026-08-17
+> Spec said: nothing about a token carrying no role, or about the database being
+> unreachable. Actually done: an account the invitation reached and provisioning
+> did not is answered `403` rather than `204`, because 204 would claim a write
+> that did not happen; and a failure that means «not now» is answered `503`
+> through the new `database.IsUnavailable` rather than `/problems/internal`.
+> `400`, `403` and `503` are declared on the operation, so both generated client
+> surfaces can branch on them. Why: both were review findings, and the second was
+> measured — a Postgres that is down returns `*pgconn.ConnectError` with no
+> SQLSTATE, which the first attempt at the classifier did not read.
 
 ### step-2: `GET /v1/dashboard/overview` v0
 
