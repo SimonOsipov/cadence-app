@@ -2,11 +2,13 @@
 # What changed-stacks.sh answers, for the inputs whose answer matters.
 #
 # The large-input case is not padding. The pipeline this replaced answered false
-# for a change it had matched, once the matching paths passed roughly 50KB — the
-# size `git ls-files` reaches on a push to main — because `grep -q` exits early
-# and SIGPIPE becomes the pipeline's status under `pipefail`. It went unnoticed
-# because the wrong answer skips a job, and a skipped job satisfies a required
-# check.
+# for a change it had matched, once the *matching* paths passed roughly 30KB,
+# because `grep -q` exits early and SIGPIPE becomes the pipeline's status under
+# `pipefail`. What crosses that pipe is the matched subset and not the change: on
+# a push to main it is under a kilobyte here, so the case that reaches the
+# threshold is a pull request touching thousands of files under one stack. It went
+# unnoticed because the wrong answer skips a job, and a skipped job satisfies a
+# required check.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -57,6 +59,23 @@ check "nothing of the scripts'"          false scripts "web/src/app.tsx"
 echo "==> a change too large for an early exit"
 large=$(printf 'web/src/app.tsx\n'; for i in $(seq 1 4000); do printf 'web/src/generated/module-%05d.tsx\n' "$i"; done)
 check "four thousand dashboard files"   true  web "$large"
+
+# The counter going quiet is the other way this answers wrongly, and it is worse:
+# every value comes out empty, empty is falsy to every `if:` in ci.yml, and all
+# four gates skip at once. The script has to refuse rather than print — which it
+# could not do while the refusal lived inside a command substitution.
+echo "==> a counter that measures nothing"
+shim=$(mktemp -d)
+printf '#!/bin/sh\nexit 0\n' > "$shim/grep"
+chmod +x "$shim/grep"
+
+if printf 'web/src/app.tsx\n' | PATH="$shim:$PATH" ./changed-stacks.sh >/dev/null 2>&1; then
+    echo "FAIL: a counter printing nothing was answered rather than refused" >&2
+    failures=$((failures + 1))
+else
+    echo "  ok  the script refuses instead of printing empty values"
+fi
+rm -rf "$shim"
 
 if [ "$failures" -gt 0 ]; then
     echo "changed-stacks: $failures failing case(s)" >&2

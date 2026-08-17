@@ -56,7 +56,19 @@ fi
 # the first hit, the writer takes SIGPIPE, and pipefail turns that into a status
 # the `if` reads as «found nothing». Measured on this list: detected at 58KB,
 # missed at 64KB, and the list is already 35KB.
-if [ "$(echo "$typescript_files" | grep -cE '/web/prototype/' || true)" -gt 0 ]; then
+#
+# The count is checked for being a number before it is compared, because `[ "" -gt
+# 0 ]` is a status of 2 and an `if` reads that as «no», which is the same silence
+# this whole block is about. Unreachable above — the emptiness guard already ran —
+# and written out so the shape stays the one changed-stacks.sh uses.
+inside_prototype=$(echo "$typescript_files" | grep -cE '/web/prototype/' || true)
+case $inside_prototype in
+    '' | *[!0-9]*)
+        echo "counting the prototype's files produced '$inside_prototype', so nothing was measured" >&2
+        exit 1
+        ;;
+esac
+if [ "$inside_prototype" -gt 0 ]; then
     echo "tsconfig.json reaches web/prototype — it is frozen and must not compile" >&2
     exit 1
 fi
