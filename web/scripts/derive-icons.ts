@@ -75,7 +75,11 @@ const namesIn = (files: string[], narrow = false): Set<string> => {
     // the prototype's wide sweep exists for; and `name=` is an ordinary HTML attribute, so
     // `<input name="magnifying-glass" />` put an icon in the shipped bundle.
     const scanned = narrow
-      ? [...source.matchAll(/<Icon\b[\s\S]*?\/>/g)].map(([tag]) => tag).join('\n') +
+      // Bounded to the tag: unbounded, a `<Icon …></Icon>` written with a closing tag runs the lazy
+      // match to the next `/>` anywhere below and swallows every quoted string in between. Measured —
+      // one such element plus `data-a="cake" data-b="scale" data-c="calendar"` derived 14 icons, and
+      // over-inclusion has no backstop the way an omission has `IconName`.
+      ? [...source.matchAll(/<Icon\b[^>]*\/>/g)].map(([tag]) => tag).join('\n') +
         [...source.matchAll(/\bicon:\s*['"][a-z0-9-]+['"]/g)].map(([entry]) => entry).join('\n')
       : source
 

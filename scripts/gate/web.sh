@@ -108,26 +108,34 @@ node scripts/derive-icons.ts --check
 echo "==> eslint"
 npm run --silent lint
 
-# The two rules that carry acceptance criteria, checked rather than assumed. A typo in an esquery
-# selector leaves the gate green for ever: there are no violations in the source, so a rule matching
-# nothing looks exactly like a rule everything obeys. The probes violate on purpose, are ignored by an
-# ordinary run, and are linted here with the count required — measured, one of these rules was silently
-# switched off over every component by a second config block, and nothing noticed.
-# What a component that ships actually gets. The probes prove the selectors match
-# something; they cannot prove the rules reach `src/features/overview/**`, and a
-# config block with a narrower glob would take them away there while both probes
-# stayed green — which is the round-one defect one directory deeper. Measured on the
-# real file rather than on a neighbour of it.
+# What the code that ships actually gets. The probes below prove the selectors match something; they
+# cannot prove the rules reach `src/features/overview/**`, and a config block with a narrower glob takes
+# them away there while both probes stay green. Every component rather than one witness, because a block
+# narrower still spares whichever file the check names — measured, a block over `patient-*.tsx` and
+# `triage.tsx` leaves roster.tsx reporting 8 while `var(--paper)` in patient-card.tsx is not refused.
 echo "==> the rules reach the components, not just the probes"
-selectors=$(npx eslint --print-config src/features/overview/roster.tsx |
-    node -e 'let j="";process.stdin.on("data",d=>j+=d).on("end",()=>{const r=JSON.parse(j).rules?.["no-restricted-syntax"];console.log(Array.isArray(r)?r.length-1:0)})')
+components=$(find src/features/overview -name '*.tsx' ! -name '*.test.tsx' | sort)
+case $components in '') echo "no components found to check the lint rules against" >&2; exit 1;; esac
 
-if [ "$selectors" -ne 8 ]; then
-    echo "roster.tsx is linted with $selectors restricted-syntax selectors, want 8 — a component is" >&2
-    echo "not getting the rules the probes say exist" >&2
-    exit 1
-fi
+for component in $components; do
+    # Severity first: --print-config keeps a rule's options after `off`, so counting them alone reads a
+    # disabled rule as fully armed. Measured — `'no-restricted-syntax': 'off'` prints [0, ...8 selectors].
+    selectors=$(npx eslint --print-config "$component" |
+        node -e 'let j="";process.stdin.on("data",d=>j+=d).on("end",()=>{const r=JSON.parse(j).rules?.["no-restricted-syntax"];console.log(Array.isArray(r)&&r[0]===2?r.length-1:0)})')
 
+    case $selectors in '' | *[!0-9]*) echo "reading the config for $component produced '$selectors'" >&2; exit 1;; esac
+
+    if [ "$selectors" -ne 8 ]; then
+        echo "$component is linted with $selectors restricted-syntax selectors, want 8 — a component is" >&2
+        echo "not getting the rules the probes say exist" >&2
+        exit 1
+    fi
+done
+echo "all $(echo "$components" | wc -l | tr -d ' ') components carry the 8 restricted-syntax selectors"
+
+# A typo in an esquery selector leaves the gate green for ever: there are no violations in the source, so
+# a rule matching nothing looks exactly like a rule everything obeys. The probes violate on purpose, are
+# ignored by an ordinary run, and are linted here with the count required.
 echo "==> the lint rules still refuse what they are for"
 for probe in aggregates:6 css-variables:2; do
     file="src/features/__probes__/${probe%%:*}.tsx"
