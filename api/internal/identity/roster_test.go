@@ -2,8 +2,16 @@ package identity
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
 // A cursor is opaque to the client and total for the server: whatever a name contains, the pair it
@@ -121,4 +129,77 @@ func TestTheRussianTheDashboardReads(t *testing.T) {
 // never produce.
 func raw(payload string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(payload))
+}
+
+// The patient's refusal at the route, not at the mapper. Without this the branch in the handler can be
+// deleted whole and the refusal table stays green, because it only ever asks the mapper what it would
+// have said. The service is nil, so an answer that reached the database would be a 500 rather than a
+// pass.
+func TestAPatientAskingForTheRosterIsRefused(t *testing.T) {
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{
+				Subject: "8a1f3b7c-0000-4000-8000-000000000001",
+				Role:    patientRole,
+			})))
+		})
+	})
+	NewService(nil, nil, nil).Register(httpserver.NewAPI(router))
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
+	}
+
+	var problem struct {
+		Type   string `json:"type"`
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decoding the problem document: %v", err)
+	}
+
+	if problem.Type != httpserver.ProblemForbidden {
+		t.Errorf("type = %q, want %q", problem.Type, httpserver.ProblemForbidden)
+	}
+	if problem.Detail != detailRosterIsNotForPatients {
+		t.Errorf("detail = %q, want %q", problem.Detail, detailRosterIsNotForPatients)
+	}
+}
+
+// The operation and the statuses it declares, for the reason the session route's are: a status that
+// lives only in the description is a branch no generated client can write.
+func TestTheOverviewIsInTheContract(t *testing.T) {
+	api := httpserver.NewAPI(chi.NewRouter())
+	NewService(nil, nil, nil).Register(api)
+
+	document, err := api.OpenAPI().MarshalJSON()
+	if err != nil {
+		t.Fatalf("marshalling the document: %v", err)
+	}
+
+	var spec struct {
+		Paths map[string]struct {
+			Get struct {
+				Responses map[string]any `json:"responses"`
+			} `json:"get"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(document, &spec); err != nil {
+		t.Fatalf("decoding the document: %v", err)
+	}
+
+	operation, ok := spec.Paths["/v1/dashboard/overview"]
+	if !ok {
+		t.Fatalf("the document does not describe /v1/dashboard/overview; it has %v", spec.Paths)
+	}
+
+	for _, status := range []string{"200", "400", "401", "403", "503"} {
+		if _, declared := operation.Get.Responses[status]; !declared {
+			t.Errorf("the operation does not declare %s; it declares %v", status, operation.Get.Responses)
+		}
+	}
 }
