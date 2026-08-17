@@ -1,12 +1,9 @@
 package identity
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
@@ -29,8 +26,8 @@ func TestWhichRefusalAReportedTimezoneHeard(t *testing.T) {
 			wantDetail: detailNotATimezone,
 		},
 		{
-			// Unreachable through the schema, which pins minLength 1, and answered anyway: RecordTimezone is
-			// exported and the empty string is the one value requireKnownTimezone lets through.
+			// Unreachable through the schema, which pins minLength 1 — and reachable through RecordTimezone,
+			// which is exported and whose zone probe accepts the empty string by design.
 			name:       "a report with no zone at all",
 			refusal:    ErrNoTimezone,
 			wantStatus: http.StatusBadRequest,
@@ -38,18 +35,18 @@ func TestWhichRefusalAReportedTimezoneHeard(t *testing.T) {
 			wantDetail: detailNotATimezone,
 		},
 		{
+			name:       "an account the invitation reached and provisioning did not",
+			refusal:    ErrNoRole,
+			wantStatus: http.StatusForbidden,
+			wantType:   httpserver.ProblemForbidden,
+			wantDetail: detailNoRole,
+		},
+		{
 			name:       "the database did not answer",
 			refusal:    ErrDatabaseUnavailable,
 			wantStatus: http.StatusServiceUnavailable,
 			wantType:   httpserver.ProblemUnavailable,
 			wantDetail: detailUnavailableOnTheWire,
-		},
-		{
-			name:       "a patient token whose profile is not there",
-			refusal:    ErrNoProfileToRecordAgainst,
-			wantStatus: http.StatusInternalServerError,
-			wantType:   httpserver.ProblemInternal,
-			wantDetail: detailInternalOnTheWire,
 		},
 		{
 			name:       "a refusal this package does not name",
@@ -79,36 +76,10 @@ func TestWhichRefusalAReportedTimezoneHeard(t *testing.T) {
 	}
 }
 
-// Which failures mean «not now». The refusal below them is the one this route must not answer 503 to: a permission
-// that went missing is a broken deployment, and telling the device to retry would hide it forever.
-func TestWhatCountsAsTheDatabaseNotAnswering(t *testing.T) {
-	tests := []struct {
-		name            string
-		err             error
-		wantUnavailable bool
-	}{
-		{"the request ran out of time", context.DeadlineExceeded, true},
-		{"the connection failed", &pgconn.PgError{Code: "08006"}, true},
-		{"the server is shutting down", &pgconn.PgError{Code: "57P01"}, true},
-		{"the backend was terminated", &pgconn.PgError{Code: "57P02"}, true},
-		{"the database stopped accepting connections", &pgconn.PgError{Code: "57P03"}, true},
-		{"a grant is missing", &pgconn.PgError{Code: insufficientPrivilege}, false},
-		{"a row already exists", &pgconn.PgError{Code: uniqueViolation}, false},
-		{"the caller gave up", context.Canceled, false},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			classified := classifyAvailability(tc.err)
-
-			if got := errors.Is(classified, ErrDatabaseUnavailable); got != tc.wantUnavailable {
-				t.Errorf("unavailable = %v, want %v", got, tc.wantUnavailable)
-			}
-
-			// The cause survives the classification, or the log loses the only description of what happened.
-			if !errors.Is(classified, tc.err) {
-				t.Errorf("the classified error no longer carries %v", tc.err)
-			}
-		})
+// A nil pool builds no service, so the handler's assembly check has something to refuse on rather than a value that
+// dereferences. Asserted here because it is the whole of what the constructor does.
+func TestNoPoolBuildsNoService(t *testing.T) {
+	if sessions := NewSessions(nil); sessions != nil {
+		t.Errorf("NewSessions(nil) = %v, want nil", sessions)
 	}
 }

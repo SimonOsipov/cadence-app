@@ -75,8 +75,8 @@ func TestSessionWritesNothingForStaffAndSaysSo(t *testing.T) {
 	}
 }
 
-// A token with no role is refused rather than answered 204: silence here would make a regression of the issuance
-// hook indistinguishable from a write, on the one route every device calls on every launch.
+// An account the invitation reached and provisioning did not is refused rather than answered 204: nothing can be
+// written for it, and 204 would claim a write that did not happen.
 func TestSessionRefusesAnAccountWithNoRole(t *testing.T) {
 	principal := auth.Principal{Subject: "8a1f3b7c-0000-4000-8000-000000000004"}
 
@@ -87,9 +87,10 @@ func TestSessionRefusesAnAccountWithNoRole(t *testing.T) {
 		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
 	}
 
+	// The sentence itself is pinned by equality in TestWhichRefusalAReportedTimezoneHeard, which can see the
+	// constant; here the assertion is that the handler routes this case through that mapper at all.
 	var problem struct {
-		Type   string `json:"type"`
-		Detail string `json:"detail"`
+		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
 		t.Fatalf("decoding the problem document: %v", err)
@@ -97,9 +98,6 @@ func TestSessionRefusesAnAccountWithNoRole(t *testing.T) {
 
 	if problem.Type != httpserver.ProblemForbidden {
 		t.Errorf("type = %q, want %q", problem.Type, httpserver.ProblemForbidden)
-	}
-	if problem.Detail == "" || !strings.ContainsRune(problem.Detail, 'А') {
-		t.Errorf("detail = %q, want the Russian sentence", problem.Detail)
 	}
 }
 

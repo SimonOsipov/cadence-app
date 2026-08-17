@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
@@ -24,8 +22,13 @@ var ErrNoProfileToRecordAgainst = errors.New("the caller has no profile to recor
 var ErrNoTimezone = errors.New("the report carries no timezone")
 
 // ErrDatabaseUnavailable separates «repeat the request» from «quote the request id»: see the two 5xx shapes in the
-// api component note.
+// api component note. What counts as one is database.IsUnavailable's to decide, so that every route answers the
+// same question the same way.
 var ErrDatabaseUnavailable = errors.New("the database did not answer")
+
+// ErrNoRole is the account an invitation reached and provisioning has not. The hook removes the claim for a user
+// with no profile, and the seam has no Postgres role to assume for one.
+var ErrNoRole = errors.New("the caller has no product role")
 
 // The Russian the device reads. Neither names the zone it was given: the value came from the platform rather than
 // from the person holding the phone.
@@ -41,9 +44,9 @@ type Sessions struct {
 	pool *pgxpool.Pool
 }
 
-// NewSessions builds the service over the **request** pool: the row is the policy's choice and the column the
-// grant's, and through the service path both decisions would move into Go. A nil pool yields a nil service rather
-// than one that panics on first use.
+// NewSessions builds the service over the request pool: the row is the policy's choice and the column the grant's,
+// and through the service path both decisions would move into Go. A nil pool yields a nil service, which is the
+// document generator's assembly and is what the handler's own check refuses on.
 func NewSessions(pool *pgxpool.Pool) *Sessions {
 	if pool == nil {
 		return nil
@@ -68,8 +71,10 @@ func (s *Sessions) RecordTimezone(ctx context.Context, caller database.Caller, t
 			return err
 		}
 
+		// nullif for the same reason the patient's creation carries one: an empty string stored here is a zone
+		// nothing reports as missing. The guard above refuses it outright; this is the column's own defence.
 		tag, err := tx.Exec(ctx, `
-			UPDATE app.profiles SET timezone = $1 WHERE user_id = $2
+			UPDATE app.profiles SET timezone = nullif($1, '') WHERE user_id = $2
 		`, timezone, caller.Subject)
 		if err != nil {
 			return fmt.Errorf("recording the timezone: %w", err)
@@ -84,31 +89,14 @@ func (s *Sessions) RecordTimezone(ctx context.Context, caller database.Caller, t
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("recording the timezone of %s: %w", caller.Subject, classifyAvailability(err))
+		if database.IsUnavailable(err) {
+			return fmt.Errorf("recording the timezone of %s: %w: %w", caller.Subject, ErrDatabaseUnavailable, err)
+		}
+
+		return fmt.Errorf("recording the timezone of %s: %w", caller.Subject, err)
 	}
 
 	return nil
-}
-
-// classifyAvailability names the failures that mean «not now» rather than «broken».
-func classifyAvailability(err error) error {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("%w: %w", ErrDatabaseUnavailable, err)
-	}
-
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && isUnavailable(pgErr.Code) {
-		return fmt.Errorf("%w: %w", ErrDatabaseUnavailable, err)
-	}
-
-	return err
-}
-
-// isUnavailable: class 08 is connection failure, 57P01-03 are shutdown, termination, and a database that stopped
-// accepting connections.
-func isUnavailable(code string) bool {
-	return strings.HasPrefix(code, "08") ||
-		code == "57P01" || code == "57P02" || code == "57P03"
 }
 
 // SessionInput is the request body of POST /v1/me/session.
@@ -129,9 +117,9 @@ func (s *Service) recordSession(ctx context.Context, input *SessionInput) (*Sess
 		return nil, huma.Error401Unauthorized("no verified principal on the request context")
 	}
 
-	// A closed set rather than «anything that is not a patient»: a token whose role claim went missing is a
-	// regression of the issuance hook, and 204 would make it indistinguishable from a write on the one route every
-	// device calls on every launch.
+	// A closed set rather than «anything that is not a patient». An absent role is an ordinary state — the account
+	// was invited and not provisioned, which is what the issuance hook and the verifier both record — but it is
+	// still an account nothing can be written for, and 204 would claim a write that did not happen.
 	//
 	// Ahead of the assembly check on purpose, unlike the onboarding routes: what staff are answered is a statement
 	// of the contract rather than of what this process was built with.
@@ -140,7 +128,7 @@ func (s *Service) recordSession(ctx context.Context, input *SessionInput) (*Sess
 	case providerRole, adminRole:
 		return &SessionOutput{}, nil
 	default:
-		return nil, huma.Error403Forbidden(detailNoRole)
+		return nil, refusalForSession(fmt.Errorf("%q: %w", principal.Role, ErrNoRole))
 	}
 
 	if s.sessions == nil {
@@ -160,13 +148,11 @@ func refusalForSession(err error) error {
 	case errors.Is(err, ErrUnknownTimezone), errors.Is(err, ErrNoTimezone):
 		return huma.Error400BadRequest(detailNotATimezone)
 
+	case errors.Is(err, ErrNoRole):
+		return huma.Error403Forbidden(detailNoRole)
+
 	case errors.Is(err, ErrDatabaseUnavailable):
 		return huma.Error503ServiceUnavailable("the database did not answer", err)
-
-	// Named rather than left to the default, so «this account has no profile» is one line in the log and not an
-	// anonymous wrapped driver error.
-	case errors.Is(err, ErrNoProfileToRecordAgainst):
-		return huma.Error500InternalServerError("no profile to record the timezone against", err)
 
 	default:
 		return huma.Error500InternalServerError("recording the timezone", err)

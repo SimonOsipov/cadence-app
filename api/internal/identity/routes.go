@@ -53,6 +53,9 @@ func (s *Service) Register(api huma.API) {
 			"Answers 400 when a patient's zone is not one the server knows, 403 when the account has no " +
 			"role yet, and 503 when the database did not answer.",
 		Tags: []string{"identity"},
+		// Declared rather than left to the default response: both client surfaces are generated from this
+		// document, and a status that exists only in the prose above is a branch neither of them can write.
+		Errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable},
 	}, s.recordSession)
 
 	huma.Register(api, huma.Operation{

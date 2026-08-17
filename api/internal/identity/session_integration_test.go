@@ -17,9 +17,10 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// What all three profiles start out reporting, written by the helper below rather than inherited from stand's
-// literals: a test asserting a row was left alone must not rest on a value another file happens to seed.
-const seededZone = "Europe/Moscow"
+// What all three profiles start out reporting. Deliberately not stand's own 'Europe/Moscow': with that value the
+// helper's UPDATE below would be a no-op, and «the fixture owns the starting value» would be a claim the suite
+// cannot fail on.
+const seededZone = "Asia/Yekaterinburg"
 
 // standWithAPatient adds the patient, puts the doctor on their care team, and builds the service over the request
 // pool. The care team is not decoration: without it the patient can read no profile but their own, and «nobody
@@ -137,10 +138,35 @@ func TestTheFirstReportFillsAnEmptyTimezone(t *testing.T) {
 	}
 }
 
+// The zones the clinic's own patients report. Asserted because the accepted set is the server's tzdata rather than
+// ours: an image built with a trimmed one would refuse every device in a region and nothing else here would notice.
+func TestASessionAcceptsTheZonesTheClinicLivesIn(t *testing.T) {
+	for _, zone := range []string{
+		"Europe/Moscow",
+		"Europe/Kaliningrad",
+		"Asia/Yekaterinburg",
+		"Asia/Vladivostok",
+		"Asia/Tbilisi",
+	} {
+		t.Run(zone, func(t *testing.T) {
+			sessions, db := standWithAPatient(t)
+
+			rec := report(t, sessions, auth.Principal{Subject: patientID, Role: "patient"}, zone)
+
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want 204; body %s", rec.Code, rec.Body)
+			}
+			if got := zoneOf(t, db, patientID); got != zone {
+				t.Errorf("the patient's timezone is %q, want %q", got, zone)
+			}
+		})
+	}
+}
+
 // The spellings the probe must refuse. Whole-name equality is the claim, and each row is a mutation of it that one
 // absurd value would not catch: a prefix survives LIKE $1 || '%', the wrong case survives ILIKE, and a fragment
-// survives position($1 in name) > 0. Any of them would be stored verbatim and break the first AT TIME ZONE
-// downstream.
+// survives position($1 in name) > 0. «MSK» is the fourth axis — it is a real zone, but it lives in
+// pg_timezone_abbrevs rather than pg_timezone_names, so it catches a probe that reads the wrong catalogue.
 func TestASessionRefusesAZoneTheServerDoesNotKnow(t *testing.T) {
 	for _, zone := range []string{
 		"Mars/Olympus",
@@ -222,6 +248,23 @@ func TestRecordingRefusesWhenThereIsNoProfileToRecordAgainst(t *testing.T) {
 	err := sessions.RecordTimezone(t.Context(), stranger, "Asia/Tbilisi")
 	if !errors.Is(err, identity.ErrNoProfileToRecordAgainst) {
 		t.Fatalf("recording against a missing profile answered %v, want ErrNoProfileToRecordAgainst", err)
+	}
+}
+
+// The guard on the empty zone, which the schema makes unreachable through the route and RecordTimezone does not:
+// requireKnownTimezone accepts «» as «not measured yet», so without this the column takes an empty string that
+// nothing downstream reports as missing.
+func TestRecordingRefusesAReportWithNoZone(t *testing.T) {
+	sessions, db := standWithAPatient(t)
+
+	caller := database.Caller{Subject: patientID, Role: "patient"}
+
+	err := sessions.RecordTimezone(t.Context(), caller, "")
+	if !errors.Is(err, identity.ErrNoTimezone) {
+		t.Fatalf("recording an empty zone answered %v, want ErrNoTimezone", err)
+	}
+	if got := zoneOf(t, db, patientID); got != seededZone {
+		t.Errorf("the patient's timezone is %q, want it untouched at %q", got, seededZone)
 	}
 }
 
