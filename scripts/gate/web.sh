@@ -115,27 +115,42 @@ npm run --silent lint
 # tokens/. stylelint was declined — a second linter and a second config for one rule
 # — so the rule is a grep.
 #
-# find -exec rather than a word-split variable, and the status read rather than
-# swallowed. A path with a space split into two unreadable ones, grep answered 2,
-# `|| true` made that indistinguishable from «found nothing», and the check went
-# green having read nothing — with the errors on stderr where a green gate hides
-# them. The repository already carries such a path one directory away:
-# web/prototype/Doctor Dashboard.html.
+# One grep per file, and its own status read. Two shapes were tried and measured
+# broken before this one. A word-split variable let a path with a space split into
+# two unreadable ones, and `|| true` made grep's 2 indistinguishable from «found
+# nothing» — the repository already carries such a path a directory away,
+# web/prototype/Doctor Dashboard.html. Then `find -exec grep {} +`, which fixed the
+# splitting but not the reading: the status that comes back is find's, and find
+# collapses grep's 2 into its own 1 — measured, a healthy run and an unreadable file
+# both answer 1, so the threshold was dead.
 echo "==> var(--…) stays inside src/tokens"
-found=$(find src -name '*.css' -not -path 'src/tokens/*' | wc -l | tr -d ' ')
-if [ "$found" -eq 0 ]; then
-    echo "no stylesheet outside src/tokens was found, so this check measured nothing" >&2
-    exit 1
-fi
+listed=0
+searched=0
+loose=''
 
-set +e
-loose=$(find src -name '*.css' -not -path 'src/tokens/*' -exec grep -niE 'var[[:space:]]*\([[:space:]]*--' {} +)
-searched=$?
-set -e
+while IFS= read -r -d '' stylesheet; do
+    listed=$((listed + 1))
 
-# 1 is «no match» and anything above it is «could not read»; only the first is a pass.
-if [ "$searched" -gt 1 ]; then
-    echo "grep answered $searched over $found stylesheet(s), so this check measured nothing" >&2
+    set +e
+    found=$(grep -niE 'var[[:space:]]*\([[:space:]]*--' "$stylesheet")
+    status=$?
+    set -e
+
+    case "$status" in
+        0)
+            loose="$loose$stylesheet: $found"
+            searched=$((searched + 1))
+            ;;
+        1) searched=$((searched + 1)) ;;
+        *)
+            echo "grep answered $status for $stylesheet, so this check did not read it" >&2
+            exit 1
+            ;;
+    esac
+done < <(find src -name '*.css' -not -path 'src/tokens/*' -print0)
+
+if [ "$listed" -eq 0 ] || [ "$searched" -ne "$listed" ]; then
+    echo "read $searched of $listed stylesheet(s) outside src/tokens, so this check measured nothing" >&2
     exit 1
 fi
 
