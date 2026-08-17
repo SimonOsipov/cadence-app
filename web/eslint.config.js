@@ -44,6 +44,41 @@ export default tseslint.config(
     },
   },
   {
+    // Invariant 2 of the component note, given a mechanism. Every number the Overview shows arrives
+    // computed; the way it stops being true is a component reaching into the rows it was handed for one
+    // — `patients.filter(p => p.status === 'attention').length` is what the prototype does four times
+    // over, and it reads like nothing at all.
+    //
+    // The rule closes the *source*, not the arithmetic: a ban on Math.* would fire on sparkline
+    // geometry while letting `Math.max(...items)` through. `map` stays — that is how rows are drawn —
+    // and so does `length`, which answers how big this page is rather than how many patients there are.
+    // The aggregate for that is `total`, and it comes from the seam.
+    //
+    // Data and tests are exempt: computing these is exactly their job, and the fixture's own test
+    // checks the literals against the rows by doing the sums this forbids in a component.
+    files: ['src/features/**/*.{ts,tsx}'],
+    ignores: ['src/features/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.name=/^(items|patients|roster|triage|schedule)$/]" +
+            "[property.name=/^(reduce|reduceRight|filter|some|every|find|findIndex|flatMap|sort)$/]",
+          message:
+            'Take the number from the aggregates the seam returns — deriving it here makes the client a second source of truth for it.',
+        },
+        {
+          selector:
+            "MemberExpression[object.property.name=/^(items|triage|schedule)$/]" +
+            "[property.name=/^(reduce|reduceRight|filter|some|every|find|findIndex|flatMap|sort)$/]",
+          message:
+            'Take the number from the aggregates the seam returns — deriving it here makes the client a second source of truth for it.',
+        },
+      ],
+    },
+  },
+  {
     // scripts/ runs under Node rather than in the browser, and the config above declares neither.
     // Named one by one instead of pulling in a globals package: two entries, and a third would be as
     // obvious to add as this comment is to read.
