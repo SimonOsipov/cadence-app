@@ -35,6 +35,10 @@ type seededPatient struct {
 	dob  *time.Time
 	// Empty means nobody: a patient with no care team is what an admin sees and a doctor does not.
 	assignedTo string
+
+	// A profile with no clinical card. The creation path writes both rows in one transaction, so this
+	// is a state of the schema rather than of the product — and the join has to survive it.
+	noCard bool
 }
 
 // rosterStand seeds a clinic of patients and returns the service over the request pool.
@@ -59,10 +63,12 @@ func rosterStand(t *testing.T, patients ...seededPatient) (*identity.Roster, *te
 					return err
 				}
 
-				if _, err := tx.Exec(ctx, `
-					INSERT INTO app.patient_profiles (user_id, dob) VALUES ($1, $2)
-				`, patient.id, patient.dob); err != nil {
-					return err
+				if !patient.noCard {
+					if _, err := tx.Exec(ctx, `
+						INSERT INTO app.patient_profiles (user_id, dob) VALUES ($1, $2)
+					`, patient.id, patient.dob); err != nil {
+						return err
+					}
 				}
 
 				if patient.assignedTo == "" {
@@ -451,5 +457,27 @@ func TestTheMountedRouteRefusesAPatientsToken(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
+	}
+}
+
+// A patient whose clinical card is missing stays on the roster, without an age. The join is a LEFT one
+// for this: an inner join would take them off their own doctor's registry, and a patient who has
+// vanished from the screen is worse than one whose age is blank.
+func TestAPatientWithNoCardIsStillOnTheRoster(t *testing.T) {
+	roster, _ := rosterStand(
+		t,
+		seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID, noCard: true},
+	)
+
+	page, err := roster.Patients(t.Context(), database.Caller{Subject: doctorID, Role: "doctor"}, "", 8)
+	if err != nil {
+		t.Fatalf("reading the roster: %v", err)
+	}
+
+	if len(page.Patients) != 1 {
+		t.Fatalf("the roster is %v, want the patient whose card is missing", page.Patients)
+	}
+	if page.Patients[0].Age != nil {
+		t.Errorf("the age is %v, want none: there is no card to read a date of birth from", *page.Patients[0].Age)
 	}
 }
