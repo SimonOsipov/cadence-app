@@ -95,6 +95,16 @@ func TestWhatAPatientCreationIsRefusedWith(t *testing.T) {
 			wantDetail: detailAlreadyOnboarded,
 		},
 		{
+			// The address is mid-hire. «Уже заведён» would be the wrong sentence twice over: there is no such
+			// patient to look for, and the person who can resolve it is the administrator rather than this doctor.
+			name:           "the address holds an unfinished hire",
+			refusal:        ErrInvitedAsSomethingElse,
+			wantStatus:     http.StatusConflict,
+			wantType:       httpserver.ProblemConflict,
+			wantDetail:     detailInvitedAsStaff,
+			notTheSentence: detailAlreadyOnboarded,
+		},
+		{
 			// The creation that raced past the claim rule and was refused by the profiles primary key: the same
 			// answer, because what the doctor has to do about it is the same.
 			name:       "the profile was written by somebody who got there first",

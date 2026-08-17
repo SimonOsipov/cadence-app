@@ -10,11 +10,11 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
-// CreatePatientInput is the request body of POST /v1/patients.
 // patientRole is what this route invites for. The invite record carries it so a creation interrupted before its
 // profile still says what it was; ClaimFor's role arm is what reads it back.
 const patientRole = "patient"
 
+// CreatePatientInput is the request body of POST /v1/patients.
 type CreatePatientInput struct {
 	Body NewPatientBody
 }

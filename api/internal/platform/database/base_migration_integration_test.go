@@ -808,6 +808,16 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 				WHERE n.nspname = $1 AND a.attnum > 0 AND NOT a.attisdropped
 				  AND c.relkind IN ('r', 'p', 'v', 'm')
 				UNION ALL
+				-- Constraints, for the same reason and the next case over: a
+				-- migration whose whole content is ADD CONSTRAINT leaves the
+				-- relation list and the column list alike untouched.
+				SELECT 'k ' || c.relname || ' ' || con.conname || ' ' ||
+				       pg_catalog.pg_get_constraintdef(con.oid)
+				FROM pg_constraint con
+				JOIN pg_class c ON c.oid = con.conrelid
+				JOIN pg_namespace n ON n.oid = con.connamespace
+				WHERE n.nspname = $1
+				UNION ALL
 				SELECT 'p ' || tablename || ' ' || policyname || ' ' || cmd || ' ' ||
 				       coalesce(qual, '-') || ' | ' || coalesce(with_check, '-')
 				FROM pg_policies WHERE schemaname = $1

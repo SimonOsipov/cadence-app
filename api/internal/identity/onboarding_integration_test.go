@@ -1050,8 +1050,10 @@ func TestAStaffCreationInterruptedBeforeItsProfileIsNotClaimedAsAPatient(t *test
 	// A doctor who knows the pending address tries to create a patient on it.
 	stolen := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor))
 
-	if stolen.status == http.StatusCreated {
-		t.Errorf("a doctor claimed a half-created member of staff as a patient: %s", stolen.body)
+	// The status, not merely «not 201»: the refusal has a sentence of its own, and a fall through to the default
+	// 500 would satisfy an inequality while telling the doctor nothing.
+	if stolen.status != http.StatusConflict {
+		t.Errorf("the claim of a half-created member of staff answered %d, want 409: %s", stolen.status, stolen.body)
 	}
 
 	if patients := clinic.countPatients(t, address); patients != 0 {

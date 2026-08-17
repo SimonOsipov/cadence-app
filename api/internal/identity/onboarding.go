@@ -69,8 +69,8 @@ type Held struct {
 	Invite  bool
 	Profile bool
 
-	// Empty when there is no invite record, and — for rows written before migration 000010 — never, since the
-	// column is NOT NULL with no default.
+	// Empty only when there is no invite record: the column is NOT NULL with no default, and the !Invite arm
+	// settles before this is ever compared.
 	InvitedRole string
 }
 

@@ -40,7 +40,11 @@ type CreatedProvider struct {
 const providerRole = "doctor"
 
 // The Russian the administrator reads when the address is already carrying somebody else's unfinished creation.
-const detailInvitedAsPatient = "На этот адрес врач заводит пациента. Адрес освободится, когда это заведение завершится."
+// It does not promise the address back: whichever way the doctor's creation ends, this route cannot have it. Finished,
+// a patient profile exists and RefuseAlreadyOnboarded settles every later request; abandoned, the invite row stays,
+// because no role holds DELETE on app.invites.
+const detailInvitedAsPatient = "На этот адрес врач заводит пациента, и освободить его этот маршрут не может. " +
+	"Заведите сотрудника на другой адрес."
 
 // The Russian an administrator reads, where the patient route's sentence would be wrong for them.
 const (

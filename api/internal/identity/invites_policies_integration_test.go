@@ -515,26 +515,33 @@ func TestTheOwnerSignsItsAuditRowWithAJobAndNeverAsAPerson(t *testing.T) {
 func TestAnInvitationCannotBeRecordedWithoutSayingWhatItIsFor(t *testing.T) {
 	c := newClinic(t)
 
+	// The SQLSTATE and not merely a refusal: «no role at all» exists to fail against a DEFAULT, and a bare
+	// err != nil is equally green when the row is refused for something else entirely — a predicate added to
+	// invites_doctor_insert, a renamed column, a foreign key. Then the subcase passes while measuring nothing.
 	for _, tc := range []struct {
 		name      string
 		statement string
 		args      []any
+		want      string
 	}{
 		{
 			name:      "no role at all",
 			statement: `INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)`,
 			args:      []any{inviteeID, inviteeAddress, doctorID},
+			want:      "23502",
 		},
 		{
 			name:      "an explicit NULL",
 			statement: `INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, NULL)`,
 			args:      []any{inviteeID, inviteeAddress, doctorID},
+			want:      "23502",
 		},
 		{
 			// Not a role profiles.role accepts, so an invitation for it could never be completed.
 			name:      "a role no profile can carry",
 			statement: `INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'nurse')`,
 			args:      []any{inviteeID, inviteeAddress, doctorID},
+			want:      "23514",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -545,6 +552,11 @@ func TestAnInvitationCannotBeRecordedWithoutSayingWhatItIsFor(t *testing.T) {
 			})
 			if err == nil {
 				t.Fatal("the row was recorded, so the invitation says nothing about what it was for")
+			}
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != tc.want {
+				t.Fatalf("refused with %v, want SQLSTATE %s", err, tc.want)
 			}
 		})
 	}
