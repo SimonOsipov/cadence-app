@@ -507,11 +507,7 @@ func TestTheOwnerSignsItsAuditRowWithAJobAndNeverAsAPerson(t *testing.T) {
 
 // The column the whole role arm rests on, checked at the schema rather than at the caller. Both halves fail closed:
 // a statement that forgets the role is refused instead of recording a guess, and a role outside the closed set is
-// refused instead of becoming one ClaimFor can never match.
-//
-// The first is the load-bearing one. With a DEFAULT — the obvious way to make this column easy to add — the omitting
-// statement below would succeed and write 'patient', reopening the window this column closes, in the column whose
-// only job is to keep it shut.
+// refused instead of becoming one ClaimFor can never match. 000010's header states why the first has no DEFAULT.
 func TestAnInvitationCannotBeRecordedWithoutSayingWhatItIsFor(t *testing.T) {
 	c := newClinic(t)
 
