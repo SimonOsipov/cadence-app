@@ -14,7 +14,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 41,
     "initial": "М",
     "compound": "Семаглутид",
-    "dose": "1,0 мг",
+    "dose": {
+      "value": 1,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 12,
     "cycleLength": 12,
@@ -81,7 +84,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 47,
     "initial": "О",
     "compound": "Тирзепатид",
-    "dose": "5,0 мг",
+    "dose": {
+      "value": 5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 5,
     "cycleLength": 12,
@@ -148,7 +154,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 35,
     "initial": "С",
     "compound": "Семаглутид",
-    "dose": "0,5 мг",
+    "dose": {
+      "value": 0.5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 7,
     "cycleLength": 12,
@@ -215,7 +224,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 52,
     "initial": "Д",
     "compound": "Тесаморелин",
-    "dose": "2,0 мг",
+    "dose": {
+      "value": 2,
+      "unit": "мг"
+    },
     "cadence": "ежедневно",
     "week": 9,
     "cycleLength": 12,
@@ -282,7 +294,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 38,
     "initial": "А",
     "compound": "Семаглутид",
-    "dose": "0,25 мг",
+    "dose": {
+      "value": 0.25,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 2,
     "cycleLength": 12,
@@ -348,7 +363,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 44,
     "initial": "П",
     "compound": "BPC-157",
-    "dose": "250 мкг",
+    "dose": {
+      "value": 250,
+      "unit": "мкг"
+    },
     "cadence": "ежедневно",
     "week": 4,
     "cycleLength": 8,
@@ -414,7 +432,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 49,
     "initial": "И",
     "compound": "Тирзепатид",
-    "dose": "2,5 мг",
+    "dose": {
+      "value": 2.5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 3,
     "cycleLength": 12,
@@ -480,7 +501,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 56,
     "initial": "В",
     "compound": "CJC-1295",
-    "dose": "100 мкг",
+    "dose": {
+      "value": 100,
+      "unit": "мкг"
+    },
     "cadence": "2× в неделю",
     "week": 6,
     "cycleLength": 10,
@@ -546,7 +570,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 36,
     "initial": "Е",
     "compound": "Семаглутид",
-    "dose": "1,0 мг",
+    "dose": {
+      "value": 1,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 10,
     "cycleLength": 12,
@@ -610,7 +637,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 43,
     "initial": "Р",
     "compound": "Тирзепатид",
-    "dose": "7,5 мг",
+    "dose": {
+      "value": 7.5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 8,
     "cycleLength": 12,
@@ -674,7 +704,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 39,
     "initial": "Н",
     "compound": "Семаглутид",
-    "dose": "0,5 мг",
+    "dose": {
+      "value": 0.5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 6,
     "cycleLength": 12,
@@ -738,7 +771,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 50,
     "initial": "А",
     "compound": "Ипаморелин",
-    "dose": "200 мкг",
+    "dose": {
+      "value": 200,
+      "unit": "мкг"
+    },
     "cadence": "ежедневно",
     "week": 5,
     "cycleLength": 10,
@@ -802,7 +838,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 33,
     "initial": "Ю",
     "compound": "Семаглутид",
-    "dose": "0,25 мг",
+    "dose": {
+      "value": 0.25,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 3,
     "cycleLength": 12,
@@ -866,7 +905,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 46,
     "initial": "М",
     "compound": "TB-500",
-    "dose": "2,0 мг",
+    "dose": {
+      "value": 2,
+      "unit": "мг"
+    },
     "cadence": "2× в неделю",
     "week": 7,
     "cycleLength": 8,
@@ -930,7 +972,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 54,
     "initial": "Г",
     "compound": "Тирзепатид",
-    "dose": "5,0 мг",
+    "dose": {
+      "value": 5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 11,
     "cycleLength": 12,
@@ -994,7 +1039,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 41,
     "initial": "С",
     "compound": "Семаглутид",
-    "dose": "1,0 мг",
+    "dose": {
+      "value": 1,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 9,
     "cycleLength": 12,
@@ -1058,7 +1106,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 37,
     "initial": "К",
     "compound": "Ретатрутид",
-    "dose": "4,0 мг",
+    "dose": {
+      "value": 4,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 4,
     "cycleLength": 12,
@@ -1122,7 +1173,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 58,
     "initial": "Б",
     "compound": "Тесаморелин",
-    "dose": "1,0 мг",
+    "dose": {
+      "value": 1,
+      "unit": "мг"
+    },
     "cadence": "ежедневно",
     "week": 8,
     "cycleLength": 12,
@@ -1186,7 +1240,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 45,
     "initial": "В",
     "compound": "Семаглутид",
-    "dose": "0,5 мг",
+    "dose": {
+      "value": 0.5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 5,
     "cycleLength": 12,
@@ -1250,7 +1307,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 42,
     "initial": "Т",
     "compound": "Тирзепатид",
-    "dose": "10,0 мг",
+    "dose": {
+      "value": 10,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 10,
     "cycleLength": 12,
@@ -1314,7 +1374,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 51,
     "initial": "Л",
     "compound": "CJC-1295",
-    "dose": "100 мкг",
+    "dose": {
+      "value": 100,
+      "unit": "мкг"
+    },
     "cadence": "2× в неделю",
     "week": 6,
     "cycleLength": 10,
@@ -1378,7 +1441,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 39,
     "initial": "Е",
     "compound": "Семаглутид",
-    "dose": "0,25 мг",
+    "dose": {
+      "value": 0.25,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 1,
     "cycleLength": 12,
@@ -1442,7 +1508,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 34,
     "initial": "А",
     "compound": "Ипаморелин",
-    "dose": "200 мкг",
+    "dose": {
+      "value": 200,
+      "unit": "мкг"
+    },
     "cadence": "ежедневно",
     "week": 7,
     "cycleLength": 10,
@@ -1506,7 +1575,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 48,
     "initial": "Н",
     "compound": "Тирзепатид",
-    "dose": "5,0 мг",
+    "dose": {
+      "value": 5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 9,
     "cycleLength": 12,
@@ -1570,7 +1642,10 @@ export const PATIENTS: readonly Patient[] = [
     "age": 40,
     "initial": "Д",
     "compound": "Семаглутид",
-    "dose": "0,5 мг",
+    "dose": {
+      "value": 0.5,
+      "unit": "мг"
+    },
     "cadence": "еженедельно",
     "week": 4,
     "cycleLength": 12,

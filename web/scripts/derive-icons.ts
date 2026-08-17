@@ -55,11 +55,22 @@ if (available.size === 0) {
   throw new Error(`${HEROICONS} yielded no icons, so this derivation measured nothing`)
 }
 
-const namesIn = (files: string[]): Set<string> => {
+/**
+ * Every quoted string that names an icon, intersected with what heroicons carries.
+ *
+ * `narrow` is for our own source, where the call shape is ours to control: `name="…"`, `icon: '…'` and
+ * `icon="…"`. Measured — without it, `export type View = 'calendar' | 'list'` anywhere under src/
+ * silently put `calendar` in the bundle, one of the three icons this MVP dropped. The prototype gets
+ * the wide sweep because its call shapes are somebody else's and a syntax list missed one of 22.
+ */
+const namesIn = (files: string[], narrow = false): Set<string> => {
+  const pattern = narrow
+    ? /(?:\bname=|\bicon[:=])\s*[{]?\s*['"]([a-z0-9-]+)['"]/g
+    : /['"]([a-z0-9-]+)['"]/g
   const quoted = new Set<string>()
 
   for (const file of files) {
-    for (const [, text] of readFileSync(file, 'utf8').matchAll(/['"]([a-z0-9-]+)['"]/g)) {
+    for (const [, text] of readFileSync(file, 'utf8').matchAll(pattern)) {
       if (text && available.has(text)) quoted.add(text)
     }
   }
@@ -73,10 +84,20 @@ if (vocabulary.size === 0) {
 }
 
 const sources = readdirSync(APPLICATION, { recursive: true, encoding: 'utf8' })
-  .filter((entry) => /\.(ts|tsx)$/.test(entry) && entry !== 'icons/icons.ts')
+  // Tests and probes are not screens. Two icons reached the shipped bundle through icon.test.tsx —
+  // one of them named inside an assertion rather than drawn — which made «the set is what src/**
+  // draws» false for 2 of 13.
+  .filter(
+    (entry) =>
+      /\.(ts|tsx)$/.test(entry) &&
+      entry !== 'icons/icons.ts' &&
+      !/\.test\.tsx?$/.test(entry) &&
+      !entry.includes('__probes__'),
+  )
   .map((entry) => join(APPLICATION, entry))
 
-const invented = [...namesIn(sources)].filter((name) => !vocabulary.has(name))
+const drawnHere = namesIn(sources, true)
+const invented = [...drawnHere].filter((name) => !vocabulary.has(name))
 if (invented.length > 0) {
   throw new Error(
     `the dashboard names ${invented.join(', ')}, which the prototype never drew — the design decides ` +
@@ -84,7 +105,7 @@ if (invented.length > 0) {
   )
 }
 
-const drawn = [...namesIn(sources)].sort()
+const drawn = [...drawnHere].sort()
 
 if (drawn.length === 0) {
   throw new Error('the application names no icon at all, which cannot be right')

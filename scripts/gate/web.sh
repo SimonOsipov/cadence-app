@@ -108,6 +108,24 @@ node scripts/derive-icons.ts --check
 echo "==> eslint"
 npm run --silent lint
 
+# The two rules that carry acceptance criteria, checked rather than assumed. A typo in an esquery
+# selector leaves the gate green for ever: there are no violations in the source, so a rule matching
+# nothing looks exactly like a rule everything obeys. The probes violate on purpose, are ignored by an
+# ordinary run, and are linted here with the count required — measured, one of these rules was silently
+# switched off over every component by a second config block, and nothing noticed.
+echo "==> the lint rules still refuse what they are for"
+for probe in aggregates:6 css-variables:2; do
+    file="src/features/__probes__/${probe%%:*}.tsx"
+    want="${probe##*:}"
+    got=$(npx eslint --no-ignore "$file" 2>&1 | grep -c 'no-restricted-syntax' || true)
+
+    if [ "$got" -ne "$want" ]; then
+        echo "$file drew $got refusals, want $want — the rule is not refusing what it was written for" >&2
+        npx eslint --no-ignore "$file" >&2 || true
+        exit 1
+    fi
+done
+
 # The other half of the same criterion. ESLint holds `var(--…)` to src/tokens/ for
 # the files it parses; it parses no CSS, and src/fonts/fonts.css is already outside
 # tokens/. stylelint was declined — a second linter and a second config for one rule

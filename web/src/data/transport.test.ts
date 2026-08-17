@@ -34,6 +34,26 @@ describe('the roster page', () => {
     expect(new Set(seen).size).toBe(seen.length)
   })
 
+  // What makes the empty state unreachable in the browser, and therefore the property the screen's
+  // «Никого не нашлось» rests on. Measured: a cursor that always names the last row of the page
+  // survives the whole walk above — the extra empty page simply ends the loop — so the walk cannot
+  // stand in for this.
+  it('offers no page after the last one that has rows', async () => {
+    let cursor: string | null = null
+    let pages = 0
+    let last: Awaited<ReturnType<typeof transport.roster>> | undefined
+
+    do {
+      last = await transport.roster({ filter: 'all', cursor })
+      cursor = last.cursor
+      pages += 1
+    } while (cursor !== null)
+
+    expect(pages).toBe(Math.ceil(PATIENTS.length / PAGE_SIZE))
+    expect(last?.items.length).toBeGreaterThan(0)
+    expect(last?.cursor).toBeNull()
+  })
+
   it('filters on the far side of the seam', async () => {
     const attention = await transport.roster({ filter: 'attention' })
 

@@ -14,7 +14,7 @@ export function FlagPill({ kind, small = false }: { kind: FlagKind; small?: bool
         alignItems: 'center',
         gap: 5,
         padding: small ? '3px 8px' : '4px 10px',
-        borderRadius: 999,
+        borderRadius: tokens.rPill,
         background: flag.bg,
         color: flag.fg,
         fontFamily: tokens.fontBody,
@@ -36,7 +36,7 @@ export function StatusDot({ status }: { status: Patient['status'] }) {
     <span
       role="img"
       aria-label={STATUS_LABEL[status]}
-      style={{ width: 8, height: 8, borderRadius: 999, background: colour, display: 'inline-block' }}
+      style={{ width: 8, height: 8, borderRadius: tokens.rPill, background: colour, display: 'inline-block' }}
     />
   )
 }
@@ -60,13 +60,13 @@ export function Spark({ points, tone }: { points: readonly number[]; tone: strin
 export function GoalBar({ patient }: { patient: Patient }) {
   return (
     <div>
-      <div style={{ height: 6, background: tokens.linen, borderRadius: 999, overflow: 'hidden' }}>
+      <div style={{ height: 6, background: tokens.linen, borderRadius: tokens.rPill, overflow: 'hidden' }}>
         <div
           style={{
             height: '100%',
             width: `${Math.min(patient.goalProgressPct, 100)}%`,
             background: tokens.forest600,
-            borderRadius: 999,
+            borderRadius: tokens.rPill,
           }}
         />
       </div>

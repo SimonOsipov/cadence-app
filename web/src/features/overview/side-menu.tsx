@@ -40,10 +40,17 @@ export function SideMenu({ current, unread }: { current: string; unread: number 
         {DESTINATIONS.map((destination) => {
           const here = destination.id === current
 
+          // A span and not a link for anything that is not this screen. The Messages screen is another
+          // block's, there is no router, and an <a href> here reloaded the page and served the Overview
+          // back with «Обзор» marked current — the one control that promised what it could not do,
+          // while the comparison callout justifies removing five others on exactly that ground. The
+          // criterion mandates the item, so it is recorded rather than removed.
+          const Element = here ? 'a' : 'span'
+
           return (
-            <a
+            <Element
               key={destination.id}
-              href={`/${destination.id}`}
+              {...(here ? { href: `/${destination.id}` } : { 'aria-disabled': true })}
               aria-current={here ? 'page' : undefined}
               style={{
                 display: 'flex',
@@ -69,14 +76,14 @@ export function SideMenu({ current, unread }: { current: string; unread: number 
                     fontSize: 11,
                     background: tokens.sand500,
                     color: tokens.forest900,
-                    borderRadius: 999,
+                    borderRadius: tokens.rPill,
                     padding: '1px 7px',
                   }}
                 >
                   {whole(unread)}
                 </span>
               )}
-            </a>
+            </Element>
           )
         })}
       </nav>

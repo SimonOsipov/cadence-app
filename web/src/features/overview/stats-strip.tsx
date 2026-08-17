@@ -51,12 +51,12 @@ export function StatsStrip({ aggregates }: { aggregates: OverviewAggregates }) {
             boxShadow: tokens.shadowXs,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: tokens.ink500 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: tokens.s3, color: tokens.ink500 }}>
             <Icon name={card.icon} size={16} />
             <span style={{ fontFamily: tokens.fontBody, fontSize: 12.5 }}>{card.label}</span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: tokens.s2, marginTop: 10 }}>
             <span style={{ fontFamily: tokens.fontDisplay, fontSize: 30, color: tokens.ink900 }}>
               {card.value}
             </span>

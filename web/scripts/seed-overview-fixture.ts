@@ -31,6 +31,16 @@ const BIOMARKERS = [
   { key: 'sleep', label: 'Сон', unit: '/100', range: { min: 75 } },
 ]
 
+/** «0,25 мг» back into the quantity it was before somebody wrote it out. */
+function splitDose(written: string): { value: number; unit: string } {
+  const parsed = /^([\d,.]+)\s*(.+)$/.exec(written.trim())
+  if (!parsed?.[1] || !parsed[2]) {
+    throw new Error(`the prototype writes the dose as "${written}", which is not a quantity and a unit`)
+  }
+
+  return { value: Number(parsed[1].replace(',', '.')), unit: parsed[2] }
+}
+
 const within = (value: number, range: { min?: number; max?: number }) =>
   (range.min === undefined || value >= range.min) && (range.max === undefined || value <= range.max)
 
@@ -40,7 +50,7 @@ const patients = prototype.PATIENTS.map((p: any) => ({
   age: p.age,
   initial: p.initial,
   compound: p.compound,
-  dose: p.dose,
+  dose: splitDose(p.dose),
   cadence: p.cadence,
   week: p.week,
   cycleLength: p.cycleLen,

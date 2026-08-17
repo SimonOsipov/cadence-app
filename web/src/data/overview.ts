@@ -35,7 +35,14 @@ export type Patient = {
   initial: string
 
   compound: string
-  dose: string
+
+  /**
+   * A quantity and not a sentence. The fixture used to carry «0,25 мг» already rendered, which is the
+   * rule this project states outright — numbers are data, formatting is presentation — broken in the
+   * one place it names as its example.
+   */
+  dose: { value: number; unit: string }
+
   cadence: string
   week: number
   cycleLength: number

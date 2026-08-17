@@ -57,10 +57,7 @@ export function OverviewPage() {
         <StatsStrip aggregates={aggregates} />
         <Triage patients={triage} onOpen={setOpened} />
 
-        {roster.isError ? (
-          <Failed error={roster.error} onRetry={() => void roster.refetch()} />
-        ) : (
-          <Roster
+        <Roster
             page={roster.data}
             aggregates={aggregates}
             filter={filter}
@@ -73,8 +70,9 @@ export function OverviewPage() {
             onPage={setCursor}
             onOpen={setOpened}
             loading={roster.isFetching}
+            error={roster.isError ? roster.error : undefined}
+            onRetry={() => void roster.refetch()}
           />
-        )}
 
         <Schedule entries={schedule} />
       </main>
@@ -109,7 +107,7 @@ function Failed({ error, onRetry }: { error: Error; onRetry: () => void }) {
           fontFamily: tokens.fontBody,
           fontSize: 13,
           padding: '8px 16px',
-          borderRadius: 999,
+          borderRadius: tokens.rPill,
           border: `1px solid ${tokens.borderStrong}`,
           background: tokens.paper,
           cursor: 'pointer',

@@ -64,6 +64,25 @@ describe('the triage row', () => {
   })
 })
 
+// The field exists because the screen used to show a raw id for anyone off the current roster page.
+// Nothing checked that the denormalised copy names the right person — which is the one way this field
+// can be wrong.
+describe('the schedule', () => {
+  it.each(OVERVIEW.schedule.map((entry) => [entry.id, entry] as const))(
+    '%s names the patient it points at',
+    (_, entry) => {
+      const patient = PATIENTS.find((candidate) => candidate.id === entry.patientId)
+
+      expect(patient, `${entry.patientId} is in the roster`).toBeDefined()
+      expect(entry.patientName).toBe(patient?.name)
+    },
+  )
+
+  it('carries entries in more than one state, so the screen draws more than one', () => {
+    expect(new Set(OVERVIEW.schedule.map((entry) => entry.state)).size).toBeGreaterThan(1)
+  })
+})
+
 describe('what each patient carries already worked out', () => {
   it.each(PATIENTS.map((patient) => [patient.name, patient] as const))(
     '%s has lost what their weights say',
@@ -95,6 +114,15 @@ describe('what each patient carries already worked out', () => {
       expect(marker.withinRange).toBe(inside)
     },
   )
+
+  // The rule this project states with «0,25 мг» as its own example. A dose written out in the data is
+  // a formatting decision taken where the data lives.
+  it('carries the dose as a quantity rather than a sentence', () => {
+    for (const patient of PATIENTS) {
+      expect(typeof patient.dose.value).toBe('number')
+      expect(patient.dose.unit).not.toMatch(/[\d,]/)
+    }
+  })
 
   it('carries a range for every biomarker, so no verdict rests on nothing', () => {
     for (const patient of PATIENTS) {

@@ -27,6 +27,8 @@ export function Roster({
   onPage,
   onOpen,
   loading,
+  error,
+  onRetry,
 }: {
   page: RosterPage | undefined
   aggregates: OverviewAggregates
@@ -35,6 +37,12 @@ export function Roster({
   onPage: (cursor: string | null) => void
   onOpen: (patient: Patient) => void
   loading: boolean
+
+  /** Shown in place of the rows. The tabs and the pager stay: a doctor whose journal failed still has
+   * to be able to change the filter or go back to the first page, and replacing the whole section with
+   * an error takes both away. */
+  error?: Error | undefined
+  onRetry?: (() => void) | undefined
 }) {
   return (
     <section style={{ marginBottom: 40 }} aria-label="Журнал протоколов">
@@ -56,7 +64,7 @@ export function Roster({
                 fontSize: 13,
                 fontWeight: 500,
                 padding: '7px 14px',
-                borderRadius: 999,
+                borderRadius: tokens.rPill,
                 cursor: 'pointer',
                 background: on ? tokens.ink900 : 'transparent',
                 color: on ? tokens.cream : tokens.ink600,
@@ -88,7 +96,7 @@ export function Roster({
           style={{
             display: 'grid',
             gridTemplateColumns: '1.7fr 1.25fr 0.8fr 1.15fr',
-            gap: 16,
+            gap: tokens.s5,
             padding: '12px 18px',
             borderBottom: `1px solid ${tokens.bone}`,
             background: tokens.cream,
@@ -111,7 +119,17 @@ export function Roster({
           ))}
         </div>
 
-        {page === undefined ? (
+        {error !== undefined ? (
+          <div role="alert" style={{ padding: '36px 18px', textAlign: 'center', fontFamily: tokens.fontBody }}>
+            <p style={{ color: tokens.ink800, margin: 0 }}>Не удалось загрузить журнал.</p>
+            <p style={{ color: tokens.ink500, fontSize: 13 }}>{error.message}</p>
+            {onRetry !== undefined && (
+              <button type="button" onClick={onRetry} style={pagerStyle}>
+                Повторить
+              </button>
+            )}
+          </div>
+        ) : page === undefined ? (
           <p style={{ padding: '44px 18px', textAlign: 'center', fontFamily: tokens.fontBody, color: tokens.ink500 }}>
             Загружаем журнал…
           </p>
@@ -128,7 +146,7 @@ export function Roster({
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1.7fr 1.25fr 0.8fr 1.15fr',
-                gap: 16,
+                gap: tokens.s5,
                 width: '100%',
                 textAlign: 'left',
                 padding: '14px 18px',
@@ -144,10 +162,10 @@ export function Roster({
                 {patient.name}
               </span>
               <span style={{ color: tokens.ink600, fontSize: 13 }}>
-                {patient.compound} · {patient.dose}
+                {patient.compound} · {quantity(patient.dose.value, patient.dose.unit, 2)}
               </span>
               <span style={{ color: tokens.ink600, fontSize: 13, fontFamily: tokens.fontMono }}>
-                {patient.week}/{patient.cycleLength}
+                {whole(patient.week)}/{whole(patient.cycleLength)}
               </span>
               <span style={{ color: tokens.ink600, fontSize: 13 }}>
                 {quantity(patient.weight, patient.unit)} · ↓ {quantity(patient.lostKg, patient.unit)}
@@ -159,7 +177,7 @@ export function Roster({
 
       <nav
         aria-label="Страницы журнала"
-        style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}
+        style={{ display: 'flex', alignItems: 'center', gap: tokens.s4, marginTop: 12 }}
       >
         <button
           type="button"
@@ -193,7 +211,7 @@ const pagerStyle = {
   fontFamily: tokens.fontBody,
   fontSize: 13,
   padding: '7px 13px',
-  borderRadius: 999,
+  borderRadius: tokens.rPill,
   border: `1px solid ${tokens.borderStrong}`,
   background: tokens.paper,
   color: tokens.ink800,

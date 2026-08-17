@@ -64,7 +64,7 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
           Протокол
         </h3>
         <div style={{ fontFamily: tokens.fontBody, fontSize: 14, color: tokens.ink800 }}>
-          {patient.compound} · {patient.dose} · {patient.cadence}
+          {patient.compound} · {quantity(patient.dose.value, patient.dose.unit, 2)} · {patient.cadence}
         </div>
         <div style={{ fontFamily: tokens.fontMono, fontSize: 12.5, color: tokens.ink500, marginTop: 2 }}>
           неделя {whole(patient.week)} из {whole(patient.cycleLength)} · регулярность {whole(patient.adherence)}%
@@ -92,7 +92,7 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
         <h3 style={{ fontFamily: tokens.fontBody, fontSize: 12, letterSpacing: '.09em', textTransform: 'uppercase', color: tokens.ink500 }}>
           Биомаркеры
         </h3>
-        <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, margin: '8px 0 0' }}>
+        <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: tokens.s4, margin: '8px 0 0' }}>
           {patient.biomarkers.map((marker) => (
             <div key={marker.key}>
               <dt style={{ fontFamily: tokens.fontBody, fontSize: 11.5, color: tokens.ink500 }}>{marker.label}</dt>
