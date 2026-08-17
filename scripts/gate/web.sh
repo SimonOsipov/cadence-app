@@ -93,6 +93,12 @@ if [ -n "$outside" ]; then
     exit 1
 fi
 
+# The CSS is the source and tokens.ts is its output; the module is committed so it
+# is readable in a diff and importable without a build step, and this is what keeps
+# that copy from becoming a second source of truth.
+echo "==> the token module matches the stylesheet"
+node scripts/generate-tokens.ts --check
+
 echo "==> eslint"
 npm run --silent lint
 
