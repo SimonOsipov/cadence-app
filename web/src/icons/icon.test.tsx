@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { Icon } from './icon'
 import { icons } from './icons'
@@ -11,15 +11,36 @@ const names = Object.keys(icons) as Array<keyof typeof icons>
 // read this file too.
 const any = names[0]!
 
+// cog, fire and camera carry two paths in heroicons; none of the three is on a screen, so the set the
+// dashboard draws is entirely single-path and `icons[name].slice(0, 1)` would pass every case above.
+// The module is substituted rather than the mapping extracted: an extracted helper tested on its own
+// leaves the call site — which paths the component hands it — measured by nothing.
+describe('an icon of more than one path', () => {
+  it('draws every one of them, in order', async () => {
+    const both = ['M1 1h2', 'M3 3h4']
+
+    vi.resetModules()
+    vi.doMock('./icons', () => ({ icons: { 'two-paths': both } }))
+
+    const { Icon: Substituted } = await import('./icon')
+    // @ts-expect-error the substituted module declares an icon the real IconName union does not
+    const { container } = render(<Substituted name="two-paths" />)
+
+    expect([...container.querySelectorAll('path')].map((path) => path.getAttribute('d'))).toEqual(both)
+
+    vi.doUnmock('./icons')
+    vi.resetModules()
+  })
+})
+
 describe('the icon', () => {
   // This reads its expectation from icons.ts, the same module the component reads, so it cannot catch a
   // wrong path — only a component that drops or reorders one. The pin on the data itself is elsewhere:
   // derive-icons.ts --check re-derives the whole set from heroicons.js on every gate run.
   //
-  // A limit worth stating: `toEqual` pins order and count per icon, so a component rendering only the
-  // first path of a two-path icon would fail — but no icon this dashboard draws has two. cog, fire and
-  // camera do, and none of the three is on a screen. There is no sentinel for that here, because a test
-  // asserting «no multi-path icon exists» would fail the day one legitimately arrives.
+  // `toEqual` pins order and count per icon, so a component rendering only the first path of a two-path
+  // icon would fail — but no icon this dashboard draws has two, so that arm is measured by the module
+  // substitution below rather than by the set.
   it.each(names)('draws %s', (name) => {
     const { container } = render(<Icon name={name} />)
 
