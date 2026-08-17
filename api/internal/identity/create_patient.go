@@ -10,6 +10,10 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
+// patientRole is what this route invites for. The invite record carries it so a creation interrupted before its
+// profile still says what it was; ClaimFor's role arm is what reads it back.
+const patientRole = "patient"
+
 // CreatePatientInput is the request body of POST /v1/patients.
 type CreatePatientInput struct {
 	Body NewPatientBody
@@ -57,6 +61,9 @@ const (
 	detailMayNotCreate     = "У вас нет прав заводить пациентов."
 	detailNotAProvider     = "В команде наблюдения указан человек, который не является врачом клиники."
 	detailUnprocessable    = "Проверьте поля формы: данные пациента заполнены неверно."
+	// Distinct from detailAlreadyOnboarded on purpose: «заведён» sends the doctor looking for a patient who is
+	// not there, and the action that resolves this one belongs to the administrator.
+	detailInvitedAsStaff = "На этот адрес администратор заводит сотрудника клиники. Обратитесь к администратору."
 )
 
 // createPatient is the doctor's half of onboarding: one request creates the person and invites them, or neither.
@@ -101,6 +108,9 @@ func refusalFor(err error) error {
 
 	case errors.Is(err, ErrAccountIsNotOurs):
 		return huma.Error409Conflict(detailAccountIsNotOurs)
+
+	case errors.Is(err, ErrInvitedAsSomethingElse):
+		return huma.Error409Conflict(detailInvitedAsStaff)
 
 	case errors.Is(err, ErrCallerNotOnTheCareTeam):
 		return huma.Error403Forbidden(detailNotOnTheCareTeam)

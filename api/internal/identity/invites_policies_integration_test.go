@@ -76,7 +76,7 @@ func recordInvitation(t *testing.T, c clinic, userID, address, invitedBy string)
 		t.Context(), c.service, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
-				INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)
+				INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')
 			`, userID, address, invitedBy)
 
 			return err
@@ -93,7 +93,7 @@ func TestADoctorRecordsAnInvitationAndCannotReadItBack(t *testing.T) {
 
 	if affected := c.changed(
 		t, doctorID, "doctor",
-		`INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)`,
+		`INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')`,
 		inviteeID, inviteeAddress, doctorID,
 	); affected != 1 {
 		t.Errorf("the doctor recorded %d invitation(s), want 1", affected)
@@ -118,7 +118,7 @@ func TestADoctorCannotSignAnInvitationWithAnotherDoctorsName(t *testing.T) {
 
 	err := c.as(t, doctorID, "doctor", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)
+			INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')
 		`, inviteeID, inviteeAddress, otherDoctorID)
 
 		return err
@@ -148,7 +148,7 @@ func TestTheAdminReadsEveryInvitationAndRecordsNone(t *testing.T) {
 
 	err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)
+			INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')
 		`, thirdInviteeID, thirdInviteeAddress, adminID)
 
 		return err
@@ -194,7 +194,7 @@ func TestAPatientReachesNothingOnTheInvitations(t *testing.T) {
 
 	err := c.as(t, patientID, "patient", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)
+			INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')
 		`, otherInviteeID, otherInviteeAddress, doctorID)
 
 		return err
@@ -220,7 +220,7 @@ func TestTheServicePathRecordsAndReadsInvitationsAndChangesNone(t *testing.T) {
 		t.Context(), c.service, provisioningJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
-				INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)
+				INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')
 			`, inviteeID, otherInviteeAddress, doctorID)
 			return err
 		},
@@ -295,7 +295,7 @@ func TestAnInvitationCarriesTheAddressTheFoldProduces(t *testing.T) {
 				t.Context(), c.service, provisioningJob,
 				func(ctx context.Context, tx pgx.Tx) error {
 					_, err := tx.Exec(ctx, `
-						INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)
+						INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')
 					`, unfolded.userID, unfolded.address, doctorID)
 
 					return err
@@ -502,5 +502,58 @@ func TestTheOwnerSignsItsAuditRowWithAJobAndNeverAsAPerson(t *testing.T) {
 	}
 	if job != "bootstrap-admin" {
 		t.Errorf("the audit row is signed %q", job)
+	}
+}
+
+// The column the whole role arm rests on, checked at the schema rather than at the caller. Both halves fail closed:
+// a statement that forgets the role is refused instead of recording a guess, and a role outside the closed set is
+// refused instead of becoming one ClaimFor can never match. 000010's header states why the first has no DEFAULT.
+func TestAnInvitationCannotBeRecordedWithoutSayingWhatItIsFor(t *testing.T) {
+	c := newClinic(t)
+
+	// The SQLSTATE and not merely a refusal: «no role at all» exists to fail against a DEFAULT, and a bare
+	// err != nil is equally green when the row is refused for something else entirely — a predicate added to
+	// invites_doctor_insert, a renamed column, a foreign key. Then the subcase passes while measuring nothing.
+	for _, tc := range []struct {
+		name      string
+		statement string
+		args      []any
+		want      string
+	}{
+		{
+			name:      "no role at all",
+			statement: `INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)`,
+			args:      []any{inviteeID, inviteeAddress, doctorID},
+			want:      "23502",
+		},
+		{
+			name:      "an explicit NULL",
+			statement: `INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, NULL)`,
+			args:      []any{inviteeID, inviteeAddress, doctorID},
+			want:      "23502",
+		},
+		{
+			// Not a role profiles.role accepts, so an invitation for it could never be completed.
+			name:      "a role no profile can carry",
+			statement: `INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'nurse')`,
+			args:      []any{inviteeID, inviteeAddress, doctorID},
+			want:      "23514",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := c.as(t, doctorID, "doctor", func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, tc.statement, tc.args...)
+
+				return err
+			})
+			if err == nil {
+				t.Fatal("the row was recorded, so the invitation says nothing about what it was for")
+			}
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != tc.want {
+				t.Fatalf("refused with %v, want SQLSTATE %s", err, tc.want)
+			}
+		})
 	}
 }

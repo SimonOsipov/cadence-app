@@ -529,7 +529,7 @@ func TestAuditRowsOutliveTheProfilesTheyName(t *testing.T) {
 		// so the row below names the doctor and describes the patient being
 		// deleted.
 		{
-			`INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)`,
+			`INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')`,
 			[]any{patient, "irina@example.test", doctor},
 		},
 	} {
@@ -637,14 +637,17 @@ func identityColumns() map[string][]string {
 			"team_messages boolean NOT NULL DEFAULT true",
 			"reorder_alerts boolean NOT NULL DEFAULT true",
 		},
-		// No status, no payload, no role: the first is derived, the second lives
-		// in the rows the same transaction writes, and the third is on the profile
-		// beside them. §03 names all three.
+		// No status and no payload: the first is derived, the second lives in the
+		// rows the same transaction writes. §03 names a role too, and 000008 left
+		// it out on the grounds that the profile carries it — until 000010, which
+		// records it here because the profile is written a transaction later and an
+		// interruption between the two says nothing about what was invited.
 		"invites": {
 			"user_id uuid NOT NULL",
 			"email text NOT NULL",
 			"invited_by uuid NOT NULL",
 			"invited_at timestamp with time zone NOT NULL DEFAULT now()",
+			"role text NOT NULL",
 		},
 		"audit_log": {
 			"id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",

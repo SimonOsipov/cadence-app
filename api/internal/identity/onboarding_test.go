@@ -27,28 +27,30 @@ func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 		account identity.Account
 		held    identity.Held
 		want    identity.Claim
+		// wantRole empty means «asked for as a patient», the role every row above this arm was written for.
+		wantRole string
 	}{
 		{
 			name: "invited, untouched, ours",
-			held: identity.Held{Invite: true},
+			held: identity.Held{Invite: true, InvitedRole: "patient"},
 			want: identity.ClaimByInviting,
 		},
 		{
 			name:    "confirmed",
 			account: identity.Account{ConfirmedAt: &opened},
-			held:    identity.Held{Invite: true},
+			held:    identity.Held{Invite: true, InvitedRole: "patient"},
 			want:    identity.ClaimByDeletingFirst,
 		},
 		{
 			// Either is enough: a person who signed in can have set a password from that session.
 			name:    "signed in",
 			account: identity.Account{LastSignInAt: &opened},
-			held:    identity.Held{Invite: true},
+			held:    identity.Held{Invite: true, InvitedRole: "patient"},
 			want:    identity.ClaimByDeletingFirst,
 		},
 		{
 			name: "already a patient",
-			held: identity.Held{Invite: true, Profile: true},
+			held: identity.Held{Invite: true, Profile: true, InvitedRole: "patient"},
 			want: identity.RefuseAlreadyOnboarded,
 		},
 		{
@@ -56,7 +58,7 @@ func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 			// not invite, and the winner's patient may well have opened the link by then.
 			name:    "already a patient, and they have opened the link",
 			account: identity.Account{ConfirmedAt: &opened},
-			held:    identity.Held{Invite: true, Profile: true},
+			held:    identity.Held{Invite: true, Profile: true, InvitedRole: "patient"},
 			want:    identity.RefuseAlreadyOnboarded,
 		},
 		{
@@ -70,11 +72,47 @@ func TestTheClaimRuleReadsTheAccountAndWhatThisClinicHolds(t *testing.T) {
 			held: identity.Held{Profile: true},
 			want: identity.RefuseAlreadyOnboarded,
 		},
+		{
+			// The window this arm exists for. Measured before it did: the claim answered 201, wrote a
+			// patient profile, and that profile then made every later request for the address answer
+			// 409 — the staff hire could never be finished.
+			name: "invited as staff, asked for as a patient",
+			held: identity.Held{Invite: true, InvitedRole: "doctor"},
+			want: identity.RefuseInvitedAsSomethingElse,
+		},
+		{
+			// And the other way, so the arm is not one-directional: an admin's hire must not silently
+			// finish a doctor's half-created patient either.
+			name:     "invited as a patient, asked for as staff",
+			held:     identity.Held{Invite: true, InvitedRole: "patient"},
+			wantRole: "doctor",
+			want:     identity.RefuseInvitedAsSomethingElse,
+		},
+		{
+			// Above hasBeenOpened, and this is what pins the order: a mismatch is refused whether or not
+			// somebody has been inside. With the arms swapped this answers ClaimByDeletingFirst and
+			// destroys the account of a half-created doctor.
+			name:    "invited as staff, opened, asked for as a patient",
+			account: identity.Account{ConfirmedAt: &opened},
+			held:    identity.Held{Invite: true, InvitedRole: "doctor"},
+			want:    identity.RefuseInvitedAsSomethingElse,
+		},
+		{
+			name:     "invited as staff, asked for as staff",
+			held:     identity.Held{Invite: true, InvitedRole: "doctor"},
+			wantRole: "doctor",
+			want:     identity.ClaimByInviting,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := identity.ClaimFor(tc.account, tc.held); got != tc.want {
+			asked := tc.wantRole
+			if asked == "" {
+				asked = "patient"
+			}
+
+			if got := identity.ClaimFor(tc.account, tc.held, asked); got != tc.want {
 				t.Errorf("ClaimFor = %d, want %d", got, tc.want)
 			}
 		})

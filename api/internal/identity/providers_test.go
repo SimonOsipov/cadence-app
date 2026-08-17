@@ -128,6 +128,18 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 		mustNotMention string
 	}{
 		{
+			// The mirror of the patient route's arm: the address is mid-creation as somebody's patient. The
+			// sentence must not promise the address back, because no ending of that creation returns it —
+			// finished, a profile settles every later request; abandoned, the invite row stays for good.
+			name:           "the address holds an unfinished patient creation",
+			refusal:        ErrInvitedAsSomethingElse,
+			wantStatus:     http.StatusConflict,
+			wantType:       httpserver.ProblemConflict,
+			wantDetail:     detailInvitedAsPatient,
+			notTheSentence: detailInvitedAsStaff,
+			mustNotMention: "освободится",
+		},
+		{
 			name:       "a caller who is not an administrator",
 			refusal:    ErrCallerMayNotCreateProviders,
 			wantStatus: http.StatusForbidden,

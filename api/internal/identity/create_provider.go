@@ -39,6 +39,13 @@ type CreatedProvider struct {
 // the closed set stays the database's: see NewProvider.Role.
 const providerRole = "doctor"
 
+// The Russian the administrator reads when the address is already carrying somebody else's unfinished creation.
+// It does not promise the address back: whichever way the doctor's creation ends, this route cannot have it. Finished,
+// a patient profile exists and RefuseAlreadyOnboarded settles every later request; abandoned, the invite row stays,
+// because no role holds DELETE on app.invites.
+const detailInvitedAsPatient = "На этот адрес врач заводит пациента, и освободить его этот маршрут не может. " +
+	"Заведите сотрудника на другой адрес."
+
 // The Russian an administrator reads, where the patient route's sentence would be wrong for them.
 const (
 	detailOnlyAnAdminCreatesStaff = "Заводить врачей может только администратор."
@@ -91,6 +98,11 @@ func refusalForProvider(err error) error {
 
 	case errors.Is(err, ErrAlreadyOnboarded), errors.Is(err, ErrAlreadyExists):
 		return huma.Error409Conflict(detailStaffAlreadyThere)
+
+	// The mirror of the patient route's arm. The address holds a doctor's half-created patient, and the person
+	// who can finish it is that doctor rather than the administrator reading this.
+	case errors.Is(err, ErrInvitedAsSomethingElse):
+		return huma.Error409Conflict(detailInvitedAsPatient)
 
 	case errors.Is(err, ErrAccountIsNotOurs):
 		return huma.Error409Conflict(detailStaffAccountIsNotOurs)
