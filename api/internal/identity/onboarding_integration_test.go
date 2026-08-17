@@ -217,6 +217,42 @@ func TestAnInvitationWhoseAnswerWasLostIsStillRecorded(t *testing.T) {
 	}
 }
 
+// The same cure for the request that is no longer there to receive it, which is the case it was written for: a call
+// that fails because the provisioner was slow has usually spent the request's whole budget first.
+//
+// Named for the mutation it exists to fail against — context.WithoutCancel(ctx) replaced by ctx in invite's recovery.
+// Under it the lookup and the write that record the account are refused before they leave the process, the account
+// stays one this clinic has no record of, and every later request for that address answers 409 with nothing able to
+// undo it. The test above runs on a live context, so both versions of that line pass it.
+//
+// Driven through InvitePatient rather than the transport: the context is the subject, and httptest gives a request one
+// that outlives its caller.
+func TestTheInvitationOfARequestThatGaveUpIsStillRecorded(t *testing.T) {
+	clinic := onboardingStand(t)
+
+	const address = "gave.up@clinic.example"
+
+	ctx, cancel := context.WithCancel(auth.WithPrincipal(t.Context(), asDoctor))
+	defer cancel()
+
+	clinic.provider.loseTheAnswer = true
+	clinic.provider.beforeTheAnswerIsLost = cancel
+
+	_, err := identity.NewOnboarding(clinic.requests, clinic.writes, clinic.provider).
+		InvitePatient(ctx, address, identity.NewPatient{
+			FullName:    "Ирина Соколова",
+			Specialists: []identity.Assignment{{ProviderID: theDoctor, CareRole: "endo", Primary: true}},
+		})
+	if !errors.Is(err, identity.ErrProvisionerUnavailable) {
+		t.Fatalf("the abandoned request came back with %v, want %v", err, identity.ErrProvisionerUnavailable)
+	}
+
+	if !clinic.holdsInviteFor(t, accountID(t, address)) {
+		t.Fatal("the caller was gone when the answer was lost, so the account the provider created was " +
+			"never recorded as this clinic's — the address is refused from here on and nothing undoes it")
+	}
+}
+
 // The other half of that cure, and the reason it is conditional: an account somebody has already been inside is not
 // recorded as ours on the strength of a failed call. From here the two are the same picture — an account at the
 // address, and no answer saying whose it is — and claiming deletes: a stranger's account, and every session on it,
@@ -639,6 +675,10 @@ type harnessProvisioner struct {
 	// Confirms the account before the answer is lost, arranging the one state the cure must refuse: an account
 	// somebody has been inside, indistinguishable from a stranger's.
 	openedFirst bool
+
+	// Runs after the account exists and before the failure is reported. One caller, and it ends the request's
+	// context there: the caller who gave up while the invitation was in flight.
+	beforeTheAnswerIsLost func()
 }
 
 // The client wraps a transport failure and the caller may not read it, so any error at all is the whole signal.
@@ -674,6 +714,10 @@ func (p *harnessProvisioner) Invite(ctx context.Context, email string) (identity
 			if err := p.confirm(ctx, email); err != nil {
 				return identity.Account{}, err
 			}
+		}
+
+		if p.beforeTheAnswerIsLost != nil {
+			p.beforeTheAnswerIsLost()
 		}
 
 		return identity.Account{}, errUnreachable

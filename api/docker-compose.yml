@@ -238,28 +238,24 @@ services:
       # The shortest gap between two emails to one person. It covers /recover,
       # which is public and therefore the one mail route a stranger can ask for;
       # the admin /invite is not covered by it at all — measured, see
-      # TestTheAdminInviteIsNotCoveredByThePerAddressGap — which is why the
-      # invitation limit is imposed on our side, per doctor and per window.
+      # TestTheAdminInviteIsNotCoveredByThePerAddressGap. Nothing on our side
+      # bounds invitations either, so the quota below is the only limit /invite
+      # has.
       #
-      # SMTP_, not MAILER_. Measured against v2.194.0 on 2026-08-16: with
-      # GOTRUE_MAILER_MAX_FREQUENCY set to 2s the provider still refused a
-      # second /recover "after 56 seconds", its one-minute default; with this
-      # name it refused for the two seconds it was given. A variable it ignores
-      # looks exactly like a limit that works, which is why a test reads this
-      # line.
+      # SMTP_, not MAILER_, and the wrong name is silent: the measurement is on
+      # testsupport.MailerMaxFrequencyVariable, which is the name a test reads
+      # this line for.
       GOTRUE_SMTP_MAX_FREQUENCY: 1m
 
-      # Emails per hour for the whole instance, and the limit that does reach
-      # /invite: measured on 2026-08-16 by running the harness at a quota of two,
-      # where the third email of a run — an invitation — was refused. The gap
-      # above and this one both answer over_email_send_rate_limit and differ only
-      # in the message.
+      # Emails per hour for the whole instance, and the only limit that reaches
+      # /invite: the measurement is on testsupport.EmailsPerHourVariable.
       #
-      # It has to be at least identity.InvitesPerWindow, or the provider refuses
-      # what our own limiter allowed one doctor; a test compares the two. The
-      # ceiling is somebody else's and is not known here: the SMTP provider is
-      # SKL-01 and has not been chosen, so this number bounds the clinic and not
-      # the sending domain.
+      # It counts the clinic rather than the doctor, so it cannot tell one
+      # doctor's loop from the rest of the staff working — it refuses everybody
+      # at once. The per-doctor limit that would have is not built. The ceiling
+      # is somebody else's and is not known here: the SMTP provider is SKL-01
+      # and has not been chosen, so this number bounds the clinic and not the
+      # sending domain.
       GOTRUE_RATE_LIMIT_EMAIL_SENT: "200"
 
       # The clinic's own mail, in the product's language. Left unset every one
@@ -267,17 +263,11 @@ services:
       # patient would receive.
       #
       # These are HTTP URLs because v2.194.0 fetches a template and cannot read
-      # one off disk: `loadEntryBody` prepends SITE_URL to anything not starting
-      # with "http" and then issues a GET, so `file:///…` becomes
-      # `http://localhost:8080file:///…` and fails to parse. Read out of the
-      # pinned image's own source, after a first version of this block shipped
-      # `file://` paths and three review rounds passed over them.
-      #
-      # A failed fetch is silent at startup and costs more than the body: `load`
-      # falls back to `loadEntryDefault`, which returns the provider's English
-      # body AND its English subject, so a broken URL here also throws away the
-      # SUBJECTS_ lines above. Unset would keep them; wrong is worse than absent.
-      # TestTheProviderFetchesTheTemplateItIsPointedAt is what measures it.
+      # one off disk, and a failed fetch is silent at startup and throws away
+      # the SUBJECTS_ lines above with the body. Both readings of the pinned
+      # image's source are written down beside the test that acts on them:
+      # TestEveryMailTemplateIsFetchableByScheme in mail_test.go. That test
+      # checks the scheme and not reachability, so a wrong host still ships.
       #
       # This covers the mail and nothing else: the provider's own error strings
       # and the page a refused link lands on stay English, with no key to

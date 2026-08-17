@@ -1,7 +1,6 @@
 package identity_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,64 +35,6 @@ func TestTheAddressIsFoldedToTheSpellingTheProviderStores(t *testing.T) {
 	}
 }
 
-// The assertion is on the refusal rather than on a count: a limiter that refused everybody would
-// satisfy "the twenty-first is refused" and nothing else here.
-func TestTheInviteLimitFires(t *testing.T) {
-	const doctor = "8a1f3b7c-0000-4000-8000-000000000002"
-
-	limit := identity.NewInviteLimit(identity.InvitesPerWindow, identity.InviteWindow)
-	start := time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
-
-	for i := range identity.InvitesPerWindow {
-		if err := limit.Take(doctor, start.Add(time.Duration(i)*time.Second)); err != nil {
-			t.Fatalf("invitation %d of the %d the window allows was refused: %v",
-				i+1, identity.InvitesPerWindow, err)
-		}
-	}
-
-	if err := limit.Take(doctor, start.Add(time.Minute)); !errors.Is(err, identity.ErrTooManyInvites) {
-		t.Errorf("the invitation past the limit answered %v, want %v",
-			err, identity.ErrTooManyInvites)
-	}
-
-	// Per doctor: one of them onboarding a cohort does not stop the rest of the clinic working.
-	if err := limit.Take("8a1f3b7c-0000-4000-8000-000000000003", start.Add(time.Minute)); err != nil {
-		t.Errorf("another doctor's first invitation was refused: %v", err)
-	}
-
-	// And it is a window rather than a lifetime allowance.
-	if err := limit.Take(doctor, start.Add(identity.InviteWindow+time.Second)); err != nil {
-		t.Errorf("the first invitation after the window was refused: %v", err)
-	}
-}
-
-// Without this, a limiter that recorded every call — the shortest thing that passes the test above
-// — would keep a doctor refused for a whole window after one burst, however long they waited.
-func TestARefusedInvitationDoesNotExtendTheRefusal(t *testing.T) {
-	const doctor = "8a1f3b7c-0000-4000-8000-000000000002"
-
-	limit := identity.NewInviteLimit(1, time.Minute)
-	start := time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
-
-	if err := limit.Take(doctor, start); err != nil {
-		t.Fatalf("the first invitation was refused: %v", err)
-	}
-
-	for i := range 5 {
-		if err := limit.Take(doctor, start.Add(time.Duration(i+1)*time.Second)); !errors.Is(
-			err, identity.ErrTooManyInvites,
-		) {
-			t.Fatalf("attempt %d inside the window answered %v, want %v",
-				i+2, err, identity.ErrTooManyInvites)
-		}
-	}
-
-	if err := limit.Take(doctor, start.Add(time.Minute+time.Second)); err != nil {
-		t.Errorf("the first invitation after the window was refused: %v — the refusals "+
-			"inside it were recorded as if they had been sent", err)
-	}
-}
-
 // Nothing stores an invitation's status, so a reader computes it from invited_at plus
 // InviteLinkLifetime; a constant that has drifted from the provider's configuration would show an
 // invitation as pending for days after the link stopped working.
@@ -125,10 +66,11 @@ func TestTheDeploymentSetsAGapBetweenTwoEmailsToOneAddress(t *testing.T) {
 	}
 }
 
-// The provider's hourly quota is the only limit that reaches /invite, and it counts the whole
-// instance. Set below what one doctor is allowed here, it refuses invitations this context let
-// through — a limit nobody configured refusing on behalf of one this file did.
-func TestTheDeploymentAllowsAtLeastOneDoctorsWorthOfInvitations(t *testing.T) {
+// The provider's hourly quota is the only limit that reaches /invite, and since this side enforces
+// none of its own it is the only limit on invitations at all. Nothing here can say what the number
+// should be — a clinic's cohort is a business decision — so what is asserted is that somebody chose
+// one: a quota of zero refuses every invitation the dashboard sends.
+func TestTheDeploymentBoundsInvitationsSomewhere(t *testing.T) {
 	set := deploymentSetting(t, testsupport.EmailsPerHourVariable)
 
 	quota, err := strconv.Atoi(set)
@@ -137,9 +79,8 @@ func TestTheDeploymentAllowsAtLeastOneDoctorsWorthOfInvitations(t *testing.T) {
 			testsupport.EmailsPerHourVariable, set, err)
 	}
 
-	if quota < identity.InvitesPerWindow {
-		t.Errorf("the provider allows %d emails an hour for the whole clinic while one doctor "+
-			"may send %d invitations in %s", quota, identity.InvitesPerWindow, identity.InviteWindow)
+	if quota <= 0 {
+		t.Errorf("%s is set to %d, so no invitation is sent at all", testsupport.EmailsPerHourVariable, quota)
 	}
 }
 

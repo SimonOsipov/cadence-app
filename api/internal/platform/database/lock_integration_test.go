@@ -187,6 +187,41 @@ func TestAFailingHolderReleasesTheLockForEverybodyElse(t *testing.T) {
 	}
 }
 
+// The release runs on a context detached from the request's, and this is what that detachment buys: a request
+// cancelled while it holds the lock hands its connection back alive.
+//
+// Named for the mutation it exists to fail against — context.WithoutCancel(ctx) replaced by ctx in the deferred
+// release. The lock itself comes free either way, which is why the suite stayed green under that mutation: the unlock
+// statement is refused before it leaves the process, the branch below it closes the connection, and Postgres drops the
+// advisory locks of a session that has died. What is lost is the connection, so that is what is measured — and the
+// pool holds one, so a replacement cannot hide behind a spare.
+func TestALockReleasedAfterCancellationKeepsItsConnection(t *testing.T) {
+	pool := oneConnectionPool(t)
+
+	before := backendPID(t, pool)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	err := database.WithAdvisoryLock(ctx, pool, database.OnboardingLock, "cancelled@clinic.example",
+		func(inside context.Context) error {
+			// From within, so that the release below is the first thing to run on an ended context: the
+			// request whose caller hung up while its invitation was in flight.
+			cancel()
+
+			return inside.Err()
+		})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("the cancelled holder came back with %v, want %v", err, context.Canceled)
+	}
+
+	if after := backendPID(t, pool); after != before {
+		t.Errorf("the pool's backend went from %d to %d: the release ran on the request's own cancelled "+
+			"context, so the connection was closed instead of unlocked and every cancelled request costs one",
+			before, after)
+	}
+}
+
 // The request path's pool, under cadence_app: the role the lock is taken as in production.
 func lockPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -201,6 +236,38 @@ func twoPoolsOnOneDatabase(t *testing.T) (*pgxpool.Pool, *pgxpool.Pool) {
 	url := cluster.NewDatabase(t).AppURL
 
 	return poolOn(t, url), poolOn(t, url)
+}
+
+// One connection, so that a connection the release destroyed is one the next acquire has to replace with a new
+// backend rather than take from a spare.
+func oneConnectionPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+
+	cfg, err := pgxpool.ParseConfig(cluster.NewDatabase(t).AppURL)
+	if err != nil {
+		t.Fatalf("parsing the database URL: %v", err)
+	}
+
+	cfg.MaxConns = 1
+
+	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("opening the pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	return pool
+}
+
+func backendPID(t *testing.T, pool *pgxpool.Pool) int {
+	t.Helper()
+
+	var pid int
+	if err := pool.QueryRow(t.Context(), `SELECT pg_catalog.pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatalf("reading the backend pid: %v", err)
+	}
+
+	return pid
 }
 
 func poolOn(t *testing.T, url string) *pgxpool.Pool {
