@@ -1656,6 +1656,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s1",
       "patientId": "marina",
+      "patientName": "Марина Левченко",
       "at": "07:00",
       "kind": "dose",
       "label": "Семаглутид · 1,0 мг",
@@ -1664,6 +1665,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s2",
       "patientId": "dmitri",
+      "patientName": "Дмитрий Орлов",
       "at": "07:30",
       "kind": "dose",
       "label": "Тесаморелин · 2,0 мг",
@@ -1672,6 +1674,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s3",
       "patientId": "roman",
+      "patientName": "Роман Беляев",
       "at": "08:00",
       "kind": "dose",
       "label": "Тирзепатид · 7,5 мг",
@@ -1680,6 +1683,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s4",
       "patientId": "sofia",
+      "patientName": "София Ермакова",
       "at": "09:15",
       "kind": "checkin",
       "label": "Звонок · побочные эффекты",
@@ -1688,6 +1692,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s5",
       "patientId": "anna",
+      "patientName": "Анна Кравцова",
       "at": "11:00",
       "kind": "dose",
       "label": "Семаглутид · 0,25 мг",
@@ -1696,6 +1701,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s6",
       "patientId": "oleg",
+      "patientName": "Олег Самойлов",
       "at": "13:30",
       "kind": "checkin",
       "label": "Звонок · пропуски дозы",
@@ -1704,6 +1710,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s7",
       "patientId": "pavel",
+      "patientName": "Павел Гордеев",
       "at": "17:00",
       "kind": "dose",
       "label": "BPC-157 · 250 мкг",
@@ -1712,6 +1719,7 @@ export const OVERVIEW: Omit<Overview, 'triage'> = {
     {
       "id": "s8",
       "patientId": "andrei",
+      "patientName": "Андрей Тихонов",
       "at": "19:00",
       "kind": "dose",
       "label": "Ипаморелин · 200 мкг",

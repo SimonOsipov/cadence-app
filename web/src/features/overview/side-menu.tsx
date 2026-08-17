@@ -1,4 +1,5 @@
 import { Icon } from '../../icons/icon'
+import { whole } from '../../format'
 import { tokens } from '../../tokens/tokens'
 
 /**
@@ -72,7 +73,7 @@ export function SideMenu({ current, unread }: { current: string; unread: number 
                     padding: '1px 7px',
                   }}
                 >
-                  {unread}
+                  {whole(unread)}
                 </span>
               )}
             </a>

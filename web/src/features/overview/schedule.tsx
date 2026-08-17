@@ -1,4 +1,4 @@
-import type { Patient, ScheduleEntry } from '../../data/overview'
+import type { ScheduleEntry } from '../../data/overview'
 import { Icon } from '../../icons/icon'
 import { tokens } from '../../tokens/tokens'
 import { SectionHead } from './patient-bits'
@@ -9,13 +9,7 @@ const STATE = {
   due: { label: 'предстоит', colour: tokens.ink500 },
 } as const
 
-export function Schedule({
-  entries,
-  patients,
-}: {
-  entries: readonly ScheduleEntry[]
-  patients: ReadonlyMap<string, Patient>
-}) {
+export function Schedule({ entries }: { entries: readonly ScheduleEntry[] }) {
   return (
     <section aria-label="Расписание">
       <SectionHead eyebrow="Сегодня" title="Расписание" />
@@ -46,7 +40,6 @@ export function Schedule({
           >
             {entries.map((entry) => {
               const state = STATE[entry.state]
-              const patient = patients.get(entry.patientId)
 
               return (
                 <li key={entry.id} style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
@@ -58,7 +51,7 @@ export function Schedule({
                       {entry.at}
                     </div>
                     <div style={{ fontFamily: tokens.fontBody, fontSize: 13.5, color: tokens.ink800 }}>
-                      {patient?.name ?? entry.patientId}
+                      {entry.patientName}
                     </div>
                     <div style={{ fontFamily: tokens.fontBody, fontSize: 12.5, color: tokens.ink600 }}>
                       {entry.label}

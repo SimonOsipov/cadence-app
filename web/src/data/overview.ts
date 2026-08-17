@@ -83,6 +83,13 @@ export type OverviewAggregates = {
 export type ScheduleEntry = {
   id: string
   patientId: string
+
+  /**
+   * Carried rather than looked up. The schedule names patients from anywhere in the clinic and the
+   * roster on screen is one page of it, so a screen resolving this itself shows an id to the doctor
+   * for everyone it has not loaded — measured against the prototype, two of eight entries.
+   */
+  patientName: string
   /** Wall-clock, as the clinic reads it: the schedule is one day and the doctor's own timezone. */
   at: string
   kind: 'dose' | 'checkin'

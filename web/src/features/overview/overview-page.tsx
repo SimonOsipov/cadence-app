@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import type { Patient, RosterFilter } from '../../data/overview'
 import { useOverview, useRoster } from '../../data/queries'
@@ -25,13 +25,6 @@ export function OverviewPage() {
   const overview = useOverview()
   const roster = useRoster({ filter, cursor })
 
-  // The schedule names patients by id; this is the lookup, and it is a lookup rather than a search
-  // through the rows on every line.
-  const byId = useMemo(
-    () => new Map((roster.data?.items ?? []).concat(overview.data?.triage ?? []).map((p) => [p.id, p])),
-    [roster.data, overview.data],
-  )
-
   if (overview.isPending) return <Waiting />
   if (overview.isError) return <Failed error={overview.error} onRetry={() => void overview.refetch()} />
 
@@ -42,6 +35,25 @@ export function OverviewPage() {
       <SideMenu current="overview" unread={aggregates.unread} />
 
       <main style={{ flex: 1, minWidth: 0, padding: '34px 40px 60px', maxWidth: 1320 }}>
+        {/* The prototype opens with a date, a greeting, a search field and a «Новый пациент» button.
+            The greeting is here; the other two are not, and for the reason the side menu drops four
+            destinations — searching the roster and creating a patient are things this MVP cannot do
+            yet, and a control that does nothing is the dead control invariant 4 forbids. */}
+        <header style={{ marginBottom: 28 }}>
+          <h1
+            style={{
+              fontFamily: tokens.fontDisplay,
+              fontSize: 34,
+              color: tokens.ink900,
+              margin: 0,
+              fontWeight: 400,
+            }}
+          >
+            Здравствуйте,{' '}
+            <span style={{ fontStyle: 'italic' }}>{overview.data.doctor.name.split(' ')[0]}</span>
+          </h1>
+        </header>
+
         <StatsStrip aggregates={aggregates} />
         <Triage patients={triage} onOpen={setOpened} />
 
@@ -64,7 +76,7 @@ export function OverviewPage() {
           />
         )}
 
-        <Schedule entries={schedule} patients={byId} />
+        <Schedule entries={schedule} />
       </main>
 
       {opened !== null && <PatientCard patient={opened} onClose={() => setOpened(null)} />}

@@ -1,6 +1,7 @@
 import type { OverviewAggregates, Patient, RosterFilter, RosterPage } from '../../data/overview'
 import { Icon } from '../../icons/icon'
 import { tokens } from '../../tokens/tokens'
+import { quantity, whole } from '../../format'
 import { SectionHead, StatusDot } from './patient-bits'
 
 /**
@@ -67,7 +68,7 @@ export function Roster({
             >
               {tab.label}
               <span style={{ fontFamily: tokens.fontMono, fontSize: 11, opacity: 0.7 }}>
-                {aggregates.byStatus[tab.of]}
+                {whole(aggregates.byStatus[tab.of])}
               </span>
             </button>
           )
@@ -149,7 +150,7 @@ export function Roster({
                 {patient.week}/{patient.cycleLength}
               </span>
               <span style={{ color: tokens.ink600, fontSize: 13 }}>
-                {patient.weight} {patient.unit} · ↓{patient.lostKg}
+                {quantity(patient.weight, patient.unit)} · ↓ {quantity(patient.lostKg, patient.unit)}
               </span>
             </button>
           ))
@@ -178,7 +179,7 @@ export function Roster({
           <Icon name="chevron-right" size={14} />
         </button>
         <span style={{ fontFamily: tokens.fontBody, fontSize: 12.5, color: tokens.ink500 }}>
-          {page === undefined ? '' : `${page.items.length} из ${page.total}`}
+          {page === undefined ? '' : `${whole(page.items.length)} из ${whole(page.total)}`}
         </span>
       </nav>
     </section>

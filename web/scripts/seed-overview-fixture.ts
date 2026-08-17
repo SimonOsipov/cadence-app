@@ -86,6 +86,7 @@ const overview = {
   schedule: prototype.SCHEDULE.map((s: any) => ({
     id: s.id,
     patientId: s.patientId,
+    patientName: prototype.patientById(s.patientId).name,
     at: s.time,
     kind: s.kind,
     label: s.label,

@@ -1,6 +1,7 @@
 import { Icon } from '../../icons/icon'
 import type { IconName } from '../../icons/icons'
 import type { OverviewAggregates } from '../../data/overview'
+import { whole } from '../../format'
 import { tokens } from '../../tokens/tokens'
 
 /**
@@ -12,18 +13,18 @@ import { tokens } from '../../tokens/tokens'
  */
 export function StatsStrip({ aggregates }: { aggregates: OverviewAggregates }) {
   const cards: Array<{ label: string; value: string; unit?: string; sub: string; icon: IconName }> = [
-    { label: 'Пациентов', value: String(aggregates.patients), sub: 'активных протоколов', icon: 'user' },
-    { label: 'Внимание', value: String(aggregates.attention), sub: 'пациента ожидают', icon: 'exclamation-circle' },
+    { label: 'Пациентов', value: whole(aggregates.patients), sub: 'активных протоколов', icon: 'user' },
+    { label: 'Внимание', value: whole(aggregates.attention), sub: 'пациента ожидают', icon: 'exclamation-circle' },
     {
       label: 'Дозы сегодня',
-      value: `${aggregates.dosesDone}/${aggregates.dosesToday}`,
+      value: `${whole(aggregates.dosesDone)}/${whole(aggregates.dosesToday)}`,
       sub: 'выполнено',
       icon: 'beaker',
     },
-    { label: 'Сообщения', value: String(aggregates.unread), sub: 'без ответа', icon: 'chat-bubble' },
+    { label: 'Сообщения', value: whole(aggregates.unread), sub: 'без ответа', icon: 'chat-bubble' },
     {
       label: 'Регулярность',
-      value: String(aggregates.averageAdherence),
+      value: whole(aggregates.averageAdherence),
       unit: '%',
       sub: 'в среднем',
       icon: 'check-circle',

@@ -1,5 +1,6 @@
 import type { FlagKind, Patient } from '../../data/overview'
 import { Icon } from '../../icons/icon'
+import { whole } from '../../format'
 import { tokens } from '../../tokens/tokens'
 import { FLAGS, STATUS_LABEL } from './flags'
 
@@ -70,7 +71,7 @@ export function GoalBar({ patient }: { patient: Patient }) {
         />
       </div>
       <div style={{ fontFamily: tokens.fontBody, fontSize: 11.5, color: tokens.ink500, marginTop: 6 }}>
-        {patient.goalProgressPct}% пути к цели
+        {whole(patient.goalProgressPct)}% пути к цели
       </div>
     </div>
   )

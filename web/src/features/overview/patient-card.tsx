@@ -2,6 +2,7 @@ import type { Patient } from '../../data/overview'
 import { Icon } from '../../icons/icon'
 import { tokens } from '../../tokens/tokens'
 import { FLAGS, STATUS_LABEL } from './flags'
+import { decimal, quantity, whole } from '../../format'
 import { FlagPill, GoalBar, Spark } from './patient-bits'
 
 /**
@@ -36,7 +37,7 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
             {patient.name}
           </h2>
           <div style={{ fontFamily: tokens.fontBody, fontSize: 13, color: tokens.ink500, marginTop: 4 }}>
-            {patient.age} лет · {STATUS_LABEL[patient.status]} · был{patient.lastSeen.startsWith('в') ? '' : 'а'} {patient.lastSeen}
+            {whole(patient.age)} лет · {STATUS_LABEL[patient.status]} · был{patient.lastSeen.startsWith('в') ? '' : 'а'} {patient.lastSeen}
           </div>
         </div>
         <button
@@ -66,7 +67,7 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
           {patient.compound} · {patient.dose} · {patient.cadence}
         </div>
         <div style={{ fontFamily: tokens.fontMono, fontSize: 12.5, color: tokens.ink500, marginTop: 2 }}>
-          неделя {patient.week} из {patient.cycleLength} · регулярность {patient.adherence}%
+          неделя {whole(patient.week)} из {whole(patient.cycleLength)} · регулярность {whole(patient.adherence)}%
         </div>
       </section>
 
@@ -74,10 +75,10 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontFamily: tokens.fontDisplay, fontSize: 24, color: tokens.ink900 }}>
-              {patient.weight} {patient.unit}
+              {quantity(patient.weight, patient.unit)}
             </div>
             <div style={{ fontFamily: tokens.fontBody, fontSize: 12.5, color: tokens.forest600, marginTop: 4 }}>
-              ↓ {patient.lostKg} {patient.unit} с начала · цель {patient.goal} {patient.unit}
+              ↓ {quantity(patient.lostKg, patient.unit)} с начала · цель {quantity(patient.goal, patient.unit)}
             </div>
           </div>
           <Spark points={patient.spark} tone={tokens.forest600} />
@@ -103,7 +104,7 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
                   color: marker.withinRange ? tokens.forest700 : FLAGS.biomarker.fg,
                 }}
               >
-                {marker.value}
+                {decimal(marker.value, 0)}
                 <span style={{ fontSize: 11, color: tokens.ink500 }}> {marker.unit}</span>
               </dd>
             </div>
