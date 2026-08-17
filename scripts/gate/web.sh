@@ -108,17 +108,17 @@ node scripts/derive-icons.ts --check
 echo "==> eslint"
 npm run --silent lint
 
-# What the code that ships actually gets. The probes below prove the selectors match something; they
-# cannot prove the rules reach `src/features/overview/**`, and a config block with a narrower glob takes
-# them away there while both probes stay green. Every component rather than one witness, because a block
-# narrower still spares whichever file the check names — measured, a block over `patient-*.tsx` and
-# `triage.tsx` leaves roster.tsx reporting 8 while `var(--paper)` in patient-card.tsx is not refused.
+# What the code that ships actually gets. The probes below prove the selectors match
+# something; they cannot prove the rules reach the components, and a config block with
+# a narrower glob takes them away there while both probes stay green. Every file the
+# rule block covers, not one witness — measured, a block over `patient-*.tsx` and
+# `triage.tsx` leaves the named roster.tsx reporting 8 while `var(--paper)` in
+# patient-card.tsx is not refused; and `flags.ts`, the flag palette's colour table and
+# the likeliest file here to grow a `var(--…)`, is a `.ts` a `*.tsx` sweep never read.
 #
-# The root is `src/features` and both extensions, matching the rule block's own scope
-# (`src/features/**/*.{ts,tsx}`): M6's screens land as new directories beside `overview/`, and `flags.ts`
-# — the flag palette's colour table, the likeliest file in the tree to grow a `var(--…)` — is a `.ts`. `__probes__`
-# is excluded because it is globally ignored, and `--print-config` on an ignored file prints the bare
-# word `undefined` — the reader below then dies on a JSON parse rather than reporting a count.
+# `__probes__` is excluded because it is globally ignored, and `--print-config` on an
+# ignored file prints the bare word `undefined` — the reader below then dies on a JSON
+# parse rather than reporting a count.
 echo "==> the rules reach the components, not just the probes"
 # Read from a file, not a pipe, so the `exit 1` below ends the script rather than a subshell — and
 # -print0 because `web/prototype/Doctor Dashboard.html` is one directory away and a word-split path
