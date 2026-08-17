@@ -289,7 +289,7 @@
     },
     "/v1/me/session": {
       "post": {
-        "description": "Records the caller's timezone against their profile. A patient's is stored — the schedule, the reminders and the server-side sweep all read it — and the zone is validated there; a doctor's and an administrator's are not stored, and the call is answered without a write rather than refused, so one client can serve every role. Answers 400 when a patient's zone is not one the server knows, 403 when the account has no role yet, and 503 when the database did not answer.",
+        "description": "Records the caller's timezone against their profile. A patient's is stored — the schedule, the reminders and the server-side sweep all read it — and the zone is validated there; a doctor's and an administrator's are not stored, and the call is answered without a write rather than refused, so one client can serve every role. Answers 400 when a patient's zone is not one the server knows, 403 when the account has no role yet, and 503 when the database could not serve the request.",
         "operationId": "record-session",
         "requestBody": {
           "content": {
@@ -314,6 +314,16 @@
               }
             },
             "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
           },
           "403": {
             "content": {

@@ -1,15 +1,20 @@
 package identity
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
-// What the device is told, type included: a client branches on the type URI, so a status arriving under the wrong
-// type is a break the status assertion cannot see.
+// Type included: a client branches on the URI, so a status under the wrong type is a break a status assertion misses.
 func TestWhichRefusalAReportedTimezoneHeard(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -26,8 +31,7 @@ func TestWhichRefusalAReportedTimezoneHeard(t *testing.T) {
 			wantDetail: detailNotATimezone,
 		},
 		{
-			// Unreachable through the schema, which pins minLength 1 — and reachable through RecordTimezone,
-			// which is exported and whose zone probe accepts the empty string by design.
+			// Unreachable through the schema, reachable through the exported method.
 			name:       "a report with no zone at all",
 			refusal:    ErrNoTimezone,
 			wantStatus: http.StatusBadRequest,
@@ -76,10 +80,45 @@ func TestWhichRefusalAReportedTimezoneHeard(t *testing.T) {
 	}
 }
 
-// A nil pool builds no service, so the handler's assembly check has something to refuse on rather than a value that
-// dereferences. Asserted here because it is the whole of what the constructor does.
+// The whole of what the constructor does.
 func TestNoPoolBuildsNoService(t *testing.T) {
 	if sessions := NewSessions(nil); sessions != nil {
 		t.Errorf("NewSessions(nil) = %v, want nil", sessions)
+	}
+}
+
+// The join: any 403 satisfies the type, so the sentence is what says this went through refusalForSession.
+func TestAnAccountWithNoRoleIsRefusedInTheMappersWords(t *testing.T) {
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{
+				Subject: "8a1f3b7c-0000-4000-8000-000000000004",
+			})))
+		})
+	})
+	NewService(nil, nil).Register(httpserver.NewAPI(router))
+
+	request := httptest.NewRequest(
+		http.MethodPost, "/v1/me/session", strings.NewReader(`{"timezone":"Asia/Tbilisi"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, request)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
+	}
+
+	var problem struct {
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decoding the problem document: %v", err)
+	}
+
+	if problem.Detail != detailNoRole {
+		t.Errorf("detail = %q, want %q", problem.Detail, detailNoRole)
 	}
 }

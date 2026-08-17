@@ -2,15 +2,19 @@ package identity_test
 
 import (
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
@@ -23,8 +27,8 @@ func reporting(timezone string) *http.Request {
 	return request
 }
 
-// servedBy mounts the context with principal standing in for what the authentication middleware would have put on
-// the context. A nil principal is the case the middleware is supposed to make impossible.
+// servedBy mounts the context with principal standing in for the middleware. A nil principal is the case the
+// middleware is supposed to make impossible.
 func servedBy(principal *auth.Principal, sessions *identity.Sessions) http.Handler {
 	router := chi.NewRouter()
 
@@ -55,8 +59,7 @@ func TestSessionRefusesWithoutAPrincipal(t *testing.T) {
 	}
 }
 
-// The staff arm, measured rather than described: the service is nil, so a handler that reached the database to
-// decide this would answer 500 instead of passing.
+// The service is nil, so a handler that reached the database to decide this would answer 500 rather than pass.
 func TestSessionWritesNothingForStaffAndSaysSo(t *testing.T) {
 	for _, role := range []string{"doctor", "admin"} {
 		t.Run(role, func(t *testing.T) {
@@ -75,8 +78,7 @@ func TestSessionWritesNothingForStaffAndSaysSo(t *testing.T) {
 	}
 }
 
-// An account the invitation reached and provisioning did not is refused rather than answered 204: nothing can be
-// written for it, and 204 would claim a write that did not happen.
+// The sentence is pinned by equality in TestAnAccountWithNoRoleIsRefusedInTheMappersWords, which sees the constant.
 func TestSessionRefusesAnAccountWithNoRole(t *testing.T) {
 	principal := auth.Principal{Subject: "8a1f3b7c-0000-4000-8000-000000000004"}
 
@@ -87,8 +89,6 @@ func TestSessionRefusesAnAccountWithNoRole(t *testing.T) {
 		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
 	}
 
-	// The sentence itself is pinned by equality in TestWhichRefusalAReportedTimezoneHeard, which can see the
-	// constant; here the assertion is that the handler routes this case through that mapper at all.
 	var problem struct {
 		Type string `json:"type"`
 	}
@@ -132,5 +132,35 @@ func TestSessionRefusesWhenTheServiceIsAbsent(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500; body %s", rec.Code, rec.Body)
+	}
+}
+
+// The join between the write and database.IsUnavailable: both ends are measured elsewhere and the call between
+// them was not.
+func TestARecordingAgainstADatabaseThatIsDownIsUnavailable(t *testing.T) {
+	var config net.ListenConfig
+
+	listener, err := config.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserving a port: %v", err)
+	}
+	address := listener.Addr().String()
+
+	// Closed rather than left open: a port the kernel chose cannot collide with something else on this machine.
+	if err := listener.Close(); err != nil {
+		t.Fatalf("closing the listener: %v", err)
+	}
+
+	pool, err := pgxpool.New(t.Context(), "postgres://nobody:nothing@"+address+"/none?sslmode=disable")
+	if err != nil {
+		t.Fatalf("building the pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	caller := database.Caller{Subject: "8a1f3b7c-0000-4000-8000-000000000001", Role: "patient"}
+
+	err = identity.NewSessions(pool).RecordTimezone(t.Context(), caller, "Asia/Tbilisi")
+	if !errors.Is(err, identity.ErrDatabaseUnavailable) {
+		t.Fatalf("recording against a dead database answered %v, want ErrDatabaseUnavailable", err)
 	}
 }

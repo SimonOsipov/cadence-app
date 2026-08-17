@@ -51,11 +51,17 @@ func (s *Service) Register(api huma.API) {
 			"doctor's and an administrator's are not stored, and the call is answered without a write " +
 			"rather than refused, so one client can serve every role. " +
 			"Answers 400 when a patient's zone is not one the server knows, 403 when the account has no " +
-			"role yet, and 503 when the database did not answer.",
+			"role yet, and 503 when the database could not serve the request.",
 		Tags: []string{"identity"},
-		// Declared rather than left to the default response: both client surfaces are generated from this
-		// document, and a status that exists only in the prose above is a branch neither of them can write.
-		Errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable},
+		// Declared because both client surfaces are generated from this document. 401 is in the list although
+		// the middleware and not this handler usually raises it: declaring any status at all makes huma drop
+		// the default response, and without it the one status a client refreshes a token on goes undescribed.
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusServiceUnavailable,
+		},
 	}, s.recordSession)
 
 	huma.Register(api, huma.Operation{

@@ -13,25 +13,21 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
-// ErrNoProfileToRecordAgainst is returned when the write matched no row: the hook issues cadence_role only for an
-// account that has a profile, so this is a broken invariant rather than a miss.
+// ErrNoProfileToRecordAgainst: the hook issues cadence_role only for an account that has a profile, so no row is a
+// broken invariant rather than a miss.
 var ErrNoProfileToRecordAgainst = errors.New("the caller has no profile to record against")
 
-// ErrNoTimezone is returned for an empty zone. requireKnownTimezone accepts one — absence is the ordinary state of a
-// freshly created patient — and this is the one caller for which it is a malformed report rather than a state.
+// ErrNoTimezone: requireKnownTimezone accepts the empty string as «not measured yet», which a device's report is not.
 var ErrNoTimezone = errors.New("the report carries no timezone")
 
-// ErrDatabaseUnavailable separates «repeat the request» from «quote the request id»: see the two 5xx shapes in the
-// api component note. What counts as one is database.IsUnavailable's to decide, so that every route answers the
-// same question the same way.
-var ErrDatabaseUnavailable = errors.New("the database did not answer")
+// ErrDatabaseUnavailable is «repeat the request» rather than «quote the request id» — the two 5xx shapes of the api
+// note. Not «did not answer»: a deadlock answers promptly and still means «not now».
+var ErrDatabaseUnavailable = errors.New("the database could not serve the request")
 
-// ErrNoRole is the account an invitation reached and provisioning has not. The hook removes the claim for a user
-// with no profile, and the seam has no Postgres role to assume for one.
+// ErrNoRole is the account an invitation reached and provisioning has not: the seam has no role to assume for one.
 var ErrNoRole = errors.New("the caller has no product role")
 
-// The Russian the device reads. Neither names the zone it was given: the value came from the platform rather than
-// from the person holding the phone.
+// The Russian the device reads. Neither names the offending zone: it came from the platform, not from the person.
 const (
 	detailNotATimezone = "Часовой пояс не распознан."
 	detailNoRole       = "Аккаунт ещё не заведён в клинике."
@@ -44,9 +40,7 @@ type Sessions struct {
 	pool *pgxpool.Pool
 }
 
-// NewSessions builds the service over the request pool: the row is the policy's choice and the column the grant's,
-// and through the service path both decisions would move into Go. A nil pool yields a nil service, which is the
-// document generator's assembly and is what the handler's own check refuses on.
+// NewSessions builds the service over the request pool; a nil pool yields a nil service, which the handler refuses on.
 func NewSessions(pool *pgxpool.Pool) *Sessions {
 	if pool == nil {
 		return nil
@@ -57,10 +51,10 @@ func NewSessions(pool *pgxpool.Pool) *Sessions {
 
 // RecordTimezone writes the zone against the caller's own profile row.
 //
-// The predicate is not a copy of profiles_own_update. That policy narrows this statement for cadence_patient only;
-// under cadence_admin it is USING (true) over a table-wide grant, and cadence_app holds membership of that role — so
-// without the predicate a caller with an admin token rewrites the timezone of every profile in the clinic and is
-// answered 204.
+// A named weakness, which is why the predicate below is not a redundant copy of profiles_own_update: that policy
+// narrows the statement for cadence_patient only. Under cadence_admin the profiles policy is USING (true) over a
+// table-wide grant and cadence_app holds membership of that role, so without WHERE user_id = $2 a caller with an
+// admin token rewrites the timezone of every profile in the clinic and is answered 204.
 func (s *Sessions) RecordTimezone(ctx context.Context, caller database.Caller, timezone string) error {
 	if timezone == "" {
 		return fmt.Errorf("recording the timezone of %s: %w", caller.Subject, ErrNoTimezone)
@@ -71,8 +65,7 @@ func (s *Sessions) RecordTimezone(ctx context.Context, caller database.Caller, t
 			return err
 		}
 
-		// nullif for the same reason the patient's creation carries one: an empty string stored here is a zone
-		// nothing reports as missing. The guard above refuses it outright; this is the column's own defence.
+		// nullif as the patient's creation writes it: an empty string here is a zone nothing reports as missing.
 		tag, err := tx.Exec(ctx, `
 			UPDATE app.profiles SET timezone = nullif($1, '') WHERE user_id = $2
 		`, timezone, caller.Subject)
@@ -80,8 +73,7 @@ func (s *Sessions) RecordTimezone(ctx context.Context, caller database.Caller, t
 			return fmt.Errorf("recording the timezone: %w", err)
 		}
 
-		// user_id is the primary key, so the count is 0 or 1: a nil error from an UPDATE that matched nothing is
-		// not a witness for a write.
+		// user_id is the primary key, so the count is 0 or 1, and a nil error is not a witness for a write.
 		if tag.RowsAffected() != 1 {
 			return ErrNoProfileToRecordAgainst
 		}
@@ -117,17 +109,13 @@ func (s *Service) recordSession(ctx context.Context, input *SessionInput) (*Sess
 		return nil, huma.Error401Unauthorized("no verified principal on the request context")
 	}
 
-	// A closed set rather than «anything that is not a patient». An absent role is an ordinary state — the account
-	// was invited and not provisioned, which is what the issuance hook and the verifier both record — but it is
-	// still an account nothing can be written for, and 204 would claim a write that did not happen.
-	//
-	// Ahead of the assembly check on purpose, unlike the onboarding routes: what staff are answered is a statement
-	// of the contract rather than of what this process was built with.
+	// Ahead of the assembly check unlike the onboarding routes: what staff are answered is the contract itself.
 	switch principal.Role {
 	case patientRole:
 	case providerRole, adminRole:
 		return &SessionOutput{}, nil
 	default:
+		// Invited and not provisioned is ordinary, and still an account no write can name: 204 would claim one.
 		return nil, refusalForSession(fmt.Errorf("%q: %w", principal.Role, ErrNoRole))
 	}
 
@@ -152,7 +140,7 @@ func refusalForSession(err error) error {
 		return huma.Error403Forbidden(detailNoRole)
 
 	case errors.Is(err, ErrDatabaseUnavailable):
-		return huma.Error503ServiceUnavailable("the database did not answer", err)
+		return huma.Error503ServiceUnavailable("the database could not serve the request", err)
 
 	default:
 		return huma.Error500InternalServerError("recording the timezone", err)

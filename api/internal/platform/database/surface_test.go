@@ -40,9 +40,7 @@ func exportedSurface() []string {
 	return []string{
 		"HealthCheck(context.Context, *pgxpool.Pool) error",
 		"IsUUIDShaped(string) bool",
-		// Takes an error and no pool: it reads what a failure was, and a
-		// version of it that reached for a connection would be asking the
-		// database whether the database is answering.
+		// Takes an error and no pool: it reads what a failure was.
 		"IsUnavailable(error) bool",
 		"MigrateDown(string, string, int) error",
 		"MigrateForce(string, string, int) error",

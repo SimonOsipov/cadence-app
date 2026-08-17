@@ -17,14 +17,12 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// What all three profiles start out reporting. Deliberately not stand's own 'Europe/Moscow': with that value the
-// helper's UPDATE below would be a no-op, and «the fixture owns the starting value» would be a claim the suite
-// cannot fail on.
-const seededZone = "Asia/Yekaterinburg"
+// Deliberately neither stand's own 'Europe/Moscow' nor any zone the acceptance table writes: with either, a test
+// asserting a row moved or stayed could pass on the value it began with.
+const seededZone = "Asia/Novosibirsk"
 
-// standWithAPatient adds the patient, puts the doctor on their care team, and builds the service over the request
-// pool. The care team is not decoration: without it the patient can read no profile but their own, and «nobody
-// else's row was touched» would be a claim about a row the caller cannot reach in the first place.
+// The care team is not decoration: without it the patient can read no profile but their own, and «nobody else's
+// row was touched» would be about a row the caller cannot reach.
 func standWithAPatient(t *testing.T) (*identity.Sessions, *testsupport.Database) {
 	t.Helper()
 
@@ -67,8 +65,7 @@ func standWithAPatient(t *testing.T) (*identity.Sessions, *testsupport.Database)
 	return identity.NewSessions(requestPool), db
 }
 
-// zoneOf reads as the superuser, so the assertion is about the row rather than about what the caller's own policies
-// would let them see. An empty string is a NULL column.
+// Read as the superuser, so the assertion is about the row rather than about what a policy would show. "" is NULL.
 func zoneOf(t *testing.T, db *testsupport.Database, userID string) string {
 	t.Helper()
 
@@ -115,9 +112,8 @@ func TestASessionRecordsThePatientsOwnTimezone(t *testing.T) {
 	}
 }
 
-// The first report a device ever makes. The column starts NULL on a created patient — that is what
-// TestACreatedPatientHasNoTimezoneYet pins — and every fixture here starts it filled, so this is the one path that
-// is not an overwrite.
+// The one path that is not an overwrite: the column starts NULL on a created patient, which
+// TestACreatedPatientHasNoTimezoneYet pins.
 func TestTheFirstReportFillsAnEmptyTimezone(t *testing.T) {
 	sessions, db := standWithAPatient(t)
 
@@ -138,8 +134,7 @@ func TestTheFirstReportFillsAnEmptyTimezone(t *testing.T) {
 	}
 }
 
-// The zones the clinic's own patients report. Asserted because the accepted set is the server's tzdata rather than
-// ours: an image built with a trimmed one would refuse every device in a region and nothing else here would notice.
+// The accepted set is the server's tzdata rather than ours: a trimmed image would refuse a whole region silently.
 func TestASessionAcceptsTheZonesTheClinicLivesIn(t *testing.T) {
 	for _, zone := range []string{
 		"Europe/Moscow",
@@ -163,10 +158,8 @@ func TestASessionAcceptsTheZonesTheClinicLivesIn(t *testing.T) {
 	}
 }
 
-// The spellings the probe must refuse. Whole-name equality is the claim, and each row is a mutation of it that one
-// absurd value would not catch: a prefix survives LIKE $1 || '%', the wrong case survives ILIKE, and a fragment
-// survives position($1 in name) > 0. «MSK» is the fourth axis — it is a real zone, but it lives in
-// pg_timezone_abbrevs rather than pg_timezone_names, so it catches a probe that reads the wrong catalogue.
+// One mutation of whole-name equality per row: a prefix survives LIKE $1 || '%', the wrong case survives ILIKE, a
+// fragment survives position(), and «MSK» is real but lives in pg_timezone_abbrevs — it catches the wrong catalogue.
 func TestASessionRefusesAZoneTheServerDoesNotKnow(t *testing.T) {
 	for _, zone := range []string{
 		"Mars/Olympus",
@@ -215,10 +208,8 @@ func TestASessionLeavesAStaffRowAlone(t *testing.T) {
 	}
 }
 
-// The method, not the handler. RecordTimezone is exported and takes whatever Caller it is given, and under
-// cadence_admin the profiles policy is USING (true) over a table-wide grant — so an UPDATE without its predicate
-// rewrites every profile in the clinic and reports no error at all. The handler's staff branch cannot be what that
-// rests on: it is a different function in a different layer.
+// The method, not the handler: RecordTimezone is exported and takes any Caller, and the handler's staff branch is
+// a different function in a different layer.
 func TestRecordingUnderAnAdminCallerTouchesNobodyElse(t *testing.T) {
 	sessions, db := standWithAPatient(t)
 
@@ -238,8 +229,7 @@ func TestRecordingUnderAnAdminCallerTouchesNobodyElse(t *testing.T) {
 	}
 }
 
-// Named rather than merely a 500: the sentinel separates «this account has no profile» from a database that failed,
-// and a test asserting only the status passes for either.
+// The sentinel, not the status: a test asserting only 500 passes for a database that failed too.
 func TestRecordingRefusesWhenThereIsNoProfileToRecordAgainst(t *testing.T) {
 	sessions, _ := standWithAPatient(t)
 
@@ -251,9 +241,7 @@ func TestRecordingRefusesWhenThereIsNoProfileToRecordAgainst(t *testing.T) {
 	}
 }
 
-// The guard on the empty zone, which the schema makes unreachable through the route and RecordTimezone does not:
-// requireKnownTimezone accepts «» as «not measured yet», so without this the column takes an empty string that
-// nothing downstream reports as missing.
+// Unreachable through the route, which pins minLength 1, and reachable through the exported method.
 func TestRecordingRefusesAReportWithNoZone(t *testing.T) {
 	sessions, db := standWithAPatient(t)
 
@@ -280,8 +268,7 @@ func TestASessionRefusesWhenThereIsNoProfileToRecordAgainst(t *testing.T) {
 	}
 }
 
-// A row the caller can see and must not write. Without the care team seeded above the patient can read no profile
-// but their own, and this would hold for the wrong reason.
+// A row the caller can see and must not write.
 func TestASessionWritesNobodyElsesRow(t *testing.T) {
 	sessions, db := standWithAPatient(t)
 
@@ -295,9 +282,8 @@ func TestASessionWritesNobodyElsesRow(t *testing.T) {
 	}
 }
 
-// The wiring, which nothing else measures: every other test here builds the service itself, so the pool the
-// composition root hands it goes unmeasured. Given the service pool instead of the request one, the seam cannot
-// assume cadence_patient and this is where that shows.
+// The wiring: every other test here builds the service itself, so the pool the composition root passes is
+// otherwise unmeasured.
 func TestTheMountedRouteRecordsAPatientsTimezone(t *testing.T) {
 	walked := walkTheCycle(t)
 
