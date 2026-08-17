@@ -12,6 +12,15 @@ proposal: ""
 
 # Dashboard Skeleton
 
+> [!decision] 2026-08-17 — steps 1, 2 and 3 are implemented and merged to `main` as
+> `ee219cb` (PR #13, squashed from 25 commits). Each was driven to an independent
+> reviewer PASS: step 1 in four rounds, step 2 in four, step 3 in six. The status stays
+> `approved` rather than `done` because steps 4 and 5 have not been started — they need
+> the deployment contour, the manual task SKL-06, which ADR-008 renamed from a Railway
+> project to a Timeweb one. Two deviations from this note were recorded during the work:
+> «Сообщения» ships as a disabled span until that screen exists, and dose became
+> `{value, unit}` rather than a preformatted string.
+
 > [!deviation] 2026-08-06
 > Spec said: the dashboard's static assets deploy to Railway. Actually: per
 > ADR-008 deployment goes to Timeweb App Platform, and every mention of Railway
