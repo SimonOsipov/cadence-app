@@ -20,5 +20,12 @@ export default tseslint.config(
   // configs.flat, not configs['recommended-latest']: at v7 the top-level entries are still
   // eslintrc-shaped and ESLint 10 refuses them — `plugins` as an array of strings.
   reactHooks.configs.flat['recommended-latest'],
-  { files: ['**/*.js'], extends: [tseslint.configs.disableTypeChecked] },
+  {
+    // scripts/ runs under Node rather than in the browser, and the config above declares neither.
+    // Named one by one instead of pulling in a globals package: two entries, and a third would be as
+    // obvious to add as this comment is to read.
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
+  },
+  { files: ['**/*.{js,mjs}'], extends: [tseslint.configs.disableTypeChecked] },
 )

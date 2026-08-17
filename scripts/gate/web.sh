@@ -102,4 +102,9 @@ npm run --silent test
 echo "==> vite build"
 npx vite build
 
+# The build does not fail on an asset it could not resolve — it warns and exits 0.
+# See the script's own header for the measurement.
+echo "==> every asset the build points at is in the build"
+node scripts/check-build-assets.mjs
+
 echo "web gate: green"

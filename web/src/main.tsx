@@ -1,3 +1,5 @@
+import './tokens/colors_and_type.css'
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
