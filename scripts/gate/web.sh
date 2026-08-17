@@ -114,15 +114,24 @@ npm run --silent lint
 # narrower still spares whichever file the check names — measured, a block over `patient-*.tsx` and
 # `triage.tsx` leaves roster.tsx reporting 8 while `var(--paper)` in patient-card.tsx is not refused.
 #
-# The root is `src/features`, matching the rule block's own scope: M6's screens land as new directories
-# beside `overview/`, and a root one level down would stop measuring at the first of them. `__probes__`
+# The root is `src/features` and both extensions, matching the rule block's own scope
+# (`src/features/**/*.{ts,tsx}`): M6's screens land as new directories beside `overview/`, and `flags.ts`
+# — the flag palette's colour table, the likeliest file in the tree to grow a `var(--…)` — is a `.ts`. `__probes__`
 # is excluded because it is globally ignored, and `--print-config` on an ignored file prints the bare
 # word `undefined` — the reader below then dies on a JSON parse rather than reporting a count.
 echo "==> the rules reach the components, not just the probes"
-# Fed by process substitution, not a pipe, so the `exit 1` below ends the script rather than a
-# subshell — and -print0 because `web/prototype/Doctor Dashboard.html` is one directory away and a
-# word-split path reaches eslint as two unreadable ones.
+# Read from a file, not a pipe, so the `exit 1` below ends the script rather than a subshell — and
+# -print0 because `web/prototype/Doctor Dashboard.html` is one directory away and a word-split path
+# reaches eslint as two unreadable ones.
 checked=0
+listing=$(mktemp)
+trap 'rm -f "$listing"' EXIT
+
+# Materialised first because a process substitution's exit status is invisible to `set -e`: a find that
+# dies partway emits what it read and the loop reports a clean count over a truncated list. As a simple
+# command its status is read. The same invisibility is what makes the zero guard below reachable.
+find src/features \( -name '*.ts' -o -name '*.tsx' \) \
+    ! -name '*.test.ts' ! -name '*.test.tsx' ! -path '*__probes__*' -print0 > "$listing"
 
 while IFS= read -r -d '' component; do
     checked=$((checked + 1))
@@ -139,7 +148,7 @@ while IFS= read -r -d '' component; do
         echo "not getting the rules the probes say exist" >&2
         exit 1
     fi
-done < <(find src/features -name '*.tsx' ! -name '*.test.tsx' ! -path '*__probes__*' -print0)
+done < "$listing"
 
 if [ "$checked" -eq 0 ]; then
     echo "no components found to check the lint rules against, so this check measured nothing" >&2
@@ -152,7 +161,7 @@ echo "all $checked components carry the 8 restricted-syntax selectors"
 # a rule matching nothing looks exactly like a rule everything obeys. The probes violate on purpose, are
 # ignored by an ordinary run, and are linted here with the count required.
 echo "==> the lint rules still refuse what they are for"
-for probe in aggregates:10 css-variables:2; do
+for probe in aggregates:15 css-variables:2; do
     file="src/features/__probes__/${probe%%:*}.tsx"
     want="${probe##*:}"
     got=$(npx eslint --no-ignore "$file" 2>&1 | grep -c 'no-restricted-syntax' || true)
