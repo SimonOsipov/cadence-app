@@ -1,7 +1,7 @@
 ---
 type: spec
 project: cadence
-status: approved
+status: done
 priority: p1
 created: 2026-07-30
 todoist_parent: "6h9JrRJC22fGwMHH"
