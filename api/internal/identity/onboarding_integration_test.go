@@ -253,6 +253,70 @@ func TestTheInvitationOfARequestThatGaveUpIsStillRecorded(t *testing.T) {
 	}
 }
 
+// The same window on the other side of a successful invitation, on both routes: the mail has left, and the row that
+// says whose account it is has not been written yet.
+//
+// Until this, only the failure of the provisioner's own call was cured. An invitation that succeeded and a write that
+// then failed — the service pool exhausted, a five-second statement timeout, a connection dropped, a caller who gave
+// up — left the same account nobody here recognises, and this time with nothing that tried again: the request
+// answered 500 and the address was refused from then on.
+//
+// Driven through the flow rather than the transport, because what has to end mid-request is the context.
+func TestAnInvitationIsRecordedEvenWhenTheRequestEndsRightAfterIt(t *testing.T) {
+	tests := []struct {
+		name   string
+		caller auth.Principal
+		invite func(*identity.Onboarding, context.Context, string) (string, error)
+	}{
+		{
+			name:   "a patient",
+			caller: asDoctor,
+			invite: func(o *identity.Onboarding, ctx context.Context, address string) (string, error) {
+				return o.InvitePatient(ctx, address, identity.NewPatient{
+					FullName: "Ирина Соколова",
+					Specialists: []identity.Assignment{
+						{ProviderID: theDoctor, CareRole: "endo", Primary: true},
+					},
+				})
+			},
+		},
+		{
+			name:   "a member of staff",
+			caller: asAdmin,
+			invite: func(o *identity.Onboarding, ctx context.Context, address string) (string, error) {
+				return o.InviteProvider(ctx, address, identity.NewProvider{
+					Role: "doctor", FullName: "Олег Ким",
+				})
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clinic := onboardingStand(t)
+
+			address := strings.ReplaceAll(tc.name, " ", "-") + "@clinic.example"
+
+			ctx, cancel := context.WithCancel(auth.WithPrincipal(t.Context(), tc.caller))
+			defer cancel()
+
+			clinic.provider.afterTheInvitation = cancel
+
+			onboarding := identity.NewOnboarding(clinic.requests, clinic.writes, clinic.provider)
+
+			if _, err := tc.invite(onboarding, ctx, address); err == nil {
+				t.Fatal("a request cancelled mid-creation answered as if the person had been created")
+			}
+
+			if !clinic.holdsInviteFor(t, accountID(t, address)) {
+				t.Fatal("the invitation went out and the row recording it did not, so the account is " +
+					"one this clinic does not recognise — every later request for the address is a " +
+					"409 and no application path undoes it")
+			}
+		})
+	}
+}
+
 // The other half of that cure, and the reason it is conditional: an account somebody has already been inside is not
 // recorded as ours on the strength of a failed call. From here the two are the same picture — an account at the
 // address, and no answer saying whose it is — and claiming deletes: a stranger's account, and every session on it,
@@ -679,6 +743,10 @@ type harnessProvisioner struct {
 	// Runs after the account exists and before the failure is reported. One caller, and it ends the request's
 	// context there: the caller who gave up while the invitation was in flight.
 	beforeTheAnswerIsLost func()
+
+	// Runs after an invitation this side was told about. The window it opens is the one the creation cannot
+	// close: the mail has left and nothing here has recorded it yet.
+	afterTheInvitation func()
 }
 
 // The client wraps a transport failure and the caller may not read it, so any error at all is the whole signal.
@@ -721,6 +789,10 @@ func (p *harnessProvisioner) Invite(ctx context.Context, email string) (identity
 		}
 
 		return identity.Account{}, errUnreachable
+	}
+
+	if p.afterTheInvitation != nil {
+		p.afterTheInvitation()
 	}
 
 	return *account, nil
@@ -887,6 +959,41 @@ func TestNamingOneSpecialistTwiceIsTheFormsMistakeAndNothingIsSent(t *testing.T)
 	var invited int
 	clinic.scan(t, `SELECT count(*) FROM app.invites WHERE email = $1`,
 		[]any{address}, &invited)
+
+	if invited != 0 {
+		t.Errorf("%d invites rows for a refused body: the address is now spent", invited)
+	}
+
+	if sent := clinic.provider.invitations(); sent != 0 {
+		t.Errorf("%d invitations went out for a body that was refused", sent)
+	}
+}
+
+// Two leading specialists, and the same property: refused before the address is spent.
+//
+// The witness for InvitePatient's own call to checkBody, which had none. `primary` is a bare bool with no
+// cross-field constraint, so huma's schema passes a body naming two — this is the one refusal in checkBody the
+// transport cannot catch first. Delete that call and the suite stayed green: the invitation goes out, the invites
+// row commits, and the 422 arrives from the check inside CreatePatient with the address already spent.
+func TestNamingTwoLeadingSpecialistsIsTheFormsMistakeAndNothingIsSent(t *testing.T) {
+	clinic := onboardingStand(t)
+
+	const address = "two-leaders@clinic.example"
+
+	answered := clinic.create(t, asDoctor, patientsPath, fmt.Sprintf(
+		`{"email":%q,"full_name":"Ирина Соколова","specialists":[`+
+			`{"provider_id":%q,"care_role":"endo","primary":true},`+
+			`{"provider_id":%q,"care_role":"nurse","primary":true}]}`,
+		address, theDoctor, theColleague,
+	))
+
+	if answered.status != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want 422: which specialist leads is the form's problem; body was %s",
+			answered.status, answered.body)
+	}
+
+	var invited int
+	clinic.scan(t, `SELECT count(*) FROM app.invites WHERE email = $1`, []any{address}, &invited)
 
 	if invited != 0 {
 		t.Errorf("%d invites rows for a refused body: the address is now spent", invited)

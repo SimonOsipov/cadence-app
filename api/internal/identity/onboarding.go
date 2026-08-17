@@ -205,7 +205,7 @@ func (o *Onboarding) InviteProvider(
 
 			// Committed before the person, for the reason record states: a creation interrupted after the
 			// mail has gone out has to be curable by a retry.
-			if err := o.remember(ctx, account.ID, of); err != nil {
+			if err := o.rememberOrRetry(ctx, account.ID, of); err != nil {
 				return err
 			}
 
@@ -348,11 +348,39 @@ func (o *Onboarding) held(ctx context.Context, userID string) (Held, error) {
 // recognise as its own, and would answer 409 forever. The window does not close — the commit always comes after the
 // side effect — it shrinks to the gap between the invitation and this first commit.
 func (o *Onboarding) record(ctx context.Context, of creation, patient NewPatient) error {
-	if err := o.remember(ctx, patient.UserID, of); err != nil {
+	if err := o.rememberOrRetry(ctx, patient.UserID, of); err != nil {
 		return err
 	}
 
 	return CreatePatient(ctx, o.writes, patient)
+}
+
+// rememberOrRetry writes the record of an invitation that has already gone out, and tries once more on a clock of its
+// own when the request's has run out.
+//
+// Without that row the address is an account nobody on this side recognises: held reports no invite, ClaimFor answers
+// RefuseNotOurs, and every later request for the address is refused permanently — no role holds DELETE on invites, and
+// nothing deletes the account either. The invitation cannot be unsent, so the write that records it does not depend on
+// a caller who may already be gone. Same move invite makes for the answer it lost, and for the same reason.
+//
+// The retry can duplicate the audit row, in the one case where the first attempt committed and only its answer was
+// lost. One extra «asked for» costs less than an address the clinic can never use again.
+func (o *Onboarding) rememberOrRetry(ctx context.Context, userID string, of creation) error {
+	err := o.remember(ctx, userID, of)
+	if err == nil {
+		return nil
+	}
+
+	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recoveryBudget)
+	defer cancel()
+
+	if again := o.remember(retryCtx, userID, of); again != nil {
+		// Both, because they are rarely the same refusal: the first is usually the request giving up, and the
+		// second is what the database actually says.
+		return fmt.Errorf("%w (retried: %w)", err, again)
+	}
+
+	return nil
 }
 
 // remember commits the record of the invitation and the row that signs it.
