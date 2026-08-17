@@ -128,10 +128,10 @@ func TestSessionIsInTheContract(t *testing.T) {
 		t.Fatalf("the document does not describe /v1/me/session; it has %v", spec.Paths)
 	}
 
-	// The statuses, not just the path. Declaring any of them makes huma drop the default response, so a status
-	// left out of the operation is one no generated client can branch on — and the drift gate cannot see it,
-	// because it compares the document against the code that produced it.
-	for _, status := range []string{"204", "400", "401", "403", "503"} {
+	// The statuses, not just the path: declaring any of them makes huma drop the default response, and the drift
+	// gate cannot see a status removed from both the code and the document. 422 and 500 are huma's own additions
+	// and are asserted for the same reason — TestSessionRefusesWhenTheServiceIsAbsent reaches the second.
+	for _, status := range []string{"204", "400", "401", "403", "422", "500", "503"} {
 		if _, declared := operation.Post.Responses[status]; !declared {
 			t.Errorf("the operation does not declare %s; it declares %v", status, operation.Post.Responses)
 		}

@@ -80,6 +80,18 @@ func TestWhichRefusalAReportedTimezoneHeard(t *testing.T) {
 	}
 }
 
+// The sentences, by literal. Everywhere else they are compared against their own constants, so an empty string or
+// the wrong one of the two would pass the suite while the device showed a patient the wrong reason.
+func TestTheRussianTheDeviceReads(t *testing.T) {
+	if detailNotATimezone != "Часовой пояс не распознан." {
+		t.Errorf("detailNotATimezone = %q", detailNotATimezone)
+	}
+
+	if detailNoRole != "Аккаунт ещё не заведён в клинике." {
+		t.Errorf("detailNoRole = %q", detailNoRole)
+	}
+}
+
 // The whole of what the constructor does.
 func TestNoPoolBuildsNoService(t *testing.T) {
 	if sessions := NewSessions(nil); sessions != nil {

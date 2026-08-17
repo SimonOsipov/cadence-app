@@ -50,20 +50,10 @@ func IsUnavailable(err error) bool {
 		return false
 	}
 
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	var connErr *pgconn.ConnectError
-	if errors.As(err, &connErr) {
-		return true
-	}
-
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return true
-	}
-
+	// The server's own word first, even inside a ConnectError. pgx wraps a server error raised during the
+	// handshake — a rotated password, an edited pg_hba, a database renamed by a restore — in one of those, so a
+	// structural arm read before this would answer «repeat in a few minutes» to a deployment that will never
+	// succeed again. Measured on pgx v5.10.0: such a refusal satisfies errors.As for both types.
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		_, transient := notNow[pgErr.Code]
@@ -71,5 +61,17 @@ func IsUnavailable(err error) bool {
 		return transient
 	}
 
-	return false
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	// Nothing came back carrying a SQLSTATE: the connection itself is what failed.
+	var connErr *pgconn.ConnectError
+	if errors.As(err, &connErr) {
+		return true
+	}
+
+	var netErr net.Error
+
+	return errors.As(err, &netErr)
 }
