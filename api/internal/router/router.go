@@ -50,11 +50,19 @@ func contexts(opts Options) []boundedContext {
 		onboarding = identity.NewOnboarding(opts.Pool, opts.ServicePool, opts.Provisioner)
 	}
 
+	// The request pool alone: this one writes the caller's own row under the
+	// caller's own identity, so it needs neither the service path nor the
+	// identity provider.
+	var sessions *identity.Sessions
+	if opts.Pool != nil {
+		sessions = identity.NewSessions(opts.Pool)
+	}
+
 	return []boundedContext{
 		{"audit", audit.Register},
 		{"content", content.Register},
 		{"dosing", dosing.Register},
-		{"identity", identity.NewService(onboarding).Register},
+		{"identity", identity.NewService(onboarding, sessions).Register},
 		{"inventory", inventory.Register},
 		{"journal", journal.Register},
 		{"measurements", measurements.Register},

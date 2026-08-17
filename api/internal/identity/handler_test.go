@@ -32,7 +32,7 @@ func mounted(principal *auth.Principal) http.Handler {
 		})
 	})
 
-	identity.NewService(nil).Register(httpserver.NewAPI(router))
+	identity.NewService(nil, nil).Register(httpserver.NewAPI(router))
 
 	return router
 }
@@ -126,7 +126,7 @@ func TestMeRefusesWithoutAPrincipal(t *testing.T) {
 func TestMeIsInTheContract(t *testing.T) {
 	router := chi.NewRouter()
 	api := httpserver.NewAPI(router)
-	identity.NewService(nil).Register(api)
+	identity.NewService(nil, nil).Register(api)
 
 	document, err := api.OpenAPI().MarshalJSON()
 	if err != nil {

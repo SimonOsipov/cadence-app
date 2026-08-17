@@ -13,15 +13,16 @@ import (
 // pool per route is a route that can be given the wrong one.
 type Service struct {
 	onboarding *Onboarding
+	sessions   *Sessions
 }
 
-// NewService builds the context around the flow its operations serve.
+// NewService builds the context around the flows its operations serve.
 //
-// A nil onboarding is legitimate and has exactly one caller: the generator that
+// A nil dependency is legitimate and has exactly one caller: the generator that
 // renders openapi.json needs the operations declared and nothing behind them.
 // An operation reached in that state refuses rather than dereferences.
-func NewService(onboarding *Onboarding) *Service {
-	return &Service{onboarding: onboarding}
+func NewService(onboarding *Onboarding, sessions *Sessions) *Service {
+	return &Service{onboarding: onboarding, sessions: sessions}
 }
 
 // Register mounts this context's operations on the API.
@@ -38,6 +39,20 @@ func (s *Service) Register(api huma.API) {
 			"It reads no database: a role changed there takes effect when the token expires.",
 		Tags: []string{"identity"},
 	}, me)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "record-session",
+		Method:        http.MethodPost,
+		Path:          "/v1/me/session",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Report the device's timezone",
+		Description: "Records the caller's timezone against their profile. The patient's is stored — the " +
+			"schedule, the reminders and the server-side sweep all read it. A doctor's and an " +
+			"administrator's are not: they hold no rights on the column, and the call is answered " +
+			"without a write rather than refused, so one client can serve every role. " +
+			"Answers 400 when the zone is not one the server knows.",
+		Tags: []string{"identity"},
+	}, s.recordSession)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-patient",
