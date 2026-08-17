@@ -121,25 +121,20 @@ func (k *SigningKey) SignWithKID(t *testing.T, kid string, claims jwt.MapClaims)
 func (k *SigningKey) PrivateJWK(t *testing.T) string {
 	t.Helper()
 
-	raw, err := json.Marshal(privateJWKMarshal(t, k, false))
+	// Without the signing marker: that one is what GoTrue reads to pick the key
+	// it signs sessions with, and every consumer of a private JWK here wants the
+	// key without it.
+	marshalled, err := privateJWKMarshalFor(k, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(marshalled)
 	if err != nil {
 		t.Fatalf("marshalling the private JWK for %q: %v", k.KID, err)
 	}
 
 	return string(raw)
-}
-
-// The signing marker is what GoTrue reads to pick the key it signs sessions
-// with; every other consumer of a private JWK here wants the key without it.
-func privateJWKMarshal(t *testing.T, key *SigningKey, signing bool) jwkset.JWKMarshal {
-	t.Helper()
-
-	marshalled, err := privateJWKMarshalFor(key, signing)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return marshalled
 }
 
 func privateJWKMarshalFor(key *SigningKey, signing bool) (jwkset.JWKMarshal, error) {

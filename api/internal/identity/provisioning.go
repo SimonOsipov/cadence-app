@@ -48,8 +48,10 @@ type Deletion struct {
 // under internal/identity compiles against the thing that speaks to it —
 // TestTheContextDoesNotCompileAgainstTheProvisionerClient is the witness.
 //
-// Four operations rather than the component's five: setting a password exists
-// outside production only, for seeding, and no context asks for it.
+// Three operations rather than the component's five: setting a password exists
+// outside production only, for seeding, and the roster lookup has no consumer in
+// this context. The client keeps both — an interface the consumer declares says
+// what this context needs, not what the thing behind it can do.
 //
 // Lookup answers with no account and no error when there is none at that
 // address. It is the answer that makes an address free to invite, and it is not
@@ -57,6 +59,5 @@ type Deletion struct {
 type Provisioner interface {
 	Invite(ctx context.Context, email string) (Account, error)
 	Lookup(ctx context.Context, email string) (*Account, error)
-	LookupBatch(ctx context.Context, ids []string) ([]Account, error)
 	Delete(ctx context.Context, deletion Deletion) error
 }

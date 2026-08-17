@@ -239,7 +239,9 @@ func (o *Onboarding) settle(ctx context.Context, of creation) (Account, error) {
 		return Account{}, err
 	}
 
-	switch ClaimFor(*found, held) {
+	claim := ClaimFor(*found, held)
+
+	switch claim {
 	case RefuseAlreadyOnboarded:
 		return Account{}, ErrAlreadyOnboarded
 
@@ -255,16 +257,25 @@ func (o *Onboarding) settle(ctx context.Context, of creation) (Account, error) {
 			return Account{}, fmt.Errorf("deleting the account being claimed: %w", ErrProvisionerUnavailable)
 		}
 
-		// In a transaction of its own, before the invitation that follows: this is the most destructive thing
-		// the clinic does to another system, and its record must not depend on the rest of the creation.
-		if err := o.audit(ctx, accountDeleted, found.ID, of); err != nil {
+		// In a transaction of its own, before the invitation that follows, and on a clock of its own: this is
+		// the most destructive thing the clinic does to another system, the account is already gone by the
+		// time this runs, and a caller who hangs up in that instant must not take the record of it with them.
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recoveryBudget)
+		defer cancel()
+
+		if err := o.audit(auditCtx, accountDeleted, found.ID, of); err != nil {
 			return Account{}, err
 		}
 
 		return o.invite(ctx, of)
 
-	default:
+	case ClaimByInviting:
 		return o.invite(ctx, of)
+
+	default:
+		// Named rather than folded into the arm above: inviting was the default, so a fifth claim added to the
+		// rule and not to this switch would have sent an invitation to whatever state it describes.
+		return Account{}, fmt.Errorf("the claim rule answered %d, which this flow does not know", claim)
 	}
 }
 
@@ -312,10 +323,12 @@ func (o *Onboarding) invite(ctx context.Context, of creation) (Account, error) {
 // that has just been slow.
 //
 // It is spent past the request's own deadline, which is the point — and the cost, since the handler goes on holding
-// the lock and its connection for up to this long after the caller has been answered. Once, not twice: invite's
-// recovery runs only when the invitation failed, and rememberOrRetry's only when it succeeded. Fifteen seconds sits
-// under SERVER_WRITE_TIMEOUT's 30s default and above the service path's 5s statement timeout, so a recovery that is
-// going to succeed has room and one that is not gives the connection back.
+// the lock and its connection for that long after the caller has been answered. Fifteen seconds sits above the service
+// path's 5s statement timeout, so a write that is going to succeed has room and one that is not gives the connection
+// back.
+//
+// The claim path is the one that can spend two of them: the deletion's own record, then invite's recovery. Both only
+// when the database or the provisioner is already hanging, and thirty seconds is the ceiling.
 const recoveryBudget = 15 * time.Second
 
 // «Somebody has been inside this account» — one predicate because it guards two things: whether an orphan may be

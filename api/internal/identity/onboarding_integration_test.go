@@ -866,10 +866,6 @@ func (p *harnessProvisioner) read(ctx context.Context, email string) (*identity.
 	return &found, nil
 }
 
-func (p *harnessProvisioner) LookupBatch(context.Context, []string) ([]identity.Account, error) {
-	return nil, errors.New("no test here asks for a roster")
-}
-
 func (p *harnessProvisioner) Delete(ctx context.Context, deletion identity.Deletion) error {
 	if p.unreachable {
 		return errUnreachable

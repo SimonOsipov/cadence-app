@@ -32,23 +32,31 @@ import (
 
 var gotrueCluster *testsupport.Cluster
 
+// os.Exit runs no deferred function and a panicking test never returns through m.Run, so the teardown lives in a
+// function of its own: without it a panic leaves the containers running, and TESTCONTAINERS_RYUK_DISABLED means
+// nothing else reaps them.
 func TestMain(m *testing.M) {
+	os.Exit(runSuite(m))
+}
+
+func runSuite(m *testing.M) int {
 	ctx := context.Background()
 
 	cluster, err := testsupport.StartCluster(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "starting the test cluster: %v\n", err)
-		os.Exit(1)
+
+		return 1
 	}
 	gotrueCluster = cluster
 
-	code := m.Run()
+	defer func() {
+		if err := gotrueCluster.Terminate(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", err)
+		}
+	}()
 
-	if err := gotrueCluster.Terminate(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", err)
-	}
-
-	os.Exit(code)
+	return m.Run()
 }
 
 // served is what an admin route that actually ran answers with: the user list,

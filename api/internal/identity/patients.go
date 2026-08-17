@@ -264,20 +264,32 @@ func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
 // classify turns the database's answer into one of this package's refusals, where there is one to turn it into.
 //
 // Only UNIQUE: everything else keeps its own error, because a refusal this package does not recognise is a failure
-// rather than a rule.
+// rather than a rule. The database's own error stays in the chain — a caller reading it is what a wrapped `%s` would
+// leave with a string and no error to inspect, which is the divergence classifyStaff did not have.
 func classify(err error) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != uniqueViolation {
 		return err
 	}
 
-	// Which key spoke decides the answer; collapsed into one, a care-team clash is answered «this address is taken».
-	if pgErr.ConstraintName == careTeamPairKey {
-		return fmt.Errorf("%w: %s", ErrAssignmentCollided, pgErr.ConstraintName)
+	// Which key spoke decides the answer. Collapsed into one they all read as «this address is taken», which is a
+	// fact about the address for two refusals that are facts about the form — and the doctor, told the patient
+	// exists, has no reason to correct it and retry.
+	switch pgErr.ConstraintName {
+	case careTeamPairKey:
+		return fmt.Errorf("%w: %w", ErrAssignmentCollided, pgErr)
+
+	case careTeamPrimaryKey:
+		return fmt.Errorf("%w: %w", ErrTwoPrimarySpecialists, pgErr)
 	}
 
-	return fmt.Errorf("%w: %s", ErrAlreadyExists, pgErr.ConstraintName)
+	return fmt.Errorf("%w: %w", ErrAlreadyExists, pgErr)
 }
 
-// careTeamPairKey is the constraint that fires when one specialist is named twice for one patient.
-const careTeamPairKey = "care_team_assignments_unique_pair"
+// The two care-team keys that answer 23505 for something the form got wrong rather than for an address already taken.
+// checkBody and refuseRepeatedSpecialist refuse both before an invitation goes out; these arms are what the answer is
+// when one of those checks is removed or a race gets past it.
+const (
+	careTeamPairKey    = "care_team_assignments_unique_pair"
+	careTeamPrimaryKey = "care_team_assignments_one_primary"
+)

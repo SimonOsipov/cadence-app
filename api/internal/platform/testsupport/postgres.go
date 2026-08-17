@@ -321,7 +321,7 @@ func (c *Cluster) migrate(ctx context.Context, name, migrationsPath string) (*Da
 	for role, password := range map[string]string{AppRole: appPass, ServiceAppRole: serviceAppPass} {
 		if err := c.exec(
 			ctx, bootstrapDSN,
-			fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", pgIdent(role), password),
+			fmt.Sprintf("ALTER ROLE %s PASSWORD %s", pgIdent(role), pgLiteral(password)),
 		); err != nil {
 			return nil, fmt.Errorf("setting the %s password: %w", role, err)
 		}
@@ -417,4 +417,12 @@ func moduleRoot() (string, error) {
 // helper that returns a bare string invites the next caller to pass one.
 func pgIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// pgLiteral quotes a string for the same statements, and exists because ALTER ROLE … PASSWORD takes no bound
+// parameter: without it the password is interpolated raw, which is the one form this project's authorship gate refuses
+// everywhere else. With standard_conforming_strings on — the server default — doubling the quote is the whole of the
+// escaping.
+func pgLiteral(value string) string {
+	return `'` + strings.ReplaceAll(value, `'`, `''`) + `'`
 }

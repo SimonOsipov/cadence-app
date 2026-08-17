@@ -292,12 +292,6 @@ func (p *countingProvisioner) Lookup(context.Context, string) (*identity.Account
 	return nil, errors.New("this provisioner looks nobody up")
 }
 
-func (p *countingProvisioner) LookupBatch(context.Context, []string) ([]identity.Account, error) {
-	p.calls++
-
-	return nil, errors.New("this provisioner looks nobody up")
-}
-
 func (p *countingProvisioner) Delete(context.Context, identity.Deletion) error {
 	p.calls++
 

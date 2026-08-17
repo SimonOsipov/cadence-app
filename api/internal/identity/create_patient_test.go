@@ -5,9 +5,69 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
+
+// Which 23505 the database spoke, and what each one is a fact about.
+//
+// Two of the three are facts about the form, and answering them as «this address is already taken» is what makes them
+// unfixable: the invitation has gone out by the time this runs, and a doctor told the patient exists has no reason to
+// correct the care team and retry. The checks above the lock refuse both before anything is sent — these arms are the
+// answer when one of those checks is removed or a concurrent creation gets past it.
+func TestWhichRefusalTheCreationHeard(t *testing.T) {
+	tests := []struct {
+		name       string
+		constraint string
+		want       error
+	}{
+		{name: "the patient already exists", constraint: "profiles_pkey", want: ErrAlreadyExists},
+		{
+			name:       "one specialist named twice",
+			constraint: careTeamPairKey,
+			want:       ErrAssignmentCollided,
+		},
+		{
+			name:       "two specialists leading",
+			constraint: careTeamPrimaryKey,
+			want:       ErrTwoPrimarySpecialists,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			refusal := &pgconn.PgError{Code: uniqueViolation, ConstraintName: tc.constraint}
+
+			got := classify(refusal)
+
+			if !errors.Is(got, tc.want) {
+				t.Errorf("classified as %v, want %v", got, tc.want)
+			}
+
+			// The database's own error stays reachable: without it a caller has the sentence and no error to
+			// inspect, and the two classifiers answered differently on exactly this.
+			if !errors.Is(got, refusal) {
+				t.Errorf("classified as %v, which no longer carries the database's own error", got)
+			}
+		})
+	}
+}
+
+// Anything that is not a UNIQUE violation keeps its own error: an unrecognised refusal is a failure rather than a rule,
+// and a 500 is the honest answer to it.
+func TestARefusalTheCreationDoesNotRecogniseIsLeftAlone(t *testing.T) {
+	refusal := &pgconn.PgError{Code: "23503", ConstraintName: "invites_invited_by_fkey"}
+
+	got := classify(refusal)
+
+	for _, named := range []error{ErrAlreadyExists, ErrAssignmentCollided, ErrTwoPrimarySpecialists} {
+		if errors.Is(got, named) {
+			t.Fatalf("read as %v, want a refusal this package does not name", named)
+		}
+	}
+}
 
 // Every refusal this route can answer, and the document each one becomes.
 //

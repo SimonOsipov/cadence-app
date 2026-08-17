@@ -30,39 +30,45 @@ var (
 	cycle *testsupport.Cycle
 )
 
+// os.Exit runs no deferred function and a panicking test never returns through m.Run, so the teardown lives in a
+// function of its own: without it a panic leaves the containers running, and TESTCONTAINERS_RYUK_DISABLED means
+// nothing else reaps them.
 func TestMain(m *testing.M) {
+	os.Exit(runSuite(m))
+}
+
+func runSuite(m *testing.M) int {
 	ctx := context.Background()
 
 	c, err := testsupport.StartCluster(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "starting the test cluster: %v\n", err)
-		os.Exit(1)
+
+		return 1
 	}
 	cluster = c
+
+	defer func() {
+		if err := cluster.Terminate(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", err)
+		}
+	}()
 
 	cy, err := testsupport.StartCycle(ctx, cluster)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "starting the cycle harness: %v\n", err)
 
-		if terminateErr := cluster.Terminate(ctx); terminateErr != nil {
-			fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", terminateErr)
-		}
-
-		os.Exit(1)
+		return 1
 	}
 	cycle = cy
 
-	code := m.Run()
+	defer func() {
+		if err := cycle.Terminate(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "terminating the cycle harness: %v\n", err)
+		}
+	}()
 
-	if err := cycle.Terminate(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "terminating the cycle harness: %v\n", err)
-	}
-
-	if err := cluster.Terminate(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", err)
-	}
-
-	os.Exit(code)
+	return m.Run()
 }
 
 const (
