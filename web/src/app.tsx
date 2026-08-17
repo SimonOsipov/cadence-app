@@ -1,7 +1,10 @@
+import { DataProvider } from './data/queries'
+import { OverviewPage } from './features/overview/overview-page'
+
 export function App() {
   return (
-    <main>
-      <h1>Cadence</h1>
-    </main>
+    <DataProvider>
+      <OverviewPage />
+    </DataProvider>
   )
 }

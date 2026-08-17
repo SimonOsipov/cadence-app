@@ -1,30 +1,38 @@
-// Writes src/icons/icons.ts: the icons the dashboard's prototype actually draws, with their paths.
+// Writes src/icons/icons.ts: the icons this dashboard draws, with their paths.
 //
 //   node scripts/derive-icons.ts          rewrites the module
-//   node scripts/derive-icons.ts --check  fails if the module has drifted from the prototype
+//   node scripts/derive-icons.ts --check  fails if the module has drifted
 //
-// Derived and not retyped. A hand-written list was tried and came out both too long — icons belonging
-// to components the dashboard does not render — and too short, missing the side menu and the activity
-// feed. Two greps of the same author disagreed with each other, which is the whole argument for a
-// script.
+// Two directions, and neither alone is enough. The set is what `src/**` actually names, so an icon
+// nothing draws cannot sit in the bundle unnoticed — that is the half step 2 could not have, because
+// the application drew nothing yet. And every name it finds must be one the prototype drew, so the
+// dashboard cannot invent an icon the design never had: the prototype is the vocabulary, the
+// application is the selection.
 //
-// The sweep is over every quoted string in the three files, intersected with what heroicons.js
-// actually carries, rather than over the syntax that names an icon. Measured: reading `Icon name="…"`
-// and `icon: '…'` misses `icon="check-circle"` in dd-app.jsx — an attribute rather than a field, one
-// spelling among several, and exactly the kind a syntax list forgets. Intersecting with the source of
-// truth is what bounds the net rather than making it safe: a string matching no heroicons key cannot
-// become an icon, but one that matches a key does — `item.kind === 'checkin'` in dd-components.jsx is
-// a character away from the key `check`. Only the second direction of the check closes that, and it
-// waits for step 3.
-import { readFileSync, writeFileSync } from 'node:fs'
+// Derived and not retyped, in both directions. A hand-written list was tried and came out
+// simultaneously too long — icons from components this dashboard does not render — and too short,
+// missing the side menu and the activity feed; two greps by one author disagreed with each other.
+//
+// The sweep is over every quoted string intersected with what heroicons.js carries, rather than over
+// the syntax that names an icon. Measured on the prototype: reading `Icon name="…"` and `icon: '…'`
+// finds 21 where the sweep finds 22, and the missing one is `icon="check-circle"` — an attribute
+// rather than a field. Intersecting with the source of truth bounds the net rather than making it
+// safe: a string matching no heroicons key cannot become an icon, but one that matches a key does —
+// `item.kind === 'checkin'` in dd-components.jsx is a character away from the key `check`. What closes
+// that is this file's other direction, which no longer waits for anything.
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const HEROICONS = 'prototype/design-system/heroicons.js'
 const MODULE = 'src/icons/icons.ts'
 
-// dd-chat* is left out because chat is another screen and out of this block's scope, and
-// design-system/ is the mobile app's own components — AppHeader, IconBtn, TabBar, Spark — which this
-// dashboard does not render.
-const DRAWN_BY = ['prototype/dd-app.jsx', 'prototype/dd-components.jsx', 'prototype/dd-data.jsx']
+// The vocabulary: what the prototype's dashboard draws. dd-chat* is left out because chat is another
+// screen and out of this block's scope, and design-system/ is the mobile app's own components —
+// AppHeader, IconBtn, TabBar, Spark — which this dashboard does not render.
+const VOCABULARY_OF = ['prototype/dd-app.jsx', 'prototype/dd-components.jsx', 'prototype/dd-data.jsx']
+
+/** The selection: what this application names. Everything under src/, less the generated module itself. */
+const APPLICATION = 'src'
 
 const heroicons = readFileSync(HEROICONS, 'utf8')
 
@@ -47,24 +55,46 @@ if (available.size === 0) {
   throw new Error(`${HEROICONS} yielded no icons, so this derivation measured nothing`)
 }
 
-const quoted = new Set<string>()
-for (const source of DRAWN_BY) {
-  for (const [, text] of readFileSync(source, 'utf8').matchAll(/['"]([a-z0-9-]+)['"]/g)) {
-    if (text) quoted.add(text)
+const namesIn = (files: string[]): Set<string> => {
+  const quoted = new Set<string>()
+
+  for (const file of files) {
+    for (const [, text] of readFileSync(file, 'utf8').matchAll(/['"]([a-z0-9-]+)['"]/g)) {
+      if (text && available.has(text)) quoted.add(text)
+    }
   }
+
+  return quoted
 }
 
-const drawn = [...available.keys()].filter((name) => quoted.has(name)).sort()
+const vocabulary = namesIn(VOCABULARY_OF)
+if (vocabulary.size === 0) {
+  throw new Error('no icon of the prototype was found, so the vocabulary measured nothing')
+}
+
+const sources = readdirSync(APPLICATION, { recursive: true, encoding: 'utf8' })
+  .filter((entry) => /\.(ts|tsx)$/.test(entry) && entry !== 'icons/icons.ts')
+  .map((entry) => join(APPLICATION, entry))
+
+const invented = [...namesIn(sources)].filter((name) => !vocabulary.has(name))
+if (invented.length > 0) {
+  throw new Error(
+    `the dashboard names ${invented.join(', ')}, which the prototype never drew — the design decides ` +
+      'what an icon means, and a screen reaching past it is a screen inventing one',
+  )
+}
+
+const drawn = [...namesIn(sources)].sort()
 
 if (drawn.length === 0) {
-  throw new Error('no icon of the prototype was found in the dashboard, which cannot be right')
+  throw new Error('the application names no icon at all, which cannot be right')
 }
 
 const rendered = `// Generated by scripts/derive-icons.ts from the prototype. Do not edit by hand.
 //
-// The icons the dashboard draws and no others: the set is derived from what the prototype references,
-// so a screen that stops using one drops it from the bundle, and a name nothing draws cannot sit here
-// unnoticed. Each entry is the icon's path data; every one draws round-capped and round-joined into a
+// The icons this dashboard draws and no others: the set is what src/** names, checked against the
+// vocabulary the prototype drew. A screen that stops using one drops it from here, and a name nothing
+// draws cannot sit here unnoticed. Each entry is the icon's path data; every one draws round-capped and round-joined into a
 // 24x24 box, which is what heroicons.js says and what the component applies.
 
 export const icons = {
@@ -77,11 +107,11 @@ export type IconName = keyof typeof icons
 
 if (process.argv.includes('--check')) {
   if (readFileSync(MODULE, 'utf8') !== rendered) {
-    console.error(`${MODULE} is not what the prototype derives — run: npm run icons`)
+    console.error(`${MODULE} is not what the dashboard draws — run: npm run icons`)
     process.exit(1)
   }
 
-  console.log(`${MODULE} matches the prototype: ${drawn.length} icons`)
+  console.log(`${MODULE} matches what the dashboard draws: ${drawn.length} icons`)
 } else {
   writeFileSync(MODULE, rendered)
   console.log(`wrote ${MODULE}: ${drawn.length} icons`)

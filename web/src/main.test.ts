@@ -20,9 +20,10 @@ describe('the entry point', () => {
     await import('./main')
 
     // Waited for rather than slept through: React 19 renders on a scheduler of its own, and a single
-    // macrotask is an assumption about MessageChannel delivery beating timers, not a signal.
+    // macrotask is an assumption about MessageChannel delivery beating timers, not a signal. The
+    // loading line and not the loaded screen, because what this measures is that something mounted.
     await waitFor(() => {
-      expect(document.querySelector('#root h1')?.textContent).toBe('Cadence')
+      expect(document.querySelector('#root [role="status"]')?.textContent).toContain('Загружаем')
     })
   })
 })
