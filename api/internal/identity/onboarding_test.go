@@ -406,7 +406,7 @@ func post(
 		})
 	})
 
-	identity.NewService(onboarding, nil, nil).Register(httpserver.NewAPI(mux))
+	identity.NewService(identity.Deps{Onboarding: onboarding}).Register(httpserver.NewAPI(mux))
 
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

@@ -150,7 +150,7 @@ func TestAPatientAskingForTheRosterIsRefused(t *testing.T) {
 			})))
 		})
 	})
-	NewService(nil, nil, nil).Register(httpserver.NewAPI(router))
+	NewService(Deps{}).Register(httpserver.NewAPI(router))
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))
@@ -179,7 +179,7 @@ func TestAPatientAskingForTheRosterIsRefused(t *testing.T) {
 // lives only in the description is a branch no generated client can write.
 func TestTheOverviewIsInTheContract(t *testing.T) {
 	api := httpserver.NewAPI(chi.NewRouter())
-	NewService(nil, nil, nil).Register(api)
+	NewService(Deps{}).Register(api)
 
 	document, err := api.OpenAPI().MarshalJSON()
 	if err != nil {
@@ -209,8 +209,7 @@ func TestTheOverviewIsInTheContract(t *testing.T) {
 	}
 }
 
-// The bound the route declares has to cover what the server can emit, or a page hands out a cursor its
-// own schema then refuses with a 422 that has nothing to do with the cursor being wrong.
+// A bound below what makeCursor emits is a page whose own next_cursor the route then answers 422.
 func TestTheDeclaredCursorBoundCoversTheLongestOneThisServerCanIssue(t *testing.T) {
 	// The column allows 200 characters, and a character in this product's copy is up to four bytes.
 	longest := makeCursor(strings.Repeat("𝛑", 200), "8a1f3b7c-0000-4000-8000-000000000001")
@@ -242,7 +241,7 @@ func TestADoctorIsRefusedWhenTheRosterServiceIsAbsent(t *testing.T) {
 			})))
 		})
 	})
-	NewService(nil, nil, nil).Register(httpserver.NewAPI(router))
+	NewService(Deps{}).Register(httpserver.NewAPI(router))
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))
@@ -263,7 +262,7 @@ func TestAnAccountWithNoRoleIsRefusedTheRoster(t *testing.T) {
 			})))
 		})
 	})
-	NewService(nil, nil, nil).Register(httpserver.NewAPI(router))
+	NewService(Deps{}).Register(httpserver.NewAPI(router))
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))

@@ -28,14 +28,11 @@ const (
 	detailNotACursor             = "Страница не найдена. Откройте реестр заново."
 )
 
-// The pair the ordering is keyed on travels as one token so that the ordering can change without the
-// query changing shape. It is encoded and not signed: a client can assemble one, and RLS rather than
-// the token is what keeps a forged start from reaching another doctor's rows.
+// Encoded, not signed: a client can assemble one, and RLS is what keeps a forged start harmless.
 const cursorSeparator = "\x00"
 
-// MaxCursorLength is what makeCursor can emit for the longest name the column allows: 200 characters
-// of up to four bytes, the separator and a UUID, base64 without padding. The route's schema pins the
-// same number — a bound smaller than this is a page whose own next_cursor the route then refuses.
+// MaxCursorLength is the longest makeCursor can emit — 200 four-byte characters, a separator and a
+// UUID, base64 — and the number the route's schema pins: a smaller bound refuses this server's own cursor.
 const MaxCursorLength = 1116
 
 func makeCursor(fullName, userID string) string {
@@ -106,9 +103,8 @@ type RosterPage struct {
 // source of truth beside it. The one predicate that is not that: role = 'patient', because a doctor
 // reads their own row through profiles_own_select and would otherwise appear in their own roster.
 func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor string, limit int) (RosterPage, error) {
-	// Refused rather than clamped: the arithmetic below indexes at limit-1, and a caller asking for a
-	// page of none is a caller whose own bound went missing. The route's schema pins minimum 1, and
-	// this method is exported to callers that schema does not reach.
+	// Refused rather than clamped: the arithmetic below indexes at limit-1, and this method is
+	// exported past the schema that pins the route's minimum.
 	if limit < 1 {
 		return RosterPage{}, fmt.Errorf("%d: %w", limit, ErrNotAPageSize)
 	}
@@ -121,10 +117,8 @@ func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor st
 	page := RosterPage{Patients: []RosterRow{}}
 
 	err = database.WithCaller(ctx, r.pool, caller, func(ctx context.Context, tx pgx.Tx) error {
-		// Row-value comparison rather than two conditions: the ordering is written once. The id is cast
-		// from text to uuid rather than the column to text — measured, the latter drops the second
-		// column out of the index condition and into a filter. nullif carries the first page, whose
-		// pair is empty and which every row is greater than on the name alone.
+		// The parameter is cast to uuid and not the column to text: measured with EXPLAIN, the latter
+		// drops the second key out of the index condition. nullif is the first page's empty pair.
 		rows, err := tx.Query(ctx, `
 			SELECT p.user_id, p.full_name,
 			       date_part('year', pg_catalog.age(pp.dob))::int AS age
@@ -158,9 +152,7 @@ func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor st
 		return RosterPage{}, fmt.Errorf("reading the roster for %s: %w", caller.Subject, err)
 	}
 
-	// One row more than the page was asked for is how «there is a next page» is known without a second
-	// count: a count over a policy-filtered set is a second query answering about a set that may have
-	// changed between the two.
+	// One row over the page is how a next page is known without a second count over a set that moves.
 	if len(page.Patients) > limit {
 		last := page.Patients[limit-1]
 		page.Patients = page.Patients[:limit]

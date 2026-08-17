@@ -17,13 +17,16 @@ type Service struct {
 	roster     *Roster
 }
 
-// NewService builds the context around the flows its operations serve.
-//
-// A nil dependency is legitimate and has exactly one caller: the generator that
-// renders openapi.json needs the operations declared and nothing behind them.
-// An operation reached in that state refuses rather than dereferences.
-func NewService(onboarding *Onboarding, sessions *Sessions, roster *Roster) *Service {
-	return &Service{onboarding: onboarding, sessions: sessions, roster: roster}
+// Deps is what this context's operations answer from. A nil field is the document generator's
+// assembly, and an operation reached in it refuses rather than dereferences.
+type Deps struct {
+	Onboarding *Onboarding
+	Sessions   *Sessions
+	Roster     *Roster
+}
+
+func NewService(deps Deps) *Service {
+	return &Service{onboarding: deps.Onboarding, sessions: deps.Sessions, roster: deps.Roster}
 }
 
 // Register mounts this context's operations on the API.
@@ -54,9 +57,7 @@ func (s *Service) Register(api huma.API) {
 			"Answers 400 when a patient's zone is not one the server knows, 403 when the account has no " +
 			"role yet, and 503 when the database could not serve the request.",
 		Tags: []string{"identity"},
-		// Declared because both client surfaces are generated from this document. 401 is in the list although
-		// the middleware and not this handler usually raises it: declaring any status at all makes huma drop
-		// the default response, and without it the one status a client refreshes a token on goes undescribed.
+		// Declaring any status makes huma drop the default response, so 401 has to be named here too.
 		Errors: []int{
 			http.StatusBadRequest,
 			http.StatusUnauthorized,

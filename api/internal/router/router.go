@@ -60,7 +60,7 @@ func contexts(opts Options) []boundedContext {
 		{"audit", audit.Register},
 		{"content", content.Register},
 		{"dosing", dosing.Register},
-		{"identity", identity.NewService(onboarding, sessions, roster).Register},
+		{"identity", identity.NewService(identity.Deps{Onboarding: onboarding, Sessions: sessions, Roster: roster}).Register},
 		{"inventory", inventory.Register},
 		{"journal", journal.Register},
 		{"measurements", measurements.Register},

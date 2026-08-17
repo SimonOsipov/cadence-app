@@ -109,7 +109,7 @@ func TestAnAccountWithNoRoleIsRefusedInTheMappersWords(t *testing.T) {
 			})))
 		})
 	})
-	NewService(nil, nil, nil).Register(httpserver.NewAPI(router))
+	NewService(Deps{}).Register(httpserver.NewAPI(router))
 
 	request := httptest.NewRequest(
 		http.MethodPost, "/v1/me/session", strings.NewReader(`{"timezone":"Asia/Tbilisi"}`),

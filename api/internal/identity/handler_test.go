@@ -104,7 +104,7 @@ func TestMeRefusesWithoutAPrincipal(t *testing.T) {
 func TestMeIsInTheContract(t *testing.T) {
 	router := chi.NewRouter()
 	api := httpserver.NewAPI(router)
-	identity.NewService(nil, nil, nil).Register(api)
+	identity.NewService(identity.Deps{}).Register(api)
 
 	document, err := api.OpenAPI().MarshalJSON()
 	if err != nil {

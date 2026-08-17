@@ -21,8 +21,7 @@ import (
 
 // The patients this file writes. doctorID, adminID and otherDoctorID come from the stand and the
 // policy suite this package shares.
-// The ids run against the alphabet on purpose: Анна last, Вера first. A roster ordered by id rather
-// than by name is then a different sequence, which is what the assertions on order can see.
+// Against the alphabet on purpose: a roster ordered by id is then a different sequence.
 const (
 	annaID  = "8a1f3b7c-0000-4000-8000-00000000000c"
 	borisID = "8a1f3b7c-0000-4000-8000-00000000000b"
@@ -149,9 +148,7 @@ func TestAnAdministratorReadsEveryPatient(t *testing.T) {
 
 	seen := namesSeenBy(t, roster, adminID, "admin", "", 10)
 
-	// The set and the order together: named, because a size holds for the wrong three, and ordered,
-	// because «ordered by name» is what the contract says and what 000011 exists for. The ids run the
-	// other way, so a roster keyed on them answers Вера, Борис, Анна.
+	// Set and order together: a size holds for the wrong three, and the contract says «ordered by name».
 	want := []string{"Анна Петрова", "Борис Ким", "Вера Ильина"}
 	if !slices.Equal(seen, want) {
 		t.Errorf("the administrator sees %v, want %v", seen, want)
@@ -163,9 +160,7 @@ func TestAnAdministratorReadsEveryPatient(t *testing.T) {
 func TestTheRosterCarriesNoStaff(t *testing.T) {
 	roster, _ := rosterStand(t, seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID})
 
-	// Both callers, and the set compared whole. As a loop over the rows this passed on an empty
-	// answer, which is the shape a broken predicate produces — and it is the doctor, not the
-	// administrator, whose own row the role predicate is there to keep out.
+	// Both callers, compared whole: as a loop this passed on the empty answer a broken predicate gives.
 	want := []string{"Анна Петрова"}
 
 	if seen := namesSeenBy(t, roster, doctorID, "doctor", "", 10); !slices.Equal(seen, want) {
@@ -407,9 +402,8 @@ func TestADoctorWithNoPatientsReadsAnEmptyPage(t *testing.T) {
 	}
 }
 
-// The mounted route with a real token, which nothing else here reaches: every other test in this file
-// calls Patients directly, so the handler's conversion of a principal into a database.Caller and the
-// pool the composition root hands the service are both otherwise unmeasured.
+// The mounted route with a real token: the principal-to-Caller conversion and the composition root's
+// pool are otherwise unmeasured.
 func TestTheMountedRouteAnswersTheDoctorsOwnRoster(t *testing.T) {
 	walked := walkTheCycle(t)
 
@@ -460,9 +454,7 @@ func TestTheMountedRouteRefusesAPatientsToken(t *testing.T) {
 	}
 }
 
-// A patient whose clinical card is missing stays on the roster, without an age. The join is a LEFT one
-// for this: an inner join would take them off their own doctor's registry, and a patient who has
-// vanished from the screen is worse than one whose age is blank.
+// Why the join is a LEFT one: an inner join takes such a patient off their doctor's registry entirely.
 func TestAPatientWithNoCardIsStillOnTheRoster(t *testing.T) {
 	roster, _ := rosterStand(
 		t,
