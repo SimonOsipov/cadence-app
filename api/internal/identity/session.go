@@ -51,10 +51,12 @@ func NewSessions(pool *pgxpool.Pool) *Sessions {
 
 // RecordTimezone writes the zone against the caller's own profile row.
 //
-// A named weakness, which is why the predicate below is not a redundant copy of profiles_own_update: that policy
-// narrows the statement for cadence_patient only. Under cadence_admin the profiles policy is USING (true) over a
-// table-wide grant and cadence_app holds membership of that role, so without WHERE user_id = $2 a caller with an
-// admin token rewrites the timezone of every profile in the clinic and is answered 204.
+// A named weakness, and two mechanisms rather than one. profiles_own_update narrows this statement for
+// cadence_patient only: under cadence_admin the profiles policy is USING (true) over a table-wide grant and
+// cadence_app holds membership of that role. So without WHERE user_id = $2 an admin caller's UPDATE reaches every
+// profile in the clinic, and it is the row-count assertion below that then refuses the transaction instead of
+// committing a clinic-wide rewrite. Neither is redundant: drop the predicate and every such call fails, drop the
+// assertion and the predicate alone is what stands between an admin token and the whole table.
 func (s *Sessions) RecordTimezone(ctx context.Context, caller database.Caller, timezone string) error {
 	if timezone == "" {
 		return fmt.Errorf("recording the timezone of %s: %w", caller.Subject, ErrNoTimezone)

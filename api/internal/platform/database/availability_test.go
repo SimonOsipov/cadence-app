@@ -21,7 +21,6 @@ func TestWhatCountsAsTheDatabaseNotAnswering(t *testing.T) {
 		{"the network went away", &net.OpError{Op: "dial", Err: errors.New("no route to host")}, true},
 		{"the request ran out of time", context.DeadlineExceeded, true},
 
-		{"the connection could not be established", &pgconn.PgError{Code: "08001"}, true},
 		{"the connection does not exist", &pgconn.PgError{Code: "08003"}, true},
 		{"the lock was not available", &pgconn.PgError{Code: "55P03"}, true},
 		{"the server is shutting down", &pgconn.PgError{Code: "57P01"}, true},
@@ -36,6 +35,13 @@ func TestWhatCountsAsTheDatabaseNotAnswering(t *testing.T) {
 
 		// Permanent and inside class 08: the code a prefix match would sell as temporary.
 		{"the protocol was violated", &pgconn.PgError{Code: "08P01"}, false},
+
+		// Inside class 08 and out of the map because this server cannot send them: 08004 and 08007 have no raise
+		// site in the tree at all, 08000 and 08001 none outside postgres_fdw and dblink.
+		{"a connection exception nothing raises", &pgconn.PgError{Code: "08000"}, false},
+		{"a client that could not establish a connection", &pgconn.PgError{Code: "08001"}, false},
+		{"a server that rejected the connection", &pgconn.PgError{Code: "08004"}, false},
+		{"a transaction whose resolution is unknown", &pgconn.PgError{Code: "08007"}, false},
 
 		// pg_hba refusing this deployment. Outside class 08 — the code that looks like it belongs there, 08004,
 		// has no raise site in the server at all.

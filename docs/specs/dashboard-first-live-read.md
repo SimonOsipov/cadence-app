@@ -230,8 +230,10 @@ todoist: "6h9MFwp6MxhMp5qq"
 > did not is answered `403` rather than `204`, because 204 would claim a write
 > that did not happen; and a failure that means «not now» is answered `503`
 > through the new `database.IsUnavailable` rather than `/problems/internal`.
-> `400`, `403` and `503` are declared on the operation, so both generated client
-> surfaces can branch on them. Why: both were review findings, and the second was
+> `400`, `401`, `403` and `503` are declared on the operation, so both generated
+> client surfaces can branch on them — `401` among them although the middleware
+> and not the handler usually raises it, because declaring any status at all
+> makes huma drop the default response. Why: both were review findings, and the second was
 > measured — a Postgres that is down returns `*pgconn.ConnectError` with no
 > SQLSTATE, which the first attempt at the classifier did not read.
 
