@@ -6,6 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -94,6 +97,8 @@ func TestWhichRefusalTheRosterHeard(t *testing.T) {
 		wantDetail string
 	}{
 		{"a patient asking for the roster", ErrNotForPatients, 403, detailRosterIsNotForPatients},
+		{"an account provisioning has not reached", ErrNoRole, 403, detailNoRole},
+		{"a page of no rows", ErrNotAPageSize, 400, detailNotACursor},
 		{"a cursor that is not one", ErrNotACursor, 400, detailNotACursor},
 		{"the database did not answer", ErrDatabaseUnavailable, 503, detailUnavailableOnTheWire},
 		{"a refusal this package does not name", errors.New("boom"), 500, detailInternalOnTheWire},
@@ -201,5 +206,80 @@ func TestTheOverviewIsInTheContract(t *testing.T) {
 		if _, declared := operation.Get.Responses[status]; !declared {
 			t.Errorf("the operation does not declare %s; it declares %v", status, operation.Get.Responses)
 		}
+	}
+}
+
+// The bound the route declares has to cover what the server can emit, or a page hands out a cursor its
+// own schema then refuses with a 422 that has nothing to do with the cursor being wrong.
+func TestTheDeclaredCursorBoundCoversTheLongestOneThisServerCanIssue(t *testing.T) {
+	// The column allows 200 characters, and a character in this product's copy is up to four bytes.
+	longest := makeCursor(strings.Repeat("𝛑", 200), "8a1f3b7c-0000-4000-8000-000000000001")
+
+	if len(longest) > MaxCursorLength {
+		t.Errorf("the longest cursor is %d characters, and the bound is %d", len(longest), MaxCursorLength)
+	}
+
+	declared := reflect.TypeOf(OverviewInput{})
+	field, ok := declared.FieldByName("Cursor")
+	if !ok {
+		t.Fatal("OverviewInput has no Cursor field")
+	}
+
+	if got := field.Tag.Get("maxLength"); got != strconv.Itoa(MaxCursorLength) {
+		t.Errorf("the route declares maxLength %q, and MaxCursorLength is %d", got, MaxCursorLength)
+	}
+}
+
+// The service assembled without a roster. The patient's refusal happens before this check, so without
+// a caller who gets past the role switch the guard is unreachable and its deletion is invisible.
+func TestADoctorIsRefusedWhenTheRosterServiceIsAbsent(t *testing.T) {
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{
+				Subject: "8a1f3b7c-0000-4000-8000-000000000002",
+				Role:    providerRole,
+			})))
+		})
+	})
+	NewService(nil, nil, nil).Register(httpserver.NewAPI(router))
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body %s", rec.Code, rec.Body)
+	}
+}
+
+// An account the invitation reached and provisioning did not, at the route: the seam has no Postgres
+// role for it, so without this arm it reaches the database and comes back a 500.
+func TestAnAccountWithNoRoleIsRefusedTheRoster(t *testing.T) {
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{
+				Subject: "8a1f3b7c-0000-4000-8000-000000000004",
+			})))
+		})
+	})
+	NewService(nil, nil, nil).Register(httpserver.NewAPI(router))
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
+	}
+
+	var problem struct {
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decoding the problem document: %v", err)
+	}
+
+	if problem.Detail != detailNoRole {
+		t.Errorf("detail = %q, want %q", problem.Detail, detailNoRole)
 	}
 }

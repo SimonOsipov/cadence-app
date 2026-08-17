@@ -4,6 +4,11 @@ package identity_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,10 +21,12 @@ import (
 
 // The patients this file writes. doctorID, adminID and otherDoctorID come from the stand and the
 // policy suite this package shares.
+// The ids run against the alphabet on purpose: Анна last, Вера first. A roster ordered by id rather
+// than by name is then a different sequence, which is what the assertions on order can see.
 const (
-	annaID  = "8a1f3b7c-0000-4000-8000-00000000000a"
+	annaID  = "8a1f3b7c-0000-4000-8000-00000000000c"
 	borisID = "8a1f3b7c-0000-4000-8000-00000000000b"
-	veraID  = "8a1f3b7c-0000-4000-8000-00000000000c"
+	veraID  = "8a1f3b7c-0000-4000-8000-00000000000a"
 )
 
 type seededPatient struct {
@@ -136,8 +143,12 @@ func TestAnAdministratorReadsEveryPatient(t *testing.T) {
 
 	seen := namesSeenBy(t, roster, adminID, "admin", "", 10)
 
-	if len(seen) != 3 {
-		t.Errorf("the administrator sees %v, want all three", seen)
+	// The set and the order together: named, because a size holds for the wrong three, and ordered,
+	// because «ordered by name» is what the contract says and what 000011 exists for. The ids run the
+	// other way, so a roster keyed on them answers Вера, Борис, Анна.
+	want := []string{"Анна Петрова", "Борис Ким", "Вера Ильина"}
+	if !slices.Equal(seen, want) {
+		t.Errorf("the administrator sees %v, want %v", seen, want)
 	}
 }
 
@@ -146,10 +157,16 @@ func TestAnAdministratorReadsEveryPatient(t *testing.T) {
 func TestTheRosterCarriesNoStaff(t *testing.T) {
 	roster, _ := rosterStand(t, seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID})
 
-	for _, name := range namesSeenBy(t, roster, adminID, "admin", "", 10) {
-		if name != "Анна Петрова" {
-			t.Errorf("the roster carries %q, which is not a patient", name)
-		}
+	// Both callers, and the set compared whole. As a loop over the rows this passed on an empty
+	// answer, which is the shape a broken predicate produces — and it is the doctor, not the
+	// administrator, whose own row the role predicate is there to keep out.
+	want := []string{"Анна Петрова"}
+
+	if seen := namesSeenBy(t, roster, doctorID, "doctor", "", 10); !slices.Equal(seen, want) {
+		t.Errorf("the doctor's roster is %v, want %v", seen, want)
+	}
+	if seen := namesSeenBy(t, roster, adminID, "admin", "", 10); !slices.Equal(seen, want) {
+		t.Errorf("the administrator's roster is %v, want %v", seen, want)
 	}
 }
 
@@ -177,11 +194,13 @@ func TestAReassignmentChangesWhatADoctorReads(t *testing.T) {
 // Age is the server's arithmetic, and absent when the clinic has not entered a date of birth.
 func TestAgeIsWorkedOutByTheServer(t *testing.T) {
 	born40YearsAgo := time.Now().UTC().AddDate(-40, 0, 1)
+	born40YearsAgoToday := time.Now().UTC().AddDate(-40, 0, 0)
 
 	roster, _ := rosterStand(
 		t,
 		seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID, dob: &born40YearsAgo},
 		seededPatient{id: borisID, name: "Борис Ким", assignedTo: doctorID},
+		seededPatient{id: veraID, name: "Вера Ильина", assignedTo: doctorID, dob: &born40YearsAgoToday},
 	)
 
 	page, err := roster.Patients(t.Context(), database.Caller{Subject: doctorID, Role: "doctor"}, "", 10)
@@ -194,8 +213,17 @@ func TestAgeIsWorkedOutByTheServer(t *testing.T) {
 		byName[patient.FullName] = patient.Age
 	}
 
+	if len(page.Patients) != 3 {
+		t.Fatalf("the roster is %v, want all three: an absent row makes every assertion below vacuous", page.Patients)
+	}
+
 	if got := byName["Анна Петрова"]; got == nil || *got != 39 {
 		t.Errorf("Анна's age is %v, want 39 — a birthday one day away has not happened yet", got)
+	}
+	// The other side of the boundary. Without it a query counting from dob + 1 day passes: it is only
+	// wrong on the birthday itself, which the row above never reaches.
+	if got := byName["Вера Ильина"]; got == nil || *got != 40 {
+		t.Errorf("Вера's age is %v, want 40 — today is her birthday", got)
 	}
 	if got := byName["Борис Ким"]; got != nil {
 		t.Errorf("Борис has age %v, want none: the clinic entered no date of birth", *got)
@@ -330,5 +358,98 @@ func TestPagingWalksTheWholeRosterWithoutRepeatingARow(t *testing.T) {
 		if times != 1 {
 			t.Errorf("%s was on %d pages, want exactly one", name, times)
 		}
+	}
+}
+
+// A page filled exactly to the limit is the last one, and it must say so. Without this a roster whose
+// size is a multiple of the page size hands out a cursor to nothing — «show more», and then nothing.
+func TestAFullLastPageCarriesNoCursor(t *testing.T) {
+	roster, _ := rosterStand(
+		t,
+		seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID},
+		seededPatient{id: borisID, name: "Борис Ким", assignedTo: doctorID},
+	)
+
+	page, err := roster.Patients(t.Context(), database.Caller{Subject: doctorID, Role: "doctor"}, "", 2)
+	if err != nil {
+		t.Fatalf("reading the roster: %v", err)
+	}
+
+	if len(page.Patients) != 2 {
+		t.Fatalf("the page carries %d rows, want both", len(page.Patients))
+	}
+	if page.Next != "" {
+		t.Errorf("a page holding every remaining row carries cursor %q", page.Next)
+	}
+}
+
+// A doctor with nobody assigned: the first day of a new hire, and the state the 403 to a patient
+// exists to keep distinguishable. The empty page is a page and not a null.
+func TestADoctorWithNoPatientsReadsAnEmptyPage(t *testing.T) {
+	roster, _ := rosterStand(t, seededPatient{id: annaID, name: "Анна Петрова", assignedTo: otherDoctorID})
+
+	page, err := roster.Patients(t.Context(), database.Caller{Subject: doctorID, Role: "doctor"}, "", 8)
+	if err != nil {
+		t.Fatalf("reading the roster: %v", err)
+	}
+
+	if len(page.Patients) != 0 {
+		t.Fatalf("the roster is %v, want nothing", page.Patients)
+	}
+	if page.Patients == nil {
+		t.Error("the empty roster is a nil slice, which reaches the wire as null rather than []")
+	}
+}
+
+// The mounted route with a real token, which nothing else here reaches: every other test in this file
+// calls Patients directly, so the handler's conversion of a principal into a database.Caller and the
+// pool the composition root hands the service are both otherwise unmeasured.
+func TestTheMountedRouteAnswersTheDoctorsOwnRoster(t *testing.T) {
+	walked := walkTheCycle(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	request.Header.Set("Authorization", "Bearer "+walked.doctor.access)
+
+	rec := httptest.NewRecorder()
+	walked.clinic.mux.ServeHTTP(rec, request)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body)
+	}
+
+	var page identity.RosterPage
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("decoding the page: %v", err)
+	}
+
+	// The patient walkTheCycle created for this doctor, and nobody else's: the other doctor's patient
+	// exists in the same clinic, so this is the policy answering rather than the table.
+	if len(page.Patients) != 1 {
+		t.Fatalf("the doctor's roster is %v, want exactly their own patient", page.Patients)
+	}
+	if page.Patients[0].UserID != walked.patient.account {
+		t.Errorf("the roster carries %q, want %q", page.Patients[0].UserID, walked.patient.account)
+	}
+
+	// The wire, not the struct: an empty roster reaching a browser as null is what the tag on Patients
+	// exists to prevent, and only the bytes can say whether it worked.
+	if body := rec.Body.String(); strings.Contains(body, `"patients":null`) {
+		t.Errorf("the page reached the wire as %s", body)
+	}
+}
+
+// A patient's own token against the mounted route, so the refusal is measured where a device meets it
+// rather than at the mapper.
+func TestTheMountedRouteRefusesAPatientsToken(t *testing.T) {
+	walked := walkTheCycle(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	request.Header.Set("Authorization", "Bearer "+walked.patient.access)
+
+	rec := httptest.NewRecorder()
+	walked.clinic.mux.ServeHTTP(rec, request)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
 	}
 }

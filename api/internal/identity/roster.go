@@ -16,6 +16,9 @@ import (
 // ErrNotACursor is returned for a page marker this server did not issue.
 var ErrNotACursor = errors.New("the cursor is not one this server issued")
 
+// ErrNotAPageSize is returned for a page of none or fewer.
+var ErrNotAPageSize = errors.New("a page carries at least one row")
+
 // ErrNotForPatients is returned for a patient asking for the roster: an empty page would be
 // indistinguishable from a breakage, and the account is not one this screen exists for.
 var ErrNotForPatients = errors.New("the roster is not a patient's to read")
@@ -25,10 +28,15 @@ const (
 	detailNotACursor             = "Страница не найдена. Откройте реестр заново."
 )
 
-// The pair the ordering is keyed on travels in one opaque token. It is base64 rather than two query
-// parameters because it is the server's to shape: a client that could assemble one would be choosing
-// where a page starts, and the next version of the ordering would break every bookmark.
+// The pair the ordering is keyed on travels as one token so that the ordering can change without the
+// query changing shape. It is encoded and not signed: a client can assemble one, and RLS rather than
+// the token is what keeps a forged start from reaching another doctor's rows.
 const cursorSeparator = "\x00"
+
+// MaxCursorLength is what makeCursor can emit for the longest name the column allows: 200 characters
+// of up to four bytes, the separator and a UUID, base64 without padding. The route's schema pins the
+// same number — a bound smaller than this is a page whose own next_cursor the route then refuses.
+const MaxCursorLength = 1116
 
 func makeCursor(fullName, userID string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(fullName + cursorSeparator + userID))
@@ -46,8 +54,8 @@ func readCursor(cursor string) (fullName, userID string, err error) {
 		return "", "", fmt.Errorf("%q: %w", cursor, ErrNotACursor)
 	}
 
-	// The last separator and not the first: a name may contain one and a UUID may not, so everything
-	// before the last is the name.
+	// The last separator and not the first. Not because a stored name can contain one — text may not
+	// hold NUL, measured against PostgreSQL 17 — but because this decodes bytes off the wire.
 	at := strings.LastIndex(string(decoded), cursorSeparator)
 	if at < 0 {
 		return "", "", fmt.Errorf("%q: %w", cursor, ErrNotACursor)
@@ -75,17 +83,20 @@ func NewRoster(pool *pgxpool.Pool) *Roster {
 	return &Roster{pool: pool}
 }
 
-// RosterRow is one patient as the Overview's registry draws them in v0. Flags, status, adherence and
-// the sparkline are M6 and extend this same route rather than a second one.
+// RosterRow is one patient as the registry draws them in v0. Flags, adherence, sparklines and lastSeen
+// are the spec's Non-scope, and M6 extends this same type rather than a second route.
 type RosterRow struct {
 	UserID   string `json:"user_id" doc:"The patient's id, and the key every later request about them is made on."`
 	FullName string `json:"full_name" doc:"The patient's name as the clinic wrote it."`
 	Age      *int   `json:"age" doc:"Years, worked out by the server. Absent when the clinic has not entered a date of birth."`
 }
 
-// Page is a page of the roster and the marker to ask for the next one.
-type Page struct {
-	Patients []RosterRow `json:"patients" doc:"The patients this caller may see, ordered by name."`
+// RosterPage is a page of the roster and the marker to ask for the next one. Named for its context
+// because the OpenAPI document has one namespace for eleven of them, and huma panics on a collision.
+type RosterPage struct {
+	// nullable false and a slice that is never nil: a doctor with no patients is an ordinary state, and
+	// two encodings of «none» on the wire is what the 403 above exists to avoid on the status line.
+	Patients []RosterRow `json:"patients" nullable:"false" doc:"The patients this caller may see, ordered by name."`
 	Next     string      `json:"next_cursor,omitempty" doc:"Pass as cursor for the following page. Absent on the last one."`
 }
 
@@ -94,24 +105,32 @@ type Page struct {
 // No predicate on the doctor: profiles_of_my_patients selects, and a condition here would be a second
 // source of truth beside it. The one predicate that is not that: role = 'patient', because a doctor
 // reads their own row through profiles_own_select and would otherwise appear in their own roster.
-func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor string, limit int) (Page, error) {
-	afterName, afterID, err := readCursor(cursor)
-	if err != nil {
-		return Page{}, err
+func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor string, limit int) (RosterPage, error) {
+	// Refused rather than clamped: the arithmetic below indexes at limit-1, and a caller asking for a
+	// page of none is a caller whose own bound went missing. The route's schema pins minimum 1, and
+	// this method is exported to callers that schema does not reach.
+	if limit < 1 {
+		return RosterPage{}, fmt.Errorf("%d: %w", limit, ErrNotAPageSize)
 	}
 
-	var page Page
+	afterName, afterID, err := readCursor(cursor)
+	if err != nil {
+		return RosterPage{}, err
+	}
+
+	page := RosterPage{Patients: []RosterRow{}}
 
 	err = database.WithCaller(ctx, r.pool, caller, func(ctx context.Context, tx pgx.Tx) error {
-		// Row-value comparison rather than two conditions: it is the ordering written once, and it is
-		// what the index on (full_name, user_id) is read by. The first page passes the empty pair,
-		// which every row is greater than.
+		// Row-value comparison rather than two conditions: the ordering is written once. The id is cast
+		// from text to uuid rather than the column to text — measured, the latter drops the second
+		// column out of the index condition and into a filter. nullif carries the first page, whose
+		// pair is empty and which every row is greater than on the name alone.
 		rows, err := tx.Query(ctx, `
 			SELECT p.user_id, p.full_name,
 			       date_part('year', pg_catalog.age(pp.dob))::int AS age
 			FROM app.profiles p
 			LEFT JOIN app.patient_profiles pp ON pp.user_id = p.user_id
-			WHERE p.role = 'patient' AND (p.full_name, p.user_id::text) > ($1, $2)
+			WHERE p.role = 'patient' AND (p.full_name, p.user_id) > ($1, nullif($2, '')::uuid)
 			ORDER BY p.full_name, p.user_id
 			LIMIT $3
 		`, afterName, afterID, limit+1)
@@ -123,7 +142,7 @@ func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor st
 		for rows.Next() {
 			var row RosterRow
 			if err := rows.Scan(&row.UserID, &row.FullName, &row.Age); err != nil {
-				return fmt.Errorf("reading a roster row: %w", err)
+				return fmt.Errorf("reading roster row %d after %q: %w", len(page.Patients), cursor, err)
 			}
 
 			page.Patients = append(page.Patients, row)
@@ -133,10 +152,10 @@ func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor st
 	})
 	if err != nil {
 		if database.IsUnavailable(err) {
-			return Page{}, fmt.Errorf("reading the roster for %s: %w: %w", caller.Subject, ErrDatabaseUnavailable, err)
+			return RosterPage{}, fmt.Errorf("reading the roster for %s: %w: %w", caller.Subject, ErrDatabaseUnavailable, err)
 		}
 
-		return Page{}, fmt.Errorf("reading the roster for %s: %w", caller.Subject, err)
+		return RosterPage{}, fmt.Errorf("reading the roster for %s: %w", caller.Subject, err)
 	}
 
 	// One row more than the page was asked for is how «there is a next page» is known without a second

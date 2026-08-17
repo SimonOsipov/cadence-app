@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -12,7 +13,7 @@ import (
 
 // OverviewInput is the query of GET /v1/dashboard/overview.
 type OverviewInput struct {
-	Cursor string `query:"cursor" maxLength:"512" doc:"Where to continue from, as the previous page's next_cursor. Absent asks for the first page."`
+	Cursor string `query:"cursor" maxLength:"1116" doc:"Where to continue from, as the previous page's next_cursor. Absent asks for the first page."`
 	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"8" doc:"How many patients the page carries."`
 }
 
@@ -20,7 +21,7 @@ type OverviewInput struct {
 // strip, the triage queue, today's schedule, the patient card and the side menu — stay on the
 // dashboard's fixtures until M6, which extends this same route rather than adding a second one.
 type OverviewOutput struct {
-	Body Page
+	Body RosterPage
 }
 
 func (s *Service) overview(ctx context.Context, input *OverviewInput) (*OverviewOutput, error) {
@@ -29,11 +30,15 @@ func (s *Service) overview(ctx context.Context, input *OverviewInput) (*Overview
 		return nil, huma.Error401Unauthorized("no verified principal on the request context")
 	}
 
-	// Refused here rather than left to the policies. A patient's own policies select nothing on this
-	// query, so the database would answer 200 with an empty page — and an empty roster is what a
-	// doctor with no patients also sees, so the one answer would mean two things.
-	if principal.Role == patientRole {
+	// A closed set, and the patient arm is not decoration: their own row passes both the policy and
+	// role = 'patient', so without this a patient is answered a registry consisting of themselves.
+	switch principal.Role {
+	case providerRole, adminRole:
+	case patientRole:
 		return nil, refusalForRoster(ErrNotForPatients)
+	default:
+		// Invited and not provisioned, which the issuance hook and the verifier both call ordinary.
+		return nil, refusalForRoster(fmt.Errorf("%q: %w", principal.Role, ErrNoRole))
 	}
 
 	if s.roster == nil {
@@ -55,7 +60,10 @@ func refusalForRoster(err error) error {
 	case errors.Is(err, ErrNotForPatients):
 		return huma.Error403Forbidden(detailRosterIsNotForPatients)
 
-	case errors.Is(err, ErrNotACursor):
+	case errors.Is(err, ErrNoRole):
+		return huma.Error403Forbidden(detailNoRole)
+
+	case errors.Is(err, ErrNotACursor), errors.Is(err, ErrNotAPageSize):
 		return huma.Error400BadRequest(detailNotACursor)
 
 	case errors.Is(err, ErrDatabaseUnavailable):

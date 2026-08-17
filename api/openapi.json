@@ -135,29 +135,6 @@
         ],
         "type": "object"
       },
-      "Page": {
-        "additionalProperties": false,
-        "properties": {
-          "next_cursor": {
-            "description": "Pass as cursor for the following page. Absent on the last one.",
-            "type": "string"
-          },
-          "patients": {
-            "description": "The patients this caller may see, ordered by name.",
-            "items": {
-              "$ref": "#/components/schemas/RosterRow"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "patients"
-        ],
-        "type": "object"
-      },
       "Problem": {
         "additionalProperties": false,
         "properties": {
@@ -218,6 +195,26 @@
         },
         "required": [
           "message"
+        ],
+        "type": "object"
+      },
+      "RosterPage": {
+        "additionalProperties": false,
+        "properties": {
+          "next_cursor": {
+            "description": "Pass as cursor for the following page. Absent on the last one.",
+            "type": "string"
+          },
+          "patients": {
+            "description": "The patients this caller may see, ordered by name.",
+            "items": {
+              "$ref": "#/components/schemas/RosterRow"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "patients"
         ],
         "type": "object"
       },
@@ -317,7 +314,7 @@
             "name": "cursor",
             "schema": {
               "description": "Where to continue from, as the previous page's next_cursor. Absent asks for the first page.",
-              "maxLength": 512,
+              "maxLength": 1116,
               "type": "string"
             }
           },
@@ -341,7 +338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page"
+                  "$ref": "#/components/schemas/RosterPage"
                 }
               }
             },
