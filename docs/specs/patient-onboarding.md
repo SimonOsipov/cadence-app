@@ -40,11 +40,11 @@ audit under my name, and a failure does not burn the patient's address forever
 
 ## Acceptance Criteria
 
-- [ ] The test harness brings up GoTrue with the hook registered; the cycle tests run against **the database GoTrue is connected to** — otherwise the hook will not find `app.profiles` — and clean up both `app.*` and `auth.users` after themselves
+- [ ] The test harness brings up GoTrue with the hook registered; the cycle tests run against **the database GoTrue is connected to** — otherwise the hook will not find `app.profiles` — and clear both `app.*` and `auth.users` **before** each of them rather than after. Implemented as `cycle.Reset` at the start of a test: a run that dies mid-test leaves its rows behind, and the next one still starts clean. Nothing enforces the call, so a test that forgets it inherits the previous one's users
 - [ ] The incompleteness of hermeticity is recorded: `auth` state is shared within the package, and tests are separated by unique addresses. IDN-17 demands more, and that is named as not done rather than done
 - [ ] In tests the invite link is taken from `auth.users.confirmation_token` through a **harness** connection, not by a query; the assumption "the link is written to the log" is unverified and unused
 - [ ] Link lifetime: the production `GOTRUE_MAILER_OTP_EXP` value is chosen and recorded as what the derived state's TTL reuses; the harness **overrides** it, otherwise the expiry test would wait out the production lifetime
-- [ ] Rate limits are named as measured: `/recover` hits the per-user `GOTRUE_MAILER_MAX_FREQUENCY`, while the admin `/invite` is **not covered at all** by the mail limiter — so the invite limit is imposed on our side, per doctor and per window
+- [ ] Rate limits are named as measured: `/recover` hits the per-address gap, which is `GOTRUE_SMTP_MAX_FREQUENCY` and not the `MAILER_` name the provider reads and ignores (deviation, step-2); the admin `/invite` is **not covered by that gap** but **is** covered by `GOTRUE_RATE_LIMIT_EMAIL_SENT`, the instance's hourly quota. ~~so the invite limit is imposed on our side, per doctor and per window~~ — **struck 2026-08-17**: no per-doctor limit is built, the type that would have held one was removed with its tests, and the quota — which counts the clinic rather than the doctor — is the only bound there is. Owned by a later block
 - [ ] `POST /recover` is permitted before the first sign-in and recorded as accepted; it was measured that on its own it does not confirm the account and does not touch the invite token, but that following `verify?type=recovery` does confirm it
 - [ ] There is nothing to disable email change via `PUT /user` — v2.194.0 has no such key. Accepted; the divergence of `invites.email` from `auth.users.email` is recorded, and reconciliation is left to whoever reads the state
 - [ ] The address is lowercased **on our side before the lookup**: `?filter=` is case-sensitive, and `/invite` locks the address; mixed case would otherwise return an empty lookup for an existing account and kill a live link
@@ -54,8 +54,8 @@ audit under my name, and a failure does not burn the patient's address forever
 - [ ] Claiming: our invite record exists and there is no row in `profiles` → finish the creation. If the account is confirmed or has signed in — first **delete** through `provisioner`, then invite again; otherwise the new patient would inherit the previous person's permanent password
 - [ ] No invite record but an account exists → `409`: that is not our half-finished onboarding, it is somebody else's account
 - [ ] A failure at commit after a successful invite is cured by a retry, and the test verifies that **after the invitee has opened the link** — otherwise the test is green only because nobody clicks in the harness
-- [ ] Failure mapping: `422 email_exists` and `23505` on the `profiles` primary key → `409`; an unavailable `provisioner` → `503` with its own problem type. All three are reachable through an ordinary scenario
-- [ ] `POST /v1/patients` sets `role = 'patient'` itself; an unknown field in the body yields `400`, not `403`
+- [ ] Failure mapping: `23505` on the `profiles` primary key → `409`; an unavailable `provisioner` → `503` with its own problem type. ~~`422 email_exists` → `409`, and all three are reachable through an ordinary scenario~~ — **struck 2026-08-17**: `cmd/provisioner` replaces the reason with `http.StatusText(status)` for anything ≥ 500, so this side cannot tell «the address is taken» from «the provider is down» and every provisioner refusal arrives as `ErrProvisionerUnavailable` → `503`. Separating them changes the contract of a trusted boundary and is owned by a later block
+- [ ] `POST /v1/patients` sets `role = 'patient'` itself; an unknown field in the body yields `422`, not `403` — measured against huma v2.39 (deviation 3, step-5): the generated schema carries `additionalProperties: false` and its validator answers `422` for every violation. `400` is the malformed body; neither is the `403` this criterion exists to rule out
 - [ ] `POST /v1/providers` is available to admins only and creates `role = 'doctor'` only: admins come into being through a one-off command, because the service-path policy does not let `role='admin'` through
 - [ ] The doctor must assign themselves; may add a second specialist; only an admin can assign a patient exclusively to somebody else — all three branches are covered
 - [ ] `profiles.timezone` is empty at creation; the identity block's service-path validation is amended to accept its absence, and the amendment is named
@@ -247,7 +247,7 @@ ability to delete an account.
 
 ### data-layer.md
 - ADDED: to the Auth contract — the production `GOTRUE_MAILER_OTP_EXP` is chosen and reused as the TTL of the derived state; the harness overrides it
-- ADDED: to the Auth contract — rate limits are named as measured: `GOTRUE_MAILER_MAX_FREQUENCY` applies to `/recover` per user, and the admin `/invite` is not covered at all
+- ADDED: to the Auth contract — rate limits are named as measured: `GOTRUE_SMTP_MAX_FREQUENCY` is the gap between two emails to one address and applies to `/recover`; the admin `/invite` is outside that gap and inside `GOTRUE_RATE_LIMIT_EMAIL_SENT`, the instance's hourly quota, which is the only limit reaching it
 - ADDED: to the Auth contract — `POST /recover` is public and permitted before the first sign-in; it does not confirm on its own, but following `verify?type=recovery` confirms and extinguishes a pending invite
 - ADDED: to the Auth contract — there is nothing to disable email change via `PUT /user`; the divergence of `invites.email` from `auth.users.email` is accepted, and reconciliation is left to whoever reads the state
 - ADDED: to the trust boundary — **SMTP holds credentials**: the link is itself a session credential
@@ -278,7 +278,7 @@ todoist: "6h9JrX2qVQcWfjWH"
 
 ### step-2: GoTrue limits and address normalization
 
-The production `GOTRUE_MAILER_OTP_EXP`, `GOTRUE_MAILER_MAX_FREQUENCY`, and the
+The production `GOTRUE_MAILER_OTP_EXP`, `GOTRUE_SMTP_MAX_FREQUENCY`, and the
 invite limit on our side. Lowercasing the address before the lookup. `/recover`
 recorded as accepted. The impossibility of disabling email change recorded.
 

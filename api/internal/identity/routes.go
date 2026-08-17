@@ -49,8 +49,11 @@ func (s *Service) Register(api huma.API) {
 			"invited at the identity provider, and the profile, the card, the care team, the " +
 			"preferences and the record of the invitation are written against the identifier it " +
 			"assigned. The server sets the role; there is no public registration. " +
-			"Answers 409 when the address already belongs to a patient or to an account this " +
-			"clinic did not invite, and 503 when the provisioner is unreachable.",
+			"Answers 403 when the caller may not create patients or is not on the care team they " +
+			"wrote, 409 when the address already belongs to a patient or to an account this " +
+			"clinic did not invite, 422 when the body says something the schema cannot refuse — " +
+			"two leading specialists, one named twice, somebody who is not a provider — and 503 " +
+			"when the provisioner is unreachable.",
 		Tags: []string{"identity"},
 	}, s.createPatient)
 
@@ -64,8 +67,9 @@ func (s *Service) Register(api huma.API) {
 			"is created. Administrators only, and doctors only: the clinic's first administrator " +
 			"comes into being through a one-off command under the migration role, and the database " +
 			"refuses any other role from this path. " +
-			"Answers 409 when the address already belongs to somebody this clinic knows or to an " +
-			"account it did not invite, and 503 when the provisioner is unreachable.",
+			"Answers 403 to a caller who is not an administrator, 409 when the address already " +
+			"belongs to somebody this clinic knows or to an account it did not invite, 422 when " +
+			"the address folds to nothing, and 503 when the provisioner is unreachable.",
 		Tags: []string{"identity"},
 	}, s.createProvider)
 }

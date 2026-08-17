@@ -32,9 +32,9 @@ const usage = `usage: bootstrap-admin <account> "<full name>"
 The account has to exist at the provider before this runs: invite the address
 through the provisioner, then pass the identifier it answers with.
 
-The command refuses to run when the clinic already has an administrator. Every
-one after the first is to be created by an administrator, through the staff
-route POST /v1/providers — which arrives with step-6 and is not mounted yet.
+The command refuses to run when the clinic already has an administrator. Doctors
+after this one are created by an administrator through POST /v1/providers; that
+route creates doctors only, so a second administrator has no path at all.
 
 Environment:
   DATABASE_MIGRATION_URL  connection string of the migration role (required)

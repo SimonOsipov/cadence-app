@@ -1,5 +1,12 @@
 # The local development stack. Everything a feature needs to be built and tried
-# on this machine, and nothing that belongs to a deployment.
+# on this machine.
+#
+# Not only this machine any more, and the header used to say otherwise: the mail
+# block below carries the product's own choices — the link lifetime, two rate
+# limits, three subjects, three template URLs, the sender name and the redirect
+# allow list — because the real instance is provisioned outside this repository
+# and this file is the only copy a test can read. The fast gate reads them as the
+# deployment.
 #
 # The integration suite does not use any of this — it brings its own Postgres
 # through testcontainers, so a test run cannot be contaminated by whatever state
@@ -297,9 +304,12 @@ services:
       # session rides in the landing address's fragment. Asserted in shape,
       # not merely in non-emptiness — see TestTheDeploymentSetsARedirectAllowList.
 
-      # No mail server locally. Invitation and recovery links are written to the
-      # log instead of sent, so `docker compose logs auth` is where you pick the
-      # link up and the whole flow walks end to end without an SMTP account.
+      # No mail server locally: with no SMTP account configured the provider sends
+      # nothing, and the flow is walked by reading the token out of auth.users the
+      # way the integration harness does. Whether it also logs the link is not
+      # measured by anything here.
+      #
+      # What this setting itself does is confirm the account on signup.
       GOTRUE_MAILER_AUTOCONFIRM: "true"
       GOTRUE_LOG_LEVEL: debug
 

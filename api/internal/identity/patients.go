@@ -247,8 +247,8 @@ func writePatient(ctx context.Context, tx pgx.Tx, patient NewPatient) error {
 		}
 	}
 
-	// NUT-01 extends this transaction with the patient's nutrition_targets row: part of creating a patient, not a
-	// second action behind an endpoint of its own.
+	// NUT-01 is to extend this transaction with the patient's nutrition_targets row — part of creating a patient
+	// rather than a second action behind an endpoint of its own. No migration creates that table yet.
 
 	// The reminder defaults live in the schema; naming none of them here is what keeps them from being duplicated.
 	if _, err := tx.Exec(ctx, `

@@ -308,8 +308,14 @@ func (o *Onboarding) invite(ctx context.Context, of creation) (Account, error) {
 	return Account{}, fmt.Errorf("inviting the address: %w", ErrProvisionerUnavailable)
 }
 
-// One provisioner call plus one short transaction, on a clock of their own: long enough for both against a
-// provisioner that has just been slow, short enough that a request cannot hang on them past its own deadline.
+// One provisioner call plus one short transaction, on a clock of their own: long enough for both against a provisioner
+// that has just been slow.
+//
+// It is spent past the request's own deadline, which is the point — and the cost, since the handler goes on holding
+// the lock and its connection for up to this long after the caller has been answered. Once, not twice: invite's
+// recovery runs only when the invitation failed, and rememberOrRetry's only when it succeeded. Fifteen seconds sits
+// under SERVER_WRITE_TIMEOUT's 30s default and above the service path's 5s statement timeout, so a recovery that is
+// going to succeed has room and one that is not gives the connection back.
 const recoveryBudget = 15 * time.Second
 
 // «Somebody has been inside this account» — one predicate because it guards two things: whether an orphan may be
