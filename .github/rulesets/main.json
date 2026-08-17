@@ -35,7 +35,8 @@
           { "context": "Go gate" },
           { "context": "Go integration suite" },
           { "context": "KMP gate (Android)" },
-          { "context": "KMP gate (iOS)" }
+          { "context": "KMP gate (iOS)" },
+          { "context": "Web gate" }
         ]
       }
     }

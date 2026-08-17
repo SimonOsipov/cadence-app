@@ -1,0 +1,41 @@
+/* The three faces, linked locally. No runtime call to Google Fonts leaves the browser: the product is
+   used in a clinic, and a font request is a third party learning who reads the dashboard and when.
+
+   The same four files the mobile app bundles, byte for byte — one decision about a typeface, two
+   surfaces. fonts.test.ts is what keeps that true.
+
+   Instrument Serif has no @font-face and that is deliberate: --font-display names it first and
+   Cormorant Garamond second, so the stack itself performs the substitution the prototype's own
+   decision made. Cyrillic is why. */
+
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url('./CormorantGaramond.ttf') format('truetype');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url('./CormorantGaramondItalic.ttf') format('truetype');
+  font-weight: 300 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Golos Text';
+  src: url('./GolosText.ttf') format('truetype');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./JetBrainsMono.ttf') format('truetype');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}

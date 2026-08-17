@@ -28,6 +28,7 @@ jobs:
     outputs:
       api: ${{ steps.filter.outputs.api }}
       kmp: ${{ steps.filter.outputs.kmp }}
+      web: ${{ steps.filter.outputs.web }}
       scripts: ${{ steps.filter.outputs.scripts }}
     steps:
       - uses: actions/checkout@v4
@@ -49,15 +50,9 @@ jobs:
           fi
           echo "changed files:"
           echo "$changed" | sed 's/^/  /'
-          matches() { echo "$changed" | grep -qE "$1" && echo true || echo false; }
-          {
-            echo "api=$(matches '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
-            echo "kmp=$(matches '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
-            # The whole of .github/, not just workflows/: the shell gate below
-            # also verifies the committed ruleset, and a change to the ruleset
-            # alone has to reach the job that checks it.
-            echo "scripts=$(matches '^(scripts/|\.github/)')"
-          } >> "$GITHUB_OUTPUT"
+          # The decision itself lives in a script so that shellcheck and a test
+          # can both reach it; an inline block is reachable by neither.
+          echo "$changed" | ./scripts/gate/changed-stacks.sh | tee -a "$GITHUB_OUTPUT"
 
   scripts:
     name: Shell gate
@@ -79,6 +74,11 @@ jobs:
           }
           shellcheck --version
           shellcheck -x scripts/gate/*.sh scripts/ralph/*.sh
+
+      # The stack filter decides which gates run at all, and a wrong answer of
+      # false skips a job — which GitHub counts as a satisfied required check.
+      - name: The stack filter answers correctly
+        run: ./scripts/gate/changed-stacks_test.sh
 
       # Checks the committed ruleset against this file. It has to run here
       # rather than anywhere else, because this is the job whose own name the
@@ -226,5 +226,20 @@ jobs:
       - name: iOS tests, project drift check, xcodebuild
         run: ./scripts/gate/ios.sh
 
-  # web/ has no job yet on purpose: the Vite dashboard does not exist until
-  # SKL-09, and web/prototype is a frozen visual spec that is never built.
+  web:
+    name: Web gate
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Types, lint, tests, build
+        run: ./scripts/gate/web.sh

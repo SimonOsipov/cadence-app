@@ -34,7 +34,7 @@ api/                 Go — internal/<bounded context>, migrations/, and six com
                        cmd/openapi          regenerates the committed contract
                        cmd/sqlauthorship    the gate that refuses interpolated SQL
 kmp/                 Kotlin Multiplatform — shared/, composeApp/, androidApp/, iosApp/
-web/                 not built yet (SKL-09); web/prototype/ is a frozen visual spec
+web/                 Vite + React + TS dashboard; web/prototype/ is a frozen visual spec
 mobile/              FROZEN. The Expo prototype: the design specification for 24 screens
 docs/specs/          snapshots of approved specs (the vault is master)
 docs/prototype-divergences.md   every deliberate departure from the prototype, with why
@@ -58,6 +58,7 @@ every departure is recorded in `docs/prototype-divergences.md`.
 | `golangci-lint` | **2.8.0** | Pinned in `ci.yml`; a different 2.x gives a different answer |
 | Xcode | latest | The iOS half of the KMP gate — macOS only |
 | XcodeGen | **2.46.0** | Pinned in `kmp/iosApp/.xcodegen-version` |
+| Node | see `web/.nvmrc` | The dashboard. `scripts/gate/all.sh` runs the web gate unconditionally |
 | Docker | any | The API integration suite brings up a real Postgres |
 | `shellcheck`, `jq` | any | The gate scripts |
 
@@ -109,6 +110,10 @@ What green does and does not cover:
   low-privilege request role and the migration chain are proven only by
   `make test-integration`, which `all.sh` runs when Docker is available.
 - **`ios.sh`** needs macOS and Xcode.
+- **`web.sh`** runs `tsc`, ESLint, Vitest and a production build, and refuses to
+  run at all on a Node whose major differs from `web/.nvmrc` — a gate measuring a
+  runtime nobody else runs is not a gate. It is the one stack with no skip: there
+  is no `web`-shaped equivalent of "no Docker here".
 
 ## CI status
 

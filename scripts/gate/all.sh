@@ -2,8 +2,8 @@
 # Runs every gate that applies on this machine. This is the command to run
 # before opening a pull request.
 #
-# web/ has no gate yet: the Vite dashboard does not exist (SKL-09). web/prototype
-# is a frozen visual specification and is never built.
+# web/prototype is a frozen visual specification and is never built; the gate
+# below covers web/ proper.
 set -euo pipefail
 
 here="$(dirname "$0")"
@@ -18,11 +18,22 @@ skipped=()
 "$here/ruleset.sh"
 ran+=("ruleset")
 
+# Cheap, and about the same thing one layer down: which gates run at all. A filter
+# answering false skips a job, and a skipped job satisfies a required check.
+"$here/changed-stacks_test.sh"
+ran+=("changed-stacks")
+
 "$here/go.sh"
 ran+=("go")
 
 "$here/kmp.sh"
 ran+=("kmp")
+
+# Needs a Node matching web/.nvmrc; the gate says so itself rather than being
+# skipped silently, because a dashboard nobody built is not a dashboard that
+# passed.
+"$here/web.sh"
+ran+=("web")
 
 # The integration suite is where forced RLS, the low-privilege request role and
 # the migration chain are actually proven — go.sh runs `go test ./...` with no
