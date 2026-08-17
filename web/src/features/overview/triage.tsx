@@ -19,7 +19,7 @@ export function Triage({ patients, onOpen }: { patients: readonly Patient[]; onO
           Никто не ждёт решения — на сегодня всё разобрано.
         </p>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: tokens.s5 }}>
           {patients.map((patient) => (
             <article
               key={patient.id}

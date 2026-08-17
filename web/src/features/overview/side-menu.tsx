@@ -36,7 +36,7 @@ export function SideMenu({ current, unread }: { current: string; unread: number 
         <span style={{ fontFamily: tokens.fontDisplay, fontSize: 22, letterSpacing: '.01em' }}>Cadence</span>
       </div>
 
-      <nav aria-label="Разделы" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <nav aria-label="Разделы" style={{ display: 'flex', flexDirection: 'column', gap: tokens.s1 }}>
         {DESTINATIONS.map((destination) => {
           const here = destination.id === current
 
@@ -45,10 +45,10 @@ export function SideMenu({ current, unread }: { current: string; unread: number 
           // back with «Обзор» marked current — the one control that promised what it could not do,
           // while the comparison callout justifies removing five others on exactly that ground. The
           // criterion mandates the item, so it is recorded rather than removed.
-          const Element = here ? 'a' : 'span'
+          const Tag = here ? 'a' : 'span'
 
           return (
-            <Element
+            <Tag
               key={destination.id}
               {...(here ? { href: `/${destination.id}` } : { 'aria-disabled': true })}
               aria-current={here ? 'page' : undefined}
@@ -83,7 +83,7 @@ export function SideMenu({ current, unread }: { current: string; unread: number 
                   {whole(unread)}
                 </span>
               )}
-            </Element>
+            </Tag>
           )
         })}
       </nav>

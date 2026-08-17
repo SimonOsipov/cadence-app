@@ -113,6 +113,21 @@ npm run --silent lint
 # nothing looks exactly like a rule everything obeys. The probes violate on purpose, are ignored by an
 # ordinary run, and are linted here with the count required — measured, one of these rules was silently
 # switched off over every component by a second config block, and nothing noticed.
+# What a component that ships actually gets. The probes prove the selectors match
+# something; they cannot prove the rules reach `src/features/overview/**`, and a
+# config block with a narrower glob would take them away there while both probes
+# stayed green — which is the round-one defect one directory deeper. Measured on the
+# real file rather than on a neighbour of it.
+echo "==> the rules reach the components, not just the probes"
+selectors=$(npx eslint --print-config src/features/overview/roster.tsx |
+    node -e 'let j="";process.stdin.on("data",d=>j+=d).on("end",()=>{const r=JSON.parse(j).rules?.["no-restricted-syntax"];console.log(Array.isArray(r)?r.length-1:0)})')
+
+if [ "$selectors" -ne 8 ]; then
+    echo "roster.tsx is linted with $selectors restricted-syntax selectors, want 8 — a component is" >&2
+    echo "not getting the rules the probes say exist" >&2
+    exit 1
+fi
+
 echo "==> the lint rules still refuse what they are for"
 for probe in aggregates:6 css-variables:2; do
     file="src/features/__probes__/${probe%%:*}.tsx"

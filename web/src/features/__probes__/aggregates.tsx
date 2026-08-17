@@ -1,4 +1,5 @@
-// Not compiled and not shipped: the gate lints this file and requires every line below to be refused.
+// Typechecked with everything else — the type-aware rules need it in the project — and shipped by
+// nothing, since no module imports it. The gate lints this file and requires every line below to be refused.
 // A rule this load-bearing with no test of its own goes green for ever on a typo in a selector.
 import type { Patient, RosterPage } from '../../data/overview'
 

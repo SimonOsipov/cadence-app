@@ -31,7 +31,7 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
         overflowY: 'auto',
       }}
     >
-      <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: tokens.s4 }}>
         <div>
           <h2 style={{ fontFamily: tokens.fontDisplay, fontSize: 27, color: tokens.ink900, margin: 0 }}>
             {patient.name}

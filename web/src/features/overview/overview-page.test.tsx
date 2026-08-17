@@ -276,6 +276,33 @@ describe('the triage row', () => {
   })
 })
 
+describe('the dose', () => {
+  // Two decimal places, asserted at the call site. Dropping the `2` is one token and renders «0,3 мг»
+  // for a protocol that says 0,25 мг — a different dose, on both surfaces of the screen — and it passed
+  // every test, because format.test.ts pins the function and nothing pinned the caller. This is the
+  // shape the weight fix closed, reopened by the fix for it.
+  // Two decimals and not merely fractional: 0,5 мг survives one place, 0,25 мг does not, and it is the
+  // second that tells the two settings apart.
+  const fractional = PATIENTS.find(
+    (patient) => (String(patient.dose.value).split('.')[1]?.length ?? 0) > 1,
+  )
+
+  it('is written to the precision the protocol uses', async () => {
+    expect(fractional, 'the fixture prescribes a dose needing two decimals').toBeDefined()
+
+    show()
+    const user = userEvent.setup()
+
+    const written = quantity(fractional!.dose.value, fractional!.dose.unit, 2)
+    const journal = within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
+
+    await user.click(await journal.findByText(fractional!.name))
+    const card = await screen.findByRole('complementary', { name: `Карточка: ${fractional!.name}` })
+
+    expect(within(card).getByText(new RegExp(written))).toBeInTheDocument()
+  })
+})
+
 describe('the patient card', () => {
   it('opens on a row and carries what the seam worked out', async () => {
     show()

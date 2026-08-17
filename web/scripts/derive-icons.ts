@@ -64,13 +64,22 @@ if (available.size === 0) {
  * the wide sweep because its call shapes are somebody else's and a syntax list missed one of 22.
  */
 const namesIn = (files: string[], narrow = false): Set<string> => {
-  const pattern = narrow
-    ? /(?:\bname=|\bicon[:=])\s*[{]?\s*['"]([a-z0-9-]+)['"]/g
-    : /['"]([a-z0-9-]+)['"]/g
   const quoted = new Set<string>()
 
   for (const file of files) {
-    for (const [, text] of readFileSync(file, 'utf8').matchAll(pattern)) {
+    const source = readFileSync(file, 'utf8')
+
+    // Anchored on the element and on the `icon:` field, not on a `name=` attribute. Two reasons, both
+    // measured: `<Icon name={entry.kind === 'dose' ? 'beaker' : 'clock'} />` in schedule.tsx has an
+    // identifier after `name={`, so an attribute pattern cannot see the ternary at all — the very shape
+    // the prototype's wide sweep exists for; and `name=` is an ordinary HTML attribute, so
+    // `<input name="magnifying-glass" />` put an icon in the shipped bundle.
+    const scanned = narrow
+      ? [...source.matchAll(/<Icon\b[\s\S]*?\/>/g)].map(([tag]) => tag).join('\n') +
+        [...source.matchAll(/\bicon:\s*['"][a-z0-9-]+['"]/g)].map(([entry]) => entry).join('\n')
+      : source
+
+    for (const [, text] of scanned.matchAll(/['"]([a-z0-9-]+)['"]/g)) {
       if (text && available.has(text)) quoted.add(text)
     }
   }
