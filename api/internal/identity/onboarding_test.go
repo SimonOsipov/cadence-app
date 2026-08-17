@@ -254,6 +254,57 @@ func TestABodyThatChoosesARoleIsRefusedRatherThanIgnored(t *testing.T) {
 	}
 }
 
+// The assembly with nothing behind the operations: the document generator builds one so that openapi.json describes
+// the routes without a database, and nothing serves from it.
+//
+// Asserted because the alternative to the arm that produces this answer is a nil dereference — a panic inside the
+// handler, which the transport turns into a dropped connection rather than a status line. Both routes, because the
+// check is written once per route and the second one is a copy.
+func TestARouteWithNothingBehindItRefusesRatherThanPanics(t *testing.T) {
+	tests := []struct {
+		path      string
+		principal auth.Principal
+		body      string
+	}{
+		{
+			path:      patientsPath,
+			principal: auth.Principal{Subject: theDoctor, Role: "doctor"},
+			body: `{"email":"anna@clinic.example","full_name":"Анна Петрова","specialists":` +
+				`[{"provider_id":"` + theDoctor + `","care_role":"endo"}]}`,
+		},
+		{
+			path:      providersPath,
+			principal: auth.Principal{Subject: theAdmin, Role: "admin"},
+			body:      staffBody(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			answered := post(t, nil, tc.principal, tc.path, tc.body)
+
+			if answered.status != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500; body %s", answered.status, answered.body)
+			}
+
+			var problem httpserver.Problem
+			if err := json.Unmarshal([]byte(answered.body), &problem); err != nil {
+				t.Fatalf("decoding the problem document: %v", err)
+			}
+
+			// The assembly is this side's mistake and the caller learns nothing about it.
+			if problem.Type != httpserver.ProblemInternal {
+				t.Errorf("type = %q, want %q", problem.Type, httpserver.ProblemInternal)
+			}
+
+			if strings.Contains(problem.Detail, "onboarding") {
+				t.Errorf("detail = %q, which tells the caller how this process is assembled",
+					problem.Detail)
+			}
+		})
+	}
+}
+
 // Distinct people, so that "the doctor assigned somebody else" is a different value rather than a reading of one.
 const (
 	theDoctor    = "8a1f3b7c-0000-4000-8000-000000000002"

@@ -222,6 +222,111 @@ func TestALockReleasedAfterCancellationKeepsItsConnection(t *testing.T) {
 	}
 }
 
+// Both of the lock's own failures, and both of them answer «busy, try again» rather than an internal error: a
+// connection that cannot be taken and a statement the server refuses are ordinary under load.
+//
+// Neither branch was produced by anything before this — the transport's table built the sentinel by hand — so the two
+// conn.Close calls that exist to keep a session lock out of the pool were dead to the suite.
+func TestWhatTheLockRefusesWith(t *testing.T) {
+	// A key of its own, so what is measured is the connection and not the lock on it.
+	t.Run("no connection to lock on", func(t *testing.T) {
+		pool := oneConnectionPool(t)
+
+		inside, mayLeave := make(chan struct{}), make(chan struct{})
+		held := make(chan error, 1)
+
+		go func() {
+			held <- database.WithAdvisoryLock(t.Context(), pool, database.OnboardingLock,
+				"holding@clinic.example", func(context.Context) error {
+					close(inside)
+					<-mayLeave
+
+					return nil
+				})
+		}()
+
+		<-inside
+
+		// Bounded rather than left to the suite's timeout: the pool's only connection is taken, so this
+		// waits for as long as it is given.
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+
+		err := database.WithAdvisoryLock(ctx, pool, database.OnboardingLock, "waiting@clinic.example",
+			func(context.Context) error {
+				t.Error("the closure ran on a connection the pool never handed out")
+
+				return nil
+			})
+		if !errors.Is(err, database.ErrLockUnavailable) {
+			t.Errorf("a request that could not take a connection was refused with %v, want %v",
+				err, database.ErrLockUnavailable)
+		}
+
+		close(mayLeave)
+
+		if err := <-held; err != nil {
+			t.Fatalf("the holder: %v", err)
+		}
+	})
+
+	// lock_timeout rather than a cancel: it makes the server refuse the statement, which is the branch, and it
+	// refuses at a moment the test chooses instead of one it races for.
+	t.Run("the server refuses the statement", func(t *testing.T) {
+		url := cluster.NewDatabase(t).AppURL
+
+		holder := poolOn(t, url)
+		waiting := configuredPool(t, url, func(cfg *pgxpool.Config) {
+			cfg.MaxConns = 1
+			cfg.ConnConfig.RuntimeParams["lock_timeout"] = "100"
+		})
+
+		before := backendPID(t, waiting)
+
+		const key = "contended@clinic.example"
+
+		inside, mayLeave := make(chan struct{}), make(chan struct{})
+		held := make(chan error, 1)
+
+		go func() {
+			held <- database.WithAdvisoryLock(t.Context(), holder, database.OnboardingLock, key,
+				func(context.Context) error {
+					close(inside)
+					<-mayLeave
+
+					return nil
+				})
+		}()
+
+		<-inside
+
+		err := database.WithAdvisoryLock(t.Context(), waiting, database.OnboardingLock, key,
+			func(context.Context) error {
+				t.Error("the closure ran without the lock")
+
+				return nil
+			})
+		if !errors.Is(err, database.ErrLockUnavailable) {
+			t.Errorf("a refused lock statement was answered with %v, want %v",
+				err, database.ErrLockUnavailable)
+		}
+
+		// The connection is destroyed rather than handed back, and deliberately: the statement may have been
+		// granted the lock and then errored, and a pooled connection still holding it blocks that key for the
+		// life of the process. Costing a connection is the cheaper side of that trade.
+		if after := backendPID(t, waiting); after == before {
+			t.Errorf("backend %d went back into the pool after its lock statement was refused; if that "+
+				"statement had been granted the lock first, the key is now blocked for good", after)
+		}
+
+		close(mayLeave)
+
+		if err := <-held; err != nil {
+			t.Fatalf("the holder: %v", err)
+		}
+	})
+}
+
 // The request path's pool, under cadence_app: the role the lock is taken as in production.
 func lockPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -243,12 +348,22 @@ func twoPoolsOnOneDatabase(t *testing.T) (*pgxpool.Pool, *pgxpool.Pool) {
 func oneConnectionPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
-	cfg, err := pgxpool.ParseConfig(cluster.NewDatabase(t).AppURL)
+	return configuredPool(t, cluster.NewDatabase(t).AppURL, func(cfg *pgxpool.Config) {
+		cfg.MaxConns = 1
+	})
+}
+
+// configuredPool opens a pool the caller shapes. Built from pgxpool rather than from NewPool because what these tests
+// arrange — one connection, a lock timeout — is exactly what the constructor decides for production.
+func configuredPool(t *testing.T, url string, shape func(*pgxpool.Config)) *pgxpool.Pool {
+	t.Helper()
+
+	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		t.Fatalf("parsing the database URL: %v", err)
 	}
 
-	cfg.MaxConns = 1
+	shape(cfg)
 
 	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
 	if err != nil {

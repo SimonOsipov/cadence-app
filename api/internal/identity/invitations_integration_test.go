@@ -6,8 +6,8 @@
 // Four behaviours the onboarding block rests on, each of them a decision somewhere else in this
 // context: the address is folded because the provider stores it folded; the pending state expires
 // with the link because the link expires at all; /recover is a second way in because it does not
-// disturb a pending invitation; and the invitation limit is ours because the only limit the
-// provider applies to /invite counts the whole clinic and cannot tell one doctor from another.
+// disturb a pending invitation; and the only limit reaching /invite is the hourly quota, which
+// counts the whole clinic and cannot tell one doctor from another.
 //
 // Not measured here, and recorded rather than asserted: v2.194.0 has no key that disables changing
 // the address through PUT /user. Nothing was found to switch off, so there is no behaviour to pin —
@@ -18,12 +18,16 @@ package identity_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
@@ -39,8 +43,12 @@ func TestTheProviderStoresTheAddressThisContextFolds(t *testing.T) {
 
 	invite(t, typed)
 
+	// Matched server-side and case-insensitively rather than read off the only row in the table: an
+	// unfiltered SELECT is right only while a Reset two lines up and one invitation are what put it
+	// there, and lower() is a different mechanism from the fold under test.
 	var stored string
-	scanProvider(t, `SELECT email FROM auth.users`, nil, &stored)
+	scanProvider(t, `SELECT email FROM auth.users WHERE lower(email) = lower($1)`,
+		[]any{typed}, &stored)
 
 	if want := identity.NormalizeAddress(typed); stored != want {
 		t.Errorf("the provider stored %q for an invitation to %q; this context would lock on "+
@@ -142,7 +150,7 @@ func TestRecoveryLeavesThePendingInvitationAloneUntilItsLinkIsFollowed(t *testin
 // uses. Both halves, because either alone is an assumption — without the second the limit on our
 // side would be belt and braces, without the first the gap would look like something nobody has
 // seen fire. The gap and not every limit: the hourly quota does reach /invite and counts the whole
-// instance, which is what TestTheDeploymentAllowsAtLeastOneDoctorsWorthOfInvitations compares.
+// instance, which is what TestTheDeploymentBoundsInvitationsSomewhere reads.
 func TestTheAdminInviteIsNotCoveredByThePerAddressGap(t *testing.T) {
 	cycle.Reset(t)
 
@@ -153,12 +161,22 @@ func TestTheAdminInviteIsNotCoveredByThePerAddressGap(t *testing.T) {
 	// Immediately, and to the same mailbox: a gap covering this route would refuse the second one.
 	invite(t, address)
 
+	firstRecovery := time.Now()
+
 	if status, said := ask(t, "/recover", "", map[string]string{"email": address}); status != http.StatusOK {
 		t.Fatalf("the first recovery request answered %d: %s", status, said)
 	}
 
 	status, said := ask(t, "/recover", "", map[string]string{"email": address})
 	if status != http.StatusTooManyRequests {
+		// Two HTTP round trips have to land inside the gap for the second one to be refused. On a
+		// loaded machine they may not, and that outcome is indistinguishable from an absent gap —
+		// so it is reported as having measured nothing rather than as a limit that is missing.
+		if waited := time.Since(firstRecovery); waited >= cycle.MailerMaxFrequency {
+			t.Fatalf("the two recovery requests took %s, past the %s gap: this run measured "+
+				"nothing about whether the gap exists", waited, cycle.MailerMaxFrequency)
+		}
+
 		t.Errorf("a second recovery request inside %s answered %d, want 429: %s",
 			cycle.MailerMaxFrequency, status, said)
 	}
@@ -177,6 +195,52 @@ func TestTheAdminInviteIsNotCoveredByThePerAddressGap(t *testing.T) {
 	if status, said := ask(t, "/recover", "", map[string]string{"email": address}); status != http.StatusOK {
 		t.Errorf("a recovery request after %s answered %d: %s",
 			cycle.MailerMaxFrequency, status, said)
+	}
+}
+
+// The hourly quota is the only limit that reaches /invite, so it is the only limit on invitations at all — and until
+// this it was pinned by finding its name in docker-compose.yml.
+//
+// That is the defect this block already met once from the other side: GOTRUE_MAILER_MAX_FREQUENCY is a name v2.194.0
+// reads and ignores, and a test that only finds a string is green whichever way that goes. Measured here instead, and
+// on a container of its own: the shared one runs at a budget no package can spend, because a quota that runs out
+// mid-run fails whichever test is next for somebody else's reason.
+func TestTheProviderRefusesInvitationsPastTheHourlyQuota(t *testing.T) {
+	const quota = 2
+
+	key := testsupport.NewES256Key(t, "quota-session-key")
+
+	provider := testsupport.StartGoTrueWith(t, cluster,
+		testsupport.GoTrueJWKS(t, testsupport.JWKEntry{Key: key, Signing: true}),
+		map[string]string{testsupport.EmailsPerHourVariable: strconv.Itoa(quota)})
+
+	admin := key.Sign(t, jwt.MapClaims{
+		"role": "service_role",
+		"aud":  testsupport.GoTrueAudience,
+		"iss":  testsupport.GoTrueIssuer,
+		"exp":  time.Now().Add(time.Minute).Unix(),
+	})
+
+	// Distinct addresses, so what refuses the last one is the instance's budget and not the gap between two emails
+	// to one person — the two answer the same code and differ only in the message.
+	for i := range quota {
+		address := fmt.Sprintf("under-quota-%d@clinic.example", i)
+
+		if status, said := askOf(t, provider, "/invite", admin,
+			map[string]string{"email": address}); status != http.StatusOK {
+			t.Fatalf("invitation %d of the %d the quota allows answered %d: %s", i+1, quota, status, said)
+		}
+	}
+
+	status, said := askOf(t, provider, "/invite", admin,
+		map[string]string{"email": "past-quota@clinic.example"})
+
+	if status != http.StatusTooManyRequests {
+		t.Fatalf("the invitation past a quota of %d answered %d, want 429: %s", quota, status, said)
+	}
+
+	if !strings.Contains(said, "email rate limit exceeded") {
+		t.Errorf("the refusal is %s, which is not the hourly quota this measures", said)
 	}
 }
 
@@ -203,13 +267,23 @@ func askForRecovery(t *testing.T, address string) {
 func ask(t *testing.T, path, token string, payload map[string]string) (int, string) {
 	t.Helper()
 
+	return askOf(t, cycle.GoTrue, path, token, payload)
+}
+
+// askOf is the same against a provider the caller brought, for the one measurement the shared
+// container cannot carry.
+func askOf(
+	t *testing.T, provider *testsupport.GoTrue, path, token string, payload map[string]string,
+) (int, string) {
+	t.Helper()
+
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("encoding the request: %v", err)
 	}
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		cycle.GoTrue.URL+path, bytes.NewReader(encoded))
+		provider.URL+path, bytes.NewReader(encoded))
 	if err != nil {
 		t.Fatalf("building the request: %v", err)
 	}

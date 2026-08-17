@@ -75,6 +75,11 @@ END $$`
 // another's address will see the other's user. IDN-17 asks for more — no address collisions and no
 // schema residue between tests — and this harness does not satisfy it. Reset narrows the residue to
 // nothing between tests that call it; it does not make two tests sharing one GoTrue independent.
+//
+// Nothing enforces the call, and that is the sharp end of it: a test written without one inherits
+// whatever the previous test left, and under -shuffle=on «the previous test» is a different one each
+// run. Addresses of one's own are what keeps that from mattering, so a new test picks an address no
+// other test uses even when it does call Reset.
 type Cycle struct {
 	// DB is the harness database: the chain is applied and GoTrue lives in the `auth` schema beside it.
 	DB *Database

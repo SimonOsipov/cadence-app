@@ -117,9 +117,12 @@ func TestTheCommandSignsItsAuditRowAsAJob(t *testing.T) {
 		entity   string
 		entityID string
 	)
+	// Filtered on the account rather than taken as the only row: unfiltered this is right only while
+	// the database is fresh and the command wrote exactly once, neither of which the query states.
 	if err := observer(t, db).QueryRow(t.Context(), `
-		SELECT actor_id, actor_job, action, entity, entity_id::text FROM app.audit_log
-	`).Scan(&actorID, &actorJob, &action, &entity, &entityID); err != nil {
+		SELECT actor_id, actor_job, action, entity, entity_id::text
+		FROM app.audit_log WHERE entity_id = $1
+	`, adminID).Scan(&actorID, &actorJob, &action, &entity, &entityID); err != nil {
 		t.Fatalf("reading the audit row: %v", err)
 	}
 

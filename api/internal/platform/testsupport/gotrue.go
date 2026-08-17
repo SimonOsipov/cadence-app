@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"testing"
 	"time"
 
@@ -128,6 +129,40 @@ func StartGoTrueOn(t *testing.T, db *Database, keys string) *GoTrue {
 	t.Helper()
 
 	return serveGoTrue(t, db.cluster.prepareForGoTrue(t, db.Name), keys)
+}
+
+// StartGoTrueWith runs the pinned image against a database of its own, with settings of the caller's
+// on top of the defaults. It exists for the measurements a shared container cannot carry: a quota
+// small enough to spend is a quota that fails whichever test runs next.
+func StartGoTrueWith(t *testing.T, cluster *Cluster, keys string, settings map[string]string) *GoTrue {
+	t.Helper()
+
+	databaseURL := cluster.newGoTrueDatabase(t)
+
+	env := gotrueEnv(databaseURL, keys)
+	maps.Copy(env, settings)
+
+	container, err := runGoTrueContainer(t.Context(), env,
+		wait.ForHTTP("/health").WithPort(gotruePort).WithStartupTimeout(gotrueStartupTimeout))
+
+	// Registered before the error is checked, for the reason runGoTrue states.
+	t.Cleanup(func() {
+		ctx := context.WithoutCancel(t.Context())
+		if err := testcontainers.TerminateContainer(container, testcontainers.StopContext(ctx)); err != nil {
+			t.Errorf("terminating the GoTrue container: %v", err)
+		}
+	})
+
+	if err != nil {
+		t.Fatalf("starting GoTrue: %v", err)
+	}
+
+	url, err := endpoint(t.Context(), container)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return &GoTrue{URL: url}
 }
 
 func serveGoTrue(t *testing.T, databaseURL, keys string) *GoTrue {

@@ -730,6 +730,10 @@ func accountID(t *testing.T, address string) string {
 // that holds the admin key. A stand-in for one reason worth naming: cmd/provisioner is a package main and cannot be
 // imported, so these tests exercise this context's half of the boundary — the order of the calls and what it does
 // with the answers. That the component itself speaks this protocol is its own integration suite's subject.
+// The mutex covers the counters and nothing else. Every field below it is set before the request that reads it and
+// not touched again while one is in flight — the double-click test is the only one with two requests at once and it
+// changes none of them — so the contract is the ordering rather than the lock. A test that flips one mid-request is
+// what -race would then report.
 type harnessProvisioner struct {
 	token string
 
