@@ -57,7 +57,6 @@ const (
 	detailMayNotCreate     = "У вас нет прав заводить пациентов."
 	detailNotAProvider     = "В команде наблюдения указан человек, который не является врачом клиники."
 	detailUnprocessable    = "Проверьте поля формы: данные пациента заполнены неверно."
-	detailBusy             = "Сейчас заняты — повторите через минуту."
 )
 
 // createPatient is the doctor's half of onboarding: one request creates the person and invites them, or neither.
@@ -116,9 +115,10 @@ func refusalFor(err error) error {
 	// Both of the lock's own failures, and both are ordinary: the loser of a double click can burn its deadline
 	// waiting on the winner, and the request pool has no explicit size, so concurrent creations — each holding a
 	// connection for the length of the request — make the next one wait. Left to the default they answer
-	// /problems/internal in English, which suggests a bug rather than «try again».
+	// /problems/internal in English, which suggests a bug rather than «try again». The sentence is English and for
+	// the log alone: httpserver normalises every 5xx detail to a constant of its own before it reaches the wire.
 	case errors.Is(err, database.ErrLockUnavailable):
-		return huma.Error503ServiceUnavailable(detailBusy, err)
+		return huma.Error503ServiceUnavailable("the advisory lock could not be taken", err)
 
 	// Its own sentence because it is the one refusal here a doctor can act on without rereading the form: the
 	// identifier came from a picker, and what is wrong with it is not a typo.

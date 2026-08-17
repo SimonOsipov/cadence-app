@@ -1,15 +1,17 @@
 package identity
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
 // Which 42501 the database spoke, decided on the message because Postgres gives all of them one SQLSTATE.
@@ -109,6 +111,7 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 		name       string
 		refusal    error
 		wantStatus int
+		wantType   string
 		wantDetail string
 
 		// The patient route's answer to the same refusal. An expectation derived from the constant under test
@@ -128,6 +131,7 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			name:       "a caller who is not an administrator",
 			refusal:    ErrCallerMayNotCreateProviders,
 			wantStatus: http.StatusForbidden,
+			wantType:   httpserver.ProblemForbidden,
 			wantDetail: detailOnlyAnAdminCreatesStaff,
 		},
 		{
@@ -136,6 +140,7 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			name:           "an address this clinic already knows",
 			refusal:        ErrAlreadyOnboarded,
 			wantStatus:     http.StatusConflict,
+			wantType:       httpserver.ProblemConflict,
 			wantDetail:     detailStaffAlreadyThere,
 			notTheSentence: detailAlreadyOnboarded,
 			mustNotMention: "ациент",
@@ -145,6 +150,7 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			name:           "an account this clinic did not invite",
 			refusal:        ErrAccountIsNotOurs,
 			wantStatus:     http.StatusConflict,
+			wantType:       httpserver.ProblemConflict,
 			wantDetail:     detailStaffAccountIsNotOurs,
 			notTheSentence: detailAccountIsNotOurs,
 			mustNotMention: "обратитесь",
@@ -153,23 +159,28 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			name:       "the provisioner did not answer",
 			refusal:    ErrProvisionerUnavailable,
 			wantStatus: http.StatusServiceUnavailable,
+			wantType:   httpserver.ProblemUnavailable,
+			wantDetail: detailUnavailableOnTheWire,
 		},
 		{
 			name:       "the lock could not be taken",
 			refusal:    database.ErrLockUnavailable,
 			wantStatus: http.StatusServiceUnavailable,
-			wantDetail: detailBusy,
+			wantType:   httpserver.ProblemUnavailable,
+			wantDetail: detailUnavailableOnTheWire,
 		},
 		{
 			name:       "an address that folds to nothing",
 			refusal:    ErrNoAddress,
 			wantStatus: http.StatusUnprocessableEntity,
+			wantType:   httpserver.ProblemValidation,
 			wantDetail: detailUnprocessable,
 		},
 		{
 			name:       "the provider named an account this side cannot parse",
 			refusal:    ErrMalformedIdentifier,
 			wantStatus: http.StatusUnprocessableEntity,
+			wantType:   httpserver.ProblemValidation,
 			wantDetail: detailUnprocessable,
 		},
 		{
@@ -178,6 +189,7 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 			name:       "the database refusing the role",
 			refusal:    ErrServicePathMakesNoAdmins,
 			wantStatus: http.StatusForbidden,
+			wantType:   httpserver.ProblemForbidden,
 			wantDetail: detailNoAdminThroughTheAPI,
 
 			// No patient-route sentence to differ from, so the property is stated directly: what makes this
@@ -188,14 +200,18 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			answered := answerFor(t, refusalForProvider(tc.refusal))
+			answered := answerFor(t, refusalForProvider, tc.refusal)
 
 			if answered.Status != tc.wantStatus {
 				t.Errorf("status = %d, want %d: %s", answered.Status, tc.wantStatus, answered.Detail)
 			}
 
-			// The provisioner's arm is the one with no constant to name: it is an inline literal in
-			// refusalFor, and what a caller reads there is httpserver's own sentence anyway.
+			// A client branches on the type, so a status arriving under the wrong one is a contract
+			// break the status assertion above cannot see.
+			if answered.Type != tc.wantType {
+				t.Errorf("type = %q, want %q", answered.Type, tc.wantType)
+			}
+
 			if tc.wantDetail != "" && answered.Detail != tc.wantDetail {
 				t.Errorf("detail = %q, want %q", answered.Detail, tc.wantDetail)
 			}
@@ -215,13 +231,44 @@ func TestWhatAStaffCreationIsRefusedWith(t *testing.T) {
 	}
 }
 
-func answerFor(t *testing.T, refused error) *huma.ErrorModel {
+// What every 503 and every 500 say once httpserver has normalised them, whichever refusal produced one. Written out
+// rather than imported: both constants are unexported there, and an expectation taken from the value under test moves
+// with it.
+const (
+	detailUnavailableOnTheWire = "Сервис временно недоступен. Повторите запрос через несколько минут."
+	detailInternalOnTheWire    = "The request could not be completed. Quote the request id when reporting this."
+)
+
+// answerFor maps a refusal the way the route does and answers with the document that reaches the caller.
+//
+// The mapping is taken as a function rather than applied at the call site, and that is the point: NewAPI is what puts
+// httpserver's Problem constructor in place of huma's — globally, and behind a sync.Once — so a refusal built before
+// any API exists is a huma.ErrorModel and one built afterwards is a Problem. Reading whichever the test order happened
+// to produce is what made this the only order-dependent test in the module, and a helper that builds the refusal
+// itself cannot be called in the wrong order.
+//
+// The document is then marshalled rather than read as a struct, because Problem.MarshalJSON normalises on the way to
+// the wire: a detail a handler wrote is replaced there, and until this went through json the table was asserting
+// sentences no caller receives.
+func answerFor(t *testing.T, refuse func(error) error, refusal error) httpserver.Problem {
 	t.Helper()
 
-	answered := &huma.ErrorModel{}
-	if !errors.As(refused, &answered) {
-		t.Fatalf("refused with %T, which the transport has no answer for", refused)
+	httpserver.NewAPI(chi.NewRouter())
+
+	built := &httpserver.Problem{}
+	if !errors.As(refuse(refusal), &built) {
+		t.Fatalf("%v was refused with something the transport has no answer for", refusal)
 	}
 
-	return answered
+	body, err := json.Marshal(built)
+	if err != nil {
+		t.Fatalf("marshalling the problem document: %v", err)
+	}
+
+	var sent httpserver.Problem
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("decoding the problem document: %v", err)
+	}
+
+	return sent
 }
