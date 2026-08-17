@@ -795,6 +795,19 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 				JOIN pg_namespace n ON n.oid = p.pronamespace
 				WHERE n.nspname = $1
 				UNION ALL
+				-- Columns, because without them a migration whose whole content is
+				-- ADD COLUMN is invisible here: the relation list is unchanged, and
+				-- an empty down file for it would pass the witness below. Measured
+				-- on 000010, which adds one column and nothing else.
+				SELECT 'c ' || c.relname || '.' || a.attname || ' ' ||
+				       pg_catalog.format_type(a.atttypid, a.atttypmod) ||
+				       CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
+				FROM pg_attribute a
+				JOIN pg_class c ON c.oid = a.attrelid
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = $1 AND a.attnum > 0 AND NOT a.attisdropped
+				  AND c.relkind IN ('r', 'p', 'v', 'm')
+				UNION ALL
 				SELECT 'p ' || tablename || ' ' || policyname || ' ' || cmd || ' ' ||
 				       coalesce(qual, '-') || ' | ' || coalesce(with_check, '-')
 				FROM pg_policies WHERE schemaname = $1

@@ -34,6 +34,11 @@ var (
 
 	// A doctor who could would be growing the clinic's staff, and every doctor's access runs through the care team.
 	ErrCallerMayNotCreateProviders = errors.New("only an administrator may create providers")
+
+	// The address holds an unfinished creation for a different role. Refused rather than completed: finishing
+	// it as the wrong kind writes a profile, and a profile is what makes every later request answer «already
+	// onboarded» — so the wrong completion spends the address permanently.
+	ErrInvitedAsSomethingElse = errors.New("the address holds an unfinished creation for another role")
 )
 
 // forPatient is carried for one column: patient_id is what a patient's audit trail is read by, so a doctor's
@@ -42,6 +47,11 @@ type creation struct {
 	address    string
 	invitedBy  string
 	forPatient bool
+
+	// The role the invitation is for, recorded so that a creation interrupted before its profile still says what
+	// it was. Not derived from forPatient: the two answer different questions, and the day staff creation grows a
+	// second role this one keeps working.
+	role string
 }
 
 // The audit row's patient_id: nothing when the person is staff.
@@ -58,6 +68,10 @@ func (c creation) patient(userID string) *string {
 type Held struct {
 	Invite  bool
 	Profile bool
+
+	// Empty when there is no invite record, and — for rows written before migration 000010 — never, since the
+	// column is NOT NULL with no default.
+	InvitedRole string
 }
 
 // Claim is what may be done with an address the provider already has an account for.
@@ -76,17 +90,26 @@ const (
 
 	// RefuseNotOurs — no invite record, so this is somebody else's account.
 	RefuseNotOurs
+
+	// RefuseInvitedAsSomethingElse — ours, unfinished, and for a different role than the one asking.
+	RefuseInvitedAsSomethingElse
 )
 
 // The order of the arms is the rule: a profile settles it before anything else is asked, which stops the loser of a
 // double click from sending a second invitation; then the invite record, the only evidence that an account is ours;
-// and only then the account's own state, where confirmed and signed-in both mean somebody has been inside.
-func ClaimFor(account Account, held Held) Claim {
+// then what that record was for; and only then the account's own state, where confirmed and signed-in both mean
+// somebody has been inside.
+//
+// The role arm sits above hasBeenOpened because a mismatch is refused whether or not anybody has been inside: an
+// account opened by a half-invited doctor is still not a patient to claim.
+func ClaimFor(account Account, held Held, wantRole string) Claim {
 	switch {
 	case held.Profile:
 		return RefuseAlreadyOnboarded
 	case !held.Invite:
 		return RefuseNotOurs
+	case held.InvitedRole != wantRole:
+		return RefuseInvitedAsSomethingElse
 	case hasBeenOpened(account):
 		return ClaimByDeletingFirst
 	default:
@@ -146,7 +169,7 @@ func (o *Onboarding) InvitePatient(ctx context.Context, email string, patient Ne
 		return "", err
 	}
 
-	of := creation{address: address, invitedBy: principal.Subject, forPatient: true}
+	of := creation{address: address, invitedBy: principal.Subject, forPatient: true, role: patientRole}
 
 	var userID string
 
@@ -189,7 +212,7 @@ func (o *Onboarding) InviteProvider(
 		return "", fmt.Errorf("the token's role is %q: %w", principal.Role, ErrCallerMayNotCreateProviders)
 	}
 
-	of := creation{address: address, invitedBy: principal.Subject}
+	of := creation{address: address, invitedBy: principal.Subject, role: providerRole}
 
 	var userID string
 
@@ -239,7 +262,7 @@ func (o *Onboarding) settle(ctx context.Context, of creation) (Account, error) {
 		return Account{}, err
 	}
 
-	claim := ClaimFor(*found, held)
+	claim := ClaimFor(*found, held, of.role)
 
 	switch claim {
 	case RefuseAlreadyOnboarded:
@@ -247,6 +270,9 @@ func (o *Onboarding) settle(ctx context.Context, of creation) (Account, error) {
 
 	case RefuseNotOurs:
 		return Account{}, ErrAccountIsNotOurs
+
+	case RefuseInvitedAsSomethingElse:
+		return Account{}, fmt.Errorf("invited as %q: %w", held.InvitedRole, ErrInvitedAsSomethingElse)
 
 	case ClaimByDeletingFirst:
 		// The proof travels as it was measured rather than as two literals: the component cannot see the app
@@ -350,8 +376,9 @@ func (o *Onboarding) held(ctx context.Context, userID string) (Held, error) {
 	err := database.WithService(ctx, o.writes, func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT EXISTS (SELECT FROM app.invites   WHERE user_id = $1),
-			       EXISTS (SELECT FROM app.profiles  WHERE user_id = $1)
-		`, userID).Scan(&held.Invite, &held.Profile)
+			       EXISTS (SELECT FROM app.profiles  WHERE user_id = $1),
+			              coalesce((SELECT role FROM app.invites WHERE user_id = $1), '')
+		`, userID).Scan(&held.Invite, &held.Profile, &held.InvitedRole)
 	})
 	if err != nil {
 		return Held{}, fmt.Errorf("reading what this clinic holds for %s: %w", userID, err)
@@ -408,10 +435,10 @@ func (o *Onboarding) remember(ctx context.Context, userID string, of creation) e
 		// DO NOTHING rather than an update: no role holds UPDATE on this table, and the row says an account was
 		// invited by this clinic, which a second invitation to it does not change.
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO app.invites (user_id, email, invited_by)
-			VALUES ($1, $2, $3)
+			INSERT INTO app.invites (user_id, email, invited_by, role)
+			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (user_id) DO NOTHING
-		`, userID, of.address, of.invitedBy); err != nil {
+		`, userID, of.address, of.invitedBy, of.role); err != nil {
 			return fmt.Errorf("writing the invite record: %w", err)
 		}
 

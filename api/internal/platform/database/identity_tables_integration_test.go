@@ -529,7 +529,7 @@ func TestAuditRowsOutliveTheProfilesTheyName(t *testing.T) {
 		// so the row below names the doctor and describes the patient being
 		// deleted.
 		{
-			`INSERT INTO app.invites (user_id, email, invited_by) VALUES ($1, $2, $3)`,
+			`INSERT INTO app.invites (user_id, email, invited_by, role) VALUES ($1, $2, $3, 'patient')`,
 			[]any{patient, "irina@example.test", doctor},
 		},
 	} {
@@ -645,6 +645,7 @@ func identityColumns() map[string][]string {
 			"email text NOT NULL",
 			"invited_by uuid NOT NULL",
 			"invited_at timestamp with time zone NOT NULL DEFAULT now()",
+			"role text NOT NULL",
 		},
 		"audit_log": {
 			"id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",

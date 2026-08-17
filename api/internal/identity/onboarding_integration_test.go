@@ -1011,3 +1011,58 @@ func TestNamingTwoLeadingSpecialistsIsTheFormsMistakeAndNothingIsSent(t *testing
 		t.Errorf("%d invitations went out for a body that was refused", sent)
 	}
 }
+
+// A staff creation interrupted between its two commits leaves an address with an invite record and no profile, and
+// nothing in that state says the invitation was for a doctor. ClaimFor reads the same three facts it reads for a
+// patient — invite yes, profile no, account unopened — and answers ClaimByInviting, so an ordinary doctor's
+// POST /v1/patients finishes an admin's staff onboarding as a patient of its own.
+//
+// The state is produced by removing the profile rather than by killing the process: the two commits are ordered
+// deliberately (see rememberOrRetry) and the interruptions that land between them — a crash, a deploy, a lost
+// connection — have no seam a request can drive. What the address holds afterwards is identical either way, and what
+// is under test is what ClaimFor makes of it.
+//
+// Expected to fail until app.invites records the invited role. Written first, so that the fix is measured rather
+// than asserted: without it this test cannot tell «the window is closed» from «the test never reached the window».
+func TestAStaffCreationInterruptedBeforeItsProfileIsNotClaimedAsAPatient(t *testing.T) {
+	clinic := onboardingStand(t)
+
+	const address = "interrupted.staff@clinic.example"
+
+	if hired := clinic.create(t, asAdmin, providersPath, providerBody(address, "эндокринолог")); hired.status !=
+		http.StatusCreated {
+		t.Fatalf("the staff creation answered %d, want 201: %s", hired.status, hired.body)
+	}
+
+	invited := accountID(t, address)
+
+	// The interruption, after the invite record and before the person.
+	superuser := testsupport.Connect(t, cycle.DB.SuperuserURL)
+	if _, err := superuser.Exec(t.Context(),
+		`DELETE FROM app.profiles WHERE user_id = $1`, invited); err != nil {
+		t.Fatalf("removing the profile to reproduce the window: %v", err)
+	}
+
+	if !clinic.holdsInviteFor(t, invited) {
+		t.Fatal("the invite record went with the profile, so this is not the window under test")
+	}
+
+	// A doctor who knows the pending address tries to create a patient on it.
+	stolen := clinic.create(t, asDoctor, patientsPath, body(address, theDoctor))
+
+	if stolen.status == http.StatusCreated {
+		t.Errorf("a doctor claimed a half-created member of staff as a patient: %s", stolen.body)
+	}
+
+	if patients := clinic.countPatients(t, address); patients != 0 {
+		t.Errorf("%d patients exist on a staff address, want 0", patients)
+	}
+
+	// The admin's retry must still work, or the fix has traded this defect for the permanent refusal the
+	// invite-first ordering exists to prevent.
+	if cured := clinic.create(t, asAdmin, providersPath, providerBody(address, "эндокринолог")); cured.status !=
+		http.StatusCreated {
+		t.Errorf("the admin's retry answered %d, want 201: %s — the address is now unusable, which is worse "+
+			"than the defect this test is about", cured.status, cured.body)
+	}
+}
