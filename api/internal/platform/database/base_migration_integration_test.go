@@ -799,12 +799,17 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 				-- ADD COLUMN is invisible here: the relation list is unchanged, and
 				-- an empty down file for it would pass the witness below. Measured
 				-- on 000010, which adds one column and nothing else.
+				-- The collation is in the line because format_type leaves it out: a migration whose
+				-- whole content is ALTER COLUMN ... COLLATE moves nothing else here, and an empty down
+				-- file for it would pass. Measured on 000012, which changes one column's collation.
 				SELECT 'c ' || c.relname || '.' || a.attname || ' ' ||
 				       pg_catalog.format_type(a.atttypid, a.atttypmod) ||
+				       coalesce(' collate ' || co.collname, '') ||
 				       CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
 				FROM pg_attribute a
 				JOIN pg_class c ON c.oid = a.attrelid
 				JOIN pg_namespace n ON n.oid = c.relnamespace
+				LEFT JOIN pg_collation co ON co.oid = a.attcollation
 				WHERE n.nspname = $1 AND a.attnum > 0 AND NOT a.attisdropped
 				  AND c.relkind IN ('r', 'p', 'v', 'm')
 				UNION ALL

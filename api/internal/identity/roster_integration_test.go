@@ -146,12 +146,15 @@ func TestAnAdministratorReadsEveryPatient(t *testing.T) {
 		seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID},
 		seededPatient{id: borisID, name: "Борис Ким", assignedTo: otherDoctorID},
 		seededPatient{id: veraID, name: "Вера Ильина"},
+		// Ё is the letter that separates the Russian alphabet from the byte order: under the database's
+		// own collation it sorts before А, and a doctor looking for Ёлкина finds her above everyone.
+		seededPatient{id: galyaID, name: "Ёлкина Мария", assignedTo: doctorID},
 	)
 
 	seen := namesSeenBy(t, roster, adminID, "admin", "", 10)
 
 	// Set and order together: a size holds for the wrong three, and the contract says «ordered by name».
-	want := []string{"Анна Петрова", "Борис Ким", "Вера Ильина"}
+	want := []string{"Анна Петрова", "Борис Ким", "Вера Ильина", "Ёлкина Мария"}
 	if !slices.Equal(seen, want) {
 		t.Errorf("the administrator sees %v, want %v", seen, want)
 	}
