@@ -110,6 +110,26 @@ node scripts/derive-icons.ts --check
 echo "==> eslint"
 npm run --silent lint
 
+# The other half of the same criterion. ESLint holds `var(--…)` to src/tokens/ for
+# the files it parses; it parses no CSS, and src/fonts/fonts.css is already outside
+# tokens/. stylelint was declined — a second linter and a second config for one rule
+# — so the rule is a grep, and it counts the files it read before trusting the
+# absence of matches.
+echo "==> var(--…) stays inside src/tokens"
+stylesheets=$(find src -name '*.css' -not -path 'src/tokens/*')
+if [ -z "$stylesheets" ]; then
+    echo "no stylesheet outside src/tokens was found, so this check measured nothing" >&2
+    exit 1
+fi
+
+# shellcheck disable=SC2086 # the list is newline-separated paths this repository controls
+loose=$(grep -rniE 'var\s*\(\s*--' $stylesheets || true)
+if [ -n "$loose" ]; then
+    echo "a custom property is named outside src/tokens, where a typo renders as nothing:" >&2
+    printf '  %s\n' "$loose" >&2
+    exit 1
+fi
+
 echo "==> vitest"
 npm run --silent test
 

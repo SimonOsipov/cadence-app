@@ -137,6 +137,10 @@ describe('the real stylesheet', () => {
   })
 
   it('leaves no reference behind', () => {
+    // A loop over an empty list asserts nothing and passes. The count above would catch that, but this
+    // one should not depend on a sibling to have measured anything.
+    expect.hasAssertions()
+
     for (const token of parsed) {
       expect(token.value).not.toContain('var(')
     }

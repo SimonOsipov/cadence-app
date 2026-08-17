@@ -15,8 +15,17 @@ const SHARED = readdirSync(MOBILE)
 const digest = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex')
 
 describe('the three faces', () => {
-  it('are the four files there are', () => {
+  // The set the dashboard links is the set the mobile app bundles. That is a new invariant this test
+  // introduces, and it is deliberate: a typeface is one product decision for both surfaces. It is
+  // stated here rather than left to an ENOENT deep inside a digest, which reads as a broken file
+  // rather than as a policy.
+  it('are the faces the mobile app bundles, neither more nor fewer', () => {
+    const linked = readdirSync('src/fonts')
+      .filter((file) => file.endsWith('.ttf'))
+      .map((file) => file.replace(/\.ttf$/, ''))
+
     expect(SHARED.length).toBeGreaterThan(0)
+    expect(linked.sort()).toEqual([...SHARED].sort())
   })
 
   // A typeface is one product decision and two surfaces. That they agree is measured, because a font
@@ -59,7 +68,18 @@ describe('the three faces', () => {
   it('reach for nothing over the network', () => {
     const everything = SHEET + readFileSync('src/tokens/colors_and_type.css', 'utf8')
 
-    expect(everything).not.toMatch(/https?:/)
+    // What a stylesheet can be made to fetch, and not every mention of a scheme: a licence URL in a
+    // comment above four bundled faces is an ordinary thing to write, and failing on it would be a red
+    // gate whose diagnosis sends the next reader hunting a leak that is not there.
+    //
+    // The scheme is optional — `//host/path` resolves against the page's own and is as live a call.
+    const fetched = [
+      ...everything.matchAll(/@import\s+(?:url\()?["']?([^"');]+)/g),
+      ...everything.matchAll(/src:\s*url\(["']?([^"')]+)/g),
+    ].map(([, address]) => address ?? '')
+
+    expect(fetched.length).toBeGreaterThan(0)
+    expect(fetched.filter((address) => /^(?:https?:)?\/\//.test(address))).toEqual([])
   })
 
   // Instrument Serif is named first in --font-display and has no @font-face on purpose: the stack falls

@@ -40,7 +40,17 @@ export function inspect(dist: string, required: string[]): Verdict {
     // linking the fonts locally exists to prevent, and minified Vite output writes a remote import as
     // `@import "https://…"` with no url() wrapper — so the sweep is over the whole text, not over
     // url() alone.
-    for (const [remote] of css.matchAll(/https?:\/\/[^"')\s]+/g)) {
+    //
+    // Inlined assets come out first. Every SVG carries xmlns="http://www.w3.org/2000/svg", and Vite
+    // inlines anything under assetsInlineLimit as a data URI — so without this the first small SVG
+    // turns the gate red with a diagnosis about a network call that is not there, and the obvious
+    // repair under time pressure is to weaken the sweep this exists for.
+    //
+    // The scheme is optional: `//fonts.googleapis.com/…` is resolved against the page's own scheme and
+    // is as live a call as either spelling.
+    const addressable = css.replace(/url\(\s*["']?data:[^)]*\)/g, '')
+
+    for (const [remote] of addressable.matchAll(/(?:https?:)?\/\/[^"')\s]+/g)) {
       problems.push(`${sheet} reaches ${remote} over the network`)
     }
 
@@ -61,8 +71,13 @@ export function inspect(dist: string, required: string[]): Verdict {
   // The positive, and it is the half that was missing: counting no failures is what a build shipping
   // no fonts at all looks like, and it announced success. What has to be true is that these four
   // arrived, not merely that nothing broke.
+  //
+  // Matched to the hyphen Vite puts before the hash, because a bare substring makes one of the four
+  // unguarded: CormorantGaramondItalic-<hash>.ttf contains CormorantGaramond, so a build that dropped
+  // the upright face satisfied the requirement for it. Measured end to end before this line existed —
+  // vite build exit 0, the file absent from dist, and the check announcing all four included.
   for (const face of required) {
-    if (!resolved.some((reference) => reference.includes(face))) {
+    if (!resolved.some((reference) => reference.includes(`${face}-`))) {
       problems.push(`no stylesheet in the build points at ${face}`)
     }
   }

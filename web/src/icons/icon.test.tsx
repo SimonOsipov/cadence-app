@@ -22,7 +22,7 @@ describe('the icon', () => {
   // the derived subset ever holds only single-path icons, the multi-path case is going untested and
   // that should be said out loud rather than passing vacuously. In the subset today it is cog alone —
   // fire and camera have two paths in heroicons.js and the dashboard draws neither.
-  it('includes an icon with more than one path, so that case is measured at all', () => {
+  it('draws exactly one icon of more than one path, and it is cog', () => {
     expect(names.filter((name) => icons[name].length > 1)).toEqual(['cog'])
   })
 

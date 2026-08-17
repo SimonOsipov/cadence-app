@@ -12,7 +12,10 @@
 // actually carries, rather than over the syntax that names an icon. Measured: reading `Icon name="…"`
 // and `icon: '…'` misses `icon="check-circle"` in dd-app.jsx — an attribute rather than a field, one
 // spelling among several, and exactly the kind a syntax list forgets. Intersecting with the source of
-// truth is what makes the wide net safe: a string that is not an icon cannot become one.
+// truth is what bounds the net rather than making it safe: a string matching no heroicons key cannot
+// become an icon, but one that matches a key does — `item.kind === 'checkin'` in dd-components.jsx is
+// a character away from the key `check`. Only the second direction of the check closes that, and it
+// waits for step 3.
 import { readFileSync, writeFileSync } from 'node:fs'
 
 const HEROICONS = 'prototype/design-system/heroicons.js'

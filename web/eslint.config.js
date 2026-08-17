@@ -33,11 +33,11 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector: "Literal[value=/var\\(--/]",
+          selector: "Literal[value=/var\\s*\\(\\s*--/i]",
           message: 'Reach for tokens.x instead: a mistyped custom property renders as nothing, silently.',
         },
         {
-          selector: "TemplateElement[value.raw=/var\\(--/]",
+          selector: "TemplateElement[value.raw=/var\\s*\\(\\s*--/i]",
           message: 'Reach for tokens.x instead: a mistyped custom property renders as nothing, silently.',
         },
       ],
