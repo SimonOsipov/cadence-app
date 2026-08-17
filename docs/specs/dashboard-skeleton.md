@@ -191,6 +191,10 @@ A byte-for-byte port of the CSS except the `@import`; the generator with alias r
 
 The icon subset derivation script, the component, and the two-way check in the gate.
 
+> [!deviation] 2026-08-17 — the icons' second direction is checked at step 3, not here
+> Spec said: «the icon subset derivation script, the component, and the two-way check in the gate». Actually done: the script, the component and one direction of the check — the committed subset is re-derived from the prototype on every gate run, so it cannot drift from the screens it was taken off. The other direction, «every icon in the set is drawn by `web/src/**`», is not wired, because at this step the application draws nothing: the check would report twenty-two unused icons and have to be switched off to let the gate pass, and a check that must be switched off is not a check. It belongs with the Overview, in step 3, and is listed in that step. What already holds today is the stronger half of the same property — `IconName` is a union of the derived names, so a name the subset lacks does not compile, asserted with `@ts-expect-error`.
+> The derivation itself diverged too, and for a measured reason: the sweep is over every quoted string in the three files intersected with what `heroicons.js` carries, rather than over the syntax that names an icon. Reading `Icon name="…"` and `icon: '…'` finds 21; the sweep finds 22. The missing one is `icon="check-circle"` in `dd-app.jsx:294` — an attribute rather than a field. Intersecting with the source of truth is what makes the wide net safe: a quoted string that is not an icon cannot become one.
+
 todoist: "6h8w88wr2qpwvvRH"
 
 ### step-3: The Overview on fixtures

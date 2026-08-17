@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "tokens": "node scripts/generate-tokens.ts"
+    "tokens": "node scripts/generate-tokens.ts",
+    "icons": "node scripts/derive-icons.ts"
   },
   "dependencies": {
     "react": "^19.2.8",

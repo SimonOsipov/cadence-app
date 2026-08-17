@@ -99,6 +99,14 @@ fi
 echo "==> the token module matches the stylesheet"
 node scripts/generate-tokens.ts --check
 
+# Derived from the prototype rather than retyped, and re-derived here so the set
+# cannot drift from the screens it was taken off. The other direction — every icon
+# in the set is actually drawn by this application — arrives with the Overview in
+# step 3; today the application draws none, and a check that must be switched off
+# to pass is not a check.
+echo "==> the icon subset matches the prototype"
+node scripts/derive-icons.ts --check
+
 echo "==> eslint"
 npm run --silent lint
 
