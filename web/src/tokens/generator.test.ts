@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 // Imported from scripts/ rather than living in src/: the parser runs at build time and has no business
@@ -71,6 +72,74 @@ describe('what the parser refuses', () => {
   // without a word — the import that used it still compiles, because the winner answers to that key.
   it('two names that fold to one key', () => {
     expect(() => parseTokens(root('  --t-body: 1rem;\n  --tBody: 2rem;'))).toThrow(/tBody/)
+  })
+
+  // A missing semicolon is the same shape of loss: CSS drops both declarations, and this used to return
+  // one token whose value held the other. The last declaration of a block was already refused; the ones
+  // in the middle were not.
+  it.each([
+    ['in the middle of the block', '  --a: 1rem\n  --b: 2rem;\n  --c: 3rem;'],
+    ['at the end of the block', '  --a: 1rem;\n  --b: 2rem'],
+  ])('a declaration missing its semicolon %s', (_, body) => {
+    expect(() => parseTokens(root(body))).toThrow(/semicolon/)
+  })
+
+  // Both reach tokens.ts as the literal string otherwise, which is not a value and which the module's
+  // own contract says it never carries.
+  it.each([
+    ['a fallback', '  --a: #000;\n  --b: var(--a, #fff);'],
+    ['a reference inside a call', '  --a: 2px;\n  --b: calc(var(--a) * 2);'],
+  ])('an alias it cannot follow: %s', (_, body) => {
+    expect(() => parseTokens(root(body))).toThrow(/cannot resolve/)
+  })
+
+  it('a declaration with no value at all', () => {
+    expect(() => parseTokens(root('  --a:;'))).toThrow(/empty value/)
+  })
+})
+
+// Three shapes that used to end the scan early or leave it inside a string, taking every declaration
+// after them with it. None is reachable while the CSS is pinned byte-for-byte to the prototype; all
+// three are one edit away from being.
+describe('what the scanner survives', () => {
+  it.each([
+    ['a closing brace inside a value', `  --a: "}";\n  --b: 2rem;`],
+    ['an escaped quote inside a value', `  --a: 'it\\'s';\n  --b: 2rem;`],
+  ])('%s', (_, body) => {
+    expect(parseTokens(root(body))).toHaveLength(2)
+  })
+})
+
+// --check compares the committed module against a regeneration by the same parser, so it is
+// self-consistent by construction: it catches drift and can never catch a parser defect. The
+// reconciliation against the mobile palette covers 32 names and all of them colours. These are the
+// families nothing else pins — a parser change that mangled every shadow would have regenerated
+// cleanly and passed everything.
+describe('the real stylesheet', () => {
+  const parsed = parseTokens(readFileSync('src/tokens/colors_and_type.css', 'utf8'))
+  const valueOf = (name: string) => parsed.find((token) => token.name === name)?.value
+
+  it('yields every declaration it carries', () => {
+    expect(parsed).toHaveLength(89)
+  })
+
+  it.each([
+    ['shadowSm', '0 2px 6px rgba(46, 38, 24, 0.06), 0 1px 2px rgba(46, 38, 24, 0.04)'],
+    ['shadowInset', 'inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 0 rgba(46,38,24,0.04)'],
+    ['tDisplay', 'clamp(3.5rem, 8vw, 5.5rem)'],
+    ['easeSpring', 'cubic-bezier(0.34, 1.56, 0.64, 1)'],
+    ['r2xl', '32px'],
+    ['s7', '24px'],
+    ['hairline', 'rgba(26,26,26,0.08)'],
+    ['fontBody', "'Golos Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif"],
+  ])('carries %s through as written', (name, value) => {
+    expect(valueOf(name)).toBe(value)
+  })
+
+  it('leaves no reference behind', () => {
+    for (const token of parsed) {
+      expect(token.value).not.toContain('var(')
+    }
   })
 })
 

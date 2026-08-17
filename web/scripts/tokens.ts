@@ -74,17 +74,33 @@ function readDeclarations(root: string): Array<{ cssVariable: string; value: str
     const colon = text.indexOf(':')
     if (colon < 0) throw new Error(`the declaration "${text}" has no value`)
 
-    declarations.push({
-      cssVariable: text.slice(0, colon).trim(),
-      value: text.slice(colon + 1).trim(),
-    })
+    const cssVariable = text.slice(0, colon).trim()
+    const value = text.slice(colon + 1).trim()
+
+    if (value === '') {
+      throw new Error(`${cssVariable} has an empty value`)
+    }
+
+    // A value carrying another declaration is this one missing its semicolon: CSS forgives that by
+    // dropping both, and dropping a token silently is the one outcome this cannot have. It looks for a
+    // declaration and not for "--", because `var(--forest-700)` is a legitimate value. Caught here
+    // rather than only at the end of the block, which is where the check used to be — measured,
+    // `--a: 1rem\n --b: 2rem;` came back as one token holding both.
+    if (/--[a-z0-9-]+\s*:/.test(value)) {
+      throw new Error(`the value of ${cssVariable} contains a declaration, so it is missing its semicolon`)
+    }
+
+    declarations.push({ cssVariable, value })
   }
 
   for (let i = 0; i < root.length; i += 1) {
     const character = root[i]
 
     if (quoted) {
-      if (character === quoted) quoted = null
+      // A backslash escapes whatever follows it, the closing quote included — without this a value
+      // holding an escaped quote leaves the scanner inside a string for the rest of the block.
+      if (character === '\\') i += 1
+      else if (character === quoted) quoted = null
       continue
     }
 
@@ -109,7 +125,17 @@ function resolve(
   seen: Set<string>,
 ): string {
   const alias = /^var\(\s*(--[a-z0-9-]+)\s*\)$/.exec(value)
-  if (!alias?.[1]) return value
+  if (!alias?.[1]) {
+    // Anything else holding a var() is a reference this cannot follow — `var(--a, #000)` with a
+    // fallback, or one nested inside calc(). Left alone it reaches tokens.ts as the literal string
+    // "var(--a, #000)", which is not a colour and which the module's own contract says it never
+    // carries. Refused rather than passed through: a value that lies is worse than a build that stops.
+    if (value.includes('var(')) {
+      throw new Error(`${of} holds ${value}, which is a reference this generator cannot resolve`)
+    }
+
+    return value
+  }
 
   const target = alias[1]
   if (seen.has(target)) {
@@ -148,10 +174,26 @@ function firstRoot(css: string): string {
   if (opening < 0) throw new Error('the stylesheet declares no :root')
 
   const brace = css.indexOf('{', opening)
-  const closing = css.indexOf('}', brace)
-  if (brace < 0 || closing < 0) throw new Error('the :root block is not closed')
+  if (brace < 0) throw new Error('the :root block is not opened')
 
-  return css.slice(brace + 1, closing)
+  // Scanned rather than indexOf('}'), for the same reason the declarations below are: a closing brace
+  // inside a quoted value would end the block early and take every declaration after it with it.
+  let quoted: string | null = null
+
+  for (let i = brace + 1; i < css.length; i += 1) {
+    const character = css[i]
+
+    if (quoted) {
+      if (character === '\\') i += 1
+      else if (character === quoted) quoted = null
+      continue
+    }
+
+    if (character === "'" || character === '"') quoted = character
+    else if (character === '}') return css.slice(brace + 1, i)
+  }
+
+  throw new Error('the :root block is not closed')
 }
 
 function camelCase(cssVariable: string): string {

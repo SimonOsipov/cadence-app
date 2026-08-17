@@ -1,37 +1,74 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
-// The mobile app bundles these four and builds its scale from them; the dashboard links the same
-// bytes. A typeface is one product decision, and two surfaces drifting apart on it is the class of
-// divergence the token port exists to close — asserted here rather than agreed to, because a font
-// swapped on one side alone is invisible until somebody puts the two screens next to each other.
-const SHARED = 'CormorantGaramond CormorantGaramondItalic GolosText JetBrainsMono'.split(' ')
+const MOBILE = '../kmp/composeApp/src/commonMain/composeResources/font'
+const SHEET = readFileSync('src/fonts/fonts.css', 'utf8')
+
+// Read rather than written down: a fifth face added to the mobile app is a fifth face this test then
+// demands of the dashboard, instead of one nobody notices. Assert the set, not the size.
+const SHARED = readdirSync(MOBILE)
+  .filter((file) => file.endsWith('.ttf'))
+  .map((file) => file.replace(/\.ttf$/, ''))
+  .sort()
 
 const digest = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex')
 
 describe('the three faces', () => {
-  it.each(SHARED)('%s is the file the mobile app ships', (face) => {
-    const mobile = `../kmp/composeApp/src/commonMain/composeResources/font/${face}.ttf`
+  it('are the four files there are', () => {
+    expect(SHARED.length).toBeGreaterThan(0)
+  })
 
-    expect(digest(`src/fonts/${face}.ttf`)).toBe(digest(mobile))
+  // A typeface is one product decision and two surfaces. That they agree is measured, because a font
+  // swapped on one side alone is invisible until somebody puts the two screens next to each other.
+  it.each(SHARED)('%s is the file the mobile app ships', (face) => {
+    expect(digest(`src/fonts/${face}.ttf`)).toBe(digest(`${MOBILE}/${face}.ttf`))
   })
 
   it('are all declared, and nothing else is', () => {
-    const declared = [...readFileSync('src/fonts/fonts.css', 'utf8').matchAll(/url\('\.\/(.+?)'\)/g)]
-      .map(([, file]) => file)
+    const declared = [...SHEET.matchAll(/url\('\.\/(.+?)'\)/g)].map(([, file]) => file)
 
     expect([...new Set(declared)].sort()).toEqual(SHARED.map((face) => `${face}.ttf`).sort())
   })
 
-  // Instrument Serif is named first in --font-display and has no @font-face on purpose: the stack
-  // falls through to Cormorant Garamond, which is the substitution the prototype's own decision made
-  // because Instrument Serif carries no Cyrillic. A @font-face for it would undo that silently.
+  // Which file is linked is half the answer; the other half is how. Measured against this suite before
+  // it existed: giving the italic face `font-style: normal` left both Cormorant faces claiming normal,
+  // the browser free to pick either, and every test green.
+  it('are declared with the style and weight each is for', () => {
+    const declarations = [...SHEET.matchAll(/@font-face\s*\{([^}]+)\}/g)].map(([, body]) => {
+      const read = (property: string) =>
+        new RegExp(`${property}:\\s*([^;]+);`).exec(body ?? '')?.[1]?.trim()
+
+      return [read('src')?.match(/\.\/(.+?\.ttf)/)?.[1], read('font-style'), read('font-display')].join(' ')
+    })
+
+    expect(declarations.sort()).toEqual(
+      [
+        'CormorantGaramond.ttf normal swap',
+        'CormorantGaramondItalic.ttf italic swap',
+        'GolosText.ttf normal swap',
+        'JetBrainsMono.ttf normal swap',
+      ].sort(),
+    )
+  })
+
+  // The sentence three comments in this step give as the reason for linking locally, and until now it
+  // was held by nothing: port.test.ts looks for that host in the *other* stylesheet. Measured — an
+  // @import of Google Fonts added here passed the whole gate, and it survives minification without a
+  // url() wrapper, so the built-asset check cannot see it either.
+  it('reach for nothing over the network', () => {
+    const everything = SHEET + readFileSync('src/tokens/colors_and_type.css', 'utf8')
+
+    expect(everything).not.toMatch(/https?:/)
+  })
+
+  // Instrument Serif is named first in --font-display and has no @font-face on purpose: the stack falls
+  // through to Cormorant Garamond, which is the substitution the prototype's own decision made because
+  // Instrument Serif carries no Cyrillic. A @font-face for it would undo that silently.
   it('leave Instrument Serif to fall through', () => {
     // The declaration and not the word: the file explains the fall-through in prose right above, so a
     // search for the name matches the explanation and measures nothing.
-    const families = [...readFileSync('src/fonts/fonts.css', 'utf8').matchAll(/font-family: '(.+?)'/g)]
-      .map(([, family]) => family)
+    const families = [...SHEET.matchAll(/font-family: '(.+?)'/g)].map(([, family]) => family)
 
     expect(families).not.toContain('Instrument Serif')
     expect(readFileSync('src/tokens/colors_and_type.css', 'utf8')).toContain(

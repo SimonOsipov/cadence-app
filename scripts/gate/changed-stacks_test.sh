@@ -35,11 +35,16 @@ check() {
 
 echo "==> the web filter"
 check "the dashboard's own source"      true  web "web/src/app.tsx"
-check "the frozen prototype alone"      false web "web/prototype/dd-app.jsx"
-check "the prototype beside the API"    false web "$(printf 'web/prototype/dd-app.jsx\napi/main.go')"
-check "the prototype beside the app"    true  web "$(printf 'web/prototype/dd-app.jsx\nweb/src/app.tsx')"
 check "the gate script itself"          true  web "scripts/gate/web.sh"
 check "nothing of the dashboard's"      false web "api/main.go"
+
+# The three the web gate reads from outside web/src. Each of them can fail it, so
+# each of them has to run it: a skipped job satisfies a required check, and the
+# merge would leave main red for whoever pushes next.
+check "the frozen prototype"            true  web "web/prototype/dd-app.jsx"
+check "the mobile palette"              true  web "kmp/composeApp/src/commonMain/kotlin/app/cadence/design/CadenceColors.kt"
+check "a face the mobile app bundles"   true  web "kmp/composeApp/src/commonMain/composeResources/font/GolosText.ttf"
+check "other kotlin"                    false web "kmp/composeApp/src/commonMain/kotlin/app/cadence/ui/Home.kt"
 
 echo "==> the other stacks"
 check "go source"                       true  api     "api/internal/identity/onboarding.go"

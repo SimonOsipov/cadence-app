@@ -69,8 +69,20 @@ describe('the dashboard and the mobile app', () => {
   const kotlin = kotlinPalette()
   const shared = Object.keys(tokens).filter((name) => name in kotlin)
 
-  it('name enough colours in common for this comparison to mean anything', () => {
-    expect(shared.length).toBeGreaterThan(25)
+  // The set and not the size, and the extraction rather than the intersection — a size guard bounds
+  // the wrong quantity. A trailing comment added to one Kotlin declaration breaks the regex for that
+  // line; the name then appears in neither `shared` nor the completeness check below, and six colours
+  // could stop being compared before a `> 25` guard noticed.
+  it('read every colour the mobile app declares', () => {
+    // Colour declarations only: the file also declares CadenceLightPalette, which is the semantic
+    // layer built out of them and not a colour of its own.
+    const declared = [
+      ...readFileSync(KOTLIN, 'utf8').matchAll(/^\s*(?:private )?val (\w+)\s*=\s*(?:Color\(|\w+\.copy\()/gm),
+    ]
+      .map(([, name]) => name)
+      .filter((name) => name !== undefined)
+
+    expect(Object.keys(kotlin).sort()).toEqual(declared.sort())
   })
 
   it.each(shared.filter((name) => !(name in RECONCILED)))('agree about %s', (name) => {
@@ -78,8 +90,10 @@ describe('the dashboard and the mobile app', () => {
   })
 
   it.each(Object.entries(RECONCILED))('still disagree about %s, as recorded', (name, recorded) => {
-    expect(tokens[name as keyof typeof tokens]).toBe(recorded.css)
-    expect(kotlin[name]).toBe(recorded.kotlin)
+    // The decision is carried into the failure rather than sitting beside it: whoever this fails on is
+    // being told the record is stale, and the record is the only thing that says why the two differ.
+    expect(tokens[name as keyof typeof tokens], recorded.decision).toBe(recorded.css)
+    expect(kotlin[name], recorded.decision).toBe(recorded.kotlin)
   })
 
   it.each(KOTLIN_ONLY)('%s is the mobile app’s alone', (name) => {

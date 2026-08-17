@@ -55,16 +55,19 @@ emit() {
 emit api "$(count '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
 emit kmp "$(count '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
 
-# web/prototype is excluded on purpose: it is a frozen visual specification that
-# no gate builds, and a change to it alone must not spend a runner.
+# Three paths outside web/ are in here because the web gate reads them, and a gate
+# that is skipped for a change it would have failed on is worse than no gate: the
+# merge leaves main red for whoever pushes next.
 #
-# Two greps rather than a negative lookahead: grep -E is POSIX ERE and has none,
-# so `(?!prototype/)` would match nothing and the answer would be false forever.
-emit web "$(
-    echo "$changed" |
-        grep -E '^(web/|scripts/gate/(web|all)\.sh|\.github/workflows/ci\.yml)' |
-        grep -cvE '^web/prototype/' || true
-)"
+#   web/prototype       port.test.ts compares the ported CSS against it byte for
+#                       byte, and derive-icons re-derives the icon subset from it
+#   CadenceColors.kt    reconciliation.test.ts compares the palettes
+#   composeResources    fonts.test.ts hashes the faces against the ones bundled
+#                       for mobile
+#
+# The prototype used to be subtracted here, on the grounds that no gate builds it.
+# That stopped being true the moment the web gate started reading it.
+emit web "$(count '^(web/|kmp/composeApp/src/commonMain/(kotlin/app/cadence/design/CadenceColors\.kt|composeResources/font/)|scripts/gate/(web|all)\.sh|\.github/workflows/ci\.yml)')"
 
 # The whole of .github/, not just workflows/: the shell gate also verifies the
 # committed ruleset, and a change to the ruleset alone has to reach the job that

@@ -7,6 +7,9 @@ import { icons } from './icons'
 const names = Object.keys(icons) as Array<keyof typeof icons>
 
 describe('the icon', () => {
+  // This reads its expectation from icons.ts, the same module the component reads, so it cannot catch a
+  // wrong path — only a component that drops or reorders one. The pin on the data itself is elsewhere:
+  // derive-icons.ts --check re-derives the whole set from heroicons.js on every gate run.
   it.each(names)('draws %s', (name) => {
     const { container } = render(<Icon name={name} />)
 
@@ -15,27 +18,31 @@ describe('the icon', () => {
     expect(paths).toEqual([...icons[name]])
   })
 
-  // cog, fire and camera are two paths each in the source. A component rendering only the first would
-  // draw a recognisable-but-wrong icon, which is the kind of thing nobody reports as a bug.
-  it('draws every path of an icon that has more than one', () => {
-    const twoPathed = names.filter((name) => icons[name].length > 1)
-
-    expect(twoPathed.length).toBeGreaterThan(0)
-
-    for (const name of twoPathed) {
-      const { container } = render(<Icon name={name} />)
-
-      expect(container.querySelectorAll('path')).toHaveLength(icons[name].length)
-    }
+  // The assertion above already pins each icon's paths in order, so what this adds is the sentinel: if
+  // the derived subset ever holds only single-path icons, the multi-path case is going untested and
+  // that should be said out loud rather than passing vacuously. In the subset today it is cog alone —
+  // fire and camera have two paths in heroicons.js and the dashboard draws neither.
+  it('includes an icon with more than one path, so that case is measured at all', () => {
+    expect(names.filter((name) => icons[name].length > 1)).toEqual(['cog'])
   })
 
-  it('is sized and coloured by its caller, and takes the colour from the text by default', () => {
-    const { container } = render(<Icon name="plus" size={32} />)
+  it('is sized and weighted by its caller, and takes the colour from the text', () => {
+    const { container } = render(<Icon name="plus" size={32} strokeWidth={2} />)
     const svg = container.querySelector('svg')
 
     expect(svg?.getAttribute('width')).toBe('32')
     expect(svg?.getAttribute('height')).toBe('32')
     expect(svg?.getAttribute('stroke')).toBe('currentColor')
+    expect(svg?.getAttribute('stroke-width')).toBe('2')
+  })
+
+  // Both are properties of the data rather than of the caller: the paths are drawn for a 24x24 box, and
+  // a different one crops all 22 at once — which reads as «the icons look wrong» and not as a bug.
+  it('draws into the box the paths were made for, at the weight they were made for', () => {
+    const svg = render(<Icon name="plus" />).container.querySelector('svg')
+
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(svg?.getAttribute('stroke-width')).toBe('1.5')
   })
 
   // The acceptance criterion is «an unknown icon name is a compile error», and this is what asserts
@@ -55,5 +62,8 @@ describe('the icon', () => {
     const { container: labelled } = render(<Icon name="plus" label="Добавить" />)
     expect(labelled.querySelector('svg')?.getAttribute('aria-hidden')).toBeNull()
     expect(labelled.querySelector('title')?.textContent).toBe('Добавить')
+    // Without role="img" most screen readers skip the <title> and the label is not announced at all,
+    // which is the outcome this test exists to prevent.
+    expect(labelled.querySelector('svg')?.getAttribute('role')).toBe('img')
   })
 })
