@@ -36,9 +36,14 @@ var openPaths = []string{
 	"/docs",
 }
 
-// assembled builds the whole HTTP surface the way the composition root does, so
-// that what the tests below walk is what the process serves. A second assembly
-// written for the tests would prove things about the test.
+// assembled mounts every route the composition root mounts, so that what the
+// tests below walk is the surface the process serves rather than a list written
+// for them.
+//
+// It is not the same assembly: main.go also passes the two pools and the
+// provisioner, and this passes none of the three. Every test here refuses before
+// a handler needs one — that is what they are about — and giving them a database
+// would make the transport's own tests depend on Docker.
 func assembled(t *testing.T, probe func(context.Context) error) (*chi.Mux, *fixture) {
 	t.Helper()
 

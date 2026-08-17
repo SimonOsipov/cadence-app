@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -70,12 +71,23 @@ func NewRS256Key(t *testing.T, kid string) *SigningKey {
 func NewES256Key(t *testing.T, kid string) *SigningKey {
 	t.Helper()
 
-	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := newES256Key(kid)
 	if err != nil {
 		t.Fatalf("generating ECDSA key: %v", err)
 	}
 
-	return &SigningKey{KID: kid, Alg: "ES256", method: jwt.SigningMethodES256, private: private}
+	return key
+}
+
+// newES256Key is the same generation reached from TestMain, where there is no
+// *testing.T to fail on.
+func newES256Key(kid string) (*SigningKey, error) {
+	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generating ECDSA key: %w", err)
+	}
+
+	return &SigningKey{KID: kid, Alg: "ES256", method: jwt.SigningMethodES256, private: private}, nil
 }
 
 // Sign mints a token carrying claims, with this key's kid in the header.
@@ -109,7 +121,15 @@ func (k *SigningKey) SignWithKID(t *testing.T, kid string, claims jwt.MapClaims)
 func (k *SigningKey) PrivateJWK(t *testing.T) string {
 	t.Helper()
 
-	raw, err := json.Marshal(privateJWKMarshal(t, k, false))
+	// Without the signing marker: that one is what GoTrue reads to pick the key
+	// it signs sessions with, and every consumer of a private JWK here wants the
+	// key without it.
+	marshalled, err := privateJWKMarshalFor(k, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(marshalled)
 	if err != nil {
 		t.Fatalf("marshalling the private JWK for %q: %v", k.KID, err)
 	}
@@ -117,11 +137,7 @@ func (k *SigningKey) PrivateJWK(t *testing.T) string {
 	return string(raw)
 }
 
-// The signing marker is what GoTrue reads to pick the key it signs sessions
-// with; every other consumer of a private JWK here wants the key without it.
-func privateJWKMarshal(t *testing.T, key *SigningKey, signing bool) jwkset.JWKMarshal {
-	t.Helper()
-
+func privateJWKMarshalFor(key *SigningKey, signing bool) (jwkset.JWKMarshal, error) {
 	metadata := jwkset.JWKMetadataOptions{
 		ALG: jwkset.ALG(key.Alg),
 		KID: key.KID,
@@ -136,10 +152,10 @@ func privateJWKMarshal(t *testing.T, key *SigningKey, signing bool) jwkset.JWKMa
 		Metadata: metadata,
 	})
 	if err != nil {
-		t.Fatalf("building the JWK for %q: %v", key.KID, err)
+		return jwkset.JWKMarshal{}, fmt.Errorf("building the JWK for %q: %w", key.KID, err)
 	}
 
-	return jwk.Marshal()
+	return jwk.Marshal(), nil
 }
 
 // PublicKeyPEM returns the PEM-encoded public key.

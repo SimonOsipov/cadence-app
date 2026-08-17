@@ -138,4 +138,4 @@ dev-up: docker-up
 	@echo "  postgres  localhost:5433"
 	@echo "  gotrue    localhost:9999  (JWKS at /.well-known/jwks.json)"
 	@echo
-	@echo "the API needs AUTH_JWT_ISSUER, AUTH_JWT_SESSION_KIDS and AUTH_JWT_ADMIN_KID; config.Load refuses to start without them"
+	@echo "the API needs AUTH_JWT_ISSUER, AUTH_JWT_SESSION_KIDS, AUTH_JWT_ADMIN_KID, PROVISIONER_URL and PROVISIONER_SHARED_SECRET; config.Load refuses to start without them, and no provisioner service is in this compose file yet"

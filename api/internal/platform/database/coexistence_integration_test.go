@@ -11,13 +11,11 @@ import (
 
 // GoTrue shares this database and brings its own migrator.
 //
-// It is not that the two cannot be split apart. profiles carries no reference to
-// the auth schema, deliberately: the identity provider owns that table, its
-// migrations change it, and the policy-test database has no auth schema at all.
-// They share a database because a deployment has one — which is enough to make
-// the collision below happen. That migrator writes its bookkeeping to `public.schema_migrations`
-// with a single `version` column, which is the name golang-migrate also claims
-// and a shape it cannot read.
+// They share a database because a deployment has one, and because the token
+// issuance hook resolves app.profiles over GoTrue's own connection — which is
+// enough to make the collision below happen. That migrator writes its
+// bookkeeping to `public.schema_migrations` with a single `version` column,
+// which is the name golang-migrate also claims and a shape it cannot read.
 //
 // Whoever runs second loses, and the failure is not subtle:
 //

@@ -55,10 +55,17 @@ authoritative definition), the component notes the story touches, and the projec
 root. It judges only — it never edits.
 
 - `VERDICT: PASS` → commit. Record any minor/nit findings in `progress.txt`.
-- `critical` / `major` → fix, re-run the gate, re-review. **Max 2 rounds.**
-- Still not PASS after 2 rounds → do NOT commit the story as done and do NOT set
+- `critical` / `major` → fix, re-run the gate, re-review. **Max 3 rounds.**
+- Still not PASS after 3 rounds → do NOT commit the story as done and do NOT set
   `passes: true`. Append the outstanding findings to `progress.txt` and move on;
   the story stays open for a human.
+
+Three, not two, and the third is the one that earns its keep: rounds one and two
+read code the loop wrote, but **round two's fixes are read by nobody**. On this
+codebase that gap has twice produced real majors — half of a second round's
+findings were introduced by the first round's repairs. A cap of two stopped three
+consecutive overnight runs with the work finished, green and uncommitted, waiting
+on a human for a defect that did not exist.
 - Reviewer itself fails (unavailable / no `VERDICT:` line) → retry once, then
   **fail open**: the gate did pass, so commit and set `passes: true`, but write
   `review-unavailable` prominently in `progress.txt` so a human checks this step

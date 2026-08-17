@@ -1,5 +1,12 @@
 # The local development stack. Everything a feature needs to be built and tried
-# on this machine, and nothing that belongs to a deployment.
+# on this machine.
+#
+# Not only this machine any more, and the header used to say otherwise: the mail
+# block below carries the product's own choices — the link lifetime, two rate
+# limits, three subjects, three template URLs, the sender name and the redirect
+# allow list — because the real instance is provisioned outside this repository
+# and this file is the only copy a test can read. The fast gate reads them as the
+# deployment.
 #
 # The integration suite does not use any of this — it brings its own Postgres
 # through testcontainers, so a test run cannot be contaminated by whatever state
@@ -150,6 +157,10 @@ services:
         condition: service_healthy
       auth-schema:
         condition: service_completed_successfully
+      # Not decoration: a template fetched before nginx answers falls back to the
+      # English default for that entry, and the fallback is silent.
+      mail-templates:
+        condition: service_healthy
     ports:
       - "9999:9999"
     environment:
@@ -219,11 +230,102 @@ services:
       # an account exists because a clinic invited it.
       GOTRUE_DISABLE_SIGNUP: "true"
 
-      # No mail server locally. Invitation and recovery links are written to the
-      # log instead of sent, so `docker compose logs auth` is where you pick the
-      # link up and the whole flow walks end to end without an SMTP account.
+      # How long an invitation link works. Chosen to survive a weekend, and read
+      # back by identity.InviteLinkLifetime, which is what the pending state is
+      # derived from — nothing stores an invitation's status. A test fails when
+      # the two stop agreeing.
+      #
+      # The three mail settings here are the exception to the header: they are
+      # the product's choice rather than this machine's, and the real instance is
+      # provisioned outside this repository. What a test can reach is this file,
+      # so this is where the choice is recorded — and a deployment left on the
+      # provider's defaults is a gap nothing here can see.
+      GOTRUE_MAILER_OTP_EXP: "259200"
+
+      # The shortest gap between two emails to one person. It covers /recover,
+      # which is public and therefore the one mail route a stranger can ask for;
+      # the admin /invite is not covered by it at all — measured, see
+      # TestTheAdminInviteIsNotCoveredByThePerAddressGap. Nothing on our side
+      # bounds invitations either, so the quota below is the only limit /invite
+      # has.
+      #
+      # SMTP_, not MAILER_, and the wrong name is silent: the measurement is on
+      # testsupport.MailerMaxFrequencyVariable, which is the name a test reads
+      # this line for.
+      GOTRUE_SMTP_MAX_FREQUENCY: 1m
+
+      # Emails per hour for the whole instance, and the only limit that reaches
+      # /invite: the measurement is on testsupport.EmailsPerHourVariable.
+      #
+      # It counts the clinic rather than the doctor, so it cannot tell one
+      # doctor's loop from the rest of the staff working — it refuses everybody
+      # at once. The per-doctor limit that would have is not built. The ceiling
+      # is somebody else's and is not known here: the SMTP provider is SKL-01
+      # and has not been chosen, so this number bounds the clinic and not the
+      # sending domain.
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: "200"
+
+      # The clinic's own mail, in the product's language. Left unset every one
+      # of these is the provider's English default, and the defaults are what a
+      # patient would receive.
+      #
+      # These are HTTP URLs because v2.194.0 fetches a template and cannot read
+      # one off disk, and a failed fetch is silent at startup and throws away
+      # the SUBJECTS_ lines above with the body. Both readings of the pinned
+      # image's source are written down beside the test that acts on them:
+      # TestEveryMailTemplateIsFetchableByScheme in mail_test.go. That test
+      # checks the scheme and not reachability, so a wrong host still ships.
+      #
+      # This covers the mail and nothing else: the provider's own error strings
+      # and the page a refused link lands on stay English, with no key to
+      # translate them. Deferred to the client surfaces, which read the error
+      # code rather than the sentence and write their own copy.
+      GOTRUE_SMTP_SENDER_NAME: Клиника Cadence
+      GOTRUE_MAILER_SUBJECTS_INVITE: Приглашение в Cadence
+      GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: Вход в Cadence
+      GOTRUE_MAILER_SUBJECTS_RECOVERY: Восстановление доступа к Cadence
+      GOTRUE_MAILER_TEMPLATES_INVITE: http://mail-templates/invite.html
+      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: http://mail-templates/magic-link.html
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://mail-templates/recovery.html
+
+      # Where a link is allowed to land, per environment: the addresses the
+      # patient app and the dashboard answer on differ per deployment, and the
+      # real instance is provisioned outside this repository exactly as the mail
+      # settings above are. What an uncovered address costs is named at
+      # TestTheAllowListDecidesWhereALinkLands.
+      #
+      # The value below opens nothing: it is SITE_URL's own origin, so locally
+      # the list is the fallback. That is not a choice — this machine has no
+      # surface to land on yet. The dashboard in web/ is still a prototype with
+      # no dev server, and the app's deep-link scheme is not chosen. Whoever
+      # adds either owns replacing this line.
+      GOTRUE_URI_ALLOW_LIST: http://localhost:8080/**
+      # A bare `**` would open this to any host the caller names, and the
+      # session rides in the landing address's fragment. Asserted in shape,
+      # not merely in non-emptiness — see TestTheDeploymentSetsARedirectAllowList.
+
+      # No mail server locally: with no SMTP account configured the provider sends
+      # nothing, and the flow is walked by reading the token out of auth.users the
+      # way the integration harness does. Whether it also logs the link is not
+      # measured by anything here.
+      #
+      # What this setting itself does is confirm the account on signup.
       GOTRUE_MAILER_AUTOCONFIRM: "true"
       GOTRUE_LOG_LEVEL: debug
+
+  # The templates GoTrue renders, served over HTTP because that is the only way
+  # it will take them. Not proxied outward and holding nothing: it answers three
+  # static files on the compose network. The same shape the deployment needs —
+  # an internal service, never the first one in the manifest.
+  mail-templates:
+    image: nginx:1.29-alpine
+    volumes:
+      - ./mail-templates:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/invite.html"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
 
 volumes:
   cadence-pgdata:

@@ -40,6 +40,18 @@ const (
 	ServiceIdleInTransactionTimeout = 15 * time.Second
 )
 
+// requestMaxConns is how many connections the request path may hold at once.
+//
+// Explicit for the same reason as the one below, and with one more of its own: an onboarding request holds a
+// connection of this pool for the whole time the identity provider takes to answer, plus up to recoveryBudget after
+// its own deadline has passed. Left at pgx's max(4, NumCPU) a four-core host serialises the clinic at four
+// simultaneous creations, and the fifth waits on a connection only a lock holder can release.
+//
+// Sixteen is a floor rather than a measurement: it is above any number of doctors creating patients at one moment in a
+// single clinic, and low enough that this pool and the service path's four sit well inside a default max_connections
+// of 100. The number to revisit is this one, the first time a route reads on this path.
+const requestMaxConns = 16
+
 // serviceMaxConns is how many connections the service path may hold at once.
 //
 // Explicit because pgx's default is max(4, NumCPU) — a number nobody chose,
@@ -85,6 +97,8 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	cfg.MaxConns = requestMaxConns
 
 	return open(ctx, cfg)
 }

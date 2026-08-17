@@ -36,7 +36,7 @@ func TestEveryBoundedContextIsRegistered(t *testing.T) {
 	}
 
 	var registered []string
-	for _, c := range contexts {
+	for _, c := range contexts(Options{}) {
 		registered = append(registered, c.name)
 	}
 
@@ -54,7 +54,7 @@ func TestEveryBoundedContextIsRegistered(t *testing.T) {
 // above while audit stays unmounted. The function knows which package it came
 // from, so ask it rather than trusting the label.
 func TestEachRegistrarBelongsToTheContextItIsNamedAfter(t *testing.T) {
-	for _, c := range contexts {
+	for _, c := range contexts(Options{}) {
 		if c.register == nil {
 			t.Errorf("bounded context %q has no registrar", c.name)
 

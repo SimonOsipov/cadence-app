@@ -20,23 +20,31 @@ import (
 
 var cluster *testsupport.Cluster
 
+// os.Exit runs no deferred function and a panicking test never returns through m.Run, so the teardown lives in a
+// function of its own: without it a panic leaves the containers running, and TESTCONTAINERS_RYUK_DISABLED means
+// nothing else reaps them.
 func TestMain(m *testing.M) {
+	os.Exit(runSuite(m))
+}
+
+func runSuite(m *testing.M) int {
 	ctx := context.Background()
 
 	c, err := testsupport.StartCluster(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "starting the test cluster: %v\n", err)
-		os.Exit(1)
+
+		return 1
 	}
 	cluster = c
 
-	code := m.Run()
+	defer func() {
+		if err := cluster.Terminate(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", err)
+		}
+	}()
 
-	if err := cluster.Terminate(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "terminating the test cluster: %v\n", err)
-	}
-
-	os.Exit(code)
+	return m.Run()
 }
 
 // The roles under test are the ones a deployment actually connects with, read

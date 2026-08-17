@@ -26,7 +26,13 @@ vault is master; the snapshots are derived and are never edited here.
 ## Layout
 
 ```
-api/                 Go — cmd/api, cmd/migrate, internal/<bounded context>, migrations/
+api/                 Go — internal/<bounded context>, migrations/, and six commands:
+                       cmd/api              the server
+                       cmd/migrate          the chain
+                       cmd/provisioner      the trusted boundary in front of GoTrue's admin key
+                       cmd/bootstrap-admin  the only way to create the clinic's first administrator
+                       cmd/openapi          regenerates the committed contract
+                       cmd/sqlauthorship    the gate that refuses interpolated SQL
 kmp/                 Kotlin Multiplatform — shared/, composeApp/, androidApp/, iosApp/
 web/                 not built yet (SKL-09); web/prototype/ is a frozen visual spec
 mobile/              FROZEN. The Expo prototype: the design specification for 24 screens
@@ -60,15 +66,26 @@ Gradle comes from the wrapper; do not install it.
 ## Running it
 
 ```sh
-cd api && make dev-up     # Postgres in Docker, chain applied, API up
+cd api && make dev-up     # Postgres and GoTrue in Docker, chain applied
 cd api && make migrate-up # apply the chain on its own
 cd api && make openapi    # regenerate the committed contract after any type change
 ```
 
-`api/` uses three connection strings, deliberately: `DATABASE_URL` for the
-request path (a role that owns nothing), `DATABASE_MIGRATION_URL` for the role
-that owns the schema, and a service URL reserved for system jobs that do not
-exist yet.
+`dev-up` does not start the API, and running it afterwards takes more than the
+compose file provides: `config.Load` refuses to start without `AUTH_JWT_ISSUER`,
+`AUTH_JWT_SESSION_KIDS`, `AUTH_JWT_ADMIN_KID`, `PROVISIONER_URL` and
+`PROVISIONER_SHARED_SECRET`, and there is no provisioner service in that file yet.
+`dev-up` prints the same list when it finishes.
+
+`api/` uses three connection strings, deliberately: `DATABASE_URL` for the request
+path (a role that owns nothing), `DATABASE_MIGRATION_URL` for the role that owns
+the schema, and `DATABASE_SERVICE_URL` for the service path — which is not a
+reserve for future jobs but how every profile, card, care team, preference row and
+audit row is written, because no request-path policy admits any of them.
+
+The clinic's first administrator cannot come from the API — the database refuses
+`role='admin'` on the service path — so it comes from `cmd/bootstrap-admin`, run
+once against the migration role. Its `-h` says the rest.
 
 ## The gate
 
@@ -95,11 +112,11 @@ What green does and does not cover:
 
 ## CI status
 
-CI is committed but has never executed. `.github/` is not on `main`, GitHub
-reports zero registered workflows, and no ruleset is applied — so **`main` is
-currently unprotected and `ci.yml` has never been validated against a real
-runner.** Applying the ruleset needs admin; the command and the ordering
-dependency are in `.github/rulesets/README.md`.
+`ci.yml` is on `main`, registered, and runs — on every pull request and on every
+push to `main`. What is still missing is the half that makes it a gate: **no
+ruleset and no branch protection are applied, so `main` takes a push whatever CI
+said, and a red PR can be merged.** Applying the ruleset needs admin; the command
+and the ordering dependency are in `.github/rulesets/README.md`.
 
 Until that changes, `scripts/gate/all.sh` on your own machine is the only gate
 there is. Run it.

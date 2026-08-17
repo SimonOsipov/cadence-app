@@ -8,12 +8,11 @@ todoist_parent: "6h9MFpPJ3mvpjRcq"
 components: [web-dashboard, api, identity, provisioner]
 proposal: "[[20-Projects/cadence/architecture/proposals/first-live-read-and-sign-in|architecture/proposals/first-live-read-and-sign-in]]"
 ---
-
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/dashboard-first-live-read.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
 # First live read: the doctor signs into the dashboard and sees their patients
 
-## Summary
+## Описание
 
 The first block whose output you can see with your eyes: the doctor opens the
 dashboard, signs in, sees the roster of assigned patients on real data along with
@@ -72,7 +71,7 @@ by SKL-01 and SKL-06, so the smoke test runs against the local harness until the
 land. Actually delivering email to seeded accounts is held by SMTP from SKL-01 —
 on dev, mail goes nowhere, and that is acceptable.
 
-## What already exists (DONE)
+## Что уже реализовано (DONE)
 
 **None of the following — they are `approved` prerequisites, not things in the
 repository.** "Dashboard Skeleton" steps 1–3 (Vite, tokens, Overview on fixtures,
@@ -85,7 +84,7 @@ What does exist and work: `web/prototype/` as the visual specification of the
 Overview; `api/openapi.json` with its drift gate; the registry of eleven contexts
 in `internal/router` with the two tests that guard it.
 
-## Technical detail
+## Технические детали
 
 ### `GET /v1/dashboard/overview`
 
@@ -159,7 +158,7 @@ Without cleanup the second run hits address uniqueness, and deletion is
 conditioned on the absence of a profile — which a freshly created patient
 precisely does have.
 
-## Architecture decision
+## Архитектурное решение
 
 The block consumes the access model rather than changing it: policies select the
 roster, state is taken from whoever owns it, and aggregates are computed by the
@@ -175,7 +174,7 @@ doctor no longer needs read access to `invites`.
 The analysis and the remaining decisions are in the
 [[20-Projects/cadence/architecture/proposals/first-live-read-and-sign-in|proposal]].
 
-## Component deltas
+## Дельты компонентов
 
 ### web-dashboard.md
 - MODIFIED: "Shape" — React **19** and TypeScript **6**, not 18 and 7: `react-router@8.3.0` has peer `react >=19.2.7`, and `typescript-eslint` holds peer `<6.1.0`
@@ -273,7 +272,7 @@ SKL-01/06 the smoke test runs against the local harness — and that is written
 down, not implied.
 todoist: "6h9MFxg2wC44vR7q"
 
-## Open questions
+## Открытые вопросы
 
 > [!question] Doctor session storage: in memory with a silent refresh, or
 > `localStorage`. The first loses the session when the tab reloads, the second is

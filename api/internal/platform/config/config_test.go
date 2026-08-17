@@ -2,6 +2,7 @@ package config
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +17,7 @@ func clearEnv(t *testing.T) {
 		"SERVER_PORT", "SERVER_READ_TIMEOUT", "SERVER_WRITE_TIMEOUT", "SERVER_IDLE_TIMEOUT",
 		"CORS_ALLOWED_ORIGINS",
 		"AUTH_JWT_ISSUER", "AUTH_JWT_AUDIENCE", "AUTH_JWT_SESSION_KIDS", "AUTH_JWT_ADMIN_KID",
+		"PROVISIONER_URL", "PROVISIONER_SHARED_SECRET",
 	} {
 		t.Setenv(key, "")
 	}
@@ -33,6 +35,81 @@ func setRequired(t *testing.T) {
 	t.Setenv("AUTH_JWT_AUDIENCE", "authenticated")
 	t.Setenv("AUTH_JWT_SESSION_KIDS", "session-kid-1")
 	t.Setenv("AUTH_JWT_ADMIN_KID", "admin-kid-1")
+	t.Setenv("PROVISIONER_URL", "http://provisioner.internal:8081")
+	t.Setenv("PROVISIONER_SHARED_SECRET", "a-secret-of-the-deployment")
+}
+
+// The API cannot invite anybody without these two, and an invitation is the
+// only way an account comes into being — so an unset one has to stop the
+// process rather than surface as a 5xx the first time a doctor creates a
+// patient.
+func TestLoadRequiresTheProvisioner(t *testing.T) {
+	tests := []struct {
+		name    string
+		unset   string
+		set     map[string]string
+		wantErr string
+	}{
+		{name: "no address", unset: "PROVISIONER_URL", wantErr: "PROVISIONER_URL is required"},
+		{
+			name: "no secret", unset: "PROVISIONER_SHARED_SECRET",
+			wantErr: "PROVISIONER_SHARED_SECRET is required",
+		},
+		{
+			// A host with no scheme parses and then addresses nothing, which is
+			// a deploy that starts and invites nobody.
+			name: "an address that is not absolute",
+			set:  map[string]string{"PROVISIONER_URL": "provisioner.internal:8081"},
+			// Its own sentence rather than "is required": the variable is set,
+			// and telling somebody it is missing sends them looking in the wrong
+			// place.
+			wantErr: "must be an absolute http(s) address",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clearEnv(t)
+			setRequired(t)
+
+			if tc.unset != "" {
+				t.Setenv(tc.unset, "")
+			}
+			for key, value := range tc.set {
+				t.Setenv(key, value)
+			}
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load accepted a configuration that cannot reach the provisioner")
+			}
+
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Load: %v, want it to mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// The control for the table above: the same fixture with nothing removed has to
+// load, or every row there would pass against a configuration that was broken
+// for some other reason.
+func TestLoadReadsTheProvisioner(t *testing.T) {
+	clearEnv(t)
+	setRequired(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if cfg.Provisioner.BaseURL != "http://provisioner.internal:8081" {
+		t.Errorf("Provisioner.BaseURL = %q", cfg.Provisioner.BaseURL)
+	}
+
+	if cfg.Provisioner.Secret != "a-secret-of-the-deployment" {
+		t.Error("Provisioner.Secret is not the value the environment set")
+	}
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {

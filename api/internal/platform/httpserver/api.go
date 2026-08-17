@@ -186,8 +186,17 @@ func problemTypeFor(status int) string {
 		return ProblemMethodNotAllowed
 	case http.StatusUnauthorized:
 		return ProblemUnauthorized
+	case http.StatusForbidden:
+		return ProblemForbidden
+	case http.StatusConflict:
+		return ProblemConflict
 	case http.StatusUnprocessableEntity, http.StatusBadRequest:
 		return ProblemValidation
+	case http.StatusServiceUnavailable:
+		// Before the 5xx arm below, which would otherwise make this the same
+		// document as a 500. It is not: the caller did nothing wrong and the
+		// answer to it is to try again.
+		return ProblemUnavailable
 	}
 
 	if status >= http.StatusInternalServerError {

@@ -35,23 +35,39 @@ type boundedContext struct {
 // contexts is every bounded context that serves HTTP. The registry test in this
 // package compares it against the directories under internal/, so a context
 // added and not listed here fails the build rather than going quietly unmounted.
-var contexts = []boundedContext{
-	{"audit", audit.Register},
-	{"content", content.Register},
-	{"dosing", dosing.Register},
-	{"identity", identity.Register},
-	{"inventory", inventory.Register},
-	{"journal", journal.Register},
-	{"measurements", measurements.Register},
-	{"messaging", messaging.Register},
-	{"notifications", notifications.Register},
-	{"nutrition", nutrition.Register},
-	{"protocol", protocol.Register},
+//
+// A function rather than a variable since one context needs the pools and the
+// provisioner to answer. Its registrar is still that context's own method, so
+// the test that checks each entry against the package it came from keeps
+// working — a closure declared here would belong to this package and pass a
+// check that is meant to catch exactly that mistake.
+func contexts(opts Options) []boundedContext {
+	// Nil is what the document generator passes, and the operations are declared
+	// either way: openapi.json is the shape of the API, not of this deployment's
+	// dependencies.
+	var onboarding *identity.Onboarding
+	if opts.Pool != nil && opts.ServicePool != nil && opts.Provisioner != nil {
+		onboarding = identity.NewOnboarding(opts.Pool, opts.ServicePool, opts.Provisioner)
+	}
+
+	return []boundedContext{
+		{"audit", audit.Register},
+		{"content", content.Register},
+		{"dosing", dosing.Register},
+		{"identity", identity.NewService(onboarding).Register},
+		{"inventory", inventory.Register},
+		{"journal", journal.Register},
+		{"measurements", measurements.Register},
+		{"messaging", messaging.Register},
+		{"notifications", notifications.Register},
+		{"nutrition", nutrition.Register},
+		{"protocol", protocol.Register},
+	}
 }
 
 // Register mounts every bounded context's operations on the API.
-func Register(api huma.API) {
-	for _, c := range contexts {
+func Register(api huma.API, opts Options) {
+	for _, c := range contexts(opts) {
 		c.register(api)
 	}
 }
@@ -64,9 +80,10 @@ func Register(api huma.API) {
 // looks like a contract change.
 func Document() ([]byte, error) {
 	// A throwaway router: building the document needs an API to register onto,
-	// not a server to serve from.
+	// not a server to serve from. No options either — the document is the shape
+	// of the operations, and none of it depends on what they answer from.
 	api := httpserver.NewAPI(chi.NewRouter())
-	Register(api)
+	Register(api, Options{})
 
 	spec, err := api.OpenAPI().MarshalJSON()
 	if err != nil {

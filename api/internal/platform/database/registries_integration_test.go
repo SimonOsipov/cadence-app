@@ -66,6 +66,13 @@ func grantRegistry() map[string][]string {
 		"audit_log/cadence_admin":               {"SELECT"},
 		"audit_log/cadence_service":             {"INSERT"},
 		"audit_log/cadence_owner":               everything,
+		// §04's row for invites: the doctor creates, the admin reads, the patient
+		// holds nothing. The service path reads too, because the transaction that
+		// writes the record runs there and has to recognise its own.
+		"invites/cadence_doctor":  {"INSERT"},
+		"invites/cadence_admin":   {"SELECT"},
+		"invites/cadence_service": {"INSERT", "SELECT"},
+		"invites/cadence_owner":   everything,
 	}
 
 	// Everybody else holds nothing, stated rather than left out: an absent key
@@ -239,6 +246,10 @@ func policyPredicates() map[string]string {
 
 	return map[string]string{
 		"audit_log_admin_read": anything,
+		// The bootstrap command runs through no seam, so there is no published
+		// actor to reconcile against: what is pinned is that the owner may sign as
+		// a job and never in a person's name.
+		"audit_log_bootstrap_insert": "- | (actor_job IS NOT NULL)",
 		"audit_log_service_insert": "- | (((actor_id)::text = lower(NULLIF(current_setting(" +
 			"'app.actor_id'::text, true), ''::text))) OR (actor_job = NULLIF(current_setting(" +
 			"'app.actor_job'::text, true), ''::text)))",
@@ -248,6 +259,10 @@ func policyPredicates() map[string]string {
 		"care_team_assignments_service_delete": anything,
 		"care_team_assignments_service_insert": anyWrite,
 		"care_team_assignments_service_read":   anything,
+		"invites_admin_read":                   anything,
+		"invites_doctor_insert":                "- | (invited_by = app.jwt_subject())",
+		"invites_service_insert":               anyWrite,
+		"invites_service_read":                 anything,
 		"patient_profiles_admin":               anythingRW,
 		"patient_profiles_of_my_patients":      through("patient_profiles", "patient_id", "provider_id"),
 		"patient_profiles_own_select":          ownRow,
@@ -255,6 +270,7 @@ func policyPredicates() map[string]string {
 		"patient_profiles_service_insert":      anyWrite,
 		"patient_profiles_service_read":        anything,
 		"profiles_admin":                       anythingRW,
+		"profiles_bootstrap_insert":            "- | (role = 'admin'::text)",
 		"profiles_hook_read":                   anything,
 		"profiles_of_my_patients":              through("profiles", "patient_id", "provider_id"),
 		"profiles_of_my_specialists":           through("profiles", "provider_id", "patient_id"),
@@ -389,6 +405,7 @@ func TestNothingIsGrantedOnSequences(t *testing.T) {
 func policyRegistry() []string {
 	return []string{
 		"audit_log audit_log_admin_read SELECT {cadence_admin}",
+		"audit_log audit_log_bootstrap_insert INSERT {cadence_owner}",
 		"audit_log audit_log_service_insert INSERT {cadence_service}",
 		"care_team_assignments care_team_assignments_admin ALL {cadence_admin}",
 		"care_team_assignments care_team_assignments_mine_patient SELECT {cadence_patient}",
@@ -396,6 +413,10 @@ func policyRegistry() []string {
 		"care_team_assignments care_team_assignments_service_delete DELETE {cadence_service}",
 		"care_team_assignments care_team_assignments_service_insert INSERT {cadence_service}",
 		"care_team_assignments care_team_assignments_service_read SELECT {cadence_service}",
+		"invites invites_admin_read SELECT {cadence_admin}",
+		"invites invites_doctor_insert INSERT {cadence_doctor}",
+		"invites invites_service_insert INSERT {cadence_service}",
+		"invites invites_service_read SELECT {cadence_service}",
 		"patient_profiles patient_profiles_admin ALL {cadence_admin}",
 		"patient_profiles patient_profiles_of_my_patients SELECT {cadence_doctor}",
 		"patient_profiles patient_profiles_own_select SELECT {cadence_patient}",
@@ -403,6 +424,7 @@ func policyRegistry() []string {
 		"patient_profiles patient_profiles_service_insert INSERT {cadence_service}",
 		"patient_profiles patient_profiles_service_read SELECT {cadence_service}",
 		"profiles profiles_admin ALL {cadence_admin}",
+		"profiles profiles_bootstrap_insert INSERT {cadence_owner}",
 		"profiles profiles_hook_read SELECT {cadence_owner}",
 		"profiles profiles_of_my_patients SELECT {cadence_doctor}",
 		"profiles profiles_of_my_specialists SELECT {cadence_patient}",
@@ -513,13 +535,17 @@ func TestEveryPolicyNamesItsRoles(t *testing.T) {
 // that reads a claim.
 //
 // The second rule is what an exemption alone would lose. Adding
-// `AND current_setting('request.jwt.claims') ... = 'doctor'` to one of the two
+// `AND current_setting('request.jwt.claims') ... = 'doctor'` to one of the
 // declared policies is the original mistake written inside the one place the
 // literals are permitted.
 func TestNoPolicyBodyDecidesTheCallersRole(t *testing.T) {
-	// A third name appearing here is a policy that started deciding something,
-	// and it fails until somebody writes down which.
-	mayNameARole := []string{"profiles_service_insert", "profiles_service_update"}
+	// A fourth name appearing here is a policy that started deciding something,
+	// and it fails until somebody writes down which. profiles_bootstrap_insert
+	// joined the list with 000009 and is the same shape as the other two: the
+	// closed set of values the caller may write, not a claim about the caller.
+	mayNameARole := []string{
+		"profiles_bootstrap_insert", "profiles_service_insert", "profiles_service_update",
+	}
 
 	// How a policy reaches the caller's identity: the pinned helper, or the
 	// connection settings it is built on. Either one beside a product-role
