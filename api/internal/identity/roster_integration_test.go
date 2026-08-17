@@ -288,3 +288,47 @@ func TestTheLastPageSaysSo(t *testing.T) {
 		t.Errorf("the last page carries cursor %q", page.Next)
 	}
 }
+
+// Walking to the end with a page wider than one row. Every other paging test here uses a page of one,
+// where «the cursor is the last row» and «the cursor is the first row» are the same statement — and
+// the second of those repeats a page for ever.
+func TestPagingWalksTheWholeRosterWithoutRepeatingARow(t *testing.T) {
+	roster, _ := rosterStand(
+		t,
+		seededPatient{id: annaID, name: "Анна Петрова", assignedTo: doctorID},
+		seededPatient{id: borisID, name: "Борис Ким", assignedTo: doctorID},
+		seededPatient{id: veraID, name: "Вера Ильина", assignedTo: doctorID},
+	)
+
+	caller := database.Caller{Subject: doctorID, Role: "doctor"}
+
+	seen := map[string]int{}
+	cursor := ""
+
+	// Bounded, because the failure this exists for is a walk that never ends: five requests is more
+	// than the three rows can need at two a page.
+	for range 5 {
+		page, err := roster.Patients(t.Context(), caller, cursor, 2)
+		if err != nil {
+			t.Fatalf("reading a page: %v", err)
+		}
+
+		for _, patient := range page.Patients {
+			seen[patient.FullName]++
+		}
+
+		if page.Next == "" {
+			break
+		}
+		cursor = page.Next
+	}
+
+	if len(seen) != 3 {
+		t.Errorf("the walk saw %v, want all three patients", seen)
+	}
+	for name, times := range seen {
+		if times != 1 {
+			t.Errorf("%s was on %d pages, want exactly one", name, times)
+		}
+	}
+}
