@@ -16,11 +16,17 @@ changed=$(cat)
 
 # No `grep -q` anywhere below, and that is not a style choice. Under `pipefail` a
 # -q consumer exits on its first hit, the producer takes SIGPIPE, and the pipeline
-# reports 141 — so the helper answers false for an input it matched. Measured on
-# this machine: the old form flips between 27KB and 32KB of *matching* paths. What
-# travels that pipe is the matched subset, not the change — for a push to main it
-# is under a kilobyte here — so the case that reaches the threshold is a pull
-# request touching thousands of files under one stack, which the test carries.
+# reports 141 — so the helper answers false for an input it matched. It is a race
+# and not a boundary: measured here, the old form is right below ~24KB of
+# *matching* paths, answers differently from run to run around 30KB, and is wrong
+# above ~35KB. What travels that pipe is the matched subset and not the change —
+# for a push to main it is under a kilobyte here — so what reaches the band is a
+# pull request touching thousands of files under one stack, which the test carries.
+#
+# emit refuses mid-stream, with earlier lines already written. That is safe and
+# worth saying: the step fails, «Changed stacks» goes red, and it is itself a
+# required context — so the pull request is blocked by a red check rather than by
+# a skipped one.
 count() { echo "$changed" | grep -cE "$1" || true; }
 
 # emit runs in this shell rather than inside a command substitution, and that is
