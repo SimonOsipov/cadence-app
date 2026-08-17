@@ -98,11 +98,9 @@ type RosterPage struct {
 	Next     string      `json:"next_cursor,omitempty" doc:"Pass as cursor for the following page. Absent on the last one."`
 }
 
-// Patients answers the page after the cursor.
-//
-// No predicate on the doctor: profiles_of_my_patients selects, and a condition here would be a second
-// source of truth beside it. The one predicate that is not that: role = 'patient', because a doctor
-// reads their own row through profiles_own_select and would otherwise appear in their own roster.
+// Patients answers the page after the cursor. No predicate on the doctor — profiles_of_my_patients
+// selects — and one on the role, because profiles_own_select would otherwise put a doctor in their
+// own roster.
 func (r *Roster) Patients(ctx context.Context, caller database.Caller, cursor string, limit int) (RosterPage, error) {
 	// Refused rather than clamped: the arithmetic below indexes at limit-1, and this method is
 	// exported past the schema that pins the route's minimum.
