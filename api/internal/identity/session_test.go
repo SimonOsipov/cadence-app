@@ -14,19 +14,17 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
-// reporting is the request a device makes on every launch.
 func reporting(timezone string) *http.Request {
-	body := strings.NewReader(`{"timezone":"` + timezone + `"}`)
-
-	request := httptest.NewRequest(http.MethodPost, "/v1/me/session", body)
+	request := httptest.NewRequest(
+		http.MethodPost, "/v1/me/session", strings.NewReader(`{"timezone":"`+timezone+`"}`),
+	)
 	request.Header.Set("Content-Type", "application/json")
 
 	return request
 }
 
-// servedBy is the identity context on a bare router with sessions behind it and
-// principal standing in for what the authentication middleware would have put on
-// the context.
+// servedBy mounts the context with principal standing in for what the authentication middleware would have put on
+// the context. A nil principal is the case the middleware is supposed to make impossible.
 func servedBy(principal *auth.Principal, sessions *identity.Sessions) http.Handler {
 	router := chi.NewRouter()
 
@@ -57,21 +55,15 @@ func TestSessionRefusesWithoutAPrincipal(t *testing.T) {
 	}
 }
 
-// The staff half of the contract, measured rather than described: the pool is
-// nil, so a handler that reached the database to decide this would panic instead
-// of passing. Only cadence_patient holds the column grant, and a doctor is
-// answered without a write rather than refused, because one client serves both
-// roles and should not have to branch.
+// The staff arm, measured rather than described: the service is nil, so a handler that reached the database to
+// decide this would answer 500 instead of passing.
 func TestSessionWritesNothingForStaffAndSaysSo(t *testing.T) {
 	for _, role := range []string{"doctor", "admin"} {
 		t.Run(role, func(t *testing.T) {
-			principal := auth.Principal{
-				Subject: "8a1f3b7c-0000-4000-8000-000000000002",
-				Role:    role,
-			}
+			principal := auth.Principal{Subject: "8a1f3b7c-0000-4000-8000-000000000002", Role: role}
 
 			rec := httptest.NewRecorder()
-			servedBy(&principal, identity.NewSessions(nil)).ServeHTTP(rec, reporting("Asia/Tbilisi"))
+			servedBy(&principal, nil).ServeHTTP(rec, reporting("Asia/Tbilisi"))
 
 			if rec.Code != http.StatusNoContent {
 				t.Fatalf("status = %d, want 204; body %s", rec.Code, rec.Body)
@@ -83,23 +75,35 @@ func TestSessionWritesNothingForStaffAndSaysSo(t *testing.T) {
 	}
 }
 
-// An account whose profile the hook found nothing to name is a real state — the
-// invitation is out and the person is not provisioned — and it reaches here as a
-// token with no role. It writes nothing, and it is answered rather than refused
-// for the same reason a doctor is.
-func TestSessionWritesNothingForAnAccountWithNoRole(t *testing.T) {
+// A token with no role is refused rather than answered 204: silence here would make a regression of the issuance
+// hook indistinguishable from a write, on the one route every device calls on every launch.
+func TestSessionRefusesAnAccountWithNoRole(t *testing.T) {
 	principal := auth.Principal{Subject: "8a1f3b7c-0000-4000-8000-000000000004"}
 
 	rec := httptest.NewRecorder()
 	servedBy(&principal, identity.NewSessions(nil)).ServeHTTP(rec, reporting("Asia/Tbilisi"))
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want 204; body %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body)
+	}
+
+	var problem struct {
+		Type   string `json:"type"`
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatalf("decoding the problem document: %v", err)
+	}
+
+	if problem.Type != httpserver.ProblemForbidden {
+		t.Errorf("type = %q, want %q", problem.Type, httpserver.ProblemForbidden)
+	}
+	if problem.Detail == "" || !strings.ContainsRune(problem.Detail, 'А') {
+		t.Errorf("detail = %q, want the Russian sentence", problem.Detail)
 	}
 }
 
-// The operation is in the contract, because the contract is what the Kotlin and
-// the dashboard clients are generated from.
+// The contract is what the Kotlin and the dashboard clients are generated from.
 func TestSessionIsInTheContract(t *testing.T) {
 	router := chi.NewRouter()
 	api := httpserver.NewAPI(router)
@@ -122,14 +126,8 @@ func TestSessionIsInTheContract(t *testing.T) {
 	}
 }
 
-// An API assembled without the sessions service is the document generator's
-// state, and an operation reached in it refuses rather than dereferences — the
-// same arrangement the onboarding routes are in.
 func TestSessionRefusesWhenTheServiceIsAbsent(t *testing.T) {
-	principal := auth.Principal{
-		Subject: "8a1f3b7c-0000-4000-8000-000000000001",
-		Role:    "patient",
-	}
+	principal := auth.Principal{Subject: "8a1f3b7c-0000-4000-8000-000000000001", Role: "patient"}
 
 	rec := httptest.NewRecorder()
 	servedBy(&principal, nil).ServeHTTP(rec, reporting("Asia/Tbilisi"))

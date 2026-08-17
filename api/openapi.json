@@ -202,7 +202,7 @@
         "additionalProperties": false,
         "properties": {
           "timezone": {
-            "description": "The device's IANA timezone, as the server knows it in pg_timezone_names: Europe/Moscow, Asia/Tbilisi. Stored for the patient only — the schedule, the reminders and the server-side sweep all read it.",
+            "description": "The device's IANA timezone as pg_timezone_names spells it: Europe/Moscow, Asia/Tbilisi.",
             "maxLength": 64,
             "minLength": 1,
             "type": "string"
@@ -289,7 +289,7 @@
     },
     "/v1/me/session": {
       "post": {
-        "description": "Records the caller's timezone against their profile. The patient's is stored — the schedule, the reminders and the server-side sweep all read it. A doctor's and an administrator's are not: they hold no rights on the column, and the call is answered without a write rather than refused, so one client can serve every role. Answers 400 when the zone is not one the server knows.",
+        "description": "Records the caller's timezone against their profile. A patient's is stored — the schedule, the reminders and the server-side sweep all read it — and the zone is validated there; a doctor's and an administrator's are not stored, and the call is answered without a write rather than refused, so one client can serve every role. Answers 400 when a patient's zone is not one the server knows, 403 when the account has no role yet, and 503 when the database did not answer.",
         "operationId": "record-session",
         "requestBody": {
           "content": {

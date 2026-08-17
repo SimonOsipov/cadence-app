@@ -46,11 +46,12 @@ func (s *Service) Register(api huma.API) {
 		Path:          "/v1/me/session",
 		DefaultStatus: http.StatusNoContent,
 		Summary:       "Report the device's timezone",
-		Description: "Records the caller's timezone against their profile. The patient's is stored — the " +
-			"schedule, the reminders and the server-side sweep all read it. A doctor's and an " +
-			"administrator's are not: they hold no rights on the column, and the call is answered " +
-			"without a write rather than refused, so one client can serve every role. " +
-			"Answers 400 when the zone is not one the server knows.",
+		Description: "Records the caller's timezone against their profile. A patient's is stored — the schedule, " +
+			"the reminders and the server-side sweep all read it — and the zone is validated there; a " +
+			"doctor's and an administrator's are not stored, and the call is answered without a write " +
+			"rather than refused, so one client can serve every role. " +
+			"Answers 400 when a patient's zone is not one the server knows, 403 when the account has no " +
+			"role yet, and 503 when the database did not answer.",
 		Tags: []string{"identity"},
 	}, s.recordSession)
 

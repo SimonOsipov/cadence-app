@@ -15,28 +15,6 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
-// mounted returns the identity context served on a bare router, with principal
-// standing in for what the authentication middleware would have put on the
-// context. A nil principal is the case the middleware is supposed to make
-// impossible — which is exactly why the handler is asked about it.
-func mounted(principal *auth.Principal) http.Handler {
-	router := chi.NewRouter()
-
-	router.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if principal != nil {
-				r = r.WithContext(auth.WithPrincipal(r.Context(), *principal))
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	})
-
-	identity.NewService(nil, nil).Register(httpserver.NewAPI(router))
-
-	return router
-}
-
 func TestMeReturnsTheVerifiedCaller(t *testing.T) {
 	expiry := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	principal := auth.Principal{
@@ -46,7 +24,7 @@ func TestMeReturnsTheVerifiedCaller(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	mounted(&principal).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	servedBy(&principal, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body)
@@ -79,7 +57,7 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	mounted(&principal).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	servedBy(&principal, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
 
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -104,7 +82,7 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 // verified one.
 func TestMeRefusesWithoutAPrincipal(t *testing.T) {
 	rec := httptest.NewRecorder()
-	mounted(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	servedBy(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401; body %s", rec.Code, rec.Body)

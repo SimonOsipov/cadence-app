@@ -52,11 +52,8 @@ func contexts(opts Options) []boundedContext {
 
 	// The request pool alone: this one writes the caller's own row under the
 	// caller's own identity, so it needs neither the service path nor the
-	// identity provider.
-	var sessions *identity.Sessions
-	if opts.Pool != nil {
-		sessions = identity.NewSessions(opts.Pool)
-	}
+	// identity provider. A nil pool yields a nil service.
+	sessions := identity.NewSessions(opts.Pool)
 
 	return []boundedContext{
 		{"audit", audit.Register},
