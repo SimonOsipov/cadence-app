@@ -40,9 +40,40 @@ npm run --silent typecheck
 # tsconfig.json — and the exclusion is asserted here rather than trusted, because
 # a widened `include` is a one-word edit and the failure it causes reads as a
 # broken prototype rather than as a broken config.
+#
+# The file list is captured and checked for being non-empty before it is
+# searched. Piped straight into `grep -q` this reports success when tsc itself
+# fails — the consumer finds nothing, and «found nothing» is what a passing check
+# looks like. It is also the shape that takes SIGPIPE once the list outgrows the
+# pipe buffer, and the list is already 35KB.
 echo "==> the frozen prototype is outside the TypeScript project"
-if npx tsc --noEmit --listFilesOnly | grep -q '/web/prototype/'; then
+typescript_files=$(npx tsc --noEmit --listFilesOnly)
+if [ -z "$typescript_files" ]; then
+    echo "tsc listed no files at all, so this check measured nothing" >&2
+    exit 1
+fi
+if echo "$typescript_files" | grep -q '/web/prototype/'; then
     echo "tsconfig.json reaches web/prototype — it is frozen and must not compile" >&2
+    exit 1
+fi
+
+# The same question of Vitest, and asked of the runner rather than of its
+# configuration: a vitest.config.ts added later takes precedence over the `test`
+# block in vite.config.ts, and `test.projects` can re-add a path — both leave an
+# assertion about that block green while the runner collects something else.
+echo "==> Vitest collects nothing outside src/"
+collected=$(npx vitest list --filesOnly)
+if [ -z "$collected" ]; then
+    echo "vitest collected no files at all, so this check measured nothing" >&2
+    exit 1
+fi
+# The paths come back relative to this directory, so the anchor is `^src/` and
+# not a path fragment — measured, `vitest list` prints `src/app.test.tsx`.
+outside=$(echo "$collected" | grep -v '^src/' || true)
+if [ -n "$outside" ]; then
+    echo "Vitest collects files outside src/:" >&2
+    printf '  %s\n' "$outside" >&2
+    echo "step 5's Playwright spec lives in tests/ and would be run by the wrong runner" >&2
     exit 1
 fi
 

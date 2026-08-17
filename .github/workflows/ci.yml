@@ -50,25 +50,9 @@ jobs:
           fi
           echo "changed files:"
           echo "$changed" | sed 's/^/  /'
-          matches() { echo "$changed" | grep -qE "$1" && echo true || echo false; }
-          # A second helper rather than a lookahead: grep -E is POSIX ERE and has
-          # none, so `(?!prototype/)` would match nothing and the filter would
-          # answer false forever — silently.
-          matches_except() {
-              echo "$changed" | grep -E "$1" | grep -qvE "$2" && echo true || echo false
-          }
-          {
-            echo "api=$(matches '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
-            echo "kmp=$(matches '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
-            # web/prototype is excluded on purpose: it is a frozen visual
-            # specification that no gate builds, and a change to it alone must
-            # not spend a runner.
-            echo "web=$(matches_except '^(web/|scripts/gate/(web|all)\.sh|\.github/workflows/ci\.yml)' '^web/prototype/')"
-            # The whole of .github/, not just workflows/: the shell gate below
-            # also verifies the committed ruleset, and a change to the ruleset
-            # alone has to reach the job that checks it.
-            echo "scripts=$(matches '^(scripts/|\.github/)')"
-          } >> "$GITHUB_OUTPUT"
+          # The decision itself lives in a script so that shellcheck and a test
+          # can both reach it; an inline block is reachable by neither.
+          echo "$changed" | ./scripts/gate/changed-stacks.sh | tee -a "$GITHUB_OUTPUT"
 
   scripts:
     name: Shell gate
@@ -90,6 +74,11 @@ jobs:
           }
           shellcheck --version
           shellcheck -x scripts/gate/*.sh scripts/ralph/*.sh
+
+      # The stack filter decides which gates run at all, and a wrong answer of
+      # false skips a job — which GitHub counts as a satisfied required check.
+      - name: The stack filter answers correctly
+        run: ./scripts/gate/changed-stacks_test.sh
 
       # Checks the committed ruleset against this file. It has to run here
       # rather than anywhere else, because this is the job whose own name the
