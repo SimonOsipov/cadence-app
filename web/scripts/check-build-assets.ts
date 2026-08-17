@@ -63,6 +63,10 @@ export function inspect(dist: string, required: string[]): Verdict {
         ? join(dist, reference.slice(1))
         : join(assets, reference)
 
+      // A remote address was already reported above; asking whether the build contains it would add a
+      // second, false diagnosis — it is not meant to be there.
+      if (/^(?:https?:)?\/\//.test(reference)) continue
+
       if (existsSync(path)) resolved.push(reference)
       else problems.push(`${sheet} points at ${reference}, which the build does not contain`)
     }
@@ -76,8 +80,14 @@ export function inspect(dist: string, required: string[]): Verdict {
   // unguarded: CormorantGaramondItalic-<hash>.ttf contains CormorantGaramond, so a build that dropped
   // the upright face satisfied the requirement for it. Measured end to end before this line existed —
   // vite build exit 0, the file absent from dist, and the check announcing all four included.
+  //
+  // Matched to the separator rather than to Vite's hyphen alone, so that a build configured without a
+  // hash — step 4 sets assetFileNames — still recognises its own faces instead of reporting all four
+  // missing.
   for (const face of required) {
-    if (!resolved.some((reference) => reference.includes(`${face}-`))) {
+    const named = new RegExp(`/${face}[-.][^/]*$`)
+
+    if (!resolved.some((reference) => named.test(reference))) {
       problems.push(`no stylesheet in the build points at ${face}`)
     }
   }

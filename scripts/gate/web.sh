@@ -113,17 +113,32 @@ npm run --silent lint
 # The other half of the same criterion. ESLint holds `var(--…)` to src/tokens/ for
 # the files it parses; it parses no CSS, and src/fonts/fonts.css is already outside
 # tokens/. stylelint was declined — a second linter and a second config for one rule
-# — so the rule is a grep, and it counts the files it read before trusting the
-# absence of matches.
+# — so the rule is a grep.
+#
+# find -exec rather than a word-split variable, and the status read rather than
+# swallowed. A path with a space split into two unreadable ones, grep answered 2,
+# `|| true` made that indistinguishable from «found nothing», and the check went
+# green having read nothing — with the errors on stderr where a green gate hides
+# them. The repository already carries such a path one directory away:
+# web/prototype/Doctor Dashboard.html.
 echo "==> var(--…) stays inside src/tokens"
-stylesheets=$(find src -name '*.css' -not -path 'src/tokens/*')
-if [ -z "$stylesheets" ]; then
+found=$(find src -name '*.css' -not -path 'src/tokens/*' | wc -l | tr -d ' ')
+if [ "$found" -eq 0 ]; then
     echo "no stylesheet outside src/tokens was found, so this check measured nothing" >&2
     exit 1
 fi
 
-# shellcheck disable=SC2086 # the list is newline-separated paths this repository controls
-loose=$(grep -rniE 'var\s*\(\s*--' $stylesheets || true)
+set +e
+loose=$(find src -name '*.css' -not -path 'src/tokens/*' -exec grep -niE 'var[[:space:]]*\([[:space:]]*--' {} +)
+searched=$?
+set -e
+
+# 1 is «no match» and anything above it is «could not read»; only the first is a pass.
+if [ "$searched" -gt 1 ]; then
+    echo "grep answered $searched over $found stylesheet(s), so this check measured nothing" >&2
+    exit 1
+fi
+
 if [ -n "$loose" ]; then
     echo "a custom property is named outside src/tokens, where a typo renders as nothing:" >&2
     printf '  %s\n' "$loose" >&2

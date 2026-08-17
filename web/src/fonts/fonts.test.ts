@@ -68,18 +68,18 @@ describe('the three faces', () => {
   it('reach for nothing over the network', () => {
     const everything = SHEET + readFileSync('src/tokens/colors_and_type.css', 'utf8')
 
-    // What a stylesheet can be made to fetch, and not every mention of a scheme: a licence URL in a
-    // comment above four bundled faces is an ordinary thing to write, and failing on it would be a red
-    // gate whose diagnosis sends the next reader hunting a leak that is not there.
+    // Comments out, then everything else swept. Enumerating the constructs that fetch — @import and
+    // src: — was tried and measured strictly weaker: `src:` is a comma-separated list and only its
+    // first url() was read, so a remote fallback appended after the local file went green, and so did
+    // `@import layer(base) url(…)`, an uppercase `@IMPORT`, and any url-bearing property that is not
+    // src:. The false positive that narrowing was meant to avoid — a licence URL in a comment above
+    // four bundled faces — is what the strip handles, and it is the only one there was.
     //
-    // The scheme is optional — `//host/path` resolves against the page's own and is as live a call.
-    const fetched = [
-      ...everything.matchAll(/@import\s+(?:url\()?["']?([^"');]+)/g),
-      ...everything.matchAll(/src:\s*url\(["']?([^"')]+)/g),
-    ].map(([, address]) => address ?? '')
+    // The scheme is optional: `//host/path` resolves against the page's own and is as live a call.
+    const addressable = everything.replace(/\/\*[\s\S]*?\*\//g, ' ')
 
-    expect(fetched.length).toBeGreaterThan(0)
-    expect(fetched.filter((address) => /^(?:https?:)?\/\//.test(address))).toEqual([])
+    expect(addressable).toContain('@font-face')
+    expect(addressable).not.toMatch(/(?:https?:)?\/\//)
   })
 
   // Instrument Serif is named first in --font-display and has no @font-face on purpose: the stack falls

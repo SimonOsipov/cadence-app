@@ -9,9 +9,15 @@ import { REQUIRED_FACES, inspect } from '../../scripts/check-build-assets'
 // code» — is the reasoning that hid a fail-open in the stack filter for three review rounds. Two of
 // them were here too: a build with no font references at all announced success, and a stylesheet
 // reaching over the network was invisible because minified Vite writes the import without url().
-function distWith(stylesheet: string, present: string[]): string {
+function emptyDist(): string {
   const dist = mkdtempSync(join(tmpdir(), 'cadence-dist-'))
   onTestFinished(() => rmSync(dist, { recursive: true, force: true }))
+
+  return dist
+}
+
+function distWith(stylesheet: string, present: string[]): string {
+  const dist = emptyDist()
   const assets = join(dist, 'assets')
   mkdirSync(assets)
 
@@ -77,7 +83,7 @@ describe('inspecting a build', () => {
   })
 
   it('refuses a build with no stylesheet rather than reporting nothing wrong', () => {
-    const dist = mkdtempSync(join(tmpdir(), 'cadence-dist-'))
+    const dist = emptyDist()
     mkdirSync(join(dist, 'assets'))
 
     expect(inspect(dist, REQUIRED_FACES)).toEqual({
@@ -111,8 +117,11 @@ describe('inspecting a build', () => {
   // What a build that emitted nothing actually leaves behind: no assets directory at all, rather than
   // an empty one.
   it('refuses a build with no assets directory', () => {
-    const dist = mkdtempSync(join(tmpdir(), 'cadence-dist-'))
-
-    expect(inspect(dist, REQUIRED_FACES).ok).toBe(false)
+    // The whole verdict and not just `ok`: without the early return this path reports four missing
+    // faces, which is false and would read as a build problem rather than as no build at all.
+    expect(inspect(emptyDist(), REQUIRED_FACES)).toEqual({
+      ok: false,
+      problems: ['the build emitted no stylesheet, so this check measured nothing'],
+    })
   })
 })
