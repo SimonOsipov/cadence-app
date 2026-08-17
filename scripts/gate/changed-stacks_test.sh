@@ -60,6 +60,10 @@ echo "==> a change too large for an early exit"
 large=$(printf 'web/src/app.tsx\n'; for i in $(seq 1 4000); do printf 'web/src/generated/module-%05d.tsx\n' "$i"; done)
 check "four thousand dashboard files"   true  web "$large"
 
+# Kills the whole of that mistake and not a part of it, measured: with one of the
+# four emitters reverted the remaining three still refuse and this stays green. It
+# is the shape of the script that is under test here, not each line of it.
+#
 # The counter going quiet is the other way this answers wrongly, and it is worse:
 # every value comes out empty, empty is falsy to every `if:` in ci.yml, and all
 # four gates skip at once. The script has to refuse rather than print — which it
