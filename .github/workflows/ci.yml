@@ -28,6 +28,7 @@ jobs:
     outputs:
       api: ${{ steps.filter.outputs.api }}
       kmp: ${{ steps.filter.outputs.kmp }}
+      web: ${{ steps.filter.outputs.web }}
       scripts: ${{ steps.filter.outputs.scripts }}
     steps:
       - uses: actions/checkout@v4
@@ -50,9 +51,19 @@ jobs:
           echo "changed files:"
           echo "$changed" | sed 's/^/  /'
           matches() { echo "$changed" | grep -qE "$1" && echo true || echo false; }
+          # A second helper rather than a lookahead: grep -E is POSIX ERE and has
+          # none, so `(?!prototype/)` would match nothing and the filter would
+          # answer false forever — silently.
+          matches_except() {
+              echo "$changed" | grep -E "$1" | grep -qvE "$2" && echo true || echo false
+          }
           {
             echo "api=$(matches '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
             echo "kmp=$(matches '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
+            # web/prototype is excluded on purpose: it is a frozen visual
+            # specification that no gate builds, and a change to it alone must
+            # not spend a runner.
+            echo "web=$(matches_except '^(web/|scripts/gate/(web|all)\.sh|\.github/workflows/ci\.yml)' '^web/prototype/')"
             # The whole of .github/, not just workflows/: the shell gate below
             # also verifies the committed ruleset, and a change to the ruleset
             # alone has to reach the job that checks it.
@@ -226,5 +237,20 @@ jobs:
       - name: iOS tests, project drift check, xcodebuild
         run: ./scripts/gate/ios.sh
 
-  # web/ has no job yet on purpose: the Vite dashboard does not exist until
-  # SKL-09, and web/prototype is a frozen visual spec that is never built.
+  web:
+    name: Web gate
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Types, lint, tests, build
+        run: ./scripts/gate/web.sh
