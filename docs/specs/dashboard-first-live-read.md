@@ -359,6 +359,32 @@ gate failing on divergence, the job created **and** added to
 Wiring into React Query.
 todoist: "6h9MFxGX42pm22HH"
 
+> [!deviation] 2026-08-19
+> Spec said: the TS client is generated from the committed `openapi.json`.
+> Actually done: the contract's **types** are generated — every shape, every
+> enum, the query and response of each operation — and the twenty lines that
+> call the route are hand-written in `src/data/api.ts`. Why: the generator emits
+> its own fetch layer by vendoring sixteen files of somebody else's runtime into
+> this repository, and no option in 0.99 takes it from the dependency instead.
+> What a contract change actually moves is the shapes. The one thing types
+> cannot catch — a route renamed under an unchanged shape — is asserted by
+> `src/data/api.test.ts`, which reads the path back out of the same document.
+
+> [!deviation] 2026-08-19
+> Spec said: the new TS-client gate job is created **and** added to
+> `.github/rulesets/main.json`, or `scripts/gate/ruleset.sh` goes red. Actually
+> done: no new job. The check runs inside `scripts/gate/web.sh`, which the
+> existing "Web gate" job already runs — one definition of green, as the
+> workflow's own header states, and one `npm ci` rather than two. `ruleset.sh` is
+> green because there is nothing new to reconcile. What did have to change is
+> `changed-stacks.sh`: `api/openapi.json` now makes it answer `web=true`, since a
+> contract change touching no file under `web/` is exactly the change this check
+> exists for — and a skipped job satisfies a required check.
+
+> [!decision] 2026-08-19 — `@hey-api/openapi-ts`, not `openapi-typescript`. The
+> latter peers on `typescript@^5.x` and this repository pins 6.0.3, so npm
+> refuses it outright; the former declares `>=6.0.0`.
+
 ### step-6: Sign-in, sign-out, identity, invite acceptance on the web
 
 Straight to GoTrue, routes for `doctor` and `admin` only, a clear refusal for a

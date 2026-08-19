@@ -55,10 +55,13 @@ emit() {
 emit api "$(count '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
 emit kmp "$(count '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
 
-# Three paths outside web/ are in here because the web gate reads them, and a gate
+# Four paths outside web/ are in here because the web gate reads them, and a gate
 # that is skipped for a change it would have failed on is worse than no gate: the
 # merge leaves main red for whoever pushes next.
 #
+#   api/openapi.json    src/api is generated from it and committed, and the gate
+#                       regenerates and compares — a contract change touching no
+#                       file under web/ is exactly what that check is for
 #   web/prototype       port.test.ts compares the ported CSS against it byte for
 #                       byte, and derive-icons re-derives the icon subset from it
 #   CadenceColors.kt    reconciliation.test.ts compares the palettes
@@ -67,7 +70,7 @@ emit kmp "$(count '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.
 #
 # The prototype used to be subtracted here, on the grounds that no gate builds it.
 # That stopped being true the moment the web gate started reading it.
-emit web "$(count '^(web/|kmp/composeApp/src/commonMain/(kotlin/app/cadence/design/CadenceColors\.kt|composeResources/font/)|scripts/gate/(web|all)\.sh|\.github/workflows/ci\.yml)')"
+emit web "$(count '^(web/|api/openapi\.json|kmp/composeApp/src/commonMain/(kotlin/app/cadence/design/CadenceColors\.kt|composeResources/font/)|scripts/gate/(web|all)\.sh|\.github/workflows/ci\.yml)')"
 
 # The whole of .github/, not just workflows/: the shell gate also verifies the
 # committed ruleset, and a change to the ruleset alone has to reach the job that

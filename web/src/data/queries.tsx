@@ -1,10 +1,19 @@
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { createContext, useContext, type ReactNode } from 'react'
 
+import type { ApiClient, RosterQuery as LiveRosterQuery } from './api'
 import type { RosterFilter } from './overview'
 import { fixtureTransport, type RosterQuery, type Transport } from './transport'
 
 const TransportContext = createContext<Transport | null>(null)
+
+/**
+ * The generated contract's client, when this dashboard has one.
+ *
+ * Null by default and not a fixture: the screens read the fixture transport above until step 7 moves
+ * them across, and a stand-in here would let a screen read live data that is not live.
+ */
+const ApiContext = createContext<ApiClient | null>(null)
 
 /**
  * Holds the transport and React Query for everything below it.
@@ -15,15 +24,19 @@ const TransportContext = createContext<Transport | null>(null)
 export function DataProvider({
   children,
   transport = fixtureTransport({ latencyMs: 220 }),
+  api = null,
   client = defaultClient(),
 }: {
   children: ReactNode
   transport?: Transport
+  api?: ApiClient | null
   client?: QueryClient
 }) {
   return (
     <QueryClientProvider client={client}>
-      <TransportContext.Provider value={transport}>{children}</TransportContext.Provider>
+      <ApiContext.Provider value={api}>
+        <TransportContext.Provider value={transport}>{children}</TransportContext.Provider>
+      </ApiContext.Provider>
     </QueryClientProvider>
   )
 }
@@ -61,6 +74,22 @@ export function useRoster(query: RosterQuery) {
     queryFn: () => transport.roster(query),
     // The previous page stays on screen while the next one loads, so paging does not blink the table
     // away and back.
+    placeholderData: (previous) => previous,
+  })
+}
+
+/** Reads the roster from the API rather than from the fixtures. */
+export function useLiveRoster(query: LiveRosterQuery = {}) {
+  const api = useContext(ApiContext)
+  if (api === null) {
+    throw new Error('this screen is inside a DataProvider with no API, so there is nothing live to read')
+  }
+
+  return useQuery({
+    // Both bounds in the key, for the reason useRoster states: a page is not the page before it, and
+    // one cached under the other shows the wrong rows for a frame.
+    queryKey: ['live-roster', query.cursor ?? null, query.limit ?? null],
+    queryFn: () => api.roster(query),
     placeholderData: (previous) => previous,
   })
 }

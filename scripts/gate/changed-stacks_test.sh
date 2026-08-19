@@ -38,9 +38,11 @@ check "the dashboard's own source"      true  web "web/src/app.tsx"
 check "the gate script itself"          true  web "scripts/gate/web.sh"
 check "nothing of the dashboard's"      false web "api/main.go"
 
-# The three the web gate reads from outside web/src. Each of them can fail it, so
+# The four the web gate reads from outside web/src. Each of them can fail it, so
 # each of them has to run it: a skipped job satisfies a required check, and the
 # merge would leave main red for whoever pushes next.
+check "the API's contract"              true  web "api/openapi.json"
+check "other go"                        false web "api/internal/identity/roster.go"
 check "the frozen prototype"            true  web "web/prototype/dd-app.jsx"
 check "the mobile palette"              true  web "kmp/composeApp/src/commonMain/kotlin/app/cadence/design/CadenceColors.kt"
 check "a face the mobile app bundles"   true  web "kmp/composeApp/src/commonMain/composeResources/font/GolosText.ttf"
