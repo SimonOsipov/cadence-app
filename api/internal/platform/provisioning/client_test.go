@@ -363,3 +363,68 @@ func TestDeletionStatesBothHalvesOfItsProof(t *testing.T) {
 		t.Errorf("the proof travelled as %v", sent)
 	}
 }
+
+// The state the roster draws is derived from three instants, and this is the
+// only path any of them travel. A field the client does not decode is a state
+// the dashboard cannot tell apart.
+func TestTheRosterLookupCarriesTheThreeInstants(t *testing.T) {
+	const (
+		invited  = "2026-08-11T09:00:00Z"
+		signedIn = "2026-08-15T18:30:00Z"
+	)
+
+	client, _ := fakeProvisioner(t, http.StatusOK,
+		`{"accounts":[{"id":"3f2a","invited_at":"`+invited+`","confirmed_at":null,`+
+			`"last_sign_in_at":"`+signedIn+`"}]}`)
+
+	accounts, err := client.LookupBatch(context.Background(), []string{"3f2a"})
+	if err != nil {
+		t.Fatalf("looking up a roster: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("the answer carried %d accounts, want one", len(accounts))
+	}
+
+	found := accounts[0]
+	if found.InvitedAt == nil || found.InvitedAt.Format(time.RFC3339) != invited {
+		t.Errorf("invited_at came back as %v, want %s", found.InvitedAt, invited)
+	}
+	if found.LastSignInAt == nil || found.LastSignInAt.Format(time.RFC3339) != signedIn {
+		t.Errorf("last_sign_in_at came back as %v, want %s", found.LastSignInAt, signedIn)
+	}
+	if found.ConfirmedAt != nil {
+		t.Errorf("confirmed_at came back as %v, want nothing", found.ConfirmedAt)
+	}
+}
+
+// The component refuses a list longer than MaxLookupBatch with a 400, and a 400
+// on this path costs the whole page its states. Refused here, before the round
+// trip, so that the caller learns what the bound is rather than reading
+// "the provisioner refused the call".
+func TestARosterLongerThanTheComponentAcceptsIsRefusedBeforeTheCall(t *testing.T) {
+	client, record := fakeProvisioner(t, http.StatusOK, `{"accounts":[]}`)
+
+	ids := make([]string, MaxLookupBatch+1)
+	for i := range ids {
+		ids[i] = "3f2a"
+	}
+
+	_, err := client.LookupBatch(context.Background(), ids)
+	if !errors.Is(err, ErrTooManyToLookUp) {
+		t.Errorf("looking up %d identifiers answered %v, want ErrTooManyToLookUp", len(ids), err)
+	}
+	if record.method != "" {
+		t.Errorf("the component was called anyway, with %s", record.body)
+	}
+}
+
+// The other half of the page's bound. identity refuses a page larger than its
+// own maximum because the states of that page come from one call to this
+// client; a maximum raised past what the component accepts would answer every
+// row "unknown" and nothing would say why.
+func TestAWholePageFitsInOneLookup(t *testing.T) {
+	if identity.MaxPageSize > MaxLookupBatch {
+		t.Errorf("a page carries %d patients and a lookup carries %d identifiers",
+			identity.MaxPageSize, MaxLookupBatch)
+	}
+}

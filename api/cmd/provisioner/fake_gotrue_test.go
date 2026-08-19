@@ -35,6 +35,7 @@ type fakeUser struct {
 	ID           string
 	Email        string
 	Password     string
+	InvitedAt    *time.Time
 	ConfirmedAt  *time.Time
 	LastSignInAt *time.Time
 }
@@ -65,8 +66,11 @@ func (f *fakeGoTrue) withUser(id, email string) *fakeUser {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// Two instants, not one: a fake that answers the same moment for both cannot
+	// tell a component reading the wrong field from one reading the right one.
+	invited := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 	confirmed := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
-	user := &fakeUser{ID: id, Email: strings.ToLower(email), ConfirmedAt: &confirmed}
+	user := &fakeUser{ID: id, Email: strings.ToLower(email), InvitedAt: &invited, ConfirmedAt: &confirmed}
 	f.users[id] = user
 
 	return user
@@ -144,7 +148,11 @@ func (f *fakeGoTrue) invite(w http.ResponseWriter, body string) {
 	id := "00000000-0000-4000-8000-" + fakeSuffix(len(f.users))
 	// Lowercased exactly as GoTrue does, which is why the component has to
 	// lowercase before it filters.
-	user := &fakeUser{ID: id, Email: strings.ToLower(payload.Email)}
+	// As the provider does it: invited_at set, nothing else. Measured on the
+	// pinned image — a fresh invitation has no confirmed_at and no top-level
+	// last_sign_in_at, and both are what the accepted state is read from.
+	invited := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	user := &fakeUser{ID: id, Email: strings.ToLower(payload.Email), InvitedAt: &invited}
 	f.users[id] = user
 	f.mu.Unlock()
 
@@ -242,7 +250,7 @@ func fakeUserDocument(user *fakeUser) map[string]any {
 		"confirmation_token":  "1f3c9d2e-the-credential-itself",
 		"encrypted_password":  "$2a$10$notarealhash",
 		"raw_user_meta_data":  map[string]any{},
-		"invited_at":          user.ConfirmedAt,
+		"invited_at":          user.InvitedAt,
 		"updated_at":          user.ConfirmedAt,
 		"banned_until":        nil,
 		"is_sso_user":         false,

@@ -272,6 +272,43 @@ than an empty roster; a patient who opened the link but never launched the app i
 shown as **accepted**, not expired — that is the case the source was moved for.
 todoist: "6h9MFx6MpCF9Mqcq"
 
+> [!deviation] 2026-08-19
+> Spec said: the expired state is `invited_at + TTL` in the past, and the DONE
+> section names `invites.invited_at` among the prerequisites. Actually done:
+> `invited_at` comes from the identity provider, through the same batch lookup
+> as the other two instants, and the roster reads no `app.invites` at all.
+> Measured on the cycle database: a doctor's SELECT touching that table fails
+> with `permission denied for table invites` (42501) — 000008 grants them INSERT
+> only, an administrator SELECT — so deriving the state from our own row would
+> have failed for the one caller this screen exists for. Measured on the pinned
+> GoTrue image: `/admin/users/{id}` states a top-level `invited_at`, and the
+> component's answer now carries it. Why: the source with no grant problem is
+> the one the acceptance criterion already named — "invite state comes from
+> GoTrue via the `provisioner` batch lookup".
+
+> [!deviation] 2026-08-19
+> Spec said: nothing about how large a page may be. Actually done: the roster
+> refuses a page larger than `identity.MaxPageSize` (100), which is the number
+> the route's schema already pinned and the number the component enforces on
+> `LookupBatch`; the client refuses a longer list before the round trip, and two
+> tests compare the three spellings. Why: this closed the open question the
+> Todoist task carried into this step — the component's 100 against a client
+> that bounded nothing. A page past the bound is not an error anyone would see:
+> the component answers 400 and every row on the screen comes back "unknown".
+
+> [!deviation] 2026-08-19
+> Spec said: nothing about a top-level versus a nested instant. Measured on the
+> pinned image and written into the component: `identities[0].last_sign_in_at`
+> is set at the moment of the invitation, so a reader of that field would draw
+> every invited patient as accepted. Only the top-level one is decoded.
+
+> [!question] Measured while step 3 was being built, and it is step 4's to
+> answer: setting a password through the dev operation confirms nothing — the
+> account keeps no `confirmed_at` and no top-level `last_sign_in_at`. Seeded
+> patients will therefore be drawn **pending**, and **expired** three days after
+> the seed was run. Either the seed confirms the accounts it creates, or the
+> dashboard's seeded roster reads as a clinic nobody has joined.
+
 ### step-4: `cmd/seed`
 
 Accounts through `provisioner`, passwords through the dev operation, data — in one

@@ -102,6 +102,18 @@ func TestTheWholeRoundTripAgainstTheRealIdentityProvider(t *testing.T) {
 		if invited.ID == "" {
 			t.Fatalf("the invitation answered with no identifier: %s", rec.Body)
 		}
+
+		// The three fields the roster reads its state from, in the state a fresh
+		// invitation leaves them. Nothing in this package's own tests would
+		// notice the provider dropping the one the expired state is measured
+		// from: the fake would go on serving it.
+		if invited.InvitedAt == nil {
+			t.Errorf("the provider states no invited_at, which the expired state is derived from")
+		}
+		if invited.ConfirmedAt != nil || invited.LastSignInAt != nil {
+			t.Errorf("a fresh invitation already reads as accepted: confirmed_at %v, last_sign_in_at %v",
+				invited.ConfirmedAt, invited.LastSignInAt)
+		}
 	})
 
 	t.Run("the address a human typed finds the account it created", func(t *testing.T) {

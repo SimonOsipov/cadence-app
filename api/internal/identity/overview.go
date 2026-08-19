@@ -66,7 +66,7 @@ func refusalForRoster(err error) error {
 	case errors.Is(err, ErrNotACursor):
 		return huma.Error400BadRequest(detailNotACursor)
 
-	// Unreachable through the route, whose schema pins a minimum of one, and its own sentence anyway:
+	// Unreachable through the route, whose schema pins both bounds, and its own sentence anyway:
 	// a caller past that schema is not a person who lost their place in a list.
 	case errors.Is(err, ErrNotAPageSize):
 		return huma.Error400BadRequest(detailNotAPageSize)

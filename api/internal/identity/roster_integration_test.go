@@ -96,7 +96,10 @@ func rosterStand(t *testing.T, patients ...seededPatient) (*identity.Roster, *te
 	}
 	t.Cleanup(pool.Close)
 
-	return identity.NewRoster(pool), db
+	// No provisioner: what this file measures is which rows a policy answers, and every state
+	// coming back unknown is what a roster with nobody to ask about it looks like. The states
+	// themselves are measured against a real provider in roster_invite_state_integration_test.go.
+	return identity.NewRoster(pool, nil), db
 }
 
 func namesSeenBy(t *testing.T, roster *identity.Roster, userID, role, cursor string, limit int) []string {

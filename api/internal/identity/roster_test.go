@@ -322,8 +322,8 @@ func TestTheRosterRefusesWithoutAPrincipal(t *testing.T) {
 // The constructor's whole content, pinned as NewSessions' is: without it a nil pool builds a service
 // whose nil check in the handler is false, and the answer is a dereference rather than a 500.
 func TestNoPoolBuildsNoRoster(t *testing.T) {
-	if roster := NewRoster(nil); roster != nil {
-		t.Errorf("NewRoster(nil) = %v, want nil", roster)
+	if roster := NewRoster(nil, &stubProvisioner{}); roster != nil {
+		t.Errorf("NewRoster with no pool = %v, want nil", roster)
 	}
 }
 
@@ -369,7 +369,7 @@ func TestARosterReadAgainstADatabaseThatIsDownIsUnavailable(t *testing.T) {
 
 	caller := database.Caller{Subject: "8a1f3b7c-0000-4000-8000-000000000002", Role: providerRole}
 
-	_, err = NewRoster(pool).Patients(t.Context(), caller, "", 8)
+	_, err = NewRoster(pool, nil).Patients(t.Context(), caller, "", 8)
 	if !errors.Is(err, ErrDatabaseUnavailable) {
 		t.Fatalf("reading against a dead database answered %v, want ErrDatabaseUnavailable", err)
 	}

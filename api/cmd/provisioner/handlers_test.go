@@ -161,11 +161,13 @@ func TestMixedCaseFindsAnExistingAccount(t *testing.T) {
 	}
 }
 
-// TestTheAnswerIsNarrowedToThreeFields. The provider's user document carries
-// the confirmation token — the credential itself — the encrypted password, and
-// whatever user metadata a clinic wrote into it. Three fields, so none of the
-// rest can reach a caller by being forgotten.
-func TestTheAnswerIsNarrowedToThreeFields(t *testing.T) {
+// accountFields is what an answer of this component carries about an account,
+// and nothing else: the provider's own document also holds the confirmation
+// token — the credential itself — the encrypted password, and whatever user
+// metadata a clinic wrote into it.
+var accountFields = []string{"confirmed_at", "id", "invited_at", "last_sign_in_at"}
+
+func TestTheAnswerIsNarrowedToWhatTheCallerNeeds(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	fake.withUser("33333333-0000-4000-8000-000000000001", "anna@clinic.example")
 
@@ -189,9 +191,8 @@ func TestTheAnswerIsNarrowedToThreeFields(t *testing.T) {
 	}
 	slices.Sort(got)
 
-	want := []string{"confirmed_at", "id", "last_sign_in_at"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("the answer carries %v, want exactly %v", got, want)
+	if !slices.Equal(got, accountFields) {
+		t.Fatalf("the answer carries %v, want exactly %v", got, accountFields)
 	}
 }
 
@@ -213,9 +214,16 @@ func TestInviteAnswersWithTheNarrowedAccount(t *testing.T) {
 		t.Fatalf("decoding the answer: %v", err)
 	}
 
-	if len(answer.Account) != 3 {
-		t.Fatalf("invite answered with %d fields, want the same three a lookup answers with: %s",
-			len(answer.Account), rec.Body)
+	got := make([]string, 0, len(answer.Account))
+	for name := range answer.Account {
+		got = append(got, name)
+	}
+	slices.Sort(got)
+
+	// The set and not the count: a document carrying four of somebody else's
+	// fields is the failure this test exists for, and it has four fields.
+	if !slices.Equal(got, accountFields) {
+		t.Fatalf("invite answered with %v, want the same fields a lookup answers with: %v", got, accountFields)
 	}
 
 	// Lowercased on the way in too, or the account is created under one
@@ -238,9 +246,9 @@ func TestInviteRefusesSomethingThatIsNotAnAddress(t *testing.T) {
 	}
 }
 
-// TestTheBatchLookupAnswersTheSameThreeFieldsForEach. Without the batch, the
-// dashboard roster would make one call per row across the boundary.
-func TestTheBatchLookupAnswersTheSameThreeFieldsForEach(t *testing.T) {
+// Without the batch, the dashboard roster would make one call per row across
+// the boundary.
+func TestTheBatchLookupAnswersTheSameFieldsForEach(t *testing.T) {
 	fake := startFakeGoTrue(t)
 	fake.withUser("44444444-0000-4000-8000-000000000001", "one@clinic.example")
 	fake.withUser("44444444-0000-4000-8000-000000000002", "two@clinic.example")
@@ -275,8 +283,8 @@ func TestTheBatchLookupAnswersTheSameThreeFieldsForEach(t *testing.T) {
 		}
 		slices.Sort(got)
 
-		if want := []string{"confirmed_at", "id", "last_sign_in_at"}; !slices.Equal(got, want) {
-			t.Fatalf("an account carries %v, want exactly %v", got, want)
+		if !slices.Equal(got, accountFields) {
+			t.Fatalf("an account carries %v, want exactly %v", got, accountFields)
 		}
 	}
 }

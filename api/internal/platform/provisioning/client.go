@@ -72,6 +72,16 @@ const maxAnswer = 1 << 20
 // line, and what a person needs from it is the first sentence.
 const maxRefusalInAnError = 512
 
+// MaxLookupBatch is how many identifiers one lookup carries. The bound is the
+// component's own — it refuses a longer list with a 400 — and the two spellings
+// are read against each other by TestTheClientSpeaksTheSurfaceTheComponentServes.
+const MaxLookupBatch = 100
+
+// ErrTooManyToLookUp is a list this component would refuse, refused before the
+// round trip: a 400 there costs the whole page its states and says nothing about
+// what the bound is.
+var ErrTooManyToLookUp = errors.New("more identifiers than one lookup carries")
+
 // ErrRefused carries the status and what the provisioner said, so a handler can
 // tell a refusal from a provisioner that is not answering at all.
 var ErrRefused = errors.New("the provisioner refused the call")
@@ -171,6 +181,10 @@ func (c *Client) LookupBatch(ctx context.Context, ids []string) ([]identity.Acco
 		return nil, nil
 	}
 
+	if len(ids) > MaxLookupBatch {
+		return nil, fmt.Errorf("%d of at most %d: %w", len(ids), MaxLookupBatch, ErrTooManyToLookUp)
+	}
+
 	var answer accountsAnswer
 
 	if err := c.call(ctx, lookupBatchPath, map[string][]string{"ids": ids}, &answer); err != nil {
@@ -220,12 +234,18 @@ type (
 // nothing to somebody else's field names.
 type account struct {
 	ID           string     `json:"id"`
+	InvitedAt    *time.Time `json:"invited_at"`
 	ConfirmedAt  *time.Time `json:"confirmed_at"`
 	LastSignInAt *time.Time `json:"last_sign_in_at"`
 }
 
 func (a account) asIdentity() identity.Account {
-	return identity.Account{ID: a.ID, ConfirmedAt: a.ConfirmedAt, LastSignInAt: a.LastSignInAt}
+	return identity.Account{
+		ID:           a.ID,
+		InvitedAt:    a.InvitedAt,
+		ConfirmedAt:  a.ConfirmedAt,
+		LastSignInAt: a.LastSignInAt,
+	}
 }
 
 // Every operation is a POST carrying a JSON body, including the two that read
