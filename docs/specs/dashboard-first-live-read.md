@@ -439,6 +439,35 @@ silently mixed state is left behind. The rule "aggregates are not derived in
 components" carries over to live data through the same mechanism.
 todoist: "6h9MFxVCgFXXJFGq"
 
+> [!deviation] 2026-08-19
+> Spec said: the roster moves to the endpoint and its loading, empty and error
+> states are preserved. Actually done: that, and three things left the roster
+> with the fixture behind it — the protocol, cycle and weight columns, the four
+> status tabs above them, and the card a row used to open. Why: the endpoint
+> answers a name, an age and the state of an invitation, and nothing else. A
+> column filled with «—» is a promise; a tab that filters nothing is the dead
+> control invariant 4 forbids; and a row opening a card built from a fixture
+> patient would be a live row showing invented measurements. They come back when
+> M6 answers what they draw. The card is still reachable — from the triage queue,
+> which is a fixture section and says so.
+
+> [!deviation] 2026-08-19
+> Spec said: the pager and the counters. Actually done: no total on the pager,
+> only «N на странице». Why: keyset paging answers no total by design — the set
+> moves under a doctor as assignments change, and a count taken at one page is
+> already wrong at the next.
+
+> [!deviation] 2026-08-19
+> Spec said: the other five sections stay on fixtures **explicitly**, marked in
+> code with a deadline. Actually done: marked on the screen as well — a badge
+> reading «Демо-данные · до M6» on the stats strip, the triage queue, the
+> schedule and the patient card. Why: «no silently mixed state» is about the
+> person reading the screen, not only about the next person reading the code. A
+> doctor seeing «Пациентов: 25» beside their own two patients has no way to tell
+> which half is their clinic. The side menu carries no badge: its only fixture
+> datum is a counter on a destination that does not exist yet and is already
+> drawn as unavailable.
+
 ### step-8: The new-patient form
 
 From tokens. Name, address, assignments with a care-team role, demographics. `409`

@@ -3,6 +3,7 @@ import type { IconName } from '../../icons/icons'
 import type { OverviewAggregates } from '../../data/overview'
 import { whole } from '../../format'
 import { tokens } from '../../tokens/tokens'
+import { DemoMark } from './patient-bits'
 
 /**
  * The five numbers across the top, every one of them handed down.
@@ -32,14 +33,20 @@ export function StatsStrip({ aggregates }: { aggregates: OverviewAggregates }) {
   ]
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        gap: tokens.s5,
-        marginBottom: 36,
-      }}
-    >
+    <div style={{ marginBottom: 36 }}>
+      {/* Above the numbers rather than inside one of them: all five are the fixture's, and a mark on
+          a single card would read as being about that card. */}
+      <p style={{ margin: '0 0 8px' }}>
+        <DemoMark />
+      </p>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: tokens.s5,
+        }}
+      >
       {cards.map((card) => (
         <article
           key={card.label}
@@ -72,6 +79,7 @@ export function StatsStrip({ aggregates }: { aggregates: OverviewAggregates }) {
           </div>
         </article>
       ))}
+      </div>
     </div>
   )
 }

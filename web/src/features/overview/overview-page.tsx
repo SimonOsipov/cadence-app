@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
-import type { Patient, RosterFilter } from '../../data/overview'
-import { useOverview, useRoster } from '../../data/queries'
+import type { Patient } from '../../data/overview'
+import { useLiveRoster, useOverview } from '../../data/queries'
 import { tokens } from '../../tokens/tokens'
 import { PatientCard } from './patient-card'
 import { Roster } from './roster'
@@ -30,12 +30,15 @@ export function OverviewPage({
   greetedAs?: string
   onSignOut?: (() => void) | undefined
 }) {
-  const [filter, setFilter] = useState<RosterFilter>('all')
   const [cursor, setCursor] = useState<string | null>(null)
   const [opened, setOpened] = useState<Patient | null>(null)
 
+  // One section live and five on fixtures until M6 extends this same endpoint with what they draw —
+  // flags, adherence, doses, appointments. Four of the five carry the mark a doctor can see; the side
+  // menu does not, because its only fixture datum is a counter on a destination that does not exist
+  // yet and is already drawn as unavailable.
   const overview = useOverview()
-  const roster = useRoster({ filter, cursor })
+  const roster = useLiveRoster(cursor === null ? {} : { cursor })
 
   if (overview.isPending) return <Waiting />
   if (overview.isError) return <Failed error={overview.error} onRetry={() => void overview.refetch()} />
@@ -95,21 +98,12 @@ export function OverviewPage({
         <Triage patients={triage} onOpen={setOpened} />
 
         <Roster
-            page={roster.data}
-            aggregates={aggregates}
-            filter={filter}
-            onFilter={(next) => {
-              // The cursor belongs to the filter it was taken from: kept across a tab change it names a
-              // patient the new filter has never heard of, and the seam refuses it.
-              setFilter(next)
-              setCursor(null)
-            }}
-            onPage={setCursor}
-            onOpen={setOpened}
-            loading={roster.isFetching}
-            error={roster.isError ? roster.error : undefined}
-            onRetry={() => void roster.refetch()}
-          />
+          page={roster.data}
+          onPage={setCursor}
+          loading={roster.isFetching}
+          error={roster.isError ? roster.error : undefined}
+          onRetry={() => void roster.refetch()}
+        />
 
         <Schedule entries={schedule} />
       </main>

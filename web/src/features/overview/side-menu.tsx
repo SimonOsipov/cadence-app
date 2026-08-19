@@ -41,10 +41,10 @@ export function SideMenu({ current, unread }: { current: string; unread: number 
           const here = destination.id === current
 
           // A span and not a link for anything that is not this screen. The Messages screen is another
-          // block's, there is no router, and an <a href> here reloaded the page and served the Overview
-          // back with «Обзор» marked current — the one control that promised what it could not do,
-          // while the comparison callout justifies removing five others on exactly that ground. The
-          // criterion mandates the item, so it is recorded rather than removed.
+          // block's and does not exist — the router step 6 added has no route to give it — and a link
+          // to nowhere is the one control that promises what it cannot do, while the comparison
+          // callout justifies removing five others on exactly that ground. The criterion mandates the
+          // item, so it is recorded rather than removed.
           const Tag = here ? 'a' : 'span'
 
           return (

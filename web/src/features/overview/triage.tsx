@@ -12,7 +12,7 @@ import { FlagPill, GoalBar, SectionHead, Spark } from './patient-bits'
 export function Triage({ patients, onOpen }: { patients: readonly Patient[]; onOpen: (patient: Patient) => void }) {
   return (
     <section style={{ marginBottom: 40 }} aria-label="Требуют внимания">
-      <SectionHead eyebrow="Триаж" title="Требуют внимания" />
+      <SectionHead eyebrow="Триаж" title="Требуют внимания" demo />
 
       {patients.length === 0 ? (
         <p style={{ fontFamily: tokens.fontBody, fontSize: 14, color: tokens.ink500 }}>
