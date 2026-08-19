@@ -198,7 +198,8 @@ func (f *fakeGoTrue) user(w http.ResponseWriter, method, id, body string) {
 		writeFakeUser(w, http.StatusOK, user)
 	case http.MethodPut:
 		var payload struct {
-			Password string `json:"password"`
+			Password     string `json:"password"`
+			EmailConfirm bool   `json:"email_confirm"`
 		}
 		if err := json.Unmarshal([]byte(body), &payload); err != nil {
 			http.Error(w, `{"msg":"bad request"}`, http.StatusBadRequest)
@@ -208,6 +209,12 @@ func (f *fakeGoTrue) user(w http.ResponseWriter, method, id, body string) {
 
 		f.mu.Lock()
 		user.Password = payload.Password
+		// As the provider does it, and the reason it has to be asked for: without
+		// this the account holds a password the grant refuses to accept.
+		if payload.EmailConfirm && user.ConfirmedAt == nil {
+			confirmed := time.Date(2026, 8, 19, 12, 30, 0, 0, time.UTC)
+			user.ConfirmedAt = &confirmed
+		}
 		f.mu.Unlock()
 
 		writeFakeUser(w, http.StatusOK, user)

@@ -53,6 +53,7 @@ const (
 	lookupPath      = "/users/lookup"
 	lookupBatchPath = "/users/lookup-batch"
 	deletePath      = "/users/delete"
+	passwordPath    = "/users/password"
 )
 
 // The struct tags below say these a second time because a tag cannot be a
@@ -197,6 +198,22 @@ func (c *Client) LookupBatch(ctx context.Context, ids []string) ([]identity.Acco
 	}
 
 	return accounts, nil
+}
+
+// SetPassword gives an account a password, which is how a seeded person signs in
+// without a mailbox to receive the invitation.
+//
+// The component mounts this outside production only. A production deployment
+// therefore answers 404, and that refusal — not this client — is what stands
+// between the operation and the clinic's real accounts.
+func (c *Client) SetPassword(ctx context.Context, id, password string) error {
+	body := map[string]string{"id": id, "password": password}
+
+	if err := c.call(ctx, passwordPath, body, nil); err != nil {
+		return fmt.Errorf("setting a password: %w", err)
+	}
+
+	return nil
 }
 
 // Delete removes an account, stating the proof that removing it is safe. Both

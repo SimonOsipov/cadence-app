@@ -428,3 +428,32 @@ func TestAWholePageFitsInOneLookup(t *testing.T) {
 			identity.MaxPageSize, MaxLookupBatch)
 	}
 }
+
+// Whether the operation exists at all is the component's decision — outside
+// production only — and from here it is one more call.
+func TestSettingAPasswordIsOneCallToTheComponent(t *testing.T) {
+	client, record := fakeProvisioner(t, http.StatusNoContent, "")
+
+	if err := client.SetPassword(context.Background(), "3f2a", "a-seeded-password-nobody-uses"); err != nil {
+		t.Fatalf("setting a password: %v", err)
+	}
+
+	if record.url.Path != passwordPath {
+		t.Errorf("the component was asked at %q, want %q", record.url.Path, passwordPath)
+	}
+	if !strings.Contains(record.body, "a-seeded-password-nobody-uses") {
+		t.Errorf("the password did not travel: %s", record.body)
+	}
+}
+
+// A refusal is not a password that was set. The seed writes rows against these
+// accounts afterwards, and an account nobody can sign into is a seeded clinic
+// nobody can open.
+func TestARefusedPasswordIsAnError(t *testing.T) {
+	client, _ := fakeProvisioner(t, http.StatusNotFound, `{"error":"not found"}`)
+
+	err := client.SetPassword(context.Background(), "3f2a", "a-seeded-password-nobody-uses")
+	if !errors.Is(err, ErrRefused) {
+		t.Errorf("a refused password answered %v, want ErrRefused", err)
+	}
+}

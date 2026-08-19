@@ -540,3 +540,26 @@ func TestAProviderFailureIsNotReportedAsSuccess(t *testing.T) {
 		t.Errorf("the provider's message reached the caller: %s", rec.Body)
 	}
 }
+
+// Where the component is held to asking for the confirmation. Why it has to is
+// measured against the pinned image, in
+// TestASeededAccountCanSignInWithThePasswordItWasGiven.
+func TestSettingAPasswordConfirmsTheAddressToo(t *testing.T) {
+	const id = "66666666-0000-4000-8000-000000000001"
+
+	fake := startFakeGoTrue(t)
+	invited := fake.withUser(id, "seeded.person@clinic.example")
+	invited.ConfirmedAt = nil
+
+	srv := testServer(t, development, fake)
+
+	rec := call(t, srv, http.MethodPost, "/users/password",
+		`{"id":"`+id+`","password":"a-seeded-password-nobody-uses"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("setting the password answered %d: %s", rec.Code, rec.Body)
+	}
+
+	if invited.ConfirmedAt == nil {
+		t.Error("the account holds a password and an unconfirmed address, which signs nobody in")
+	}
+}

@@ -171,8 +171,13 @@ func (c *gotrueClient) deleteAccount(ctx context.Context, id string) error {
 	return nil
 }
 
+// The confirmation travels with the password because one without the other signs
+// nobody in: an invited account is refused the grant until its address is
+// confirmed. Measured — see TestASeededAccountCanSignInWithThePasswordItWasGiven.
 func (c *gotrueClient) setPassword(ctx context.Context, id, password string) error {
-	err := c.call(ctx, http.MethodPut, "/admin/users/"+id, nil, map[string]string{"password": password}, nil)
+	body := map[string]any{"password": password, "email_confirm": true}
+
+	err := c.call(ctx, http.MethodPut, "/admin/users/"+id, nil, body, nil)
 	if err != nil {
 		return fmt.Errorf("setting a password: %w", err)
 	}

@@ -316,6 +316,41 @@ command. Марина Волкова, a care team of three, the roster patients.
 production is covered by a test.
 todoist: "6h9MFx8V9c6w2prq"
 
+> [!decision] 2026-08-19 — the question step 3 left here is answered by the
+> component. Measured on the pinned image: a password set through the dev
+> operation left the account unable to sign in at all, `400
+> email_not_confirmed`, so "without a password the seeded doctor cannot sign in"
+> was true and setting one did not make it false. The operation now confirms the
+> address in the same call. It is mounted outside production only, and that is
+> exactly what the exemption is for — the same call against a real clinic would
+> confirm an address whose owner has not been near it.
+
+> [!deviation] 2026-08-19
+> Spec said: the seed sets the passwords of the accounts it creates. Actually
+> done: staff always, patients only where the roster is meant to show them as
+> having arrived — three of the twenty-five, plus the persona. Why: setting a
+> password confirms the address, and a confirmed account is one the registry
+> draws as **accepted**. Giving every seeded patient one would leave a roster
+> with a single state on it, and the dashboard the seed exists to fill would show
+> nothing of what step 3 built. The third state, expired, cannot be seeded at
+> all: it is measured from the moment the provider recorded the invitation, and
+> moving that means writing to the provider's own table.
+
+> [!deviation] 2026-08-19
+> Spec said: nothing about who the seed creates people as. Actually done: it
+> requires an administrator to already exist and names `bootstrap-admin` when
+> there is none. Why: staff are created by an administrator, migration 000006
+> refuses `role='admin'` from the service path, and the first administrator is
+> written under the migration role by that command. Writing those two statements
+> here would be a second implementation of the one thing that is deliberately
+> a command of its own.
+
+> [!question] `make seed` cannot be run end to end on a developer machine yet:
+> the seed reaches the provisioner over HTTP and `docker-compose.yml` has no
+> such service — the same gap `dev-up` already prints a line about. Until it
+> does, the command is run against a provisioner started by hand. Blocked by the
+> same deployment work as SKL-01/06.
+
 ### step-5: TS client generation and the drift gate
 
 The client from the committed `openapi.json`, the generated output committed, the

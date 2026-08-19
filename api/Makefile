@@ -74,6 +74,15 @@ migrate-down:
 migrate-new:
 	go run ./cmd/migrate new "$(NAME)"
 
+# Fills a development clinic with the people the screens were designed around.
+# Needs the two request-path roles, a reachable provisioner and SEED_PASSWORD;
+# the command refuses to run when SEED_ENVIRONMENT says production.
+#
+# `dev-up` does not bring a provisioner up — this compose file has no such
+# service yet — so this target is run against one started by hand until it does.
+seed:
+	go run ./cmd/seed
+
 # Local Postgres for development. Tests bring their own via testcontainers.
 docker-up:
 	docker compose up -d

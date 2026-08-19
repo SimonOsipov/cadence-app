@@ -125,21 +125,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	databaseURL := getEnv("DATABASE_URL", "")
-	if databaseURL == "" {
-		return nil, errors.New("DATABASE_URL is required")
-	}
-
-	serviceURL := getEnv("DATABASE_SERVICE_URL", "")
-	if serviceURL == "" {
-		return nil, errors.New("DATABASE_SERVICE_URL is required")
-	}
-
-	if serviceURL == databaseURL {
-		return nil, errors.New(
-			"DATABASE_SERVICE_URL and DATABASE_URL are the same connection string, " +
-				"so the request path and the service path are one privilege domain",
-		)
+	database, err := loadDatabase()
+	if err != nil {
+		return nil, err
 	}
 
 	allowedOrigins, err := originsEnv("CORS_ALLOWED_ORIGINS", []string{"http://localhost:5173"})
@@ -164,16 +152,40 @@ func Load() (*Config, error) {
 			WriteTimeout: writeTimeout,
 			IdleTimeout:  idleTimeout,
 		},
-		Database: DatabaseConfig{
-			URL:        databaseURL,
-			ServiceURL: serviceURL,
-		},
+		Database: *database,
 		CORS: CORSConfig{
 			AllowedOrigins: allowedOrigins,
 		},
 		Auth:        *auth,
 		Provisioner: *provisioner,
 	}, nil
+}
+
+// loadDatabase reads the two roles the process writes as.
+//
+// They are required to differ: pgx falls through to libpq's defaults on an empty
+// string, and one connection string for both would make the request path and the
+// service path one privilege domain — green tests, and a different one in
+// production.
+func loadDatabase() (*DatabaseConfig, error) {
+	databaseURL := getEnv("DATABASE_URL", "")
+	if databaseURL == "" {
+		return nil, errors.New("DATABASE_URL is required")
+	}
+
+	serviceURL := getEnv("DATABASE_SERVICE_URL", "")
+	if serviceURL == "" {
+		return nil, errors.New("DATABASE_SERVICE_URL is required")
+	}
+
+	if serviceURL == databaseURL {
+		return nil, errors.New(
+			"DATABASE_SERVICE_URL and DATABASE_URL are the same connection string, " +
+				"so the request path and the service path are one privilege domain",
+		)
+	}
+
+	return &DatabaseConfig{URL: databaseURL, ServiceURL: serviceURL}, nil
 }
 
 // loadProvisioner reads where the provisioner component listens and the secret
