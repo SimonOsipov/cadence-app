@@ -183,14 +183,22 @@ func requestLogger(logger *slog.Logger) func(next http.Handler) http.Handler {
 
 			next.ServeHTTP(ww, r)
 
-			logger.Info(
-				"request",
+			attrs := []any{
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),
 				"duration", time.Since(start).String(),
 				"request_id", chimw.GetReqID(r.Context()),
-			)
+			}
+
+			// An error rate is read off this line, and a status written to a
+			// socket the caller had already closed inflates it. Marked rather
+			// than restated as 499: this line says what was actually written.
+			if errors.Is(r.Context().Err(), context.Canceled) {
+				attrs = append(attrs, "caller_gone", true)
+			}
+
+			logger.Info("request", attrs...)
 		})
 	}
 }
