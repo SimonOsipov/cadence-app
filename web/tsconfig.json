@@ -22,6 +22,8 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "scripts", "vite.config.ts"],
+  // tests/ is the Playwright spec and its teardown — typed and linted here, run by neither Vitest nor
+  // the gate. See playwright.config.ts for why it is a command a person runs.
+  "include": ["src", "scripts", "tests", "vite.config.ts", "playwright.config.ts"],
   "exclude": ["prototype", "dist", "node_modules"]
 }

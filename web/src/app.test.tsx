@@ -131,3 +131,48 @@ describe('signing out and coming back in', () => {
     expect(await screen.findByRole('heading', { name: 'Задайте пароль' })).toBeInTheDocument()
   })
 })
+
+// The second thing the smoke test found, and only the router could: the form that was about to say
+// why was replaced before it could. See AuthProvider.signIn for what changed.
+describe('a patient at the door', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_URL', API)
+    vi.stubEnv('VITE_AUTH_URL', PROVIDER)
+    sessionStorage.clear()
+    window.history.pushState({}, '', '/')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('is told why, on the form they filled in', async () => {
+    const user = userEvent.setup()
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify(
+              String(url).includes('/token')
+                ? { access_token: 'a', refresh_token: 'r', expires_at: 1 }
+                : { sub: '3f2a', role: 'patient', expires_at: '2026-08-20T12:00:00Z' },
+            ),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        ),
+      ),
+    )
+
+    render(<App />)
+
+    await user.type(await screen.findByLabelText('Почта'), 'marina@clinic.example')
+    await user.type(screen.getByLabelText('Пароль'), 'a-seeded-password')
+    await user.click(screen.getByRole('button', { name: 'Войти' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('для сотрудников клиники')
+    expect(readSession()).toBeNull()
+  })
+})

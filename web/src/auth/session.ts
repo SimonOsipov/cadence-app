@@ -145,6 +145,10 @@ export type HeldSession = {
   /** The access token to present, or the empty string once there is no session. */
   token(): string
 
+  /** Takes a session the provider has just minted. Everything that reads a token reads it here, so a
+   * session stored anywhere else is a session nothing presents. */
+  signedIn(session: Session): void
+
   /** A fresh access token. Concurrent callers share one call to the provider. */
   refresh(): Promise<string>
 
@@ -206,6 +210,8 @@ export function holdSession(options: ProviderOptions, initial: Session | null): 
 
       return refreshing
     },
+
+    signedIn: (session) => settle(session),
 
     signOut: () => settle(null),
 

@@ -16,6 +16,8 @@ const PROVIDER = 'https://auth.example'
 type Answer = { status?: number; body?: unknown }
 
 /** A stand-in for both the provider and the API, answering by the path it is asked for. */
+const tokensPresented: string[] = []
+
 function serving(answers: Record<string, Answer | Answer[]>): { fetcher: typeof fetch; asked: string[] } {
   const asked: string[] = []
   const served: Record<string, number> = {}
@@ -23,6 +25,7 @@ function serving(answers: Record<string, Answer | Answer[]>): { fetcher: typeof 
   const fetcher = (url: string, init?: RequestInit) => {
     const path = String(url)
     asked.push(`${init?.method ?? 'GET'} ${path}`)
+    tokensPresented.push(new Headers(init?.headers).get('authorization') ?? '')
 
     const match = Object.keys(answers).find((key) => path.includes(key))
     if (match === undefined) throw new Error(`nothing answers ${path}`)
@@ -219,5 +222,44 @@ describe('signing out', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Выйти' }))
 
     expect(client.getQueryData(['roster'])).toBeUndefined()
+  })
+})
+
+// The bug the smoke test found and 365 tests did not: signing in stored the session and told React
+// about it, and the holder — the one thing every request reads its token from — never heard. The
+// dashboard signed in and then answered 401 to everything, on every screen.
+describe('what the session is worth after signing in', () => {
+  it('is on every request the API client makes next', async () => {
+    const user = userEvent.setup()
+    const { fetcher, asked } = serving({
+      '/token': { body: { access_token: 'the-minted-token', refresh_token: 'r', expires_at: 1 } },
+      '/v1/me': { body: { sub: '3f2a', role: 'doctor', expires_at: '2026-08-20T12:00:00Z', full_name: 'Ксения' } },
+      '/v1/dashboard/overview': { body: { patients: [] } },
+    })
+
+    function AsksTheApi() {
+      const auth = useAuth()
+
+      return (
+        <button type="button" onClick={() => void auth.api.roster({})}>
+          Прочитать реестр
+        </button>
+      )
+    }
+
+    showing(
+      <>
+        <SignInPage />
+        <AsksTheApi />
+      </>,
+      fetcher,
+    )
+
+    await signInAs(user)
+    await waitFor(() => expect(asked.some((call) => call.includes('/v1/me'))).toBe(true))
+
+    await user.click(screen.getByRole('button', { name: 'Прочитать реестр' }))
+
+    await waitFor(() => expect(tokensPresented).toContain('Bearer the-minted-token'))
   })
 })

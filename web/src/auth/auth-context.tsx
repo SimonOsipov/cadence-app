@@ -7,7 +7,6 @@ import {
   holdSession,
   readSession,
   signIn as signInWithProvider,
-  storeSession,
   type Credentials,
   type HeldSession,
   type Session,
@@ -80,27 +79,25 @@ export function AuthProvider({
     async (credentials: Credentials) => {
       const minted = await signInWithProvider({ providerUrl, fetcher }, credentials)
 
-      // Stored before the role is known, because reading the role is a request this session has to
-      // authenticate: the refusal below takes it away again.
-      storeSession(minted)
-      setSession(minted)
-
-      const who = await apiClient({ baseUrl: apiUrl, session: staticAccess(minted), fetcher }).me()
+      // Asked with the token in hand and not through the holder, so that nothing outside this call
+      // has a session yet: the screens route on it, and a patient held one for as long as it took to
+      // learn they are a patient — long enough for the router to replace the form that was about to
+      // tell them so.
+      const who = await apiClient({ baseUrl: apiUrl, session: justMinted(minted), fetcher }).me()
 
       if (who.role === '') {
-        signOut()
-
         throw new Error(NOT_IN_THE_CLINIC_YET)
       }
       if (!STAFF.includes(who.role)) {
-        signOut()
-
         throw new Error(NOT_FOR_PATIENTS)
       }
 
+      // Handed to the holder and not merely stored: everything that presents a token reads it from
+      // there, so a session kept anywhere else is a session no request carries.
+      holder.signedIn(minted)
       setIdentity(who)
     },
-    [apiUrl, providerUrl, fetcher, signOut],
+    [apiUrl, providerUrl, fetcher, holder],
   )
 
   const value = useMemo<Auth>(
@@ -138,8 +135,13 @@ export function useAuth(): Auth {
   return auth
 }
 
-/** The just-minted session, for the one call made before the holder is asked anything. */
-function staticAccess(session: Session) {
+/**
+ * The session a moment old, for the one call made before anybody else has it.
+ *
+ * It does not refresh: a token minted seconds ago that the API refuses is not a token that has run
+ * out, and asking the provider for another would hide whatever actually refused it.
+ */
+function justMinted(session: Session) {
   return {
     token: () => session.accessToken,
     refresh: () => Promise.reject(new Error('a session minted a moment ago is not refreshed')),

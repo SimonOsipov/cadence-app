@@ -267,3 +267,7 @@ web/.vite/
 
 # Playwright MCP writes screenshots and page snapshots here during a visual comparison.
 .playwright-mcp/
+
+# Playwright's own output: traces and screenshots of a run somebody did on their machine.
+web/test-results/
+web/playwright-report/

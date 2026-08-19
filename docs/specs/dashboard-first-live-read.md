@@ -518,6 +518,41 @@ SKL-01/06 the smoke test runs against the local harness — and that is written
 down, not implied.
 todoist: "6h9MFxg2wC44vR7q"
 
+> [!decision] 2026-08-20 — the cleanup question, answered: **the database**, not
+> the provisioner. Deleting an account there is conditioned on the absence of a
+> profile, and that condition is what stands between «reuse an address a
+> rolled-back transaction burned» and «delete any account»; a patient the smoke
+> test creates has a profile. The alternative was an exception to that condition
+> for a test environment, which is a production surface changed for a test. The
+> smoke test runs against a local harness whose database it already owns, and the
+> teardown deletes from both schemas by the `e2e+` prefix — measured: after a run,
+> nothing matching it is left in `app.invites`, `app.profiles` or `auth.users`,
+> and the seeded clinic's 26 patients are untouched.
+
+> [!deviation] 2026-08-20
+> Spec said: the smoke test runs against the local harness while the deployment
+> steps are blocked, and that is written down rather than implied. Actually done:
+> written down in three places that a reader reaches — the Playwright config, the
+> harness script and this note — and **no CI job**. What CI would need is the
+> deployment SKL-01 and SKL-06 hold; a job that can only be red says nothing.
+> `make smoke` brings up Postgres, GoTrue, the provisioner, the API, the clinic
+> and the dashboard's dev server, and runs the three specs against them.
+
+> [!deviation] 2026-08-20
+> Spec said: nothing about where an invitation lands locally. Actually done:
+> `GOTRUE_SITE_URL` now names the dashboard's acceptance route and the allow list
+> its origin — the compose file's own comment asked whoever added a dev server to
+> replace those lines, and step 6 added one.
+
+> [!deviation] 2026-08-20
+> The smoke test found two defects on its first run, both invisible to 365 unit
+> tests. The session minted at sign-in never reached the holder every request
+> reads its token from, so the dashboard signed in and then answered 401 to
+> everything. And a patient's refusal was never seen: their credentials are
+> valid, the session existed for as long as it took to ask who they were, and the
+> router — which routes on exactly that — replaced the form that was about to tell
+> them. Both are fixed, and both now have a test that fails without the fix.
+
 ## Открытые вопросы
 
 > [!question] Doctor session storage: in memory with a silent refresh, or
