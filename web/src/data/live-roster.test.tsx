@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
 
 import type { ApiClient } from './api'
+import { stubApi } from './api.stub'
 import { DataProvider, defaultClient, useLiveRoster } from './queries'
 
 function reading(api: ApiClient) {
@@ -13,15 +14,12 @@ function reading(api: ApiClient) {
   )
 }
 
-const noIdentity = () => Promise.reject(new Error('these tests do not ask who is signed in'))
-
-const onePage: ApiClient = {
-  me: noIdentity,
+const onePage: ApiClient = stubApi({
   roster: () =>
     Promise.resolve({
       patients: [{ user_id: '3f2a', full_name: 'Марина Волкова', age: 38, invite_state: 'accepted' }],
     }),
-}
+})
 
 describe('the live roster', () => {
   it('answers the page the API gave it', async () => {
@@ -33,14 +31,13 @@ describe('the live roster', () => {
 
   it('asks again for a different page rather than answering the first from cache', async () => {
     const asked: (string | undefined)[] = []
-    const paging: ApiClient = {
-      me: noIdentity,
+    const paging: ApiClient = stubApi({
       roster: ({ cursor }) => {
         asked.push(cursor)
 
         return Promise.resolve({ patients: [] })
       },
-    }
+    })
 
     const { rerender } = renderHook((cursor?: string) => useLiveRoster(cursor === undefined ? {} : { cursor }), {
       wrapper: reading(paging),
@@ -55,10 +52,9 @@ describe('the live roster', () => {
 
   // The refusal reaches the screen: an error state nobody can produce is an error state nobody drew.
   it('reports the refusal the API wrote', async () => {
-    const refusing: ApiClient = {
-      me: noIdentity,
+    const refusing: ApiClient = stubApi({
       roster: () => Promise.reject(new Error('Страница не найдена. Откройте реестр заново.')),
-    }
+    })
 
     const { result } = renderHook(() => useLiveRoster(), { wrapper: reading(refusing) })
 

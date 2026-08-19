@@ -1,7 +1,10 @@
 import { useState } from 'react'
 
 import type { Patient } from '../../data/overview'
-import { useLiveRoster, useOverview } from '../../data/queries'
+import { useApi, useLiveRoster, useOverview } from '../../data/queries'
+import type { Me } from '../../api'
+import { useQueryClient } from '@tanstack/react-query'
+import { NewPatientForm } from '../patients/new-patient-form'
 import { tokens } from '../../tokens/tokens'
 import { PatientCard } from './patient-card'
 import { Roster } from './roster'
@@ -18,18 +21,21 @@ import { Triage } from './triage'
  * states one component at a time, later, under pressure — the move to `/v1` is exactly when.
  */
 /**
- * greetedAs is the signed-in person's own name, passed in rather than read from the fixture: the
- * fixture's doctor is whoever the design drew, and the person in front of the screen is whoever
- * signed in. Left empty while the API has not answered yet — a greeting with a stranger's name in it
- * for one frame is worse than a greeting with none.
+ * me is the signed-in person as the API describes them, passed in rather than read from the fixture:
+ * the fixture's doctor is whoever the design drew, and the person in front of the screen is whoever
+ * signed in. It is also who the new-patient form puts on the care team.
  */
 export function OverviewPage({
-  greetedAs = '',
+  me = null,
   onSignOut,
 }: {
-  greetedAs?: string
+  me?: Me | null
   onSignOut?: (() => void) | undefined
 }) {
+  const greetedAs = me?.full_name ?? ''
+  const api = useApi()
+  const cache = useQueryClient()
+  const [creating, setCreating] = useState(false)
   const [cursor, setCursor] = useState<string | null>(null)
   const [opened, setOpened] = useState<Patient | null>(null)
 
@@ -51,9 +57,9 @@ export function OverviewPage({
 
       <main style={{ flex: 1, minWidth: 0, padding: '34px 40px 60px', maxWidth: 1320 }}>
         {/* The prototype opens with a date, a greeting, a search field and a «Новый пациент» button.
-            The greeting is here; the other two are not, and for the reason the side menu drops four
-            destinations — searching the roster and creating a patient are things this MVP cannot do
-            yet, and a control that does nothing is the dead control invariant 4 forbids. */}
+            Three of the four are here. Search is not: the roster is a page the server chose, and a
+            field that filters the eight rows in front of you is a search that lies about what it
+            searched. */}
         <header style={{ marginBottom: 28, position: 'relative' }}>
           <h1
             style={{
@@ -72,6 +78,14 @@ export function OverviewPage({
               </>
             )}
           </h1>
+          <div style={{ position: 'absolute', top: 34, right: 40, display: 'flex', gap: 10 }}>
+            {me !== null && !creating && (
+              <button type="button" onClick={() => setCreating(true)} style={newPatientButton}>
+                Новый пациент
+              </button>
+            )}
+          </div>
+
           {onSignOut !== undefined && (
             <button
               type="button"
@@ -80,6 +94,7 @@ export function OverviewPage({
                 position: 'absolute',
                 top: 34,
                 right: 40,
+                transform: me !== null && !creating ? 'translateX(-150px)' : 'none',
                 padding: '8px 14px',
                 borderRadius: 8,
                 border: `1px solid ${tokens.ink300}`,
@@ -93,6 +108,20 @@ export function OverviewPage({
             </button>
           )}
         </header>
+
+        {creating && me !== null && (
+          <NewPatientForm
+            api={api}
+            me={me}
+            onCreated={() => {
+              // The roster is a page the server chose, and the new patient may or may not be on the
+              // one in front of this doctor — so it is asked again rather than added to by hand.
+              void cache.invalidateQueries({ queryKey: ['live-roster'] })
+              setCreating(false)
+            }}
+            onClose={() => setCreating(false)}
+          />
+        )}
 
         <StatsStrip aggregates={aggregates} />
         <Triage patients={triage} onOpen={setOpened} />
@@ -111,6 +140,17 @@ export function OverviewPage({
       {opened !== null && <PatientCard patient={opened} onClose={() => setOpened(null)} />}
     </div>
   )
+}
+
+const newPatientButton = {
+  padding: '8px 14px',
+  borderRadius: 8,
+  border: 'none',
+  background: tokens.forest700,
+  color: tokens.paper,
+  font: 'inherit',
+  fontSize: 13,
+  cursor: 'pointer',
 }
 
 function Waiting() {

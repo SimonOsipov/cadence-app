@@ -300,6 +300,53 @@
           "care_role"
         ],
         "type": "object"
+      },
+      "StaffMember": {
+        "additionalProperties": false,
+        "properties": {
+          "full_name": {
+            "description": "The name as the clinic wrote it.",
+            "type": "string"
+          },
+          "role": {
+            "description": "doctor or admin.",
+            "type": "string"
+          },
+          "title_ru": {
+            "description": "What a patient sees beside the name. Absent when the clinic stated none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "description": "The identifier a care-team assignment names.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "full_name",
+          "role",
+          "title_ru"
+        ],
+        "type": "object"
+      },
+      "StaffPage": {
+        "additionalProperties": false,
+        "properties": {
+          "staff": {
+            "description": "Everyone who may be put on a care team, ordered by name.",
+            "items": {
+              "$ref": "#/components/schemas/StaffMember"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "staff"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -606,6 +653,66 @@
       }
     },
     "/v1/providers": {
+      "get": {
+        "description": "Everyone a care team may name: the clinic's doctors and administrators, by name and by the title a patient reads beside it. Staff only — a patient is answered their own care team by the screen that draws it, not this list. The read is authorised here rather than by a policy: no policy lets a doctor read a colleague's profile, which is why the new-patient form had nobody to offer. Answers 403 to a patient and 503 when the database could not serve the request.",
+        "operationId": "list-providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "The clinic's staff",
+        "tags": [
+          "identity"
+        ]
+      },
       "post": {
         "description": "Creates the doctor and sends the invitation as one action, the way a patient is created. Administrators only, and doctors only: the clinic's first administrator comes into being through a one-off command under the migration role, and the database refuses any other role from this path. Answers 403 to a caller who is not an administrator, 409 when the address already belongs to somebody this clinic knows or to an account it did not invite, 422 when the address folds to nothing, and 503 when the provisioner is unreachable.",
         "operationId": "create-provider",

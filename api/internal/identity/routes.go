@@ -16,6 +16,7 @@ type Service struct {
 	sessions   *Sessions
 	roster     *Roster
 	profiles   ProfileReader
+	directory  *Directory
 }
 
 // Deps is what this context's operations answer from. A nil field is the document generator's
@@ -25,6 +26,7 @@ type Deps struct {
 	Sessions   *Sessions
 	Roster     *Roster
 	Profiles   ProfileReader
+	Directory  *Directory
 }
 
 func NewService(deps Deps) *Service {
@@ -33,6 +35,7 @@ func NewService(deps Deps) *Service {
 		sessions:   deps.Sessions,
 		roster:     deps.Roster,
 		profiles:   deps.Profiles,
+		directory:  deps.Directory,
 	}
 }
 
@@ -99,6 +102,25 @@ func (s *Service) Register(api huma.API) {
 			http.StatusServiceUnavailable,
 		},
 	}, s.overview)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-providers",
+		Method:      http.MethodGet,
+		Path:        "/v1/providers",
+		Summary:     "The clinic's staff",
+		Description: "Everyone a care team may name: the clinic's doctors and administrators, by name and " +
+			"by the title a patient reads beside it. Staff only — a patient is answered their own care " +
+			"team by the screen that draws it, not this list. " +
+			"The read is authorised here rather than by a policy: no policy lets a doctor read a " +
+			"colleague's profile, which is why the new-patient form had nobody to offer. " +
+			"Answers 403 to a patient and 503 when the database could not serve the request.",
+		Tags: []string{"identity"},
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusServiceUnavailable,
+		},
+	}, s.staff)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-patient",

@@ -476,6 +476,40 @@ assigns themselves and adds a second specialist; a repeated address shows a clea
 message.
 todoist: "6h9MFxVvCx68CxWH"
 
+> [!deviation] 2026-08-20
+> Spec said: the form carries assignments with a care-team role, and the test is
+> a doctor assigning themselves and adding a second specialist. Actually done:
+> that, plus `GET /v1/providers` — the API had no way to answer who works at the
+> clinic, and measured, no policy lets a doctor read a colleague's profile
+> (`profiles_own_select` is their own row, `profiles_of_my_patients` their
+> patients). So the picker had nobody to offer. The route reads through the
+> service seam with the authorisation in Go, exactly as creating a person does,
+> rather than by widening the grant matrix — no migration, no policy change, and
+> the answer carries names and titles of staff only.
+
+> [!deviation] 2026-08-20
+> Spec said: nothing about an administrator filling the form in. Actually done:
+> they name the leading specialist instead of being put on the care team, and no
+> administrator is offered in either picker. Why, measured: `CreatePatient` reads
+> the assigned specialist's profile and refuses any role but `doctor` — an
+> administrator assigning themselves would be refused **after** the invitation
+> had gone out, which is the one failure the whole creation path is ordered to
+> prevent.
+
+> [!deviation] 2026-08-20
+> Spec said: the `409` and `503` refusals are in Russian. Actually done: the
+> client's refusal carries the status as well as the sentence, so the form can
+> choose its own words — and the 503 says what the API cannot: that the patient
+> was **not** created and the address is still free. Without the status the form
+> would have had only the API's own sentence, which is written for every caller
+> rather than for the person who just filled a form in.
+
+> [!question] The search field the prototype draws beside «Новый пациент» is
+> still absent, and now for a reason worth recording rather than «the MVP cannot
+> do it»: the roster is a page the server chose, so a field filtering the rows on
+> screen would be a search that lies about what it searched. It needs a query
+> parameter on the endpoint — M6's, with the other five sections.
+
 ### step-9: A smoke test to the critical path, with cleanup
 
 Playwright: sign in → roster → create → appears. `e2e+<runid>@` addresses, cleanup

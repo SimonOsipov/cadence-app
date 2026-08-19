@@ -13,6 +13,7 @@ import type { Transport } from '../../data/transport'
 import { fixtureTransport } from '../../data/transport'
 import type { RosterPage, RosterRow } from '../../api'
 import type { ApiClient } from '../../data/api'
+import { stubApi } from '../../data/api.stub'
 import { OverviewPage } from './overview-page'
 import { PatientCard } from './patient-card'
 
@@ -25,10 +26,7 @@ const LIVE_PATIENTS: RosterRow[] = [
 ]
 
 function liveRoster(page: Partial<RosterPage> = {}): ApiClient {
-  return {
-    me: () => Promise.reject(new Error('this screen is handed its identity')),
-    roster: () => Promise.resolve({ patients: LIVE_PATIENTS, ...page }),
-  }
+  return stubApi({ roster: () => Promise.resolve({ patients: LIVE_PATIENTS, ...page }) })
 }
 
 function show(transport: Transport = fixtureTransport(), api: ApiClient = liveRoster()) {
@@ -144,8 +142,7 @@ describe('the roster', () => {
     const user = userEvent.setup()
     const asked: (string | undefined)[] = []
 
-    show(fixtureTransport(), {
-      me: () => Promise.reject(new Error('this screen is handed its identity')),
+    show(fixtureTransport(), stubApi({
       roster: ({ cursor }) => {
         asked.push(cursor)
 
@@ -155,7 +152,7 @@ describe('the roster', () => {
             : { patients: [{ user_id: 'c', full_name: 'Вера Зорина', age: 45, invite_state: 'unknown' as const }] },
         )
       },
-    })
+    }))
 
     const journal = within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
     await journal.findByText('Анна Петрова')
@@ -175,10 +172,7 @@ describe('the roster', () => {
 
   // The five fixture sections are not the roster's to take down: what failed is one request.
   it('keeps the rest of the screen when only the roster fails', async () => {
-    show(fixtureTransport(), {
-      me: () => Promise.reject(new Error('this screen is handed its identity')),
-      roster: () => Promise.reject(new Error('журнал недоступен')),
-    })
+    show(fixtureTransport(), stubApi({ roster: () => Promise.reject(new Error('журнал недоступен')) }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('журнал недоступен')
@@ -190,10 +184,7 @@ describe('the roster', () => {
   })
 
   it('shows its own line while the page is on its way', async () => {
-    show(fixtureTransport(), {
-      me: () => Promise.reject(new Error('this screen is handed its identity')),
-      roster: () => new Promise(() => undefined),
-    })
+    show(fixtureTransport(), stubApi({ roster: () => new Promise(() => undefined) }))
 
     expect(await screen.findByText('Загружаем журнал…')).toBeInTheDocument()
   })
@@ -353,5 +344,57 @@ describe('what is still a fixture', () => {
 
     const card = await screen.findByRole('complementary', { name: `Карточка: ${patient?.name ?? ''}` })
     expect(within(card).getByText(/Демо-данные/)).toBeInTheDocument()
+  })
+})
+
+// The button the prototype draws and this MVP could not honour until the endpoint existed.
+describe('taking a patient on', () => {
+  const ME = {
+    sub: 'the-doctor',
+    role: 'doctor',
+    expires_at: '2026-08-21T12:00:00Z',
+    full_name: 'Ксения Первеева',
+  }
+
+  it('is not offered to a screen that does not know who is signed in', async () => {
+    show()
+
+    await screen.findByRole('region', { name: 'Журнал протоколов' })
+    expect(screen.queryByRole('button', { name: 'Новый пациент' })).toBeNull()
+  })
+
+  it('opens the form, and asks the roster again once the patient exists', async () => {
+    const user = userEvent.setup()
+    let asked = 0
+
+    const api = stubApi({
+      roster: () => {
+        asked += 1
+
+        return Promise.resolve({ patients: LIVE_PATIENTS })
+      },
+      staff: () => Promise.resolve({ staff: [] }),
+      createPatient: () => Promise.resolve({ user_id: 'the-new-patient' }),
+    })
+
+    render(
+      <DataProvider transport={fixtureTransport()} api={api} client={defaultClient()}>
+        <OverviewPage me={ME} />
+      </DataProvider>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Новый пациент' }))
+
+    const form = within(await screen.findByRole('region', { name: 'Новый пациент' }))
+    await user.type(form.getByLabelText('Имя и фамилия'), 'Марина Волкова')
+    await user.type(form.getByLabelText('Почта'), 'marina@clinic.example')
+
+    const before = asked
+    await user.click(form.getByRole('button', { name: 'Создать и пригласить' }))
+
+    // The form closes and the roster is read again: the new patient is on a page the server chooses,
+    // and a row added by hand here would be this screen deciding where the server puts them.
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Новый пациент' })).toBeNull())
+    await waitFor(() => expect(asked).toBeGreaterThan(before))
   })
 })

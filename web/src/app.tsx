@@ -96,7 +96,7 @@ function DashboardRoute() {
 
   return (
     <DataProvider api={auth.api}>
-      <OverviewPage greetedAs={identity.data.full_name ?? ''} onSignOut={() => auth.signOut()} />
+      <OverviewPage me={identity.data} onSignOut={() => auth.signOut()} />
     </DataProvider>
   )
 }

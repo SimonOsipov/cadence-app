@@ -165,6 +165,32 @@ export type SpecialistBody = {
     provider_id: string;
 };
 
+export type StaffMember = {
+    /**
+     * The name as the clinic wrote it.
+     */
+    full_name: string;
+    /**
+     * doctor or admin.
+     */
+    role: string;
+    /**
+     * What a patient sees beside the name. Absent when the clinic stated none.
+     */
+    title_ru: string | null;
+    /**
+     * The identifier a care-team assignment names.
+     */
+    user_id: string;
+};
+
+export type StaffPage = {
+    /**
+     * Everyone who may be put on a care team, ordered by name.
+     */
+    staff: Array<StaffMember>;
+};
+
 export type DashboardOverviewData = {
     body?: never;
     path?: never;
@@ -321,6 +347,43 @@ export type CreatePatientResponses = {
 };
 
 export type CreatePatientResponse = CreatePatientResponses[keyof CreatePatientResponses];
+
+export type ListProvidersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/providers';
+};
+
+export type ListProvidersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ListProvidersError = ListProvidersErrors[keyof ListProvidersErrors];
+
+export type ListProvidersResponses = {
+    /**
+     * OK
+     */
+    200: StaffPage;
+};
+
+export type ListProvidersResponse = ListProvidersResponses[keyof ListProvidersResponses];
 
 export type CreateProviderData = {
     body: NewProviderBody;

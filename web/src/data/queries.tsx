@@ -78,12 +78,20 @@ export function useRoster(query: RosterQuery) {
   })
 }
 
-/** Reads the roster from the API rather than from the fixtures. */
-export function useLiveRoster(query: LiveRosterQuery = {}) {
+/** The API this screen reads from. Throws rather than answering nothing: a screen inside a provider
+ * with no API would otherwise draw a clinic with no patients in it. */
+export function useApi(): ApiClient {
   const api = useContext(ApiContext)
   if (api === null) {
     throw new Error('this screen is inside a DataProvider with no API, so there is nothing live to read')
   }
+
+  return api
+}
+
+/** Reads the roster from the API rather than from the fixtures. */
+export function useLiveRoster(query: LiveRosterQuery = {}) {
+  const api = useApi()
 
   return useQuery({
     // Both bounds in the key, for the reason useRoster states: a page is not the page before it, and

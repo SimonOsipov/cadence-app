@@ -187,3 +187,20 @@ describe('a token that has run out', () => {
     expect(calls.length).toBe(2)
   })
 })
+
+// The sentence is not always the whole of it: a form has a better one for «this address is already
+// somebody» than the API's, and it can only choose it by the status.
+describe('a refusal', () => {
+  it('carries the status it came with', async () => {
+    const { fetcher } = answering({ status: 409, title: 'Conflict', detail: 'Адрес занят.' }, 409)
+
+    await expect(client(fetcher).createPatient({ full_name: 'Марина', email: 'm@clinic.example', specialists: [] }))
+      .rejects.toMatchObject({ status: 409, message: 'Адрес занят.' })
+  })
+
+  it('carries it even when there was no document to read', async () => {
+    const { fetcher } = answering('<html>gateway</html>', 502)
+
+    await expect(client(fetcher).staff()).rejects.toMatchObject({ status: 502 })
+  })
+})

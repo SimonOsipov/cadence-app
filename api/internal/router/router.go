@@ -58,6 +58,8 @@ func contexts(opts Options) []boundedContext {
 	// Assigned through a variable of the interface type rather than straight into Deps: a nil
 	// *identity.Profiles put in an interface field is an interface that is not nil, and the handler's
 	// nil check would pass while every call dereferenced nothing.
+	directory := identity.NewDirectory(opts.ServicePool)
+
 	var profiles identity.ProfileReader
 	if reader := identity.NewProfiles(opts.Pool); reader != nil {
 		profiles = reader
@@ -72,6 +74,7 @@ func contexts(opts Options) []boundedContext {
 			Sessions:   sessions,
 			Roster:     roster,
 			Profiles:   profiles,
+			Directory:  directory,
 		}).Register},
 		{"inventory", inventory.Register},
 		{"journal", journal.Register},

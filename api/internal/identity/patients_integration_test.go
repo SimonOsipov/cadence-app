@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -594,5 +595,61 @@ func TestAProfileNamesNobodyElse(t *testing.T) {
 
 	if seen != "" {
 		t.Errorf("a doctor read %q off a colleague's profile", seen)
+	}
+}
+
+// The staff a care team may name, read the way the route reads it — through the service seam, since
+// no policy lets a doctor read a colleague's profile. What the read must not carry is anybody who is
+// not staff: a patient's name in a picker of specialists is a care team nobody could write.
+func TestTheStaffListNamesTheClinicsOwnAndNobodyElse(t *testing.T) {
+	servicePool, _ := stand(t)
+
+	if err := database.WithServiceJob(
+		t.Context(), servicePool, provisioningJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO app.profiles (user_id, role, full_name) VALUES ($1, 'doctor', 'Игорь Седов')
+			`, otherDoctorID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO app.provider_profiles (user_id, title_ru) VALUES ($1, 'Диетолог')
+			`, otherDoctorID); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.profiles (user_id, role, full_name) VALUES ($1, 'patient', 'Анна Петрова')
+			`, annaID)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("seeding the clinic: %v", err)
+	}
+
+	staff, err := identity.NewDirectory(servicePool).Staff(
+		auth.WithPrincipal(t.Context(), auth.Principal{Subject: doctorID, Role: "doctor"}),
+	)
+	if err != nil {
+		t.Fatalf("reading the staff: %v", err)
+	}
+
+	names := make([]string, 0, len(staff))
+	titles := map[string]string{}
+
+	for _, member := range staff {
+		names = append(names, member.FullName)
+		if member.TitleRU != nil {
+			titles[member.FullName] = *member.TitleRU
+		}
+	}
+
+	// The doctor stand() seeds, the administrator it seeds, and the colleague above — in Russian
+	// collation order, which is the roster's own ordering and the one a picker is read in.
+	if want := []string{"Игорь Седов", "Марина Крылова", "Пётр Аверин"}; !slices.Equal(names, want) {
+		t.Errorf("the staff list is %v, want %v", names, want)
+	}
+	if titles["Игорь Седов"] != "Диетолог" {
+		t.Errorf("the title beside the name is %q, want Диетолог", titles["Игорь Седов"])
 	}
 }
