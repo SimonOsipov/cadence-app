@@ -17,7 +17,19 @@ import { Triage } from './triage'
  * request, not the stats strip. A screen that draws only the happy path acquires its loading and error
  * states one component at a time, later, under pressure — the move to `/v1` is exactly when.
  */
-export function OverviewPage() {
+/**
+ * greetedAs is the signed-in person's own name, passed in rather than read from the fixture: the
+ * fixture's doctor is whoever the design drew, and the person in front of the screen is whoever
+ * signed in. Left empty while the API has not answered yet — a greeting with a stranger's name in it
+ * for one frame is worse than a greeting with none.
+ */
+export function OverviewPage({
+  greetedAs = '',
+  onSignOut,
+}: {
+  greetedAs?: string
+  onSignOut?: (() => void) | undefined
+}) {
   const [filter, setFilter] = useState<RosterFilter>('all')
   const [cursor, setCursor] = useState<string | null>(null)
   const [opened, setOpened] = useState<Patient | null>(null)
@@ -39,7 +51,7 @@ export function OverviewPage() {
             The greeting is here; the other two are not, and for the reason the side menu drops four
             destinations — searching the roster and creating a patient are things this MVP cannot do
             yet, and a control that does nothing is the dead control invariant 4 forbids. */}
-        <header style={{ marginBottom: 28 }}>
+        <header style={{ marginBottom: 28, position: 'relative' }}>
           <h1
             style={{
               fontFamily: tokens.fontDisplay,
@@ -49,9 +61,34 @@ export function OverviewPage() {
               fontWeight: 400,
             }}
           >
-            Здравствуйте,{' '}
-            <span style={{ fontStyle: 'italic' }}>{overview.data.doctor.name.split(' ')[0]}</span>
+            Здравствуйте
+            {greetedAs !== '' && (
+              <>
+                ,{' '}
+                <span style={{ fontStyle: 'italic' }}>{greetedAs.split(' ')[0]}</span>
+              </>
+            )}
           </h1>
+          {onSignOut !== undefined && (
+            <button
+              type="button"
+              onClick={onSignOut}
+              style={{
+                position: 'absolute',
+                top: 34,
+                right: 40,
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: `1px solid ${tokens.ink300}`,
+                background: 'transparent',
+                font: 'inherit',
+                color: tokens.ink600,
+                cursor: 'pointer',
+              }}
+            >
+              Выйти
+            </button>
+          )}
         </header>
 
         <StatsStrip aggregates={aggregates} />

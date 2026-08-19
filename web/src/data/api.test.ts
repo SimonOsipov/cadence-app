@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { apiClient, OVERVIEW_PATH } from './api'
+import { apiClient, OVERVIEW_PATH, type SessionAccess } from './api'
 
 type Contract = { paths: Record<string, Record<string, unknown> | undefined> }
 
@@ -31,8 +31,35 @@ function answering(body: unknown, status = 200): { fetcher: typeof fetch; calls:
   return { fetcher: fetcher as unknown as typeof fetch, calls }
 }
 
-function client(fetcher: typeof fetch) {
-  return apiClient({ baseUrl: 'https://api.example', token: 'a-session-token', fetcher })
+/** A session that never expires, for the calls that are not about expiry. */
+function staticSession(token = 'a-session-token'): SessionAccess {
+  return { token: () => token, refresh: () => Promise.reject(new Error('this session does not refresh')) }
+}
+
+/** Answers each call with the next of the given answers, so a retry can be told from a first try. */
+function answeringInTurn(...answers: { status: number; body: unknown }[]): { fetcher: typeof fetch; calls: Call[] } {
+  const calls: Call[] = []
+  let served = 0
+
+  const fetcher = (url: string, init?: RequestInit) => {
+    calls.push({ url, init })
+
+    const answer = answers[Math.min(served, answers.length - 1)]
+    served += 1
+
+    return Promise.resolve(
+      new Response(JSON.stringify(answer?.body), {
+        status: answer?.status ?? 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+  }
+
+  return { fetcher: fetcher as unknown as typeof fetch, calls }
+}
+
+function client(fetcher: typeof fetch, session: SessionAccess = staticSession()) {
+  return apiClient({ baseUrl: 'https://api.example', session, fetcher })
 }
 
 // The generated types carry every shape the contract has and no path: a route renamed under an
@@ -108,5 +135,55 @@ describe('the roster call', () => {
     const { fetcher } = answering('<html>gateway</html>', 502)
 
     await expect(client(fetcher).roster({})).rejects.toThrow(/502/)
+  })
+})
+
+// An access token runs out after an hour of a dashboard being open, and a doctor mid-page should not
+// be sent back to a sign-in form for it.
+describe('a token that has run out', () => {
+  it('is refreshed once and the request is sent again', async () => {
+    const { fetcher, calls } = answeringInTurn(
+      { status: 401, body: { status: 401, title: 'Unauthorized' } },
+      { status: 200, body: { patients: [] } },
+    )
+
+    let refreshed = 0
+    const session: SessionAccess = {
+      token: () => 'the-stale-token',
+      refresh: () => {
+        refreshed += 1
+
+        return Promise.resolve('the-fresh-token')
+      },
+    }
+
+    await client(fetcher, session).roster({})
+
+    expect(refreshed).toBe(1)
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe('Bearer the-stale-token')
+    expect(new Headers(calls[1]?.init?.headers).get('authorization')).toBe('Bearer the-fresh-token')
+  })
+
+  // Twice would be a loop: a token the API refuses twice is a session that has ended, and the screen
+  // has to say so rather than hold the person in a retry nobody can see.
+  it('is not refreshed a second time when the fresh one is refused too', async () => {
+    const { fetcher, calls } = answeringInTurn(
+      { status: 401, body: { status: 401 } },
+      { status: 401, body: { status: 401 } },
+    )
+
+    let refreshed = 0
+    const session: SessionAccess = {
+      token: () => 'the-stale-token',
+      refresh: () => {
+        refreshed += 1
+
+        return Promise.resolve('the-fresh-token')
+      },
+    }
+
+    await expect(client(fetcher, session).roster({})).rejects.toThrow(/401/)
+    expect(refreshed).toBe(1)
+    expect(calls.length).toBe(2)
   })
 })

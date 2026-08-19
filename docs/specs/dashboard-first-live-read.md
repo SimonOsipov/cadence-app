@@ -394,6 +394,43 @@ Tests: concurrent 401s produce one refresh; an invited doctor completes acceptan
 and signs in.
 todoist: "6h9MFxMqfmc82R8q"
 
+> [!decision] 2026-08-19 — **sessionStorage**, chosen by the user against the two
+> the open question named. It survives a reload, dies with the tab, and is not
+> shared with a second one. Both stores are readable by any script that reaches
+> the page, so what this buys is the window the session exists in, not secrecy.
+> Asserted where it is made: session.test.ts reads the key back out of
+> sessionStorage and finds nothing in localStorage.
+
+> [!decision] 2026-08-19 — `/v1/me` gains `full_name`, read from the caller's own
+> profile row. Measured first: no endpoint in the API answered a person their own
+> name, so «the doctor's own identity replaces the hardcoded header» could not be
+> satisfied without one. It costs the operation its "reads no database" property —
+> the role is still the token's, and only the name is read — and it answers 503
+> when the database will not. The alternative, greeting a Russian-speaking clinic
+> with the latin local part of an address, was declined by the user.
+
+> [!deviation] 2026-08-19
+> Spec said: nothing about where an invitation link lands. Actually done: the app
+> takes any landing carrying `type=invite` in the fragment to `/accept-invite`,
+> whatever path the provider was configured to send it to. Why: the provisioner's
+> invitation asks for no `redirect_to`, so GoTrue substitutes SITE_URL — measured
+> by TestTheAllowListDecidesWhereALinkLands — and a link landing on the dashboard
+> would ask the person to sign in with a password they have not set yet. A
+> deployment may still point SITE_URL at the acceptance route; this makes the
+> route reachable either way, with no new variable.
+
+> [!deviation] 2026-08-19
+> Spec said: nothing about what happens to the cache at sign-out. Actually done:
+> signing out clears React Query. Why: what it holds is the roster of the doctor
+> who just left — their patients' names — and the next person to sign in on the
+> same machine would be shown it until their own answer arrived.
+
+> [!deviation] 2026-08-19
+> The global standard names React Router v6; installed is v7. Why: v7's
+> declarative API is v6's, and the repository already pins Node for it — the web
+> gate's own comment says react-router refuses anything below 22.22, which is v7's
+> engines field.
+
 ### step-7: A live roster instead of fixtures
 
 The roster moves to the endpoint. Loading, empty, and error states are preserved.

@@ -35,6 +35,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "full_name": {
+            "description": "The caller's name as the clinic wrote it. Absent for an account the clinic holds no profile for.",
+            "type": "string"
+          },
           "role": {
             "description": "The product role the token asserts, from the cadence_role claim: patient, doctor or admin. Empty when the account has no profile yet, in which case no data endpoint will answer for it.",
             "type": "string"
@@ -424,7 +428,7 @@
     },
     "/v1/me": {
       "get": {
-        "description": "Returns the identity carried by the presented token. It reads no database: a role changed there takes effect when the token expires.",
+        "description": "Returns the identity the presented token carries, and the caller's own name. The role is the token's: changed in the database, it takes effect when the token expires. The name is read from the caller's own profile row, because nothing else in the API answers a person their own name — it is absent for an account the clinic holds no profile for. Answers 503 when the database could not serve the request.",
         "operationId": "get-me",
         "responses": {
           "200": {
@@ -437,7 +441,7 @@
             },
             "description": "OK"
           },
-          "default": {
+          "401": {
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -445,7 +449,27 @@
                 }
               }
             },
-            "description": "Error"
+            "description": "Unauthorized"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "The authenticated caller",

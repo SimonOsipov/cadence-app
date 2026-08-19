@@ -24,6 +24,10 @@ export type Me = {
      */
     expires_at: string;
     /**
+     * The caller's name as the clinic wrote it. Absent for an account the clinic holds no profile for.
+     */
+    full_name?: string;
+    /**
      * The product role the token asserts, from the cadence_role claim: patient, doctor or admin. Empty when the account has no profile yet, in which case no data endpoint will answer for it.
      */
     role: string;
@@ -224,9 +228,17 @@ export type GetMeData = {
 
 export type GetMeErrors = {
     /**
-     * Error
+     * Unauthorized
      */
-    default: Problem;
+    401: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
 };
 
 export type GetMeError = GetMeErrors[keyof GetMeErrors];

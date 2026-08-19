@@ -15,6 +15,7 @@ type Service struct {
 	onboarding *Onboarding
 	sessions   *Sessions
 	roster     *Roster
+	profiles   ProfileReader
 }
 
 // Deps is what this context's operations answer from. A nil field is the document generator's
@@ -23,10 +24,16 @@ type Deps struct {
 	Onboarding *Onboarding
 	Sessions   *Sessions
 	Roster     *Roster
+	Profiles   ProfileReader
 }
 
 func NewService(deps Deps) *Service {
-	return &Service{onboarding: deps.Onboarding, sessions: deps.Sessions, roster: deps.Roster}
+	return &Service{
+		onboarding: deps.Onboarding,
+		sessions:   deps.Sessions,
+		roster:     deps.Roster,
+		profiles:   deps.Profiles,
+	}
 }
 
 // Register mounts this context's operations on the API.
@@ -39,10 +46,17 @@ func (s *Service) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/v1/me",
 		Summary:     "The authenticated caller",
-		Description: "Returns the identity carried by the presented token. " +
-			"It reads no database: a role changed there takes effect when the token expires.",
+		Description: "Returns the identity the presented token carries, and the caller's own name. " +
+			"The role is the token's: changed in the database, it takes effect when the token expires. " +
+			"The name is read from the caller's own profile row, because nothing else in the API " +
+			"answers a person their own name — it is absent for an account the clinic holds no " +
+			"profile for. Answers 503 when the database could not serve the request.",
 		Tags: []string{"identity"},
-	}, me)
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusServiceUnavailable,
+		},
+	}, s.me)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "record-session",

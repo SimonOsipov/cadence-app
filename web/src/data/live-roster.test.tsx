@@ -13,7 +13,10 @@ function reading(api: ApiClient) {
   )
 }
 
+const noIdentity = () => Promise.reject(new Error('these tests do not ask who is signed in'))
+
 const onePage: ApiClient = {
+  me: noIdentity,
   roster: () =>
     Promise.resolve({
       patients: [{ user_id: '3f2a', full_name: 'Марина Волкова', age: 38, invite_state: 'accepted' }],
@@ -31,6 +34,7 @@ describe('the live roster', () => {
   it('asks again for a different page rather than answering the first from cache', async () => {
     const asked: (string | undefined)[] = []
     const paging: ApiClient = {
+      me: noIdentity,
       roster: ({ cursor }) => {
         asked.push(cursor)
 
@@ -52,6 +56,7 @@ describe('the live roster', () => {
   // The refusal reaches the screen: an error state nobody can produce is an error state nobody drew.
   it('reports the refusal the API wrote', async () => {
     const refusing: ApiClient = {
+      me: noIdentity,
       roster: () => Promise.reject(new Error('Страница не найдена. Откройте реестр заново.')),
     }
 

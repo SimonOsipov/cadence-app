@@ -3,7 +3,6 @@ package identity_test
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
@@ -23,8 +22,7 @@ func TestMeReturnsTheVerifiedCaller(t *testing.T) {
 		ExpiresAt: expiry,
 	}
 
-	rec := httptest.NewRecorder()
-	servedBy(&principal, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	rec := askingWhoIAm(&principal, &stubProfiles{name: "Марина Волкова"})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body)
@@ -56,8 +54,7 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 
-	rec := httptest.NewRecorder()
-	servedBy(&principal, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	rec := askingWhoIAm(&principal, &stubProfiles{name: "Марина Волкова"})
 
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -70,7 +67,9 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 	}
 	slices.Sort(got)
 
-	if want := []string{"expires_at", "role", "sub"}; !slices.Equal(got, want) {
+	// Four now: the name the dashboard greets them by is read from their own profile row, and it is
+	// the only field here that is not the token's.
+	if want := []string{"expires_at", "full_name", "role", "sub"}; !slices.Equal(got, want) {
 		t.Errorf("the response carries %v, want exactly %v", got, want)
 	}
 }
@@ -81,8 +80,7 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 // 200 with an empty subject would be an anonymous caller presented as a
 // verified one.
 func TestMeRefusesWithoutAPrincipal(t *testing.T) {
-	rec := httptest.NewRecorder()
-	servedBy(nil, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	rec := askingWhoIAm(nil, &stubProfiles{})
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401; body %s", rec.Code, rec.Body)
