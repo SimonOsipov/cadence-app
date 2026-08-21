@@ -187,18 +187,20 @@ func columnGrantRegistry() map[string][]string {
 		// in by the clinic, and when.
 		"SELECT/compounds/cadence_patient": {"default_unit", "icon", "id", "name_ru", "route"},
 		"SELECT/compounds/cadence_doctor":  {"default_unit", "icon", "id", "name_ru", "route"},
-		// The patient writes their own vial, and two columns are withheld from that
-		// for reasons that are not ownership: label_photo_path is a key into a store
-		// with no row security, and id is what dose events will point at.
-		// patient_id is present on purpose — the policies are what hold ownership
-		// here, and taking it out of the grant would hide which mechanism works.
+		// The patient writes their own vial, and two columns are withheld for reasons
+		// that are not ownership: `id` is what dose events will point at, and
+		// `created_at` is the row's provenance. `patient_id` is present on purpose —
+		// the policies hold ownership here, and taking it out of the grant would
+		// hide which mechanism does the work. `label_photo_path` is present too: it
+		// is constrained to the patient's own prefix in 000015, which is a stronger
+		// statement than a grant because it binds every role.
 		"INSERT/vials/cadence_patient": {
-			"compound_id", "concentration_label", "expires_on", "location_ru",
-			"lot", "opened_at", "patient_id", "total_doses",
+			"compound_id", "concentration_label", "expires_on", "label_photo_path",
+			"location_ru", "lot", "opened_at", "patient_id", "total_doses",
 		},
 		"UPDATE/vials/cadence_patient": {
 			"compound_id", "concentration_label", "disposed_at", "expires_on",
-			"location_ru", "lot", "opened_at", "patient_id", "total_doses",
+			"label_photo_path", "location_ru", "lot", "opened_at", "patient_id", "total_doses",
 		},
 	}
 }

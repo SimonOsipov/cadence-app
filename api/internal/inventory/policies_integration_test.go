@@ -274,42 +274,65 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 	// rows. That is why this asserts on the count and on the row read back rather
 	// than on an error.
 	//
-	// Measured, and not what it looks like: two clauses refuse it, not one.
-	// PostgreSQL applies the SELECT policies to an UPDATE whose WHERE reads a
-	// column, so widening vials_own_update's USING alone leaves the theft refused by
-	// vials_own_select, and widening vials_own_select alone leaves it refused by the
-	// update's USING. This assertion fires when both are gone; the visibility
-	// assertions below fire on the SELECT policy by itself.
-	var affected int64
-	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE app.vials SET patient_id = $1 WHERE id = $2`, patientA, c.vialB)
-		affected = tag.RowsAffected()
+	// Measured, and the conclusion is not the obvious one. PostgreSQL adds the
+	// SELECT policies to an UPDATE only when the statement reads a column of the
+	// table — a WHERE that names one, or a RETURNING. So for the first form below
+	// the two clauses deputise for each other, and for the second and third they do
+	// not: nothing is read, vials_own_select never runs, and vials_own_update's
+	// USING is the only guard there is. Widening it alone moves every row in the
+	// table at once — measured at two, which is every vial the fixture has.
+	for _, theft := range []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{"naming the row", `UPDATE app.vials SET patient_id = $1 WHERE id = $2`, []any{patientA, c.vialB}},
+		// No WHERE at all, and it is the form that matters most: it reads no
+		// column, so the SELECT policies are never added to the statement and
+		// vials_own_update's USING is the only thing standing in front of it. It is
+		// also a sweep rather than a theft — every vial in the table at once.
+		{"sweeping the table", `UPDATE app.vials SET patient_id = $1`, []any{patientA}},
+		{"with a predicate that reads nothing", `UPDATE app.vials SET patient_id = $1 WHERE true`, []any{patientA}},
+	} {
+		var affected int64
+		if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			tag, err := tx.Exec(ctx, theft.sql, theft.args...)
+			affected = tag.RowsAffected()
 
-		return err
-	}); err != nil {
-		t.Fatalf("taking another patient's vial: %v", err)
-	}
-	if affected != 0 {
-		t.Errorf("the patient took %d of another patient's vials", affected)
-	}
-	if owner := c.ownerOf(t, c.vialB); owner != patientB {
-		t.Errorf("the vial now belongs to %s, want %s", owner, patientB)
+			return err
+		}); err != nil {
+			t.Fatalf("%s: %v", theft.name, err)
+		}
+		if affected > 1 {
+			t.Errorf("%s: touched %d rows", theft.name, affected)
+		}
+		if owner := c.ownerOf(t, c.vialB); owner != patientB {
+			t.Errorf("%s: the vial now belongs to %s, want %s", theft.name, owner, patientB)
+		}
 	}
 
-	// The same shape through ON CONFLICT, where the patient's INSERT and UPDATE
-	// grants meet a row they cannot see. Its behaviour under row security is
-	// different from a plain UPDATE and worth measuring rather than citing.
+	// The same shape through ON CONFLICT, and it has to name the id or the DO UPDATE
+	// arm is unreachable: without it the conflict target is a fresh
+	// gen_random_uuid() that collides with nothing, so the statement quietly inserts
+	// a third vial and proves nothing. The first version of this test did exactly
+	// that.
+	//
+	// Named, it is refused by the column grant before any policy is consulted —
+	// `id` is not the patient's to write — which is a stronger answer than a
+	// filtered update and the one worth pinning.
 	err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_doses, expires_on)
-			VALUES ($1, $2, '1 мг/мл', 4, DATE '2026-12-31')
-			ON CONFLICT (id) DO UPDATE SET patient_id = $1
-		`, patientA, c.compound)
+			INSERT INTO app.vials (id, patient_id, compound_id, concentration_label, total_doses, expires_on)
+			VALUES ($1, $2, $3, '1 мг/мл', 4, DATE '2026-12-31')
+			ON CONFLICT (id) DO UPDATE SET patient_id = $2
+		`, c.vialB, patientA, c.compound)
 
 		return err
 	})
-	if err != nil {
-		t.Logf("ON CONFLICT DO UPDATE refused: %v", err)
+
+	var conflictErr *pgconn.PgError
+	if !errors.As(err, &conflictErr) || conflictErr.Code != "42501" {
+		t.Errorf("ON CONFLICT naming another patient's row: got %v, want SQLSTATE 42501", err)
 	}
 	if owner := c.ownerOf(t, c.vialB); owner != patientB {
 		t.Errorf("after ON CONFLICT the vial belongs to %s, want %s", owner, patientB)
@@ -367,21 +390,99 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 		t.Errorf("the vial is stored in %q, want «холодильник»", got)
 	}
 
-	// The two columns that are not theirs to write, each refused by the grant
-	// rather than by the predicate: the row is their own.
-	for _, withheld := range []string{
-		`UPDATE app.vials SET label_photo_path = 'other/vials/x.jpg' WHERE id = $1`,
-		`UPDATE app.vials SET id = pg_catalog.gen_random_uuid() WHERE id = $1`,
+	// The columns that are not theirs to write, refused by the grant rather than by
+	// the predicate: the row is their own. Both verbs, because M4 writes a vial at
+	// creation and a grant narrowed on one verb only is a grant that is open on the
+	// other.
+	for _, withheld := range []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			"rewriting their own key",
+			`UPDATE app.vials SET id = pg_catalog.gen_random_uuid() WHERE id = $1`,
+			[]any{c.vialA},
+		},
+		{
+			"choosing a key at creation",
+			`INSERT INTO app.vials (id, patient_id, compound_id, concentration_label, total_doses, expires_on)
+			 VALUES (pg_catalog.gen_random_uuid(), $1, $2, '1 мг/мл', 4, DATE '2026-12-31')`,
+			[]any{patientA, c.compound},
+		},
+		{
+			"backdating their own row",
+			`UPDATE app.vials SET created_at = pg_catalog.now() WHERE id = $1`,
+			[]any{c.vialA},
+		},
+		{
+			"backdating a row at creation",
+			`INSERT INTO app.vials (created_at, patient_id, compound_id, concentration_label, total_doses, expires_on)
+			 VALUES (pg_catalog.now(), $1, $2, '1 мг/мл', 4, DATE '2026-12-31')`,
+			[]any{patientA, c.compound},
+		},
 	} {
 		err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(ctx, withheld, c.vialA)
+			_, err := tx.Exec(ctx, withheld.sql, withheld.args...)
 
 			return err
 		})
 
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
-			t.Errorf("a withheld column was writable: got %v, want SQLSTATE 42501", err)
+			t.Errorf("%s: got %v, want SQLSTATE 42501", withheld.name, err)
+		}
+	}
+
+	// The photo key is writable — withholding it left it unwritable on every product
+	// path — and what stops it pointing at somebody else's object is the schema, not
+	// the grant. Both verbs again, and the accept side beside them so that «refused»
+	// does not turn out to mean «refused always».
+	for _, key := range []struct {
+		name    string
+		sql     string
+		args    []any
+		allowed bool
+	}{
+		{
+			"a key under another patient's prefix, at creation",
+			`INSERT INTO app.vials
+			   (patient_id, compound_id, concentration_label, total_doses, expires_on, label_photo_path)
+			 VALUES ($1, $2, '1 мг/мл', 4, DATE '2026-12-31', $3)`,
+			[]any{patientA, c.compound, patientB + "/vials/label.jpg"},
+			false,
+		},
+		{
+			"a key under another patient's prefix, by edit",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientB + "/vials/label.jpg", c.vialA},
+			false,
+		},
+		{
+			"a key under their own prefix",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/vials/label.jpg", c.vialA},
+			true,
+		},
+	} {
+		err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, key.sql, key.args...)
+
+			return err
+		})
+
+		if key.allowed {
+			if err != nil {
+				t.Errorf("%s was refused: %v", key.name, err)
+			}
+
+			continue
+		}
+
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23514" ||
+			pgErr.ConstraintName != "vials_photo_key_is_under_its_own_prefix" {
+			t.Errorf("%s: got %v, want 23514/vials_photo_key_is_under_its_own_prefix", key.name, err)
 		}
 	}
 
@@ -570,7 +671,22 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 		{
 			"a photo key of nothing",
 			"concentration_label, total_doses, expires_on, label_photo_path",
-			"'1 мг/мл', 4, DATE '2026-12-31', ''", "vials_label_photo_path_check",
+			"'1 мг/мл', 4, DATE '2026-12-31', ''", "vials_photo_key_is_under_its_own_prefix",
+		},
+		{
+			"a lot number past its bound",
+			"concentration_label, total_doses, expires_on, lot",
+			"'1 мг/мл', 4, DATE '2026-12-31', pg_catalog.repeat('x', 51)", "vials_lot_check",
+		},
+		{
+			"a storage location past its bound",
+			"concentration_label, total_doses, expires_on, location_ru",
+			"'1 мг/мл', 4, DATE '2026-12-31', pg_catalog.repeat('x', 101)", "vials_location_ru_check",
+		},
+		{
+			"a concentration label past its bound",
+			"concentration_label, total_doses, expires_on",
+			"pg_catalog.repeat('x', 51), 4, DATE '2026-12-31'", "vials_concentration_label_check",
 		},
 		{
 			"thrown away before it was opened",
@@ -587,6 +703,25 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 		})
 	}
 
+	// The exact bounds, on the accept side: without these, every «past its bound»
+	// case above passes just as well against a limit of five thousand.
+	t.Run("each length bound accepts its own last character", func(t *testing.T) {
+		if err := database.WithServiceJob(
+			t.Context(), c.service, seedJob,
+			func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, c.insertVial(
+					"concentration_label, total_doses, expires_on, lot, location_ru",
+					"pg_catalog.repeat('x', 50), 4, DATE '2026-12-31', "+
+						"pg_catalog.repeat('y', 50), pg_catalog.repeat('z', 100)",
+				), patientA, c.compound)
+
+				return err
+			},
+		); err != nil {
+			t.Fatalf("a value exactly at its bound was refused: %v", err)
+		}
+	})
+
 	// The accept side, which a suite of refusals cannot supply: a CHECK that refused
 	// everything would pass every case above. Disposing of a vial that was never
 	// opened is legal — stock can expire in its box.
@@ -596,7 +731,7 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			func(ctx context.Context, tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, c.insertVial(
 					"concentration_label, total_doses, expires_on, disposed_at, lot, location_ru, label_photo_path",
-					"'2,4 мг/мл', 1, DATE '2026-06-01', DATE '2026-05-20', 'L-77', 'холодильник', 'a/b.jpg'",
+					fmt.Sprintf("'2,4 мг/мл', 1, DATE '2026-06-01', DATE '2026-05-20', 'L-77', 'холодильник', '%s/b.jpg'", patientA),
 				), patientA, c.compound)
 
 				return err
@@ -611,9 +746,10 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 // reasons: its doctor predicate is textually the same, and its write surface is
 // wider.
 func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
-	c := newClinic(t)
-
+	// A clinic each, because the first subtest reassigns a patient and the rest
+	// would then be reading a world they did not set up.
 	t.Run("reassignment moves the doctor's reach both ways", func(t *testing.T) {
+		c := newClinic(t)
 		before := c.visible(t, doctorB, "doctor", `SELECT id::text FROM app.vials`)
 		if len(before) != 1 || before[0] != c.vialB {
 			t.Fatalf("the other doctor reads %v before the move, want [%s]", before, c.vialB)
@@ -649,10 +785,24 @@ func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
 	})
 
 	t.Run("the admin reaches every cabinet and may write one", func(t *testing.T) {
+		c := newClinic(t)
 		if seen := c.visible(t, adminID, "admin", `SELECT id::text FROM app.vials`); len(seen) != 2 {
 			t.Errorf("the admin reads %v, want both", seen)
 		}
-		// The WITH CHECK half of FOR ALL, which a read-only test cannot reach.
+		// The WITH CHECK half, and it takes an INSERT to reach it: on an UPDATE,
+		// vials_admin's WITH CHECK is `true` and so is its USING, so removing one is
+		// indistinguishable from removing the other. Creating a vial for a patient
+		// the admin is not assigned to is the half only WITH CHECK decides.
+		if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_doses, expires_on)
+				VALUES ($1, $2, '5 мг/мл', 2, DATE '2027-03-01')
+			`, patientB, c.compound)
+
+			return err
+		}); err != nil {
+			t.Fatalf("the admin could not write a vial for an unassigned patient: %v", err)
+		}
 		if affected := c.changed(t, adminID, "admin",
 			`UPDATE app.vials SET location_ru = 'сейф' WHERE id = $1`, c.vialB); affected != 1 {
 			t.Errorf("the admin wrote %d rows of a patient they are unassigned to, want 1", affected)
@@ -660,6 +810,22 @@ func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
 	})
 
 	t.Run("a caller with no identity reaches nothing", func(t *testing.T) {
+		c := newClinic(t)
+
+		// The two forms the seam refuses before a transaction opens, asserted rather
+		// than skipped: they are why the cases below have to be written as a
+		// stranger and as a blanking, and if they stopped being refused the cases
+		// below would silently change meaning.
+		for subject, want := range map[string]error{
+			"":           database.ErrNoSubject,
+			"not-a-uuid": database.ErrInvalidSubject,
+		} {
+			err := c.as(t, subject, "patient", func(context.Context, pgx.Tx) error { return nil })
+			if !errors.Is(err, want) {
+				t.Errorf("subject %q: got %v, want %v", subject, err, want)
+			}
+		}
+
 		stranger := "8a1f3b7c-0000-4000-8000-00000000dead"
 		for _, role := range []string{"patient", "doctor"} {
 			if seen := c.visible(t, stranger, role, `SELECT id::text FROM app.vials`); len(seen) != 0 {
@@ -705,6 +871,7 @@ func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
 	})
 
 	t.Run("the service path reads and inserts and does not rewrite", func(t *testing.T) {
+		c := newClinic(t)
 		// A vial is the patient's own record; nothing on the service path has
 		// business editing one, and the grant is what says so.
 		err := database.WithServiceJob(

@@ -77,22 +77,26 @@ CREATE POLICY vials_service_insert ON app.vials
 -- is deliberately still in both lists: the predicate is the mechanism here, not the
 -- grant, and taking it out of the grant would hide which one is working.
 --
--- `label_photo_path` is withheld because it is a key into a store that has no row
--- level security. The endpoint of step 10 checks that the *row* is visible to the
--- caller and then signs a link to whatever the *path* says; with the column
--- writable, a patient stores their own vial with a path under somebody else's
--- prefix and the check passes on a row that is genuinely theirs. The server owns
--- the key.
---
 -- `id` is withheld because dose events point at it from step 8, and because a
 -- primary key the caller chooses is a way to ask whether a guessed one exists: a
 -- uniqueness check runs before row security and answers 23505 either way.
+--
+-- `created_at` is withheld because it is the row's provenance rather than a field
+-- of the form: a value the patient sets is a value that can be a lie.
+--
+-- `label_photo_path` is **not** withheld, and that is the second decision here.
+-- Withholding it was the first repair, and it left the column unwritable on every
+-- product path — the patient writes vials through this seam, the service path has
+-- no UPDATE, and a photo is attached after the vial exists. M4 would have met
+-- 42501 and fixed it by moving the write to the service seam, undoing the seam
+-- decision quietly. The key is constrained in 000015 instead, to the patient's own
+-- prefix, which holds for every role rather than for the ones a grant names.
 GRANT SELECT ON app.vials TO cadence_patient;
 GRANT INSERT (patient_id, compound_id, concentration_label, total_doses,
-              opened_at, expires_on, lot, location_ru)
+              opened_at, expires_on, lot, location_ru, label_photo_path)
     ON app.vials TO cadence_patient;
 GRANT UPDATE (patient_id, compound_id, concentration_label, total_doses,
-              opened_at, expires_on, lot, location_ru, disposed_at)
+              opened_at, expires_on, lot, location_ru, disposed_at, label_photo_path)
     ON app.vials TO cadence_patient;
 GRANT SELECT ON app.vials TO cadence_doctor, cadence_service;
 GRANT INSERT ON app.vials TO cadence_service;

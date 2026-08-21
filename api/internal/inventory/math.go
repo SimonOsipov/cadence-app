@@ -84,6 +84,34 @@ func StatusOf(vial Vial, drawnFrom []VialID, today protocol.Date) VialStatus {
 	}
 }
 
+// Cabinet is one patient's vials, and it exists so that a mixed slice cannot be
+// handed to the arithmetic below.
+//
+// ReorderHintFor sums remaining doses and looks for a sealed spare across
+// everything it is given, and nothing in a vial makes the mixing visible: a
+// doctor-side caller reads several patients' cabinets in one result set under a
+// single policy, and every row in it is one they are entitled to — so the database
+// cannot catch this and the type has to. Patient B's sealed spare would otherwise
+// silence patient A's hint, and B's remaining doses would inflate A's weeks left.
+//
+// The field is unexported, so the only way to build one is the constructor, and the
+// only way to build one wrong is to name the wrong patient — which yields an empty
+// cabinet and no hint rather than a mixed answer.
+type Cabinet struct {
+	vials []Vial
+}
+
+func CabinetOf(patient protocol.UserID, vials []Vial) Cabinet {
+	var mine []Vial
+	for _, vial := range vials {
+		if vial.PatientID == patient {
+			mine = append(mine, vial)
+		}
+	}
+
+	return Cabinet{vials: mine}
+}
+
 // ReorderHint is «buy more of this, you have about this long».
 type ReorderHint struct {
 	CompoundID protocol.CompoundID
@@ -102,7 +130,7 @@ type ReorderHint struct {
 // patient two doses from nothing.
 func ReorderHintFor(
 	item protocol.ProtocolItem,
-	vials []Vial,
+	cabinet Cabinet,
 	drawnFrom []VialID,
 	today protocol.Date,
 ) *ReorderHint {
@@ -115,7 +143,7 @@ func ReorderHintFor(
 	// One compound at a time: without the filter, an unopened vial of anything else
 	// counts as the sealed spare that suppresses the hint.
 	var live []Vial
-	for _, vial := range vials {
+	for _, vial := range cabinet.vials {
 		if vial.DisposedAt == nil && vial.CompoundID == compound && !vial.ExpiresOn.Before(today) {
 			live = append(live, vial)
 		}

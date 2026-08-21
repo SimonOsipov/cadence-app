@@ -161,8 +161,8 @@ func TestAHintIsAboutOneCompoundAndCountsOnlyItsVials(t *testing.T) {
 	bpcSpare := vial(30, nil, farOff)
 	bpcSpare.CompoundID = protocol.CompoundID("bpc")
 
-	alone := ReorderHintFor(weeklyItem(sema, 1), []Vial{mine}, nil, today)
-	withOtherCompound := ReorderHintFor(weeklyItem(sema, 1), []Vial{mine, bpcSpare}, nil, today)
+	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, today)
+	withOtherCompound := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, bpcSpare}), nil, today)
 
 	if alone == nil || withOtherCompound == nil || *alone != *withOtherCompound {
 		t.Fatalf("a vial of another compound changed the answer: %v vs %v", alone, withOtherCompound)
@@ -180,14 +180,14 @@ func TestTheReorderHintNeedsBothNoSparesAndLittleSupply(t *testing.T) {
 	// anyway, passing without the spare check ever running.
 	spare := vial(1, nil, farOff)
 
-	if got := ReorderHintFor(weeklyItem(sema, 1), []Vial{open, spare}, drawn(open, 3), today); got != nil {
+	if got := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, spare}), drawn(open, 3), today); got != nil {
 		t.Errorf("a sealed spare is exactly what makes reordering unnecessary: got %v", got)
 	}
-	if got := ReorderHintFor(weeklyItem(sema, 0), []Vial{open}, nil, today); got != nil {
+	if got := ReorderHintFor(weeklyItem(sema, 0), CabinetOf(patient, []Vial{open}), nil, today); got != nil {
 		t.Errorf("an item prescribed on no day has no weekly rate: got %v", got)
 	}
 
-	hint := ReorderHintFor(weeklyItem(sema, 1), []Vial{open}, drawn(open, 1), today)
+	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open}), drawn(open, 1), today)
 
 	if hint == nil {
 		t.Fatal("three doses at one a week is three weeks of supply and no spare")
@@ -203,7 +203,7 @@ func TestAnExpiredVialIsNeitherASpareNorSupply(t *testing.T) {
 	open := vial(4, day(2026, time.May, 1), farOff)
 	dead := vial(4, nil, today.AddDays(-1))
 
-	hint := ReorderHintFor(weeklyItem(sema, 1), []Vial{open, dead}, drawn(open, 2), today)
+	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, dead}), drawn(open, 2), today)
 
 	if hint == nil || hint.WeeksLeft != 2 {
 		t.Errorf("the expired vial is not two more weeks of supply: got %v", hint)
@@ -212,7 +212,7 @@ func TestAnExpiredVialIsNeitherASpareNorSupply(t *testing.T) {
 	// Boundary: a vial expiring *today* is still usable and still suppresses the hint.
 	expiringToday := vial(4, nil, today)
 	if got := ReorderHintFor(
-		weeklyItem(sema, 1), []Vial{open, expiringToday}, drawn(open, 2), today,
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, expiringToday}), drawn(open, 2), today,
 	); got != nil {
 		t.Errorf("stock that expires today has not expired yet: got %v", got)
 	}
@@ -223,7 +223,7 @@ func TestADisposedVialIsNeitherASpareNorSupply(t *testing.T) {
 	binned := vial(4, nil, farOff)
 	binned.DisposedAt = day(2026, time.May, 2)
 
-	hint := ReorderHintFor(weeklyItem(sema, 1), []Vial{open, binned}, drawn(open, 1), today)
+	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, binned}), drawn(open, 1), today)
 
 	if hint == nil || hint.WeeksLeft != 3 {
 		t.Errorf("got %v, want 3 weeks", hint)
@@ -247,7 +247,7 @@ func TestFourWeeksOfSupplyIsAHintAndFiveIsNot(t *testing.T) {
 	} {
 		open := vial(c.doses, day(2026, time.May, 1), farOff)
 
-		got := ReorderHintFor(weeklyItem(sema, 1), []Vial{open}, nil, today)
+		got := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open}), nil, today)
 
 		switch {
 		case c.hint && got == nil:
@@ -275,7 +275,37 @@ func TestAnItemWithNoWeeklyRateGetsNoHintEvenWhenTheVialIsEmpty(t *testing.T) {
 	// uses the drained vial because that is the case both architectures fail.
 	drained := vial(4, day(2026, time.May, 1), farOff)
 
-	if got := ReorderHintFor(weeklyItem(sema, 0), []Vial{drained}, drawn(drained, 4), today); got != nil {
+	if got := ReorderHintFor(weeklyItem(sema, 0), CabinetOf(patient, []Vial{drained}), drawn(drained, 4), today); got != nil {
 		t.Errorf("an item prescribed on no day: got %v, want no hint", got)
+	}
+}
+
+func TestAnotherPatientsVialsChangeNothing(t *testing.T) {
+	// The axis the fixture never varied: every vial in this file belongs to one
+	// patient, so the function would behave identically with PatientID deleted. A
+	// doctor-side caller reads several cabinets in one result set, and the database
+	// cannot catch the mixing — every row is one they are entitled to.
+	other := protocol.UserID("p-2")
+	mine := vial(4, day(2026, time.May, 1), farOff)
+
+	// A sealed spare of theirs would suppress the hint, and their remaining doses
+	// would inflate the weeks left. Both, so neither half can pass alone.
+	theirSpare := vial(30, nil, farOff)
+	theirSpare.PatientID = other
+
+	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, today)
+	mixed := ReorderHintFor(
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, theirSpare}), nil, today)
+
+	if alone == nil || mixed == nil || *alone != *mixed {
+		t.Fatalf("another patient's vials changed the answer: %v vs %v", alone, mixed)
+	}
+
+	// And the constructor is what does it, not the arithmetic: their cabinet holds
+	// only their own row.
+	if theirs := ReorderHintFor(
+		weeklyItem(sema, 1), CabinetOf(other, []Vial{mine, theirSpare}), nil, today,
+	); theirs != nil {
+		t.Errorf("the other patient has a sealed spare and no hint is due: got %v", theirs)
 	}
 }
