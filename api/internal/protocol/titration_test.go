@@ -172,10 +172,15 @@ func TestADoseThatArrivedThroughArithmeticReadsAsAChangeOfDose(t *testing.T) {
 }
 
 func TestTwoPhasesOpeningOnTheSameWeekKeepTheOrderTheyArrivedIn(t *testing.T) {
-	// Nothing else has two phases sharing a FromWeek, so sort.SliceStable survives being
-	// swapped for sort.Slice. It is load-bearing for a reason PhaseDose's own comment names:
-	// until step 2 adds the EXCLUDE, nothing forbids overlap, and an unstable sort makes the
-	// bands and the steps differ run to run on the same input.
+	// What this pins is the outcome, and what it does NOT pin is the choice of sort — said
+	// plainly because the first version of this test claimed otherwise. Measured against
+	// go 1.26: swapping sort.SliceStable for sort.Slice changes nothing here, and nothing at
+	// any size probed — all-tied inputs up to 40 elements and paired ties up to 100 both keep
+	// their arrival order, because pdqsort has a fast path for equal keys. The stable sort is
+	// chosen for the guarantee, not because a test can tell the two apart.
+	//
+	// Ties are representable at all only until step 2 adds the EXCLUDE, which is the same
+	// window PhaseDose's comment names.
 	duplicate := titrationPlan
 	duplicate.Phases = map[ProtocolItemID][]ProtocolPhase{
 		sema: {
@@ -185,13 +190,13 @@ func TestTwoPhasesOpeningOnTheSameWeekKeepTheOrderTheyArrivedIn(t *testing.T) {
 		},
 	}
 
-	for i := range 32 {
-		steps := TitrationSteps(duplicate, sema)
-		if len(steps) != 2 {
-			t.Fatalf("run %d: two boundaries, got %d", i, len(steps))
-		}
-		if steps[0].To != (Dose{Value: 0.5, Unit: MG}) || steps[1].From != (Dose{Value: 0.5, Unit: MG}) {
-			t.Fatalf("run %d: the arrival order of the tied phases moved: %v", i, steps)
-		}
+	steps := TitrationSteps(duplicate, sema)
+
+	if len(steps) != 2 {
+		t.Fatalf("two boundaries, got %d: %v", len(steps), steps)
+	}
+	// The first of the tied pair is the one that arrived first — 0,5 before 0,75.
+	if steps[0].To != (Dose{Value: 0.5, Unit: MG}) || steps[1].From != (Dose{Value: 0.5, Unit: MG}) {
+		t.Fatalf("the arrival order of the tied phases moved: %v", steps)
 	}
 }
