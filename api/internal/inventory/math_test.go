@@ -261,12 +261,18 @@ func TestFourWeeksOfSupplyIsAHintAndFiveIsNot(t *testing.T) {
 }
 
 func TestAnItemWithNoWeeklyRateGetsNoHintEvenWhenTheVialIsEmpty(t *testing.T) {
-	// The guard on the rate is load-bearing, and measured: without it the division
-	// is by zero. A vial with doses left gives +Inf, which converts to a number
-	// larger than the threshold and happens to answer «no hint» by accident — but a
-	// drained one gives NaN, which converts to 0, and 0 is not more than four weeks.
-	// The patient would be told to reorder a drug prescribed on no day at all, with
-	// «0 weeks left» beside it.
+	// The guard on the rate is load-bearing, and it sits before the division rather
+	// than after it because Go leaves the conversion undefined: converting ±Inf or
+	// NaN to an int is not specified, and the two architectures this project runs on
+	// disagree. Measured on both, 2026-08-21:
+	//
+	//	arm64 (this laptop):   int(4/0) = maxint,  int(0/0) = 0
+	//	amd64 (CI, Timeweb):   int(4/0) = minint,  int(0/0) = minint
+	//
+	// So without the guard, amd64 tells a patient to reorder a drug prescribed on no
+	// day at all — for a full vial as readily as an empty one — with a nonsense
+	// number of weeks beside it. On arm64 only the drained case shows it. This test
+	// uses the drained vial because that is the case both architectures fail.
 	drained := vial(4, day(2026, time.May, 1), farOff)
 
 	if got := ReorderHintFor(weeklyItem(sema, 0), []Vial{drained}, drawn(drained, 4), today); got != nil {

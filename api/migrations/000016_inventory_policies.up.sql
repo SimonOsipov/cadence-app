@@ -4,10 +4,16 @@
 -- request path, RLS, and no audit row: cadence_patient has no privilege on
 -- audit_log and is not going to be given one.
 --
--- What that means for this migration is that the patient's own predicate is not
--- a read filter here, it is the write rule as well — so every one of their
--- policies carries WITH CHECK, and USING and WITH CHECK say the same thing. A
--- patient may not write a row about somebody else, and may not move one to them.
+-- The shape is not new. The identity block already writes three tables this way,
+-- and `ownRowWrite` in the policy registry is this predicate in both USING and
+-- WITH CHECK, applied to profiles, patient_profiles and user_preferences. Two of
+-- those three are narrowed by column, and that precedent is the one to follow —
+-- see the grants at the foot of this file.
+--
+-- Two things here are new and are what to read carefully. It is the first INSERT
+-- cadence_patient holds at all. And it is the first patient-written table whose
+-- owner is an ordinary column rather than the row's primary key: on profiles and
+-- user_preferences, «change owner» means «change the key», and here it does not.
 
 SET ROLE cadence_owner;
 
@@ -19,11 +25,19 @@ CREATE POLICY vials_own_select ON app.vials
 -- meant to hold is a missing policy rather than a missing grant. The grant is the
 -- second lock; this is the first.
 --
--- WITH CHECK on both halves of the UPDATE: without it on the USING side a patient
--- edits only their own row, and without it on the CHECK side they may hand that
--- row to somebody else. The pair is what makes «may not move a row» true here
--- without a column grant — the patient's predicate names the subject, which the
--- service path's cannot.
+-- The subject appears in USING and in WITH CHECK, and the two answer different
+-- questions: WITH CHECK refuses a row that would become somebody else's, USING
+-- refuses one that is already theirs. That pair is what makes «may not move a row»
+-- true here without a column grant — the patient's predicate names the subject,
+-- which the service path's cannot.
+--
+-- Measured, and worth knowing before editing either: USING here is defence in
+-- depth rather than the sole guard. PostgreSQL applies the SELECT policies to an
+-- UPDATE whose WHERE reads a column, so taking another patient's row is refused
+-- twice over. Widen either one alone and the theft is still refused; only widening
+-- both lets the row move. That is why the suite's theft assertion fires on the
+-- pair and the visibility assertions fire on the SELECT policy — neither clause is
+-- distinguishable on its own while the other stands.
 CREATE POLICY vials_own_insert ON app.vials
     FOR INSERT TO cadence_patient
     WITH CHECK (patient_id = app.jwt_subject());
@@ -58,11 +72,28 @@ CREATE POLICY vials_service_insert ON app.vials
 
 -- ------------------------------------------------------------------ grants --
 
--- Table-wide on this one, and the reason is the shape above: the patient's own
--- policies carry the subject in both USING and WITH CHECK, so a row cannot change
--- owner through them. That is the guarantee the protocol tables had to buy with
--- column grants, because the service path's policies carry no subject at all.
-GRANT SELECT, INSERT, UPDATE ON app.vials TO cadence_patient;
+-- The patient's write is by column, and for two reasons that have nothing to do
+-- with ownership — that part the policies above do hold, which is why `patient_id`
+-- is deliberately still in both lists: the predicate is the mechanism here, not the
+-- grant, and taking it out of the grant would hide which one is working.
+--
+-- `label_photo_path` is withheld because it is a key into a store that has no row
+-- level security. The endpoint of step 10 checks that the *row* is visible to the
+-- caller and then signs a link to whatever the *path* says; with the column
+-- writable, a patient stores their own vial with a path under somebody else's
+-- prefix and the check passes on a row that is genuinely theirs. The server owns
+-- the key.
+--
+-- `id` is withheld because dose events point at it from step 8, and because a
+-- primary key the caller chooses is a way to ask whether a guessed one exists: a
+-- uniqueness check runs before row security and answers 23505 either way.
+GRANT SELECT ON app.vials TO cadence_patient;
+GRANT INSERT (patient_id, compound_id, concentration_label, total_doses,
+              opened_at, expires_on, lot, location_ru)
+    ON app.vials TO cadence_patient;
+GRANT UPDATE (patient_id, compound_id, concentration_label, total_doses,
+              opened_at, expires_on, lot, location_ru, disposed_at)
+    ON app.vials TO cadence_patient;
 GRANT SELECT ON app.vials TO cadence_doctor, cadence_service;
 GRANT INSERT ON app.vials TO cadence_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.vials TO cadence_admin;

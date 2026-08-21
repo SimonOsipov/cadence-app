@@ -31,21 +31,26 @@ CREATE TABLE app.vials (
     lot                 text CHECK (lot IS NULL OR pg_catalog.length(lot) BETWEEN 1 AND 50),
     location_ru         text CHECK (location_ru IS NULL OR pg_catalog.length(location_ru) BETWEEN 1 AND 100),
     disposed_at         date,
-    label_photo_path    text,
+    -- Bounded like every other text column here, and withheld from the patient's
+    -- write grant besides: it is a key into a store that has no row security, and
+    -- the endpoint that signs a link to it checks the row rather than the path.
+    label_photo_path    text CHECK (label_photo_path IS NULL OR pg_catalog.length(label_photo_path) BETWEEN 1 AND 500),
     created_at          timestamptz NOT NULL DEFAULT pg_catalog.now(),
     -- A vial cannot be thrown away before it was opened, and neither date may
     -- precede the other's meaning. Written as two comparisons rather than one
     -- range, because either date may be null and a range would be NULL — and a
     -- CHECK evaluating to NULL passes, which this schema has already been bitten
-    -- by once.
+    -- by twice — once on array_length returning NULL for an empty array, and once on
+    -- cardinality counting a NULL element.
     CONSTRAINT vials_disposed_after_opening CHECK (
         disposed_at IS NULL OR opened_at IS NULL OR disposed_at >= opened_at
     )
 );
 
--- Both directions the math reads. The reorder hint walks a patient's live vials
--- of one compound, and the dose-logging path resolves a vial by patient.
-CREATE INDEX vials_by_patient ON app.vials (patient_id);
+-- One index, not two. The reorder hint walks a patient's live vials of one
+-- compound and the dose-logging path resolves a vial by patient, and a leading
+-- column serves both — a separate (patient_id) index would be a strict prefix of
+-- this one, and the cascade from profiles uses it too.
 CREATE INDEX vials_by_patient_and_compound ON app.vials (patient_id, compound_id);
 
 ALTER TABLE app.vials ENABLE ROW LEVEL SECURITY;

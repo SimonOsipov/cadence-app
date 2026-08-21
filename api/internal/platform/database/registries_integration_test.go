@@ -101,15 +101,15 @@ func grantRegistry() map[string][]string {
 		"protocol_phases/cadence_admin":   crud,
 		"protocol_phases/cadence_service": {"DELETE", "INSERT", "SELECT"},
 		"protocol_phases/cadence_owner":   everything,
-		// The one table in the schema the patient writes directly. A vial is the
-		// patient's own record about themselves, so it travels the request seam
-		// rather than the service one — and its policies carry the subject in both
-		// USING and WITH CHECK, which is what the protocol tables had to buy with
-		// column grants.
+		// A vial is the patient's own record about themselves, so it travels the
+		// request seam rather than the service one. The shape is the identity
+		// block's ownRowWrite — the subject in USING and in WITH CHECK — and what is
+		// new is that this is cadence_patient's first INSERT, and the first
+		// patient-written table whose owner is a column rather than the primary key.
 		//
 		// No DELETE for anybody but the admin: a vial is disposed of by setting
 		// disposed_at, and the dose events drawn from it keep pointing at it.
-		"vials/cadence_patient": {"INSERT", "SELECT", "UPDATE"},
+		"vials/cadence_patient": {"SELECT"},
 		"vials/cadence_doctor":  {"SELECT"},
 		"vials/cadence_admin":   crud,
 		"vials/cadence_service": {"INSERT", "SELECT"},
@@ -187,6 +187,19 @@ func columnGrantRegistry() map[string][]string {
 		// in by the clinic, and when.
 		"SELECT/compounds/cadence_patient": {"default_unit", "icon", "id", "name_ru", "route"},
 		"SELECT/compounds/cadence_doctor":  {"default_unit", "icon", "id", "name_ru", "route"},
+		// The patient writes their own vial, and two columns are withheld from that
+		// for reasons that are not ownership: label_photo_path is a key into a store
+		// with no row security, and id is what dose events will point at.
+		// patient_id is present on purpose — the policies are what hold ownership
+		// here, and taking it out of the grant would hide which mechanism works.
+		"INSERT/vials/cadence_patient": {
+			"compound_id", "concentration_label", "expires_on", "location_ru",
+			"lot", "opened_at", "patient_id", "total_doses",
+		},
+		"UPDATE/vials/cadence_patient": {
+			"compound_id", "concentration_label", "disposed_at", "expires_on",
+			"location_ru", "lot", "opened_at", "patient_id", "total_doses",
+		},
 	}
 }
 
