@@ -699,8 +699,8 @@ func identityColumns() map[string][]string {
 			"kind text NOT NULL",
 			"compound_id uuid NULL",
 			"cadence text NOT NULL",
-			"days_of_week ARRAY NOT NULL DEFAULT '{}'::smallint[]",
-			"times ARRAY NOT NULL",
+			"days_of_week ARRAY _int2 NOT NULL DEFAULT '{}'::smallint[]",
+			"times ARRAY _time NOT NULL",
 			"loggable boolean NOT NULL DEFAULT true",
 		},
 		"protocol_phases": {
@@ -730,8 +730,13 @@ func TestTheColumnsAreTheOnesDeclared(t *testing.T) {
 	conn := testsupport.Connect(t, db.SuperuserURL)
 
 	rows, err := conn.Query(t.Context(), `
-		SELECT table_name, column_name, data_type, is_nullable,
-		       coalesce(column_default, ''), is_identity
+		SELECT table_name, column_name,
+		       -- data_type is the literal string ARRAY for every array type, so it
+		       -- pins nothing about the element. udt_name carries it (_int2, _time),
+		       -- and is appended only where it would otherwise be lost — every other
+		       -- line in the registry stays as it was written.
+		       CASE WHEN data_type = 'ARRAY' THEN data_type || ' ' || udt_name ELSE data_type END,
+		       is_nullable, coalesce(column_default, ''), is_identity
 		FROM information_schema.columns
 		WHERE table_schema = $1
 		ORDER BY table_name, ordinal_position

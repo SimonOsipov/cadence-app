@@ -111,7 +111,21 @@ CREATE TABLE app.protocol_items (
         OR (cadence <> 'daily' AND pg_catalog.cardinality(days_of_week) >= 1)
     ),
     CONSTRAINT protocol_items_has_a_slot
-        CHECK (pg_catalog.cardinality(times) >= 1)
+        CHECK (pg_catalog.cardinality(times) >= 1),
+    -- cardinality counts a NULL element, so «at least one slot» above accepts an
+    -- array holding nothing but NULL — measured, the row inserts. The generator
+    -- scans this into []Slot and would fail on a row already saved, which is the
+    -- read-time disagreement these constraints exist to prevent.
+    --
+    -- days_of_week needs no equivalent: <@ answers false, not NULL, for an array
+    -- with a NULL element. It does need the dimension check — a two-dimensional
+    -- array passes both <@ and cardinality.
+    CONSTRAINT protocol_items_slots_are_named
+        CHECK (pg_catalog.array_position(times, NULL) IS NULL),
+    CONSTRAINT protocol_items_days_are_a_flat_list
+        CHECK (pg_catalog.array_ndims(days_of_week) IS NULL OR pg_catalog.array_ndims(days_of_week) = 1),
+    CONSTRAINT protocol_items_times_are_a_flat_list
+        CHECK (pg_catalog.array_ndims(times) = 1)
 );
 
 CREATE INDEX protocol_items_by_protocol ON app.protocol_items (protocol_id);

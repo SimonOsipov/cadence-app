@@ -62,6 +62,7 @@ const (
 	patientB = "8a1f3b7c-0000-4000-8000-0000000000b1"
 	doctorA  = "8a1f3b7c-0000-4000-8000-0000000000a2"
 	doctorB  = "8a1f3b7c-0000-4000-8000-0000000000b2"
+	adminID  = "8a1f3b7c-0000-4000-8000-0000000000c1"
 
 	seedJob = "test.protocol"
 )
@@ -95,6 +96,16 @@ func newClinic(t *testing.T) clinic {
 		t.Fatalf("opening the request pool: %v", err)
 	}
 	t.Cleanup(request.Close)
+
+	// The admin is written by the superuser, and it is an exception since 000006
+	// rather than a shortcut: the service policies on profiles refuse the value.
+	superuser := testsupport.Connect(t, db.SuperuserURL)
+	if _, err := superuser.Exec(t.Context(), `
+		INSERT INTO app.profiles (user_id, role, full_name, timezone)
+		VALUES ($1, 'admin', 'Пётр Аверин', 'Europe/Moscow')
+	`, adminID); err != nil {
+		t.Fatalf("seeding the admin: %v", err)
+	}
 
 	c := clinic{service: service, request: request}
 	if err := database.WithServiceJob(
@@ -631,5 +642,233 @@ func TestTheServicePathMayNotMoveARowToAnotherPatient(t *testing.T) {
 		},
 	); err != nil {
 		t.Fatalf("the write path lost a column it needs: %v", err)
+	}
+}
+
+// Every closed set is closed, and every value inside it is accepted. The second
+// half is what a suite trying only bad values cannot say: a CHECK that refused
+// everything would pass one, and so would a CHECK on the wrong column — the
+// «daily item that also names weekdays» case reports 23514 whether the cadence
+// set is spelled right or not.
+//
+// The accepted values are the ones internal/protocol/types.go declares, which is
+// the pairing between the Go constants and the schema that nothing else asserts.
+func TestEveryClosedSetAcceptsItsOwnValuesAndRefusesOthers(t *testing.T) {
+	c := newClinic(t)
+
+	t.Run("every kind and cadence and unit is accepted", func(t *testing.T) {
+		if err := database.WithServiceJob(
+			t.Context(), c.service, seedJob,
+			func(ctx context.Context, tx pgx.Tx) error { return acceptEveryValue(ctx, tx, c) },
+		); err != nil {
+			t.Fatalf("a value the schema declares was refused: %v", err)
+		}
+	})
+
+	for _, refused := range []struct {
+		name string
+		sql  string
+		arg  string
+	}{
+		{"a compound unit outside the set", `
+			INSERT INTO app.compounds (name_ru, default_unit, route, icon)
+			VALUES ('Тирзепатид', 'ml', 'п/к', 'vial')`, ""},
+		{"a course status outside the set", `
+			INSERT INTO app.protocols (patient_id, start_date, duration_weeks, status)
+			VALUES ($1, DATE '2026-01-01', 8, 'paused')`, patientB},
+		{"a course longer than the bound", `
+			INSERT INTO app.protocols (patient_id, start_date, duration_weeks, status)
+			VALUES ($1, DATE '2026-01-01', 105, 'completed')`, patientB},
+		{"a course of no weeks at all", `
+			INSERT INTO app.protocols (patient_id, start_date, duration_weeks, status)
+			VALUES ($1, DATE '2026-01-01', 0, 'completed')`, patientB},
+		{"an item kind outside the set", `
+			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
+			VALUES ($1, 'infusion', 'weekly', ARRAY[7]::smallint[], ARRAY['09:00'::time])`, "course"},
+		{"a cadence outside the set", `
+			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
+			VALUES ($1, 'weigh_in', 'fortnightly', ARRAY[7]::smallint[], ARRAY['09:00'::time])`, "course"},
+		{"a dose unit outside the set", `
+			INSERT INTO app.protocol_phases (protocol_item_id, from_week, to_week, dose_value, dose_unit)
+			VALUES ($1, 5, 8, 1, 'iu')`, "item"},
+		{"a dose of nothing", `
+			INSERT INTO app.protocol_phases (protocol_item_id, from_week, to_week, dose_value, dose_unit)
+			VALUES ($1, 5, 8, 0, 'мг')`, "item"},
+		{"a slot that is NULL", `
+			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
+			VALUES ($1, 'weigh_in', 'weekly', ARRAY[7]::smallint[], ARRAY[NULL]::time[])`, "course"},
+		{"a weekday list of two dimensions", `
+			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
+			VALUES ($1, 'weigh_in', 'weekly', ARRAY[ARRAY[1,2],ARRAY[3,4]]::smallint[],
+			        ARRAY['09:00'::time])`, "course"},
+		{"a compound with an empty name", `
+			INSERT INTO app.compounds (name_ru, default_unit, route, icon)
+			VALUES ('', 'мг', 'п/к', 'vial')`, ""},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			var args []any
+			switch refused.arg {
+			case "":
+			case "course":
+				args = []any{c.courseB}
+			case "item":
+				args = []any{c.itemB}
+			default:
+				args = []any{refused.arg}
+			}
+			if code := c.refuse(t, refused.sql, args...); code != "23514" {
+				t.Errorf("refused with %s, want 23514", code)
+			}
+		})
+	}
+}
+
+func acceptEveryValue(ctx context.Context, tx pgx.Tx, c clinic) error {
+	var mcg string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO app.compounds (name_ru, default_unit, route, icon)
+		VALUES ('BPC-157', 'мкг', 'п/к', 'vial')
+		RETURNING id::text
+	`).Scan(&mcg); err != nil {
+		return fmt.Errorf("мкг as a default unit: %w", err)
+	}
+
+	for _, shape := range []struct {
+		kind    string
+		cadence string
+		days    string
+	}{
+		{"injection", "daily", `'{}'::smallint[]`},
+		{"supplement", "n_per_week", `ARRAY[1,3,5]::smallint[]`},
+		{"weigh_in", "weekly", `ARRAY[7]::smallint[]`},
+	} {
+		var item string
+		if err := tx.QueryRow(ctx, fmt.Sprintf(`
+			INSERT INTO app.protocol_items
+			    (protocol_id, kind, compound_id, cadence, days_of_week, times)
+			VALUES ($1, $2, $3, $4, %s, ARRAY['08:00'::time, '20:00'::time])
+			RETURNING id::text
+		`, shape.days), c.courseB, shape.kind, mcg, shape.cadence).Scan(&item); err != nil {
+			return fmt.Errorf("%s / %s: %w", shape.kind, shape.cadence, err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app.protocol_phases
+			    (protocol_item_id, from_week, to_week, dose_value, dose_unit)
+			VALUES ($1, 1, 12, 250, 'мкг')
+		`, item); err != nil {
+			return fmt.Errorf("мкг as a dose unit on %s: %w", shape.kind, err)
+		}
+	}
+
+	// The two finished statuses, on a patient whose active course the fixture
+	// already holds, and the far end of the length bound — otherwise always 12.
+	for _, course := range []struct {
+		status string
+		weeks  int
+	}{{"completed", 1}, {"cancelled", 8}, {"completed", 104}} {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app.protocols (patient_id, start_date, duration_weeks, status)
+			VALUES ($1, DATE '2024-01-01', $2, $3)
+		`, patientA, course.weeks, course.status); err != nil {
+			return fmt.Errorf("status %s over %d weeks: %w", course.status, course.weeks, err)
+		}
+	}
+
+	return nil
+}
+
+// The fourth table, which the step names and the crosswise test above cannot
+// cover: a reference has no row predicate to get wrong, so what is worth
+// measuring is the column list and the refusal to write.
+func TestTheReferenceIsReadableByBothRolesAndWritableByNeither(t *testing.T) {
+	c := newClinic(t)
+
+	for _, caller := range []struct{ subject, role string }{
+		{patientA, "patient"},
+		{doctorA, "doctor"},
+	} {
+		names := c.visible(t, caller.subject, caller.role, `SELECT name_ru FROM app.compounds`)
+		if len(names) != 1 || names[0] != "Семаглутид" {
+			t.Errorf("%s reads %v, want the seeded compound", caller.role, names)
+		}
+
+		// code and created_at are withheld by a column grant, so asking for
+		// either is a privilege refusal and not an empty answer.
+		for _, column := range []string{"code", "created_at"} {
+			err := c.as(t, caller.subject, caller.role, func(ctx context.Context, tx pgx.Tx) error {
+				var value *string
+				return tx.QueryRow(ctx, `SELECT `+column+`::text FROM app.compounds`).Scan(&value)
+			})
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+				t.Errorf("%s read compounds.%s: got %v, want SQLSTATE 42501", caller.role, column, err)
+			}
+		}
+
+		err := c.as(t, caller.subject, caller.role, func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.compounds (name_ru, default_unit, route, icon)
+				VALUES ('Тирзепатид', 'мг', 'п/к', 'vial')
+			`)
+
+			return err
+		})
+
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+			t.Errorf("%s wrote the reference: got %v, want SQLSTATE 42501", caller.role, err)
+		}
+	}
+}
+
+// The guarantee on protocol_phases is entirely transitive — both its request-role
+// bodies mention no subject at all — so «a caller with no subject reads nothing»
+// is the axis that would notice the day protocol_items stops depending on one.
+//
+// Positive equality is what makes this fail closed: a predicate written with a
+// negation is three-valued, and on NULL it matches everything rather than
+// nothing.
+func TestACallerWithNoSubjectReadsNothing(t *testing.T) {
+	c := newClinic(t)
+
+	for _, subject := range []string{"", "not-a-uuid", "8a1f3b7c-0000-4000-8000-00000000dead"} {
+		for _, role := range []string{"patient", "doctor"} {
+			for _, table := range []string{"protocols", "protocol_items", "protocol_phases"} {
+				err := c.as(t, subject, role, func(ctx context.Context, tx pgx.Tx) error {
+					var rows int
+
+					return tx.QueryRow(ctx, `SELECT count(*) FROM app.`+table).Scan(&rows)
+				})
+				// An empty or unparseable subject is refused before a transaction
+				// opens; a well-formed stranger opens one and reads nothing.
+				if err != nil {
+					continue
+				}
+
+				seen := c.visible(t, subject, role, `SELECT id::text FROM app.`+table)
+				if len(seen) != 0 {
+					t.Errorf("subject %q as %s read %s: %v", subject, role, table, seen)
+				}
+			}
+		}
+	}
+}
+
+// The admin's four FOR ALL policies, which the registries declare and nothing
+// exercised: USING (true) WITH CHECK (true) is also what a policy looks like when
+// somebody meant to write a predicate and did not.
+func TestTheAdminReachesEveryPatientsCourse(t *testing.T) {
+	c := newClinic(t)
+
+	seen := c.visible(t, adminID, "admin", `SELECT id::text FROM app.protocols ORDER BY id`)
+	if len(seen) != 2 {
+		t.Errorf("the admin reads %v, want both courses", seen)
+	}
+
+	// The control that makes the two above mean «reaches everyone» rather than
+	// «reaches whatever the query returned»: the same call as a patient sees one.
+	if mine := c.visible(t, patientA, "patient", `SELECT id::text FROM app.protocols`); len(mine) != 1 {
+		t.Errorf("the patient reads %v, want exactly their own", mine)
 	}
 }

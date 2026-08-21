@@ -1,5 +1,10 @@
--- The same six shapes as identity, on four more tables, and every one of them
--- carries an explicit TO. A policy without it applies to PUBLIC — which includes
+-- Five of the six shapes identity uses, on four more tables, plus a seventh that
+-- is new here and recorded as a deviation on step 2: a reference table open to
+-- both request roles. data-layer.md invariant 2 enumerates six and says «and no
+-- others», so widening it is an architecture change and not a detail — the note
+-- is rewritten at finalization rather than extended.
+--
+-- Every policy carries an explicit TO. A policy without it applies to PUBLIC — which includes
 -- the service path, and would hand it the request path's row predicate.
 --
 -- No policy body below contains 'patient', 'doctor' or 'admin'. The role decision
@@ -111,15 +116,24 @@ CREATE POLICY protocol_phases_own_select ON app.protocol_phases
         WHERE protocol_items.id = protocol_phases.protocol_item_id
     ));
 
--- One level deeper than the item's own policy, and it does not repeat it: the
--- subquery above runs under protocol_items' policies, which already answer «this
--- patient's». Repeating the join here would be a second copy of the rule to keep
--- in step, and the identity block chose the same way.
+-- One level deeper than the item's own policy, and it does not repeat it: a phase
+-- carries no patient column of its own, and the subquery above runs under
+-- protocol_items' policies, which already answer «this patient's».
 --
--- The consequence, for whoever edits protocol_items next: its SELECT policies are
--- the single source of «whose» for phases too. A policy widened there — «a doctor
--- reads the items of a template protocol», say — widens this table in the same
--- commit, without this file being opened.
+-- This is not what the identity block does — every relation policy in 000004
+-- writes its predicate out in full, and none of them is two levels deep. Nor is
+-- it what protocol_items does thirty lines above. It is a decision taken here, and
+-- these are its two standing costs:
+--
+--   * both bodies below mention no subject at all, so the guarantee is entirely
+--     transitive: a protocol_items policy that stops depending on the subject
+--     opens this table with no edit visible in this file;
+--   * the two are identical and differ only in TO, so adding a role to either
+--     one's TO is the whole of the change.
+--
+-- Measured rather than argued: a caller with no subject published reads nothing
+-- from any of the four tables, and the deepest one is reached by primary key
+-- without escaping its predicate.
 CREATE POLICY protocol_phases_of_my_patients ON app.protocol_phases
     FOR SELECT TO cadence_doctor
     USING (EXISTS (
