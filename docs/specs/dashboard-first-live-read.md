@@ -1,12 +1,14 @@
 ---
 type: spec
 project: cadence
-status: approved
+status: done
 priority: p1
 created: 2026-07-30
 todoist_parent: "6h9MFpPJ3mvpjRcq"
 components: [web-dashboard, api, identity, provisioner]
 proposal: "[[20-Projects/cadence/architecture/proposals/first-live-read-and-sign-in|architecture/proposals/first-live-read-and-sign-in]]"
+adr: "[[20-Projects/cadence/adr/ADR-012-first-live-read-and-sign-in|adr/ADR-012-first-live-read-and-sign-in]]"
+completed: 2026-08-21
 ---
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/dashboard-first-live-read.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
