@@ -13,15 +13,30 @@ import (
 // pool per route is a route that can be given the wrong one.
 type Service struct {
 	onboarding *Onboarding
+	sessions   *Sessions
+	roster     *Roster
+	profiles   ProfileReader
+	directory  *Directory
 }
 
-// NewService builds the context around the flow its operations serve.
-//
-// A nil onboarding is legitimate and has exactly one caller: the generator that
-// renders openapi.json needs the operations declared and nothing behind them.
-// An operation reached in that state refuses rather than dereferences.
-func NewService(onboarding *Onboarding) *Service {
-	return &Service{onboarding: onboarding}
+// Deps is what this context's operations answer from. A nil field is the document generator's
+// assembly, and an operation reached in it refuses rather than dereferences.
+type Deps struct {
+	Onboarding *Onboarding
+	Sessions   *Sessions
+	Roster     *Roster
+	Profiles   ProfileReader
+	Directory  *Directory
+}
+
+func NewService(deps Deps) *Service {
+	return &Service{
+		onboarding: deps.Onboarding,
+		sessions:   deps.Sessions,
+		roster:     deps.Roster,
+		profiles:   deps.Profiles,
+		directory:  deps.Directory,
+	}
 }
 
 // Register mounts this context's operations on the API.
@@ -34,10 +49,78 @@ func (s *Service) Register(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/v1/me",
 		Summary:     "The authenticated caller",
-		Description: "Returns the identity carried by the presented token. " +
-			"It reads no database: a role changed there takes effect when the token expires.",
+		Description: "Returns the identity the presented token carries, and the caller's own name. " +
+			"The role is the token's: changed in the database, it takes effect when the token expires. " +
+			"The name is read from the caller's own profile row, because nothing else in the API " +
+			"answers a person their own name — it is absent for an account the clinic holds no " +
+			"profile for. Answers 503 when the database could not serve the request.",
 		Tags: []string{"identity"},
-	}, me)
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusServiceUnavailable,
+		},
+	}, s.me)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "record-session",
+		Method:        http.MethodPost,
+		Path:          "/v1/me/session",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Report the device's timezone",
+		Description: "Records the caller's timezone against their profile. A patient's is stored — the schedule, " +
+			"the reminders and the server-side sweep all read it — and the zone is validated there; a " +
+			"doctor's and an administrator's are not stored, and the call is answered without a write " +
+			"rather than refused, so one client can serve every role. " +
+			"Answers 400 when a patient's zone is not one the server knows, 403 when the account has no " +
+			"role yet, and 503 when the database could not serve the request.",
+		Tags: []string{"identity"},
+		// Declaring any status makes huma drop the default response, so 401 has to be named here too.
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusServiceUnavailable,
+		},
+	}, s.recordSession)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "dashboard-overview",
+		Method:      http.MethodGet,
+		Path:        "/v1/dashboard/overview",
+		Summary:     "The patients this member of staff may see",
+		Description: "The doctor's registry, on the route §11 names and the one M6 extends rather than replaces. " +
+			"A doctor is answered their assigned patients and an administrator everyone; the selection is the " +
+			"database's, so reassigning a patient changes the answer with no query edit. Paging is by cursor " +
+			"rather than by offset, because the set changes underneath a doctor as assignments do. " +
+			"Answers 400 for a cursor this server did not issue, 403 to a patient, and 503 when the database " +
+			"could not serve the request.",
+		Tags: []string{"identity"},
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusServiceUnavailable,
+		},
+	}, s.overview)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-providers",
+		Method:      http.MethodGet,
+		Path:        "/v1/providers",
+		Summary:     "The clinic's staff",
+		Description: "Everyone a care team may name: the clinic's doctors and administrators, by name and " +
+			"by the title a patient reads beside it. Staff only — a patient is answered their own care " +
+			"team by the screen that draws it, not this list. " +
+			"The read is authorised here rather than by a policy: no policy lets a doctor read a " +
+			"colleague's profile, which is why the new-patient form had nobody to offer. " +
+			"Answers 403 to a patient and 503 when the database could not serve the request.",
+		Tags: []string{"identity"},
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusServiceUnavailable,
+		},
+	}, s.staff)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-patient",

@@ -221,6 +221,19 @@ func (c *cycleClinic) hire(t *testing.T, admin person, address, title string) pe
 	return signIn(t, address)
 }
 
+// invited is take() stopped one step short: the patient exists, the invitation has gone out, and
+// nobody has opened it. It is the state most of a clinic's roster is in on any given day.
+func (c *cycleClinic) invited(t *testing.T, doctor person, address string) string {
+	t.Helper()
+
+	created := c.send(t, patientsPath, doctor.access, body(address, doctor.account))
+	if created.status != http.StatusCreated {
+		t.Fatalf("the doctor could not create %s: %d %s", address, created.status, created.body)
+	}
+
+	return accountID(t, address)
+}
+
 // take is a doctor creating a patient and putting themselves on their care team, through to the
 // patient holding a session.
 func (c *cycleClinic) take(t *testing.T, doctor person, address string) person {

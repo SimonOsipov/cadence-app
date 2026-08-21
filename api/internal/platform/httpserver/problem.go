@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -53,6 +54,14 @@ const unavailableDetail = "Сервис временно недоступен. �
 // the original payload did.
 const problemFallbackBody = `{"type":"/problems/internal","title":"Internal Server Error","status":500,` +
 	`"detail":"` + internalDetail + `"}`
+
+// What a refusal line says, which is the difference between an alarm and a
+// reason attached to an otherwise mute 400.
+const (
+	msgDetailWithheld = "response detail withheld from the caller"
+	msgRefused        = "request refused"
+	msgCallerGone     = "the caller went away before the response"
+)
 
 // Problem is the single error shape of the API: RFC 9457 problem details.
 //
@@ -165,7 +174,7 @@ func (p *Problem) ContentType(ct string) string {
 func WriteProblem(w http.ResponseWriter, r *http.Request, p Problem) {
 	requestID := chimw.GetReqID(r.Context())
 
-	logScrubbed(r.Context(), p, requestID)
+	logRefusal(r.Context(), p, requestID)
 	p.normalise()
 	p.Instance = r.URL.Path
 	p.RequestID = requestID
@@ -192,7 +201,8 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, p Problem) {
 	writeRaw(w, p.Status, ProblemContentType, body)
 }
 
-// logScrubbed writes down what normalise is about to destroy.
+// logRefusal records why a request was refused, at the level the refusal
+// deserves.
 //
 // Scrubbing and logging are one action on purpose. Every place that says the
 // caller learns nothing also says the reason lives in the log, and the only way
@@ -200,20 +210,34 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, p Problem) {
 // records it. A caller passes the real cause into Problem.Detail and gets the
 // guarantee for free; a caller that passes nothing has nothing to lose here and
 // has usually logged already, which is why this is silent in that case.
-func logScrubbed(ctx context.Context, p Problem, requestID string) {
+//
+// It is also where an abandoned request is told from a fault: that depends on
+// the request rather than on the route, so deciding it per route is deciding it
+// again in every context.
+func logRefusal(ctx context.Context, p Problem, requestID string) {
 	if p.Detail == "" && len(p.Errors) == 0 {
 		return
 	}
 
-	level := slog.LevelError
+	level, message := slog.LevelError, msgDetailWithheld
 	switch {
+	case errors.Is(ctx.Err(), context.Canceled):
+		// The caller hung up: the status is being written to a closed socket, and
+		// an alarm nobody can act on is an alarm its readers learn to skip.
+		// DeadlineExceeded is deliberately not here — that bound is this
+		// server's own, and missing it is a fault to answer for.
+		level, message = slog.LevelInfo, msgCallerGone
+
 	case p.Status >= http.StatusInternalServerError:
+
 	case p.Status == http.StatusUnauthorized:
 		level = slog.LevelWarn
+
 	default:
-		// Below 500 and not a rejected token: the detail reaches the caller
-		// unchanged, so there is nothing the log would be preserving.
-		return
+		// The detail reaches the caller unchanged, so this line preserves nothing
+		// — it explains: without it a systematically broken cursor is a flat run
+		// of 400s in the access log with no reason attached to any of them.
+		level, message = slog.LevelInfo, msgRefused
 	}
 
 	attrs := []any{
@@ -226,7 +250,7 @@ func logScrubbed(ctx context.Context, p Problem, requestID string) {
 		attrs = append(attrs, fmt.Sprintf("error_%d", i), detail.Location+": "+detail.Message)
 	}
 
-	loggerFrom(ctx).Log(ctx, level, "response detail withheld from the caller", attrs...)
+	loggerFrom(ctx).Log(ctx, level, message, attrs...)
 }
 
 // normalise applies the rules that must not depend on the caller remembering

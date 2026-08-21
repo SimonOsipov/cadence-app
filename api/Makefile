@@ -1,4 +1,4 @@
-.PHONY: build run test test-integration gate openapi dev-up fmt tidy migrate-up migrate-down migrate-new docker-up docker-down
+.PHONY: build run test test-integration gate openapi dev-up smoke seed fmt tidy migrate-up migrate-down migrate-new docker-up docker-down
 
 APP_NAME = cadence-api
 BUILD_DIR = bin
@@ -73,6 +73,21 @@ migrate-down:
 
 migrate-new:
 	go run ./cmd/migrate new "$(NAME)"
+
+# The critical path through a browser, against everything on this machine: the stack, the clinic and
+# the dashboard's dev server. Lives in scripts/ because it is not the API's alone — see the script's
+# own header for why it is not in the gate.
+smoke:
+	../scripts/smoke/run.sh
+
+# Fills a development clinic with the people the screens were designed around.
+# Needs the two request-path roles, a reachable provisioner and SEED_PASSWORD;
+# the command refuses to run when SEED_ENVIRONMENT says production.
+#
+# `dev-up` does not bring a provisioner up — this compose file has no such
+# service yet — so this target is run against one started by hand until it does.
+seed:
+	go run ./cmd/seed
 
 # Local Postgres for development. Tests bring their own via testcontainers.
 docker-up:

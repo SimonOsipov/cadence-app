@@ -225,6 +225,15 @@ AGENTS.md
 # Go (api/)
 api/bin/
 api/coverage.out
+# `go build ./cmd/<name>` from api/ drops the binary here under the command's own
+# name, one `git add -A` away from the trunk.
+api/api
+api/bootstrap-admin
+api/migrate
+api/openapi
+api/provisioner
+api/seed
+api/sqlauthorship
 *.test
 
 # Local environment
@@ -258,3 +267,7 @@ web/.vite/
 
 # Playwright MCP writes screenshots and page snapshots here during a visual comparison.
 .playwright-mcp/
+
+# Playwright's own output: traces and screenshots of a run somebody did on their machine.
+web/test-results/
+web/playwright-report/

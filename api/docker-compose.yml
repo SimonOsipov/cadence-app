@@ -192,7 +192,7 @@ services:
       # derives from AUTH_JWT_ISSUER.
       API_EXTERNAL_URL: http://localhost:9999
       GOTRUE_JWT_ISSUER: http://localhost:9999
-      GOTRUE_SITE_URL: http://localhost:8080
+      GOTRUE_SITE_URL: http://localhost:5173/accept-invite
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_EXP: "3600"
 
@@ -294,12 +294,12 @@ services:
       # settings above are. What an uncovered address costs is named at
       # TestTheAllowListDecidesWhereALinkLands.
       #
-      # The value below opens nothing: it is SITE_URL's own origin, so locally
-      # the list is the fallback. That is not a choice — this machine has no
-      # surface to land on yet. The dashboard in web/ is still a prototype with
-      # no dev server, and the app's deep-link scheme is not chosen. Whoever
-      # adds either owns replacing this line.
-      GOTRUE_URI_ALLOW_LIST: http://localhost:8080/**
+      # The dashboard's dev server, which is where an invitation now lands: SITE_URL
+      # above names its acceptance route, so an invitation asking for no redirect
+      # of its own — which is every invitation this API sends — arrives at the
+      # screen that finishes it. The app's deep-link scheme is still not chosen,
+      # and whoever chooses it owns adding it here.
+      GOTRUE_URI_ALLOW_LIST: http://localhost:5173/**
       # A bare `**` would open this to any host the caller names, and the
       # session rides in the landing address's fragment. Asserted in shape,
       # not merely in non-emptiness — see TestTheDeploymentSetsARedirectAllowList.

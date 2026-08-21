@@ -8,17 +8,30 @@ import { OVERVIEW, PATIENTS, TRIAGE_IDS } from '../../data/fixtures/overview'
 const OVERVIEW_TRIAGE = TRIAGE_IDS.map(
   (id) => PATIENTS.find((patient) => patient.id === id)?.name ?? id,
 )
-const TRIAGE_LAST_ID = PATIENTS.filter((patient) => patient.status === 'attention').at(-1)?.id ?? null
 import { quantity, whole } from '../../format'
 import type { Transport } from '../../data/transport'
-import { PAGE_SIZE, fixtureTransport } from '../../data/transport'
+import { fixtureTransport } from '../../data/transport'
+import type { RosterPage, RosterRow } from '../../api'
+import type { ApiClient } from '../../data/api'
+import { stubApi } from '../../data/api.stub'
 import { OverviewPage } from './overview-page'
+import { PatientCard } from './patient-card'
 
-// A transport per test and a client per test: React Query caches across renders, and a shared client
-// makes one test's answer the next test's starting point.
-function show(transport: Transport = fixtureTransport()) {
+// Two seams now, because the screen reads two: the roster is live and the five sections around it
+// are still the fixture transport's. A transport and a client per test — React Query caches across
+// renders, and a shared client makes one test's answer the next test's starting point.
+const LIVE_PATIENTS: RosterRow[] = [
+  { user_id: 'a', full_name: 'Анна Петрова', age: 41, invite_state: 'accepted' },
+  { user_id: 'b', full_name: 'Борис Ким', age: 47, invite_state: 'pending' },
+]
+
+function liveRoster(page: Partial<RosterPage> = {}): ApiClient {
+  return stubApi({ roster: () => Promise.resolve({ patients: LIVE_PATIENTS, ...page }) })
+}
+
+function show(transport: Transport = fixtureTransport(), api: ApiClient = liveRoster()) {
   return render(
-    <DataProvider transport={transport} client={defaultClient()}>
+    <DataProvider transport={transport} api={api} client={defaultClient()}>
       <OverviewPage />
     </DataProvider>,
   )
@@ -101,123 +114,77 @@ describe('the numbers on the strip', () => {
     await screen.findByText('Пациентов')
 
     expect(within(card('Пациентов')).getByText(String(aggregates.patients))).toBeInTheDocument()
-    expect(aggregates.patients).toBeGreaterThan(PAGE_SIZE)
+    // The strip counts the clinic and the roster beside it carries two rows: a strip summing what is
+    // on screen would say two, and it says what the seam sent.
+    expect(aggregates.patients).toBeGreaterThan(LIVE_PATIENTS.length)
     expect(within(card('Регулярность')).getByText(String(aggregates.averageAdherence))).toBeInTheDocument()
     expect(
       within(card('Дозы сегодня')).getByText(`${aggregates.dosesDone}/${aggregates.dosesToday}`),
     ).toBeInTheDocument()
   })
 
-  // Pairs and not a list of digits: «Внимание» and «Наблюдение» are both 4 in this fixture, so a list
-  // passes with the two swapped — the label is half of what is being asserted.
-  it.each([
-    ['Все', OVERVIEW.aggregates.byStatus.all],
-    ['Внимание', OVERVIEW.aggregates.byStatus.attention],
-    ['Наблюдение', OVERVIEW.aggregates.byStatus.watch],
-    ['В норме', OVERVIEW.aggregates.byStatus.track],
-  ] as const)('counts %s from the aggregates', async (label, count) => {
-    show()
-
-    const tab = await screen.findByRole('tab', { name: new RegExp(`^${label}`) })
-
-    expect(tab.textContent?.replace(/\D+/g, '')).toBe(String(count))
-  })
+  // The roster's status tabs counted the same aggregates and are gone with them: the live roster has
+  // no status to filter by until M6 answers one, and a tab that filters nothing is the dead control
+  // invariant 4 forbids.
 })
 
 describe('the roster', () => {
-  it('shows one page of it and says how many there are', async () => {
+  it('draws the patients the API answered, and not the fixture beside them', async () => {
     show()
 
-    await screen.findByRole('tab', { name: /Все/ })
+    const journal = within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
 
-    await waitFor(() => {
-      expect(screen.getByText(`${PAGE_SIZE} из ${PATIENTS.length}`)).toBeInTheDocument()
-    })
+    expect(await journal.findByText('Анна Петрова')).toBeInTheDocument()
+    expect(journal.queryByText(PATIENTS[0]?.name ?? '')).toBeNull()
   })
 
-  it('walks to the next page', async () => {
-    show()
+  it('walks to the next page by the cursor the answer carried', async () => {
     const user = userEvent.setup()
+    const asked: (string | undefined)[] = []
 
-    // Scoped to the roster: the first patients are also on the triage cards above it, so «gone from the
-    // page» is a claim about this section and not about the screen.
-    const journal = async () => within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
-    const first = PATIENTS[0]?.name ?? ''
+    show(fixtureTransport(), stubApi({
+      roster: ({ cursor }) => {
+        asked.push(cursor)
 
-    expect(await (await journal()).findByText(first)).toBeInTheDocument()
-    await screen.findByText(`${PAGE_SIZE} из ${PATIENTS.length}`)
+        return Promise.resolve(
+          cursor === undefined
+            ? { patients: LIVE_PATIENTS, next_cursor: 'after-boris' }
+            : { patients: [{ user_id: 'c', full_name: 'Вера Зорина', age: 45, invite_state: 'unknown' as const }] },
+        )
+      },
+    }))
+
+    const journal = within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
+    await journal.findByText('Анна Петрова')
 
     await user.click(screen.getByRole('button', { name: /Дальше/ }))
 
-    await waitFor(async () => {
-      expect((await journal()).queryByText(first)).toBeNull()
-    })
-    expect((await journal()).getByText(PATIENTS[PAGE_SIZE]?.name ?? '')).toBeInTheDocument()
+    expect(await journal.findByText('Вера Зорина')).toBeInTheDocument()
+    expect(asked).toEqual([undefined, 'after-boris'])
   })
 
-  // The cursor belongs to the filter it came from. Kept across a tab change it names a patient the new
-  // filter has never heard of, and the seam refuses it — so this is the error the screen must not be
-  // able to cause.
-  it('starts the new filter from its own beginning', async () => {
-    show()
-    const user = userEvent.setup()
+  // A clinic that has not created anybody yet, which is the state every new deployment starts in.
+  it('says so when the clinic has nobody', async () => {
+    show(fixtureTransport(), liveRoster({ patients: [] }))
 
-    const journal = async () => within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
-
-    // The pager is disabled until the first page lands, and a click on a disabled button is not
-    // delivered. Waited for rather than assumed: measured, a transport answering the roster 30ms after
-    // the overview turns this green test red, and today it passes only because both timers fire in one
-    // tick.
-    await screen.findByText(`${PAGE_SIZE} из ${PATIENTS.length}`)
-    await user.click(screen.getByRole('button', { name: /Дальше/ }))
-    await waitFor(async () => expect((await journal()).queryByText(PATIENTS[0]?.name ?? '')).toBeNull())
-
-    await user.click(screen.getByRole('tab', { name: /Внимание/ }))
-
-    expect(await screen.findByText(OVERVIEW.aggregates.attention + ' из ' + OVERVIEW.aggregates.attention)).toBeInTheDocument()
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(await screen.findByText(/Пациентов пока нет/)).toBeInTheDocument()
   })
 
-  // Through the real seam and not a stub. The fixture has patients of every status and the seam offers
-  // no page after the last one with rows, so the browser cannot reach this state today — which is
-  // exactly why the empty screen would otherwise be drawn against nothing. The seam is asked the one
-  // question that does produce it.
-  it('says so when a page has nobody on it', async () => {
-    const attention = OVERVIEW.aggregates.byStatus.attention
-    const past: Transport = {
-      overview: () => fixtureTransport().overview(),
-      // The one question the seam answers with an empty page: the filter's last patient as the cursor.
-      roster: () => fixtureTransport().roster({ filter: 'attention', cursor: TRIAGE_LAST_ID }),
-    }
-    show(past)
-
-    expect(await screen.findByText(/Никого не нашлось/)).toBeInTheDocument()
-    expect(attention).toBeGreaterThan(0)
-  })
-
-  // Both branches were unreachable in tests: `failWith` fails the overview too, so the page
-  // short-circuits before the roster is ever rendered.
-  it('keeps the filters usable when only the roster fails', async () => {
-    const rosterDown: Transport = {
-      overview: () => fixtureTransport().overview(),
-      roster: () => Promise.reject(new Error('журнал недоступен')),
-    }
-    show(rosterDown)
+  // The five fixture sections are not the roster's to take down: what failed is one request.
+  it('keeps the rest of the screen when only the roster fails', async () => {
+    show(fixtureTransport(), stubApi({ roster: () => Promise.reject(new Error('журнал недоступен')) }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('журнал недоступен')
-    // The tabs and the pager survive the failure: replacing the section wholesale leaves a doctor with
-    // no way to change the filter or step back to the first page.
-    expect(screen.getAllByRole('tab')).toHaveLength(4)
+
+    // The pager survives the failure: a doctor whose journal failed still has to be able to step back
+    // to the first page.
     expect(screen.getByRole('button', { name: 'В начало' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Расписание' })).toBeInTheDocument()
   })
 
   it('shows its own line while the page is on its way', async () => {
-    const slow: Transport = {
-      overview: () => fixtureTransport().overview(),
-      roster: (query) => fixtureTransport({ latencyMs: 60 }).roster(query),
-    }
-    show(slow)
+    show(fixtureTransport(), stubApi({ roster: () => new Promise(() => undefined) }))
 
     expect(await screen.findByText('Загружаем журнал…')).toBeInTheDocument()
   })
@@ -228,12 +195,11 @@ describe('the schedule', () => {
     show()
 
     const section = within(await screen.findByRole('region', { name: 'Расписание' }))
-    const offPage = OVERVIEW.schedule.find(
-      (entry) => !PATIENTS.slice(0, PAGE_SIZE).some((patient) => patient.id === entry.patientId),
-    )
+    // Nobody the roster is showing — it is a live page of other people entirely — which is the case
+    // that used to print an id.
+    const offPage = OVERVIEW.schedule[0]
 
-    // Deliberately one the roster is not showing: that is the case that used to print an id.
-    expect(offPage, 'the fixture schedules somebody off the first page').toBeDefined()
+    expect(offPage, 'the fixture schedules somebody').toBeDefined()
     expect(section.getByText(offPage!.patientName)).toBeInTheDocument()
     expect(section.queryByText(offPage!.patientId)).toBeNull()
   })
@@ -280,8 +246,8 @@ describe('the dose', () => {
   // Two decimals and not merely fractional: 0,5 мг survives one place, 0,25 мг does not, and it is the
   // second that tells the two settings apart. Dropping the `2` is one token, renders «0,3 мг» for a
   // 0,25 мг protocol and passed every test — format.test.ts pins the function, nothing pinned the
-  // caller. Both surfaces are read here: the fix for this asserted the card alone and left the row it
-  // is opened from measured by nothing, which is the third time this shape reopened one step down.
+  // caller. The card is the one surface left that writes a dose: the roster's protocol column is
+  // M6's, and it left with the fixture the row came from.
   const fractional = PATIENTS.find(
     (patient) => (String(patient.dose.value).split('.')[1]?.length ?? 0) > 1,
   )
@@ -289,16 +255,11 @@ describe('the dose', () => {
   it('is written to the precision the protocol uses', async () => {
     expect(fractional, 'the fixture prescribes a dose needing two decimals').toBeDefined()
 
-    show()
-    const user = userEvent.setup()
+    // The card on its own, because the patient prescribed such a dose is not one triage carries and
+    // the roster no longer writes a dose at all. What has to stay measured is the call site.
+    render(<PatientCard patient={fractional!} onClose={() => undefined} />)
 
     const written = quantity(fractional!.dose.value, fractional!.dose.unit, 2)
-    const journal = within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
-
-    const row = await journal.findByText(fractional!.name)
-    expect(journal.getByText(new RegExp(written)), 'the roster row writes it').toBeInTheDocument()
-
-    await user.click(row)
     const card = await screen.findByRole('complementary', { name: `Карточка: ${fractional!.name}` })
 
     expect(within(card).getByText(new RegExp(written)), 'the card writes it').toBeInTheDocument()
@@ -306,17 +267,16 @@ describe('the dose', () => {
 })
 
 describe('the patient card', () => {
-  it('opens on a row and carries what the seam worked out', async () => {
+  it('opens on a triage tile and carries what the seam worked out', async () => {
     show()
     const user = userEvent.setup()
 
-    // The second row and not the first: `onOpen(items[0])` would satisfy a click on row one, and
+    // The second tile and not the first: `onOpen(patients[0])` would satisfy a click on tile one, and
     // «the card that opens is the patient that was clicked» is the property.
-    const patient = PATIENTS[1]
-    const journalRegion = await screen.findByRole('region', { name: 'Журнал протоколов' })
-    const journal = within(journalRegion)
+    const patient = PATIENTS.find((candidate) => candidate.id === TRIAGE_IDS[1])
+    const triage = within(await screen.findByRole('region', { name: 'Требуют внимания' }))
 
-    await user.click(await journal.findByText(patient?.name ?? ''))
+    await user.click(await triage.findByText(patient?.name ?? ''))
 
     const card = await screen.findByRole('complementary', { name: `Карточка: ${patient?.name ?? ''}` })
 
@@ -335,9 +295,6 @@ describe('the patient card', () => {
     // assertion reached had whole numbers.
     expect(patient?.weight).not.toBeCloseTo(Math.round(patient?.weight ?? 0), 5)
     expect(within(card).getByText(new RegExp(`${quantity(patient!.weight, patient!.unit)}`))).toBeInTheDocument()
-    expect(
-      within(journalRegion).getByText(new RegExp(quantity(patient!.weight, patient!.unit))),
-    ).toBeInTheDocument()
 
     await user.click(within(card).getByRole('button', { name: 'Закрыть карточку' }))
     // By name: the side menu is a landmark of the same kind, and an unnamed query would answer «still
@@ -345,5 +302,99 @@ describe('the patient card', () => {
     await waitFor(() =>
       expect(screen.queryByRole('complementary', { name: /^Карточка:/ })).toBeNull(),
     )
+  })
+})
+
+// The screen is mixed on purpose — one live section and the rest on invented numbers — and the whole
+// requirement is that nobody has to guess which is which. See DemoMark for why it is on the screen
+// rather than in a comment.
+describe('what is still a fixture', () => {
+  it('is marked on the screen, section by section, with the release it comes off at', async () => {
+    show()
+
+    await screen.findByRole('region', { name: 'Требуют внимания' })
+
+    const marks = screen.getAllByText(/Демо-данные · до M6/)
+    expect(marks.length).toBeGreaterThanOrEqual(3)
+
+    for (const section of ['Требуют внимания', 'Расписание']) {
+      const region = within(screen.getByRole('region', { name: section }))
+      expect(region.getByText(/Демо-данные/), `${section} is not marked`).toBeInTheDocument()
+    }
+  })
+
+  // The one section that is not a fixture must not carry the mark, or the mark says nothing.
+  it('does not mark the roster, which is live', async () => {
+    show()
+
+    const journal = within(await screen.findByRole('region', { name: 'Журнал протоколов' }))
+    await journal.findByText('Анна Петрова')
+
+    expect(journal.queryByText(/Демо-данные/)).toBeNull()
+  })
+
+  it('marks the card a triage tile opens', async () => {
+    show()
+    const user = userEvent.setup()
+
+    const patient = PATIENTS.find((candidate) => candidate.id === TRIAGE_IDS[0])
+    const triage = within(await screen.findByRole('region', { name: 'Требуют внимания' }))
+
+    await user.click(await triage.findByText(patient?.name ?? ''))
+
+    const card = await screen.findByRole('complementary', { name: `Карточка: ${patient?.name ?? ''}` })
+    expect(within(card).getByText(/Демо-данные/)).toBeInTheDocument()
+  })
+})
+
+// The button the prototype draws and this MVP could not honour until the endpoint existed.
+describe('taking a patient on', () => {
+  const ME = {
+    sub: 'the-doctor',
+    role: 'doctor',
+    expires_at: '2026-08-21T12:00:00Z',
+    full_name: 'Ксения Первеева',
+  }
+
+  it('is not offered to a screen that does not know who is signed in', async () => {
+    show()
+
+    await screen.findByRole('region', { name: 'Журнал протоколов' })
+    expect(screen.queryByRole('button', { name: 'Новый пациент' })).toBeNull()
+  })
+
+  it('opens the form, and asks the roster again once the patient exists', async () => {
+    const user = userEvent.setup()
+    let asked = 0
+
+    const api = stubApi({
+      roster: () => {
+        asked += 1
+
+        return Promise.resolve({ patients: LIVE_PATIENTS })
+      },
+      staff: () => Promise.resolve({ staff: [] }),
+      createPatient: () => Promise.resolve({ user_id: 'the-new-patient' }),
+    })
+
+    render(
+      <DataProvider transport={fixtureTransport()} api={api} client={defaultClient()}>
+        <OverviewPage me={ME} />
+      </DataProvider>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Новый пациент' }))
+
+    const form = within(await screen.findByRole('region', { name: 'Новый пациент' }))
+    await user.type(form.getByLabelText('Имя и фамилия'), 'Марина Волкова')
+    await user.type(form.getByLabelText('Почта'), 'marina@clinic.example')
+
+    const before = asked
+    await user.click(form.getByRole('button', { name: 'Создать и пригласить' }))
+
+    // The form closes and the roster is read again: the new patient is on a page the server chooses,
+    // and a row added by hand here would be this screen deciding where the server puts them.
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Новый пациент' })).toBeNull())
+    await waitFor(() => expect(asked).toBeGreaterThan(before))
   })
 })

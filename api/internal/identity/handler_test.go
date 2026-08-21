@@ -3,7 +3,6 @@ package identity_test
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
@@ -15,28 +14,6 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
-// mounted returns the identity context served on a bare router, with principal
-// standing in for what the authentication middleware would have put on the
-// context. A nil principal is the case the middleware is supposed to make
-// impossible — which is exactly why the handler is asked about it.
-func mounted(principal *auth.Principal) http.Handler {
-	router := chi.NewRouter()
-
-	router.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if principal != nil {
-				r = r.WithContext(auth.WithPrincipal(r.Context(), *principal))
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	})
-
-	identity.NewService(nil).Register(httpserver.NewAPI(router))
-
-	return router
-}
-
 func TestMeReturnsTheVerifiedCaller(t *testing.T) {
 	expiry := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	principal := auth.Principal{
@@ -45,8 +22,7 @@ func TestMeReturnsTheVerifiedCaller(t *testing.T) {
 		ExpiresAt: expiry,
 	}
 
-	rec := httptest.NewRecorder()
-	mounted(&principal).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	rec := askingWhoIAm(&principal, &stubProfiles{name: "Марина Волкова"})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body)
@@ -78,8 +54,7 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 
-	rec := httptest.NewRecorder()
-	mounted(&principal).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	rec := askingWhoIAm(&principal, &stubProfiles{name: "Марина Волкова"})
 
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -92,7 +67,9 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 	}
 	slices.Sort(got)
 
-	if want := []string{"expires_at", "role", "sub"}; !slices.Equal(got, want) {
+	// Four now: the name the dashboard greets them by is read from their own profile row, and it is
+	// the only field here that is not the token's.
+	if want := []string{"expires_at", "full_name", "role", "sub"}; !slices.Equal(got, want) {
 		t.Errorf("the response carries %v, want exactly %v", got, want)
 	}
 }
@@ -103,8 +80,7 @@ func TestMeReturnsNothingBeyondTheNarrowPrincipal(t *testing.T) {
 // 200 with an empty subject would be an anonymous caller presented as a
 // verified one.
 func TestMeRefusesWithoutAPrincipal(t *testing.T) {
-	rec := httptest.NewRecorder()
-	mounted(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/me", nil))
+	rec := askingWhoIAm(nil, &stubProfiles{})
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401; body %s", rec.Code, rec.Body)
@@ -126,7 +102,7 @@ func TestMeRefusesWithoutAPrincipal(t *testing.T) {
 func TestMeIsInTheContract(t *testing.T) {
 	router := chi.NewRouter()
 	api := httpserver.NewAPI(router)
-	identity.NewService(nil).Register(api)
+	identity.NewService(identity.Deps{}).Register(api)
 
 	document, err := api.OpenAPI().MarshalJSON()
 	if err != nil {

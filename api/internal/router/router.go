@@ -50,11 +50,32 @@ func contexts(opts Options) []boundedContext {
 		onboarding = identity.NewOnboarding(opts.Pool, opts.ServicePool, opts.Provisioner)
 	}
 
+	// The request pool alone: this one writes the caller's own row under the
+	// caller's own identity, so it needs neither the service path nor the
+	// identity provider. A nil pool yields a nil service.
+	sessions := identity.NewSessions(opts.Pool)
+	roster := identity.NewRoster(opts.Pool, opts.Provisioner)
+	// Assigned through a variable of the interface type rather than straight into Deps: a nil
+	// *identity.Profiles put in an interface field is an interface that is not nil, and the handler's
+	// nil check would pass while every call dereferenced nothing.
+	directory := identity.NewDirectory(opts.ServicePool)
+
+	var profiles identity.ProfileReader
+	if reader := identity.NewProfiles(opts.Pool); reader != nil {
+		profiles = reader
+	}
+
 	return []boundedContext{
 		{"audit", audit.Register},
 		{"content", content.Register},
 		{"dosing", dosing.Register},
-		{"identity", identity.NewService(onboarding).Register},
+		{"identity", identity.NewService(identity.Deps{
+			Onboarding: onboarding,
+			Sessions:   sessions,
+			Roster:     roster,
+			Profiles:   profiles,
+			Directory:  directory,
+		}).Register},
 		{"inventory", inventory.Register},
 		{"journal", journal.Register},
 		{"measurements", measurements.Register},

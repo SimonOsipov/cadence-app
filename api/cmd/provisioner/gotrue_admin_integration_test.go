@@ -102,6 +102,18 @@ func TestTheWholeRoundTripAgainstTheRealIdentityProvider(t *testing.T) {
 		if invited.ID == "" {
 			t.Fatalf("the invitation answered with no identifier: %s", rec.Body)
 		}
+
+		// The three fields the roster reads its state from, in the state a fresh
+		// invitation leaves them. Nothing in this package's own tests would
+		// notice the provider dropping the one the expired state is measured
+		// from: the fake would go on serving it.
+		if invited.InvitedAt == nil {
+			t.Errorf("the provider states no invited_at, which the expired state is derived from")
+		}
+		if invited.ConfirmedAt != nil || invited.LastSignInAt != nil {
+			t.Errorf("a fresh invitation already reads as accepted: confirmed_at %v, last_sign_in_at %v",
+				invited.ConfirmedAt, invited.LastSignInAt)
+		}
 	})
 
 	t.Run("the address a human typed finds the account it created", func(t *testing.T) {
@@ -280,4 +292,66 @@ func decodeAccount(t *testing.T, body []byte) account {
 	}
 
 	return *answer.Account
+}
+
+// A password exists so that somebody can sign in with it. Measured on the pinned
+// image: the grant answers 400 email_not_confirmed for an account that was
+// invited and never opened its link, which is every account a seed creates — so
+// setting a password has to confirm the address as well, or the operation gives
+// the seeded clinic a credential nobody can use.
+//
+// Outside production only, and this is what that exemption is for: the same call
+// against a real clinic would confirm an address whose owner has not been near it.
+func TestASeededAccountCanSignInWithThePasswordItWasGiven(t *testing.T) {
+	srv, gotrue, _ := liveProvisioner(t)
+
+	const address = "seeded.person@clinic.example"
+	const password = "a-seeded-password-nobody-uses"
+
+	rec := call(t, srv, http.MethodPost, "/invite", `{"email":"`+address+`"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the invitation answered %d: %s", rec.Code, rec.Body)
+	}
+
+	invited := decodeAccount(t, rec.Body.Bytes())
+
+	rec = call(t, srv, http.MethodPost, "/users/password",
+		`{"id":"`+invited.ID+`","password":"`+password+`"}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("setting the password answered %d: %s", rec.Code, rec.Body)
+	}
+
+	grant, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		gotrue.URL+"/token?grant_type=password",
+		strings.NewReader(`{"email":"`+address+`","password":"`+password+`"}`))
+	if err != nil {
+		t.Fatalf("building the grant request: %v", err)
+	}
+	grant.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(grant)
+	if err != nil {
+		t.Fatalf("asking the provider for a session: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	said, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("the seeded person could not sign in: %d %.200s", resp.StatusCode, said)
+	}
+
+	// And the roster reads them as accepted, which is the same fact seen from the
+	// dashboard: a confirmed account is one somebody has been inside.
+	rec = call(t, srv, http.MethodPost, "/users/lookup-batch", `{"ids":["`+invited.ID+`"]}`)
+
+	var answer struct {
+		Accounts []account `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("decoding the answer: %v", err)
+	}
+
+	if len(answer.Accounts) != 1 || answer.Accounts[0].ConfirmedAt == nil {
+		t.Errorf("the account is %+v, want one the provider calls confirmed", answer.Accounts)
+	}
 }

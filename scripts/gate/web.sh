@@ -99,6 +99,14 @@ fi
 echo "==> the token module matches the stylesheet"
 node scripts/generate-tokens.ts --check
 
+# The API's contract is the source and src/api is its output, generated from the committed
+# openapi.json — so a field added, an enum widened or a response that stopped being nullable reaches
+# the dashboard as a type error rather than as undefined at runtime. This is also why api/openapi.json
+# is one of the paths that makes changed-stacks.sh answer web=true: a contract change touching no file
+# under web/ is exactly the change this check exists for.
+echo "==> the generated API types match the contract"
+node scripts/generate-api-client.ts --check
+
 # Both directions now: the set is what src/** draws, so an icon nothing uses cannot
 # sit in the bundle, and every name it finds has to be one the prototype drew, so a
 # screen cannot invent one the design never had.

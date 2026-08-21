@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -41,6 +42,14 @@ func TestAnOutwardCallCannotOutlastTheTransactionItIsMadeIn(t *testing.T) {
 			"the request ends first and what went slow is never named",
 			database.ServiceIdleInTransactionTimeout, httpserver.RequestDeadline)
 	}
+
+	// The roster's call is made outside a transaction and still inside a request:
+	// a lookup allowed to outlast the request budget would take the page down
+	// with it, and the page renders without the states.
+	if callTimeout >= httpserver.RequestDeadline {
+		t.Errorf("one call is bounded at %s inside a request bounded at %s: the roster would "+
+			"lose the page rather than the states on it", callTimeout, httpserver.RequestDeadline)
+	}
 }
 
 // The component's surface is spelled in two places — its own package main, which
@@ -71,6 +80,13 @@ func TestTheClientSpeaksTheSurfaceTheComponentServes(t *testing.T) {
 	routesSource, err := os.ReadFile(filepath.Join(root, "cmd", "provisioner", "routes.go"))
 	if err != nil {
 		t.Fatalf("reading the component's routes: %v", err)
+	}
+
+	// The bound the component enforces, spelled here so that a list this client
+	// sends is refused before the round trip rather than by a 400 that costs the
+	// whole page its states.
+	if want := "maxBatchLookup = " + strconv.Itoa(MaxLookupBatch); !strings.Contains(string(routesSource), want) {
+		t.Errorf("cmd/provisioner does not declare %s, so the two bounds have parted", want)
 	}
 
 	for _, path := range []string{invitePath, lookupPath, lookupBatchPath, deletePath} {

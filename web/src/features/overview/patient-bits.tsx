@@ -77,7 +77,15 @@ export function GoalBar({ patient }: { patient: Patient }) {
   )
 }
 
-export function SectionHead({ eyebrow, title }: { eyebrow: string; title: string }) {
+/**
+ * demo marks a section still drawn from fixtures.
+ *
+ * On the screen and not only in a comment: with the roster live and five sections around it on
+ * invented numbers, a doctor reading «Пациентов: 25» beside their own two patients has no way to
+ * tell which of the two is their clinic. The mark comes off section by section as M6 answers what
+ * each one draws.
+ */
+export function SectionHead({ eyebrow, title, demo = false }: { eyebrow: string; title: string; demo?: boolean }) {
   return (
     <header style={{ marginBottom: 14 }}>
       <div
@@ -94,7 +102,33 @@ export function SectionHead({ eyebrow, title }: { eyebrow: string; title: string
       </div>
       <h2 style={{ fontFamily: tokens.fontDisplay, fontSize: 26, color: tokens.ink900, margin: '4px 0 0' }}>
         {title}
+        {demo && <DemoMark />}
       </h2>
     </header>
+  )
+}
+
+/** The words a doctor reads. «Демо-данные» rather than «фикстуры»: the person in front of the screen
+ * is not the person who wrote them. */
+export function DemoMark() {
+  return (
+    <span
+      style={{
+        marginLeft: 10,
+        verticalAlign: 'middle',
+        fontFamily: tokens.fontBody,
+        fontSize: 11,
+        fontWeight: 500,
+        letterSpacing: '.06em',
+        textTransform: 'uppercase',
+        color: tokens.ink600,
+        background: tokens.linen,
+        border: `1px solid ${tokens.bone}`,
+        borderRadius: tokens.rPill,
+        padding: '3px 9px',
+      }}
+    >
+      Демо-данные · до M6
+    </span>
   )
 }

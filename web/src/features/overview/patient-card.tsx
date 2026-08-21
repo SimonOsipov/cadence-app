@@ -3,7 +3,7 @@ import { Icon } from '../../icons/icon'
 import { tokens } from '../../tokens/tokens'
 import { FLAGS, STATUS_LABEL } from './flags'
 import { decimal, quantity, whole } from '../../format'
-import { FlagPill, GoalBar, Spark } from './patient-bits'
+import { DemoMark, FlagPill, GoalBar, Spark } from './patient-bits'
 
 /**
  * One patient, opened beside the roster.
@@ -35,6 +35,7 @@ export function PatientCard({ patient, onClose }: { patient: Patient; onClose: (
         <div>
           <h2 style={{ fontFamily: tokens.fontDisplay, fontSize: 27, color: tokens.ink900, margin: 0 }}>
             {patient.name}
+            <DemoMark />
           </h2>
           <div style={{ fontFamily: tokens.fontBody, fontSize: 13, color: tokens.ink500, marginTop: 4 }}>
             {whole(patient.age)} лет · {STATUS_LABEL[patient.status]} · был{patient.lastSeen.startsWith('в') ? '' : 'а'} {patient.lastSeen}

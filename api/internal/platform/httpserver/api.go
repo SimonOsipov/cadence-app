@@ -173,7 +173,7 @@ func logProblem(ctx huma.Context, _ string, v any) (any, error) {
 		problem.RequestID = chimw.GetReqID(ctx.Context())
 	}
 
-	logScrubbed(ctx.Context(), *problem, problem.RequestID)
+	logRefusal(ctx.Context(), *problem, problem.RequestID)
 
 	return problem, nil
 }

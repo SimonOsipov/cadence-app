@@ -59,9 +59,14 @@ func noSuchAccount(err error) bool {
 // credential itself — the encrypted password, and whatever a clinic wrote into
 // the user metadata. None of it can reach a caller by being forgotten, because
 // nothing decodes it. `confirmed_at` and `last_sign_in_at` are here because the
-// claim rule in the onboarding block rests on both.
+// claim rule in the onboarding block rests on both, and `invited_at` because the
+// roster's third state is the invitation that has run out of time.
 type account struct {
-	ID           string     `json:"id"`
+	ID string `json:"id"`
+	// The top-level one. `identities[0].last_sign_in_at` is set at the moment of
+	// the invitation — measured on the pinned image — so a reader of that field
+	// would call every invited account signed in.
+	InvitedAt    *time.Time `json:"invited_at"`
 	ConfirmedAt  *time.Time `json:"confirmed_at"`
 	LastSignInAt *time.Time `json:"last_sign_in_at"`
 }
@@ -166,8 +171,13 @@ func (c *gotrueClient) deleteAccount(ctx context.Context, id string) error {
 	return nil
 }
 
+// The confirmation travels with the password because one without the other signs
+// nobody in: an invited account is refused the grant until its address is
+// confirmed. Measured — see TestASeededAccountCanSignInWithThePasswordItWasGiven.
 func (c *gotrueClient) setPassword(ctx context.Context, id, password string) error {
-	err := c.call(ctx, http.MethodPut, "/admin/users/"+id, nil, map[string]string{"password": password}, nil)
+	body := map[string]any{"password": password, "email_confirm": true}
+
+	err := c.call(ctx, http.MethodPut, "/admin/users/"+id, nil, body, nil)
 	if err != nil {
 		return fmt.Errorf("setting a password: %w", err)
 	}

@@ -12,7 +12,7 @@ const STATE = {
 export function Schedule({ entries }: { entries: readonly ScheduleEntry[] }) {
   return (
     <section aria-label="Расписание">
-      <SectionHead eyebrow="Сегодня" title="Расписание" />
+      <SectionHead eyebrow="Сегодня" title="Расписание" demo />
 
       <div
         style={{

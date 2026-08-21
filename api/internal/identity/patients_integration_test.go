@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -509,5 +510,146 @@ func TestTheAuditLogIsAppendOnlyForEverybody(t *testing.T) {
 	}
 	if audits == 0 {
 		t.Fatal("there are no audit rows, so nothing above was protected")
+	}
+}
+
+// The name the dashboard greets a person by, read the way the route reads it: as the caller
+// themselves, through the policies. Three roles, because each reaches its own row by a different
+// one — profiles_own_select for the doctor, profiles_admin for the administrator.
+func TestAProfileNamesItsOwnCaller(t *testing.T) {
+	_, db := stand(t)
+
+	pool, err := database.NewPool(t.Context(), db.AppURL)
+	if err != nil {
+		t.Fatalf("opening the request pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	profiles := identity.NewProfiles(pool)
+
+	for name, expected := range map[string]struct {
+		caller database.Caller
+		want   string
+	}{
+		"the doctor stand() seeds": {
+			caller: database.Caller{Subject: doctorID, Role: "doctor"},
+			want:   "Марина Крылова",
+		},
+		"an administrator, who reaches their row by another policy": {
+			caller: database.Caller{Subject: adminID, Role: "admin"},
+			want:   "Пётр Аверин",
+		},
+		"an account the clinic holds no profile for": {
+			caller: database.Caller{Subject: "8a1f3b7c-0000-4000-8000-0000000000ff", Role: "patient"},
+			want:   "",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := profiles.NameOf(t.Context(), expected.caller)
+			if err != nil {
+				t.Fatalf("reading the profile: %v", err)
+			}
+			if got != expected.want {
+				t.Errorf("the profile names %q, want %q", got, expected.want)
+			}
+		})
+	}
+}
+
+// A doctor asking for their own name may not be answered somebody else's, however the statement is
+// written: the policy is what stands there, and this is the measurement that says so.
+func TestAProfileNamesNobodyElse(t *testing.T) {
+	servicePool, db := stand(t)
+
+	if err := database.WithServiceJob(
+		t.Context(), servicePool, provisioningJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.profiles (user_id, role, full_name) VALUES ($1, 'doctor', 'Игорь Седов')
+			`, otherDoctorID)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("seeding the other doctor: %v", err)
+	}
+
+	pool, err := database.NewPool(t.Context(), db.AppURL)
+	if err != nil {
+		t.Fatalf("opening the request pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	var seen string
+
+	if err := database.WithCaller(
+		t.Context(), pool, database.Caller{Subject: doctorID, Role: "doctor"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT coalesce(max(full_name), '') FROM app.profiles WHERE user_id = $1
+			`, otherDoctorID).Scan(&seen)
+		},
+	); err != nil {
+		t.Fatalf("reading another doctor's row: %v", err)
+	}
+
+	if seen != "" {
+		t.Errorf("a doctor read %q off a colleague's profile", seen)
+	}
+}
+
+// The staff a care team may name, read the way the route reads it — through the service seam, since
+// no policy lets a doctor read a colleague's profile. What the read must not carry is anybody who is
+// not staff: a patient's name in a picker of specialists is a care team nobody could write.
+func TestTheStaffListNamesTheClinicsOwnAndNobodyElse(t *testing.T) {
+	servicePool, _ := stand(t)
+
+	if err := database.WithServiceJob(
+		t.Context(), servicePool, provisioningJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO app.profiles (user_id, role, full_name) VALUES ($1, 'doctor', 'Игорь Седов')
+			`, otherDoctorID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO app.provider_profiles (user_id, title_ru) VALUES ($1, 'Диетолог')
+			`, otherDoctorID); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.profiles (user_id, role, full_name) VALUES ($1, 'patient', 'Анна Петрова')
+			`, annaID)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("seeding the clinic: %v", err)
+	}
+
+	staff, err := identity.NewDirectory(servicePool).Staff(
+		auth.WithPrincipal(t.Context(), auth.Principal{Subject: doctorID, Role: "doctor"}),
+	)
+	if err != nil {
+		t.Fatalf("reading the staff: %v", err)
+	}
+
+	names := make([]string, 0, len(staff))
+	titles := map[string]string{}
+
+	for _, member := range staff {
+		names = append(names, member.FullName)
+		if member.TitleRU != nil {
+			titles[member.FullName] = *member.TitleRU
+		}
+	}
+
+	// The doctor stand() seeds, the administrator it seeds, and the colleague above — in Russian
+	// collation order, which is the roster's own ordering and the one a picker is read in.
+	if want := []string{"Игорь Седов", "Марина Крылова", "Пётр Аверин"}; !slices.Equal(names, want) {
+		t.Errorf("the staff list is %v, want %v", names, want)
+	}
+	if titles["Игорь Седов"] != "Диетолог" {
+		t.Errorf("the title beside the name is %q, want Диетолог", titles["Игорь Седов"])
 	}
 }

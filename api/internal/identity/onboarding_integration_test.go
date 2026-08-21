@@ -619,7 +619,7 @@ func (c *onboarding) create(t *testing.T, caller auth.Principal, path, payload s
 		})
 	})
 
-	identity.NewService(identity.NewOnboarding(c.requests, c.writes, c.provider)).
+	identity.NewService(identity.Deps{Onboarding: identity.NewOnboarding(c.requests, c.writes, c.provider)}).
 		Register(httpserver.NewAPI(mux))
 
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
@@ -855,8 +855,8 @@ func (p *harnessProvisioner) read(ctx context.Context, email string) (*identity.
 	var found identity.Account
 
 	err = conn.QueryRow(ctx, `
-		SELECT id::text, confirmed_at, last_sign_in_at FROM auth.users WHERE email = $1
-	`, email).Scan(&found.ID, &found.ConfirmedAt, &found.LastSignInAt)
+		SELECT id::text, invited_at, confirmed_at, last_sign_in_at FROM auth.users WHERE email = $1
+	`, email).Scan(&found.ID, &found.InvitedAt, &found.ConfirmedAt, &found.LastSignInAt)
 
 	// No account is an answer rather than a failure: it is what makes an address free to invite.
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -868,6 +868,34 @@ func (p *harnessProvisioner) read(ctx context.Context, email string) (*identity.
 	}
 
 	return &found, nil
+}
+
+// LookupBatch is the same read as read(), keyed by identifier: the component answers it from the
+// same admin listing, and an identifier it holds no account for is absent rather than an error.
+func (p *harnessProvisioner) LookupBatch(ctx context.Context, ids []string) ([]identity.Account, error) {
+	if p.unreachable {
+		return nil, errUnreachable
+	}
+
+	conn, err := pgx.Connect(ctx, cycle.DB.SuperuserURL)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to the provider's own database: %w", err)
+	}
+	defer func() { _ = conn.Close(ctx) }()
+
+	rows, err := conn.Query(ctx, `
+		SELECT id::text, invited_at, confirmed_at, last_sign_in_at FROM auth.users WHERE id::text = ANY($1)
+	`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("looking up a roster: %w", err)
+	}
+
+	found, err := pgx.CollectRows(rows, pgx.RowToStructByPos[identity.Account])
+	if err != nil {
+		return nil, fmt.Errorf("reading a roster lookup: %w", err)
+	}
+
+	return found, nil
 }
 
 func (p *harnessProvisioner) Delete(ctx context.Context, deletion identity.Deletion) error {
