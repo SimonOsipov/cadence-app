@@ -81,8 +81,11 @@ func assertSpans(t *testing.T, want, got []span) {
 	}
 }
 
-// MockSeed's protocol, reproduced rather than imported: the KMP mock lives in commonMain,
-// and these are the numbers its assertions turn on.
+// A second view of the same arithmetic, not an independent witness. In Kotlin MockSeed was a
+// shipped commonMain fixture, so the tests below cross-checked the mock against §03; here the
+// test supplies the numbers itself and the two copies can drift with nothing failing. The
+// start date is kept identical to MockSeed's on purpose, so that «day 28 and day 56» below
+// still names the same days the prototype's schedule does.
 func seedPlan() Plan {
 	return Plan{
 		Protocol: Protocol{
@@ -152,6 +155,11 @@ func TestEachPhaseIsOneBandRunningFromItsFirstDayToItsLast(t *testing.T) {
 func TestTheBandsMeetWithoutOverlappingAndCoverTheCourseExactly(t *testing.T) {
 	bands := DoseBands(defaultBandsPlan(), sema, wholeCourse)
 
+	// Checked before indexing: a panic here takes the test binary down and every later test
+	// reports nothing rather than failing.
+	if len(bands) != 3 {
+		t.Fatalf("three phases, three bands, got %d", len(bands))
+	}
 	if bands[0].Range.From != bandsStart {
 		t.Errorf("the first band opens on day 0, got %v", bands[0].Range.From)
 	}
@@ -221,6 +229,9 @@ func TestABandIsWhatWasPrescribedAndNotWhatWasTaken(t *testing.T) {
 	// No logged slot reaches this function: the seed's history stops at seededThrough
 	// holding one dose, but the bands run two months further with three different doses.
 	bands := DoseBands(seedPlan(), seedSema, wholeCourse)
+	if len(bands) == 0 {
+		t.Fatal("the seeded course prescribes something")
+	}
 
 	var doses []Dose
 	for _, b := range bands {
@@ -506,6 +517,9 @@ func TestAnItemDosedFromTheSecondWeekIsMarkedWhereItsFirstBandOpens(t *testing.T
 	// Bands under it: the first opens the same day as the mark, the last closes at its own
 	// phase's end, not running on to the end of a course it doesn't cover.
 	bands := DoseBands(washIn, sema, wholeCourse)
+	if len(bands) != 2 {
+		t.Fatalf("two phases, two bands, got %d", len(bands))
+	}
 	if bands[0].Range.From != NewDate(2026, time.May, 17) {
 		t.Errorf("the first band opens with the mark, got %v", bands[0].Range.From)
 	}

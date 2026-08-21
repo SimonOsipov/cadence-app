@@ -1,5 +1,7 @@
 package protocol
 
+import "slices"
+
 // ProtocolRow is one line of the week's prescription strip. TodayStatus is nil when the item
 // is not due today at all — a claim about nothing.
 type ProtocolRow struct {
@@ -41,7 +43,7 @@ func WeekProtocolRows(plan Plan, compounds []Compound, logged []LoggedSlot, toda
 			Kind:        item.Kind,
 			Compound:    compoundOf(compounds, item.CompoundID),
 			Dose:        PhaseDose(plan, item.ID, today),
-			Times:       item.Times,
+			Times:       slices.Clone(item.Times),
 			Cadence:     item.Cadence,
 			TodayStatus: leastComplete(mine),
 			Loggable:    item.Loggable,
@@ -56,7 +58,11 @@ func compoundOf(compounds []Compound, id *CompoundID) *Compound {
 	}
 	for i := range compounds {
 		if compounds[i].ID == *id {
-			return &compounds[i]
+			// A copy, like the three other pointer results in this package: the compound
+			// table is a repository cache shared between requests, and &compounds[i] hands
+			// every row a write into it.
+			found := compounds[i]
+			return &found
 		}
 	}
 	return nil
@@ -65,6 +71,9 @@ func compoundOf(compounds []Compound, id *CompoundID) *Compound {
 // Not the first slot: reading it collapsed a multi-slot item, and logging BPC-157's 08:00
 // dose read «Сегодня · записано» while the 20:00 injection was still due. Done only when
 // every slot is done, else whatever the first slot that is not says.
+//
+// Which status that is stays unmeasured: WeekProtocolRows asks for today, so only done and
+// pending can reach here. A caller passing some other day would exercise the branch.
 func leastComplete(occurrences []Occurrence) *OccurrenceStatus {
 	if len(occurrences) == 0 {
 		return nil

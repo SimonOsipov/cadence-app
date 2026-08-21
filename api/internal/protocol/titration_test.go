@@ -104,3 +104,26 @@ func TestSortingThePhasesLeavesTheCallersOrderAlone(t *testing.T) {
 		}
 	}
 }
+
+func TestAChangeOfUnitAtTheSameNumberIsStillAStep(t *testing.T) {
+	// Measured: weakening the comparison in TitrationSteps to `from.Dose.Value ==
+	// to.Dose.Value` left the whole suite green, because no fixture ever varies the unit
+	// inside one item's phase list. «250 мкг → 250 мг» is a fourfold rise that would read as
+	// a dose held and lose its mark.
+	unitChange := titrationPlan
+	unitChange.Phases = map[ProtocolItemID][]ProtocolPhase{
+		sema: {
+			{FromWeek: 1, ToWeek: 4, Dose: Dose{Value: 250.0, Unit: MCG}},
+			{FromWeek: 5, ToWeek: 12, Dose: Dose{Value: 250.0, Unit: MG}},
+		},
+	}
+
+	steps := TitrationSteps(unitChange, sema)
+
+	if len(steps) != 1 {
+		t.Fatalf("one step, got %d: %v", len(steps), steps)
+	}
+	if steps[0].From.Unit != MCG || steps[0].To.Unit != MG {
+		t.Errorf("мкг → мг, got %v → %v", steps[0].From, steps[0].To)
+	}
+}

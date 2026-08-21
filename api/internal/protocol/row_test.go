@@ -110,7 +110,7 @@ func TestTheRowCarriesTheDoseOfTheWeekItIsIn(t *testing.T) {
 		{NewDate(2026, time.June, 10), Dose{Value: 0.5, Unit: MG}},
 		{NewDate(2026, time.July, 8), Dose{Value: 1.0, Unit: MG}},
 	} {
-		row := rowsOn(c.today, nil, StatusActive)[0]
+		row := rowFor(t, rowsOn(c.today, nil, StatusActive), sema)
 		if row.Dose == nil || *row.Dose != c.dose {
 			t.Errorf("%v: want %v got %v", c.today, c.dose, row.Dose)
 		}
@@ -153,7 +153,7 @@ func TestAnItemNotDueTodayHasNoStatusForToday(t *testing.T) {
 }
 
 func TestARowNamesItsCompoundRatherThanCarryingAnID(t *testing.T) {
-	row := rowsOn(NewDate(2026, time.May, 20), nil, StatusActive)[0]
+	row := rowFor(t, rowsOn(NewDate(2026, time.May, 20), nil, StatusActive), sema)
 
 	if row.Compound == nil || row.Compound.NameRU != "SEMA" {
 		t.Errorf("the row carries the name, got %v", row.Compound)
@@ -165,7 +165,13 @@ func TestEachRowGetsItsOwnCompoundAndNotTheFirstOne(t *testing.T) {
 	// than the per-row mapping.
 	rows := rowsOn(NewDate(2026, time.May, 20), nil, StatusActive)
 
-	for i, name := range []string{"SEMA", "BPC", "GLYCINE"} {
+	want := []string{"SEMA", "BPC", "GLYCINE"}
+	// Checked before indexing: a short slice here panics, and a panic takes the whole test
+	// binary with it — every later test reports nothing rather than failing.
+	if len(rows) != len(want) {
+		t.Fatalf("want %d rows, got %d", len(want), len(rows))
+	}
+	for i, name := range want {
 		if rows[i].Compound == nil || rows[i].Compound.NameRU != name {
 			t.Errorf("row %d: want %s got %v", i, name, rows[i].Compound)
 		}
@@ -193,7 +199,11 @@ func TestAnItemReferencingAnUnknownCompoundHasNoneRatherThanTheWrongOne(t *testi
 func TestTheRowCarriesTheKindTheStripDrawsItBy(t *testing.T) {
 	rows := rowsOn(NewDate(2026, time.May, 20), nil, StatusActive)
 
-	for i, kind := range []ItemKind{KindInjection, KindInjection, KindSupplement} {
+	want := []ItemKind{KindInjection, KindInjection, KindSupplement}
+	if len(rows) != len(want) {
+		t.Fatalf("want %d rows, got %d", len(want), len(rows))
+	}
+	for i, kind := range want {
 		if rows[i].Kind != kind {
 			t.Errorf("row %d: want %v got %v", i, kind, rows[i].Kind)
 		}
@@ -247,12 +257,48 @@ func TestATwiceDailyItemIsNotDoneUntilBothSlotsAre(t *testing.T) {
 func TestTheStripCarriesWhichItemsCanBeLogged(t *testing.T) {
 	// Guarded in the domain, not only through a UI test: a mapping that lives here should
 	// fail here.
-	loggableBy := map[ItemKind]bool{}
-	for _, row := range rowsOn(NewDate(2026, time.May, 20), nil, StatusActive) {
-		loggableBy[row.Kind] = row.Loggable
+	//
+	// The fourth item contradicts its own kind on purpose. Every other fixture sets
+	// `Loggable: kind != KindSupplement`, so the row could be derived from the kind instead
+	// of carried — measured, with the whole suite green. §03 gives `protocol_items.loggable`
+	// a column of its own, and an injection the clinic has stopped logging is what that
+	// column is for.
+	retired := rowItem(ProtocolItemID("retired"), KindInjection, []Slot{{Hour: 6}}, nil)
+	retired.Loggable = false
+	plan := rowPlan(StatusActive)
+	plan.Items = append(append([]ProtocolItem{}, rowItems...), retired)
+
+	rows := WeekProtocolRows(plan, rowCompounds, nil, NewDate(2026, time.May, 20))
+
+	want := map[ProtocolItemID]bool{sema: true, bpc: true, glycine: false, retired.ID: false}
+	if len(rows) != len(want) {
+		t.Fatalf("want %d rows, got %d", len(want), len(rows))
+	}
+	for _, row := range rows {
+		if row.Loggable != want[row.ItemID] {
+			t.Errorf("%v: want loggable %v, got %v", row.ItemID, want[row.ItemID], row.Loggable)
+		}
+	}
+}
+
+func TestARowOwnsWhatItCarriesRatherThanPointingIntoTheCallers(t *testing.T) {
+	// Kotlin's data classes made this safe by construction; a *Compound does not. The
+	// compound table is a repository cache shared between requests, so a row holding
+	// &compounds[i] hands every caller a write into the table — and every row that resolved
+	// the same compound shares one pointer.
+	compounds := append([]Compound{}, rowCompounds...)
+	plan := rowPlan(StatusActive)
+
+	rows := WeekProtocolRows(plan, compounds, nil, NewDate(2026, time.May, 20))
+
+	row := rowFor(t, rows, sema)
+	row.Compound.NameRU = "OVERWRITTEN"
+	if compounds[0].NameRU != "SEMA" {
+		t.Errorf("writing through the row edited the compound table: %v", compounds[0].NameRU)
 	}
 
-	if len(loggableBy) != 2 || !loggableBy[KindInjection] || loggableBy[KindSupplement] {
-		t.Errorf("an injection is loggable and a supplement is not, got %v", loggableBy)
+	row.Times[0] = Slot{Hour: 23}
+	if plan.Items[0].Times[0] != (Slot{Hour: 7}) {
+		t.Errorf("writing through the row edited the plan: %v", plan.Items[0].Times[0])
 	}
 }

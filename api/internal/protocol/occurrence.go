@@ -60,12 +60,20 @@ func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today Date) []Occurrence 
 		}
 		dose := PhaseDose(plan, item.ID, d)
 		for _, at := range item.Times {
+			// A copy per slot: Kotlin's Dose is immutable and could be shared, a *Dose
+			// cannot — one pointer across an item's slots ties BPC-157's morning and
+			// evening occurrences to each other for anyone who writes through it.
+			var own *Dose
+			if dose != nil {
+				value := *dose
+				own = &value
+			}
 			out = append(out, Occurrence{
 				ItemID: item.ID,
 				Kind:   item.Kind,
 				Date:   d,
 				Time:   at,
-				Dose:   dose,
+				Dose:   own,
 				Status: statusOf(item, d, at, logged, today),
 			})
 		}
@@ -74,8 +82,13 @@ func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today Date) []Occurrence 
 }
 
 // PhaseDose returns nil for three causes with one answer: cancelled, outside the window, or
-// no phase covering that week. Phases are read in the order they arrive — DoseBands and
-// TitrationSteps are the sorted readers, and this one deliberately is not.
+// no phase covering that week.
+//
+// It reads the phases in the order they arrive while DoseBands and TitrationSteps sort them,
+// and the two agree only while phases do not overlap. That is faithful to the Kotlin, which
+// does not sort here either — but it is a property nothing in this package holds. What holds
+// it is the EXCLUDE constraint of step 2; on overlapping phases the schedule and the dose
+// band under it would name different doses for one day.
 func PhaseDose(plan Plan, itemID ProtocolItemID, d Date) *Dose {
 	if plan.Protocol.Status == StatusCancelled {
 		return nil

@@ -20,6 +20,11 @@ const (
 )
 
 // Dose is a number and a unit; «0,25 мг» is a rendering, not data.
+//
+// float64 is safe only because doses are never summed anywhere: the remaining count in a
+// vial is total minus a count of events, not a sum of milligrams. Two doses are compared
+// with == in TitrationSteps, and a value that arrived through arithmetic rather than from
+// the wire would make «0,3 мг → 0,3 мг» a titration step. Adding a total changes this type.
 type Dose struct {
 	Value float64
 	Unit  DoseUnit

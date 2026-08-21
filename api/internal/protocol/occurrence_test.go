@@ -281,6 +281,11 @@ func TestACompletedProtocolKeepsItsHistory(t *testing.T) {
 	done.Protocol.Status = StatusCompleted
 
 	active := OccurrencesFor(fixturePlan(), nil, date, date)
+	// Two empties compare equal, so without this the assertion below holds whenever the
+	// generator stops producing anything at all.
+	if len(active) == 0 {
+		t.Fatal("the active course has to produce something to compare against")
+	}
 	if !occurrencesEqual(OccurrencesFor(done, nil, date, date), active) {
 		t.Error("a completed course lost its history")
 	}
@@ -417,4 +422,93 @@ func occurrencesEqual(a, b []Occurrence) bool {
 		}
 	}
 	return true
+}
+
+func TestALoggedDoseStaysDoneOnceTheDayHasPassed(t *testing.T) {
+	// Measured: inserting an early `if d.Before(today) { return StatusMissed }` at the head
+	// of statusOf, ahead of the scan over logged slots, left all sixty-seven tests green.
+	// Every other DONE in this suite is asserted with today == date, and WeekProtocolRows
+	// asks OccurrencesFor for (today, today), so the row suite cannot vary the axis at all.
+	// The schedule would grey out every injection the patient logged the moment midnight
+	// passed. The Kotlin suite has the identical hole.
+	injected := NewDate(2026, time.May, 17)
+	weeksLater := NewDate(2026, time.May, 31)
+	logged := []LoggedSlot{{ItemID: sema, Date: injected, Time: slot(7, 0)}}
+
+	occurrences := occurrencesOn(injected, logged, weeksLater)
+
+	if got := statusOfItem(occurrences, sema); got != StatusDone {
+		t.Errorf("a dose logged a fortnight ago is still done, got %v", got)
+	}
+	// The sibling has to stay missed, or the assertion above would pass on a function that
+	// simply never reports a miss.
+	if got := statusAt(occurrences, bpc, Slot{Hour: 8}); got != StatusMissed {
+		t.Errorf("the injection nobody logged that day is missed, got %v", got)
+	}
+}
+
+func TestTwoSlotsInsideOneHourAreLoggedApart(t *testing.T) {
+	// The axis no fixture varies: every logged slot in this suite is built at a whole hour,
+	// so `*s.Time == at` can be weakened to `s.Time.Hour == at.Hour` with all sixty-seven
+	// tests green. §03's times[] admits 08:00 and 08:30 — the prototype already prescribes a
+	// :30 time — and one log would then close both. Same defect class as the slotless event
+	// above, on the half of the slot nothing measured.
+	day := NewDate(2026, time.May, 18)
+	twice := fixtureItems[1]
+	twice.Times = []Slot{{Hour: 8}, {Hour: 8, Minute: 30}}
+	plan := Plan{Protocol: fixtureProtocol, Items: []ProtocolItem{twice}, Phases: fixturePhases}
+
+	occurrences := OccurrencesFor(plan, []LoggedSlot{{ItemID: bpc, Date: day, Time: slot(8, 0)}}, day, day)
+
+	if len(occurrences) != 2 {
+		t.Fatalf("the fixture has to put two slots inside one hour, got %d", len(occurrences))
+	}
+	if got := statusAt(occurrences, bpc, Slot{Hour: 8}); got != StatusDone {
+		t.Errorf("08:00 was logged, got %v", got)
+	}
+	if got := statusAt(occurrences, bpc, Slot{Hour: 8, Minute: 30}); got != StatusPending {
+		t.Errorf("08:30 was not, got %v", got)
+	}
+}
+
+func TestACourseThatIsNotTwelveWeeksLongEndsWhereItsOwnLengthSays(t *testing.T) {
+	// Every fixture in the package is twelve weeks, so `week > 12` at CycleWeek and
+	// `AddDays(83)` at LastPrescribedDay survive together with the suite green. This is to
+	// Weeks what the leap-year band test is to StartDate.
+	eight := fixtureProtocol
+	eight.Weeks = 8
+
+	if week, ok := CycleWeek(eight, NewDate(2026, time.July, 4)); !ok || week != 8 {
+		t.Errorf("4 July is week 8 of an eight-week course, got %d (%v)", week, ok)
+	}
+	if _, ok := CycleWeek(eight, NewDate(2026, time.July, 5)); ok {
+		t.Error("5 July is past an eight-week course")
+	}
+	if got := eight.LastPrescribedDay(); got != NewDate(2026, time.July, 4) {
+		t.Errorf("day 55 is the last an eight-week course prescribes, got %v", got)
+	}
+}
+
+func TestEachOccurrenceOwnsItsDose(t *testing.T) {
+	// One *Dose hoisted out of the slot loop tied BPC-157's morning and evening occurrences
+	// together: a caller writing through one changed the other. Kotlin shared an immutable
+	// Dose and was safe; a pointer is not.
+	day := NewDate(2026, time.May, 18)
+
+	occurrences := occurrencesOn(day, nil, day)
+	var bpcSlots []Occurrence
+	for _, o := range occurrences {
+		if o.ItemID == bpc {
+			bpcSlots = append(bpcSlots, o)
+		}
+	}
+	if len(bpcSlots) != 2 || bpcSlots[0].Dose == nil || bpcSlots[1].Dose == nil {
+		t.Fatalf("two dosed slots to compare, got %v", bpcSlots)
+	}
+
+	bpcSlots[0].Dose.Value = 99
+
+	if bpcSlots[1].Dose.Value != 250.0 {
+		t.Errorf("the evening slot moved with the morning one: %v", bpcSlots[1].Dose.Value)
+	}
 }
