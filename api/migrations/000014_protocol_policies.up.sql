@@ -191,8 +191,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON app.compounds TO cadence_admin;
 -- and nothing here prevents it: INSERT … SELECT onto another patient's course,
 -- then DELETE the originals, all within the verbs the write path needs. DELETE
 -- has no column form, so a grant cannot narrow it, and the service path carries
--- no row predicate by design. That half is Go's, in step 6 — measured, not
--- assumed: the sequence was run and the rows moved.
+-- no row predicate by design. That half is Go's, in step 6.
 --
 -- Measured before it was written this way: with a table-wide UPDATE, one
 -- statement moved another patient's item onto this patient's course, and the

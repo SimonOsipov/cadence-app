@@ -110,6 +110,11 @@ CREATE TABLE app.protocol_items (
         (cadence = 'daily' AND pg_catalog.cardinality(days_of_week) = 0)
         OR (cadence <> 'daily' AND pg_catalog.cardinality(days_of_week) >= 1)
     ),
+    -- Subsumed by the merged constraint below — an empty array fails that one's
+    -- WHEN too — and kept because it names the rule an empty list breaks. Which of
+    -- the two reports it is constraint-name order, the one thing the merge exists
+    -- to stop depending on: has_a_slot sorts first today, and the refusal table
+    -- pins that by name, so a rename fails loudly rather than quietly.
     CONSTRAINT protocol_items_has_a_slot
         CHECK (pg_catalog.cardinality(times) >= 1),
     -- One constraint and not two, and the CASE is the whole reason. cardinality

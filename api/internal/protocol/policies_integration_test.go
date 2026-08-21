@@ -507,6 +507,7 @@ func TestTheRowShapeRulesEachFire(t *testing.T) {
 		sql        string
 		arg        string
 		constraint string
+		code       string
 	}{
 		{
 			// The generator answers «not prescribed» for a day before the course,
@@ -514,24 +515,24 @@ func TestTheRowShapeRulesEachFire(t *testing.T) {
 			// denies.
 			"a phase before week one", `
 			INSERT INTO app.protocol_phases (protocol_item_id, from_week, to_week, dose_value, dose_unit)
-			VALUES ($1, 0, 0, 0.25, 'мг')`, "item", "protocol_phases_from_week_check",
+			VALUES ($1, 0, 0, 0.25, 'мг')`, "item", "protocol_phases_from_week_check", "23514",
 		},
 		{
 			"a phase running backwards", `
 			INSERT INTO app.protocol_phases (protocol_item_id, from_week, to_week, dose_value, dose_unit)
-			VALUES ($1, 8, 5, 0.25, 'мг')`, "item", "protocol_phases_runs_forwards",
+			VALUES ($1, 8, 5, 0.25, 'мг')`, "item", "protocol_phases_runs_forwards", "23514",
 		},
 		{
 			"a daily item that also names weekdays", `
 			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
 			VALUES ($1, 'supplement', 'daily', ARRAY[1,3]::smallint[], ARRAY['21:30'::time])`,
-			"course", "protocol_items_cadence_matches_days",
+			"course", "protocol_items_cadence_matches_days", "23514",
 		},
 		{
 			"a weekly item that names none", `
 			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
 			VALUES ($1, 'weigh_in', 'weekly', '{}'::smallint[], ARRAY['09:00'::time])`,
-			"course", "protocol_items_cadence_matches_days",
+			"course", "protocol_items_cadence_matches_days", "23514",
 		},
 		{
 			// Zero is what Go's time.Weekday gives for Sunday, which is exactly the
@@ -539,28 +540,24 @@ func TestTheRowShapeRulesEachFire(t *testing.T) {
 			"a weekday outside the ISO range", `
 			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
 			VALUES ($1, 'weigh_in', 'weekly', ARRAY[0]::smallint[], ARRAY['09:00'::time])`,
-			"course", "protocol_items_days_are_iso",
+			"course", "protocol_items_days_are_iso", "23514",
 		},
 		{
 			"an item with no slot", `
 			INSERT INTO app.protocol_items (protocol_id, kind, cadence, days_of_week, times)
 			VALUES ($1, 'weigh_in', 'weekly', ARRAY[7]::smallint[], '{}'::time[])`,
-			"course", "protocol_items_has_a_slot",
+			"course", "protocol_items_has_a_slot", "23514",
 		},
 		{
 			"two compounds whose names differ only in case", `
 			INSERT INTO app.compounds (name_ru, default_unit, route, icon)
-			VALUES ('семаглутид', 'мг', 'п/к', 'syringe')`, "", "compounds_one_row_per_name",
+			VALUES ('семаглутид', 'мг', 'п/к', 'syringe')`, "", "compounds_one_row_per_name", "23505",
 		},
 	} {
 		t.Run(rule.name, func(t *testing.T) {
 			code, name := c.refuse(t, rule.sql, c.argsFor(rule.arg)...)
-			want := "23514"
-			if rule.constraint == "compounds_one_row_per_name" {
-				want = "23505"
-			}
-			if code != want || name != rule.constraint {
-				t.Errorf("refused by %s/%s, want %s/%s", code, name, want, rule.constraint)
+			if code != rule.code || name != rule.constraint {
+				t.Errorf("refused by %s/%s, want %s/%s", code, name, rule.code, rule.constraint)
 			}
 		})
 	}
@@ -874,16 +871,27 @@ func TestWhatACallerWithoutAnIdentityCanReach(t *testing.T) {
 	t.Run("a stranger with a well-formed subject reads nothing", func(t *testing.T) {
 		stranger := "8a1f3b7c-0000-4000-8000-00000000dead"
 
+		// The control first, over the same three tables and both roles: zero is
+		// also what a broken query returns, and a control that covers one table
+		// leaves the other two asserting «empty after» against a possibly empty
+		// table.
+		for _, known := range []struct{ subject, role string }{
+			{patientA, "patient"},
+			{doctorA, "doctor"},
+		} {
+			for _, table := range tables {
+				if mine := c.visible(t, known.subject, known.role, `SELECT id::text FROM app.`+table); len(mine) == 0 {
+					t.Fatalf("the control read nothing from %s as %s, so the zeroes below measure nothing",
+						table, known.role)
+				}
+			}
+		}
+
 		for _, role := range []string{"patient", "doctor"} {
 			for _, table := range tables {
 				if seen := c.visible(t, stranger, role, `SELECT id::text FROM app.`+table); len(seen) != 0 {
 					t.Errorf("a stranger as %s read %s: %v", role, table, seen)
 				}
-			}
-			// The control: zero is also what a broken query returns, so the same
-			// call with a subject the clinic knows has to be non-empty.
-			if mine := c.visible(t, patientA, "patient", `SELECT id::text FROM app.protocols`); len(mine) == 0 {
-				t.Fatal("the control read nothing, so the zeroes above measure nothing")
 			}
 		}
 	})
@@ -894,33 +902,19 @@ func TestWhatACallerWithoutAnIdentityCanReach(t *testing.T) {
 	// subject, and every predicate here is positive equality — a negation would be
 	// three-valued and match everything instead of nothing.
 	t.Run("a caller who blanks their own claims reads nothing", func(t *testing.T) {
-		for _, blanked := range []string{"", "not-json-at-all"} {
-			if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
-				var before int
-				if err := tx.QueryRow(ctx, `SELECT count(*) FROM app.protocol_phases`).Scan(&before); err != nil {
-					return err
+		// The doctor as well as the patient: their chain is one link longer —
+		// phases through items through protocols to care_team_assignments — so it
+		// is the one with more places to stop depending on a subject.
+		for _, caller := range []struct{ subject, role string }{
+			{patientA, "patient"},
+			{doctorA, "doctor"},
+		} {
+			for _, blanked := range []string{"", "not-json-at-all"} {
+				if err := c.as(t, caller.subject, caller.role, func(ctx context.Context, tx pgx.Tx) error {
+					return blankTheClaims(ctx, t, tx, tables, blanked)
+				}); err != nil {
+					t.Fatalf("as %s with claims %q: %v", caller.role, blanked, err)
 				}
-				if before == 0 {
-					t.Fatal("the caller read nothing before blanking, so this measures nothing")
-				}
-
-				if _, err := tx.Exec(ctx, `SELECT set_config('request.jwt.claims', $1, true)`, blanked); err != nil {
-					return err
-				}
-
-				for _, table := range tables {
-					var after int
-					if err := tx.QueryRow(ctx, `SELECT count(*) FROM app.`+table).Scan(&after); err != nil {
-						return err
-					}
-					if after != 0 {
-						t.Errorf("claims blanked to %q: %s still returns %d row(s)", blanked, table, after)
-					}
-				}
-
-				return nil
-			}); err != nil {
-				t.Fatalf("blanking the claims: %v", err)
 			}
 		}
 	})
@@ -990,4 +984,47 @@ func TestTheAdminReachesEveryPatientsCourse(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("the admin could not write a course for an unassigned patient: %v", err)
 	}
+}
+
+// The three tables counted before and after, and the mechanism named rather than
+// inferred from the counts: a jwt_subject() that returned a sentinel instead of
+// NULL would leave the zeroes intact and the property this measures gone.
+func blankTheClaims(ctx context.Context, t *testing.T, tx pgx.Tx, tables []string, blanked string) error {
+	t.Helper()
+
+	before := map[string]int{}
+	for _, table := range tables {
+		var rows int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM app.`+table).Scan(&rows); err != nil {
+			return err
+		}
+		if rows == 0 {
+			t.Fatalf("%s read nothing before the blanking, so this measures nothing", table)
+		}
+		before[table] = rows
+	}
+
+	if _, err := tx.Exec(ctx, `SELECT set_config('request.jwt.claims', $1, true)`, blanked); err != nil {
+		return err
+	}
+
+	var subjectIsNull bool
+	if err := tx.QueryRow(ctx, `SELECT app.jwt_subject() IS NULL`).Scan(&subjectIsNull); err != nil {
+		return err
+	}
+	if !subjectIsNull {
+		t.Fatalf("claims %q left a subject in place, so the zeroes below are not the NULL case", blanked)
+	}
+
+	for _, table := range tables {
+		var after int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM app.`+table).Scan(&after); err != nil {
+			return err
+		}
+		if after != 0 {
+			t.Errorf("claims blanked to %q: %s went from %d to %d, want 0", blanked, table, before[table], after)
+		}
+	}
+
+	return nil
 }
