@@ -101,6 +101,19 @@ func grantRegistry() map[string][]string {
 		"protocol_phases/cadence_admin":   crud,
 		"protocol_phases/cadence_service": {"DELETE", "INSERT", "SELECT"},
 		"protocol_phases/cadence_owner":   everything,
+		// The one table in the schema the patient writes directly. A vial is the
+		// patient's own record about themselves, so it travels the request seam
+		// rather than the service one — and its policies carry the subject in both
+		// USING and WITH CHECK, which is what the protocol tables had to buy with
+		// column grants.
+		//
+		// No DELETE for anybody but the admin: a vial is disposed of by setting
+		// disposed_at, and the dose events drawn from it keep pointing at it.
+		"vials/cadence_patient": {"INSERT", "SELECT", "UPDATE"},
+		"vials/cadence_doctor":  {"SELECT"},
+		"vials/cadence_admin":   crud,
+		"vials/cadence_service": {"INSERT", "SELECT"},
+		"vials/cadence_owner":   everything,
 	}
 
 	// Everybody else holds nothing, stated rather than left out: an absent key
@@ -381,6 +394,21 @@ func policyPredicates() map[string]string {
 		"protocol_phases_service_insert": anyWrite,
 		"protocol_phases_service_read":   anything,
 		"protocol_phases_service_update": anythingRW,
+
+		// The medicine cabinet, and the one place a request role's predicate is the
+		// write rule as well as the read filter. USING and WITH CHECK say the same
+		// thing on the update, which is what stops a patient handing their vial to
+		// somebody else — the protocol tables needed a column grant for that,
+		// because the service path's policies name no subject.
+		"vials_admin":          anythingRW,
+		"vials_own_select":     "(patient_id = app.jwt_subject()) | -",
+		"vials_own_insert":     "- | (patient_id = app.jwt_subject())",
+		"vials_own_update":     "(patient_id = app.jwt_subject()) | (patient_id = app.jwt_subject())",
+		"vials_service_insert": anyWrite,
+		"vials_service_read":   anything,
+		"vials_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
+			"WHERE ((care_team_assignments.patient_id = vials.patient_id) AND " +
+			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
 	}
 }
 
@@ -559,6 +587,13 @@ func policyRegistry() []string {
 		"user_preferences user_preferences_own_update UPDATE {cadence_patient}",
 		"user_preferences user_preferences_service_insert INSERT {cadence_service}",
 		"user_preferences user_preferences_service_read SELECT {cadence_service}",
+		"vials vials_admin ALL {cadence_admin}",
+		"vials vials_of_my_patients SELECT {cadence_doctor}",
+		"vials vials_own_insert INSERT {cadence_patient}",
+		"vials vials_own_select SELECT {cadence_patient}",
+		"vials vials_own_update UPDATE {cadence_patient}",
+		"vials vials_service_insert INSERT {cadence_service}",
+		"vials vials_service_read SELECT {cadence_service}",
 	}
 }
 

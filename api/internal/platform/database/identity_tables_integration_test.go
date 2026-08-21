@@ -45,9 +45,16 @@ func protocolTables() []string {
 	}
 }
 
+// The medicine cabinet, added by 000015. One table, and kept in a list of its own
+// for the reason the protocol list is: a reader asking «what did the inventory
+// block add» should find a list rather than a diff.
+func inventoryTables() []string {
+	return []string{"vials"}
+}
+
 // Every table the chain creates, sorted the way the catalogue returns them.
 func appTables() []string {
-	all := append(append([]string{}, identityTables()...), protocolTables()...)
+	all := append(append(append([]string{}, identityTables()...), protocolTables()...), inventoryTables()...)
 	slices.Sort(all)
 	return all
 }
@@ -710,6 +717,24 @@ func identityColumns() map[string][]string {
 			"to_week integer NOT NULL",
 			"dose_value numeric NOT NULL",
 			"dose_unit text NOT NULL",
+		},
+		// The medicine cabinet, and what is not in it is the point: no status, no
+		// remaining. Both are derived on read from total_doses and the dose events
+		// drawn from the vial.
+		"vials": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"patient_id uuid NOT NULL",
+			"compound_id uuid NOT NULL",
+			"concentration_label text NOT NULL",
+			"total_doses integer NOT NULL",
+			// Null until opened; that absence is the whole of «sealed».
+			"opened_at date NULL",
+			"expires_on date NOT NULL",
+			"lot text NULL",
+			"location_ru text NULL",
+			"disposed_at date NULL",
+			"label_photo_path text NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
 		},
 		"audit_log": {
 			"id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
