@@ -73,11 +73,39 @@ func grantRegistry() map[string][]string {
 		"invites/cadence_admin":   {"SELECT"},
 		"invites/cadence_service": {"INSERT", "SELECT"},
 		"invites/cadence_owner":   everything,
+		// §03's protocol block. The write path is the service seam throughout —
+		// a course is written by the doctor about the patient, which is a
+		// cross-actor write — so no product role but the admin holds a verb
+		// other than SELECT.
+		"compounds/cadence_patient": {"SELECT"},
+		"compounds/cadence_doctor":  {"SELECT"},
+		"compounds/cadence_admin":   crud,
+		"compounds/cadence_service": {"INSERT", "SELECT"},
+		"compounds/cadence_owner":   everything,
+		"protocols/cadence_patient": {"SELECT"},
+		"protocols/cadence_doctor":  {"SELECT"},
+		"protocols/cadence_admin":   crud,
+		// No DELETE: a course ends by becoming completed or cancelled, and the
+		// dose history hangs off it.
+		"protocols/cadence_service":      {"INSERT", "SELECT", "UPDATE"},
+		"protocols/cadence_owner":        everything,
+		"protocol_items/cadence_patient": {"SELECT"},
+		"protocol_items/cadence_doctor":  {"SELECT"},
+		"protocol_items/cadence_admin":   crud,
+		// DELETE here and not on protocols: editing a course removes items from
+		// it, which is a different act from ending the course.
+		"protocol_items/cadence_service":  {"DELETE", "INSERT", "SELECT", "UPDATE"},
+		"protocol_items/cadence_owner":    everything,
+		"protocol_phases/cadence_patient": {"SELECT"},
+		"protocol_phases/cadence_doctor":  {"SELECT"},
+		"protocol_phases/cadence_admin":   crud,
+		"protocol_phases/cadence_service": {"DELETE", "INSERT", "SELECT", "UPDATE"},
+		"protocol_phases/cadence_owner":   everything,
 	}
 
 	// Everybody else holds nothing, stated rather than left out: an absent key
 	// and an empty one are the same to a map and very different to a reader.
-	for _, table := range identityTables() {
+	for _, table := range appTables() {
 		for _, role := range testsupport.ChainRoles() {
 			key := table + "/" + role
 			if _, declared := registry[key]; !declared {
@@ -96,7 +124,7 @@ func TestTheGrantsAreTheOnesDeclared(t *testing.T) {
 
 	declared := grantRegistry()
 
-	for _, table := range identityTables() {
+	for _, table := range appTables() {
 		for _, role := range testsupport.ChainRoles() {
 			var held []string
 			if err := conn.QueryRow(ctx, `
@@ -233,6 +261,9 @@ func policyPredicates() map[string]string {
 		noAdmin = "(role = ANY (ARRAY['patient'::text, 'doctor'::text]))"
 	)
 
+	const phaseThroughItem = "(EXISTS ( SELECT FROM app.protocol_items " +
+		"WHERE (protocol_items.id = protocol_phases.protocol_item_id))) | -"
+
 	// The care team read in one direction or the other. The table being read
 	// supplies the row; the subquery supplies the relation.
 	through := func(table, mine, theirs string) string {
@@ -289,6 +320,50 @@ func policyPredicates() map[string]string {
 		"user_preferences_own_update":          ownRowWrite,
 		"user_preferences_service_insert":      anyWrite,
 		"user_preferences_service_read":        anything,
+
+		// The protocol block. A reference table has nothing in a row to filter
+		// on, so compounds is open to both request roles and says so.
+		"compounds_admin":          anythingRW,
+		"compounds_read":           anything,
+		"compounds_service_insert": anyWrite,
+		"compounds_service_read":   anything,
+
+		"protocols_admin":      anythingRW,
+		"protocols_own_select": "(patient_id = app.jwt_subject()) | -",
+		"protocols_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
+			"WHERE ((care_team_assignments.patient_id = protocols.patient_id) AND " +
+			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
+		"protocols_service_insert": anyWrite,
+		"protocols_service_read":   anything,
+		"protocols_service_update": anythingRW,
+
+		// One level down: the item names its course, and the course's own policy
+		// decides whose it is.
+		"protocol_items_admin": anythingRW,
+		"protocol_items_own_select": "(EXISTS ( SELECT FROM app.protocols " +
+			"WHERE ((protocols.id = protocol_items.protocol_id) AND " +
+			"(protocols.patient_id = app.jwt_subject())))) | -",
+		"protocol_items_of_my_patients": "(EXISTS ( SELECT FROM (app.protocols " +
+			"JOIN app.care_team_assignments ON ((care_team_assignments.patient_id = " +
+			"protocols.patient_id))) WHERE ((protocols.id = protocol_items.protocol_id) AND " +
+			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
+		"protocol_items_service_delete": anything,
+		"protocol_items_service_insert": anyWrite,
+		"protocol_items_service_read":   anything,
+		"protocol_items_service_update": anythingRW,
+
+		// Two levels down, and the two request roles share one predicate: the
+		// subquery runs under protocol_items' policies, which already answer
+		// «whose». Identical bodies with different TO is the shape, not a
+		// copy-paste slip, and the registry showing them equal is the record of
+		// that.
+		"protocol_phases_admin":          anythingRW,
+		"protocol_phases_own_select":     phaseThroughItem,
+		"protocol_phases_of_my_patients": phaseThroughItem,
+		"protocol_phases_service_delete": anything,
+		"protocol_phases_service_insert": anyWrite,
+		"protocol_phases_service_read":   anything,
+		"protocol_phases_service_update": anythingRW,
 	}
 }
 
@@ -413,6 +488,10 @@ func policyRegistry() []string {
 		"care_team_assignments care_team_assignments_service_delete DELETE {cadence_service}",
 		"care_team_assignments care_team_assignments_service_insert INSERT {cadence_service}",
 		"care_team_assignments care_team_assignments_service_read SELECT {cadence_service}",
+		"compounds compounds_admin ALL {cadence_admin}",
+		"compounds compounds_read SELECT {cadence_doctor,cadence_patient}",
+		"compounds compounds_service_insert INSERT {cadence_service}",
+		"compounds compounds_service_read SELECT {cadence_service}",
 		"invites invites_admin_read SELECT {cadence_admin}",
 		"invites invites_doctor_insert INSERT {cadence_doctor}",
 		"invites invites_service_insert INSERT {cadence_service}",
@@ -433,6 +512,26 @@ func policyRegistry() []string {
 		"profiles profiles_service_insert INSERT {cadence_service}",
 		"profiles profiles_service_read SELECT {cadence_service}",
 		"profiles profiles_service_update UPDATE {cadence_service}",
+		"protocol_items protocol_items_admin ALL {cadence_admin}",
+		"protocol_items protocol_items_of_my_patients SELECT {cadence_doctor}",
+		"protocol_items protocol_items_own_select SELECT {cadence_patient}",
+		"protocol_items protocol_items_service_delete DELETE {cadence_service}",
+		"protocol_items protocol_items_service_insert INSERT {cadence_service}",
+		"protocol_items protocol_items_service_read SELECT {cadence_service}",
+		"protocol_items protocol_items_service_update UPDATE {cadence_service}",
+		"protocol_phases protocol_phases_admin ALL {cadence_admin}",
+		"protocol_phases protocol_phases_of_my_patients SELECT {cadence_doctor}",
+		"protocol_phases protocol_phases_own_select SELECT {cadence_patient}",
+		"protocol_phases protocol_phases_service_delete DELETE {cadence_service}",
+		"protocol_phases protocol_phases_service_insert INSERT {cadence_service}",
+		"protocol_phases protocol_phases_service_read SELECT {cadence_service}",
+		"protocol_phases protocol_phases_service_update UPDATE {cadence_service}",
+		"protocols protocols_admin ALL {cadence_admin}",
+		"protocols protocols_of_my_patients SELECT {cadence_doctor}",
+		"protocols protocols_own_select SELECT {cadence_patient}",
+		"protocols protocols_service_insert INSERT {cadence_service}",
+		"protocols protocols_service_read SELECT {cadence_service}",
+		"protocols protocols_service_update UPDATE {cadence_service}",
 		"provider_profiles provider_profiles_admin ALL {cadence_admin}",
 		"provider_profiles provider_profiles_of_my_specialists SELECT {cadence_patient}",
 		"provider_profiles provider_profiles_own_select SELECT {cadence_doctor}",

@@ -32,6 +32,26 @@ func identityTables() []string {
 	}
 }
 
+// The prescription, added by 000013. Kept apart from the identity list rather
+// than folded into it: the two arrive in different migrations, and a reader
+// asking «which tables did the protocol block add» should find the answer as a
+// list rather than as a diff.
+func protocolTables() []string {
+	return []string{
+		"compounds",
+		"protocol_items",
+		"protocol_phases",
+		"protocols",
+	}
+}
+
+// Every table the chain creates, sorted the way the catalogue returns them.
+func appTables() []string {
+	all := append(append([]string{}, identityTables()...), protocolTables()...)
+	slices.Sort(all)
+	return all
+}
+
 // The pg_class sweeps have been in the suite since the first migration and have
 // been passing vacuously ever since — there were no tables to walk. This is the
 // step where that stops, and the emptiness is worth asserting against: a sweep
@@ -64,8 +84,8 @@ func TestTheSchemaHoldsExactlyTheTablesDeclared(t *testing.T) {
 		t.Fatalf("iterating: %v", err)
 	}
 
-	if !slices.Equal(found, identityTables()) {
-		t.Errorf("schema %s holds %v, want exactly %v", testsupport.AppSchema, found, identityTables())
+	if !slices.Equal(found, appTables()) {
+		t.Errorf("schema %s holds %v, want exactly %v", testsupport.AppSchema, found, appTables())
 	}
 }
 
@@ -131,7 +151,7 @@ func unforced(t *testing.T, db *testsupport.Database) *pgx.Conn {
 		t.Fatalf("becoming the owner: %v", err)
 	}
 
-	for _, table := range identityTables() {
+	for _, table := range appTables() {
 		if _, err := conn.Exec(
 			t.Context(), `ALTER TABLE app.`+table+` NO FORCE ROW LEVEL SECURITY`,
 		); err != nil {
@@ -648,6 +668,48 @@ func identityColumns() map[string][]string {
 			"invited_by uuid NOT NULL",
 			"invited_at timestamp with time zone NOT NULL DEFAULT now()",
 			"role text NOT NULL",
+		},
+		// The prescription. Every dose is a number and a unit — «0,25 мг» is a
+		// rendering — and nothing derived is stored: there is no status column on
+		// an item, no remaining anywhere, and no materialized schedule.
+		"compounds": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			// Nullable on purpose: a seeded compound carries a code so the seed is
+			// idempotent under a rename; one a doctor types in has none.
+			"code text NULL",
+			"name_ru text NOT NULL",
+			"default_unit text NOT NULL",
+			"route text NOT NULL",
+			"icon text NOT NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		"protocols": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"patient_id uuid NOT NULL",
+			"start_date date NOT NULL",
+			"duration_weeks integer NOT NULL",
+			"status text NOT NULL",
+			"created_by uuid NULL",
+			"notes text NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		"protocol_items": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"protocol_id uuid NOT NULL",
+			"kind text NOT NULL",
+			"compound_id uuid NULL",
+			"cadence text NOT NULL",
+			"days_of_week ARRAY NOT NULL DEFAULT '{}'::smallint[]",
+			"times ARRAY NOT NULL",
+			"loggable boolean NOT NULL DEFAULT true",
+		},
+		"protocol_phases": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"protocol_item_id uuid NOT NULL",
+			"from_week integer NOT NULL",
+			"to_week integer NOT NULL",
+			"dose_value numeric NOT NULL",
+			"dose_unit text NOT NULL",
 		},
 		"audit_log": {
 			"id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
