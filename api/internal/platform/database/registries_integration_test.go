@@ -195,8 +195,8 @@ func columnGrantRegistry() map[string][]string {
 		// is constrained to the patient's own prefix in 000015, which is a stronger
 		// statement than a grant because it binds every role.
 		"INSERT/vials/cadence_patient": {
-			"compound_id", "concentration_label", "expires_on", "label_photo_path",
-			"location_ru", "lot", "opened_at", "patient_id", "total_doses",
+			"compound_id", "concentration_label", "disposed_at", "expires_on",
+			"label_photo_path", "location_ru", "lot", "opened_at", "patient_id", "total_doses",
 		},
 		"UPDATE/vials/cadence_patient": {
 			"compound_id", "concentration_label", "disposed_at", "expires_on",

@@ -92,8 +92,13 @@ CREATE POLICY vials_service_insert ON app.vials
 -- decision quietly. The key is constrained in 000015 instead, to the patient's own
 -- prefix, which holds for every role rather than for the ones a grant names.
 GRANT SELECT ON app.vials TO cadence_patient;
+-- disposed_at is in the INSERT list as well as the UPDATE one: a vial that was
+-- thrown away before the clinic ever recorded it is a row M4 has to be able to
+-- create, and leaving the column out of one verb only would be the same dead end
+-- the photo key was — writable by nobody on the path that needs it.
+-- vials_disposed_after_opening still holds the two dates coherent.
 GRANT INSERT (patient_id, compound_id, concentration_label, total_doses,
-              opened_at, expires_on, lot, location_ru, label_photo_path)
+              opened_at, expires_on, lot, location_ru, disposed_at, label_photo_path)
     ON app.vials TO cadence_patient;
 GRANT UPDATE (patient_id, compound_id, concentration_label, total_doses,
               opened_at, expires_on, lot, location_ru, disposed_at, label_photo_path)
