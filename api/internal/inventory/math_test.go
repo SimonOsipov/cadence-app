@@ -259,3 +259,17 @@ func TestFourWeeksOfSupplyIsAHintAndFiveIsNot(t *testing.T) {
 		}
 	}
 }
+
+func TestAnItemWithNoWeeklyRateGetsNoHintEvenWhenTheVialIsEmpty(t *testing.T) {
+	// The guard on the rate is load-bearing, and measured: without it the division
+	// is by zero. A vial with doses left gives +Inf, which converts to a number
+	// larger than the threshold and happens to answer «no hint» by accident — but a
+	// drained one gives NaN, which converts to 0, and 0 is not more than four weeks.
+	// The patient would be told to reorder a drug prescribed on no day at all, with
+	// «0 weeks left» beside it.
+	drained := vial(4, day(2026, time.May, 1), farOff)
+
+	if got := ReorderHintFor(weeklyItem(sema, 0), []Vial{drained}, drawn(drained, 4), today); got != nil {
+		t.Errorf("an item prescribed on no day: got %v, want no hint", got)
+	}
+}
