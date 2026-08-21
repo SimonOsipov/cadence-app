@@ -229,3 +229,33 @@ func TestADisposedVialIsNeitherASpareNorSupply(t *testing.T) {
 		t.Errorf("got %v, want 3 weeks", hint)
 	}
 }
+
+func TestFourWeeksOfSupplyIsAHintAndFiveIsNot(t *testing.T) {
+	// §03 sets the threshold at «≤4 weeks», and no other fixture lands on it: moving
+	// the comparison to five weeks left the whole suite green. The Kotlin suite has
+	// the same hole.
+	//
+	// One dose a week, so a vial's total is its weeks of supply outright.
+	for _, c := range []struct {
+		doses int
+		want  int
+		hint  bool
+	}{
+		{3, 3, true},
+		{4, 4, true},
+		{5, 0, false},
+	} {
+		open := vial(c.doses, day(2026, time.May, 1), farOff)
+
+		got := ReorderHintFor(weeklyItem(sema, 1), []Vial{open}, nil, today)
+
+		switch {
+		case c.hint && got == nil:
+			t.Errorf("%d weeks of supply: got no hint, want one", c.doses)
+		case c.hint && got.WeeksLeft != c.want:
+			t.Errorf("%d weeks of supply: got %d weeks left, want %d", c.doses, got.WeeksLeft, c.want)
+		case !c.hint && got != nil:
+			t.Errorf("%d weeks of supply is more than the threshold: got %v", c.doses, got)
+		}
+	}
+}
