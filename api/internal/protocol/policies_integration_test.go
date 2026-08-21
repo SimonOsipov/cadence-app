@@ -341,11 +341,28 @@ func TestNeitherRequestRoleMayWriteAProtocol(t *testing.T) {
 func TestNamingAnotherPatientsCourseDoesNotFetchIt(t *testing.T) {
 	c := newClinic(t)
 
-	seen := c.visible(t, patientA, "patient",
-		fmt.Sprintf(`SELECT id::text FROM app.protocols WHERE id = '%s'`, c.courseB))
-
-	if len(seen) != 0 {
-		t.Errorf("the patient fetched another patient's course by id: %v", seen)
+	// All three tables, not just the shallow one. The deepest is where it matters
+	// most: the plan takes the primary key as an index condition and hangs the RLS
+	// predicate above it as a filter, so «filters a scan» and «filters a lookup»
+	// are different code paths and only one of them was measured.
+	for _, reach := range []struct {
+		table string
+		id    string
+	}{
+		{"protocols", c.courseB},
+		{"protocol_items", c.itemB},
+		{"protocol_phases", c.phaseB},
+	} {
+		for _, caller := range []struct{ subject, role string }{
+			{patientA, "patient"},
+			{doctorA, "doctor"},
+		} {
+			seen := c.visible(t, caller.subject, caller.role,
+				fmt.Sprintf(`SELECT id::text FROM app.%s WHERE id = '%s'`, reach.table, reach.id))
+			if len(seen) != 0 {
+				t.Errorf("the %s fetched another patient's %s by id: %v", caller.role, reach.table, seen)
+			}
+		}
 	}
 }
 
@@ -550,5 +567,69 @@ func TestTheExclusionConstraintsExtensionNeedsNoSuperuser(t *testing.T) {
 	}
 	if !trusted {
 		t.Error("btree_gist is not trusted on this image: the chain would need a superuser")
+	}
+}
+
+// The service path carries no row predicate — that authorization lives in Go —
+// so what stops it moving a row across a patient boundary is the grant, and a
+// grant is the only tool that can: WITH CHECK sees no OLD row, and «patient_id
+// did not change» is therefore unsayable as a policy.
+//
+// Measured before it was closed: one UPDATE moved another patient's item onto
+// this patient's course, and the patient then read the moved row through their
+// own policy, which is exactly correct policy behaviour on a row that now
+// belongs to them.
+func TestTheServicePathMayNotMoveARowToAnotherPatient(t *testing.T) {
+	c := newClinic(t)
+
+	for _, move := range []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{
+			"a course to another patient",
+			`UPDATE app.protocols SET patient_id = $1 WHERE id = $2`,
+			[]any{patientA, c.courseB},
+		},
+		{
+			"an item to another patient's course",
+			`UPDATE app.protocol_items SET protocol_id = $1 WHERE id = $2`,
+			[]any{c.courseA, c.itemB},
+		},
+		{
+			"a phase to another patient's item",
+			`UPDATE app.protocol_phases SET protocol_item_id = $1 WHERE id = $2`,
+			[]any{c.itemA, c.phaseB},
+		},
+	} {
+		if code := c.refuse(t, move.sql, move.args...); code != "42501" {
+			t.Errorf("%s: refused with %s, want 42501", move.name, code)
+		}
+	}
+
+	// The control: the columns the write path actually needs are still writable,
+	// so the refusals above are the ownership columns and not a lost grant.
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `
+				UPDATE app.protocols SET status = 'completed', notes = 'закончен' WHERE id = $1
+			`, c.courseA); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE app.protocol_items SET loggable = false WHERE id = $1
+			`, c.itemA); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `
+				UPDATE app.protocol_phases SET dose_value = 0.5 WHERE id = $1
+			`, c.phaseA)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("the write path lost a column it needs: %v", err)
 	}
 }

@@ -115,6 +115,11 @@ CREATE POLICY protocol_phases_own_select ON app.protocol_phases
 -- subquery above runs under protocol_items' policies, which already answer «this
 -- patient's». Repeating the join here would be a second copy of the rule to keep
 -- in step, and the identity block chose the same way.
+--
+-- The consequence, for whoever edits protocol_items next: its SELECT policies are
+-- the single source of «whose» for phases too. A policy widened there — «a doctor
+-- reads the items of a template protocol», say — widens this table in the same
+-- commit, without this file being opened.
 CREATE POLICY protocol_phases_of_my_patients ON app.protocol_phases
     FOR SELECT TO cadence_doctor
     USING (EXISTS (
@@ -136,27 +141,55 @@ CREATE POLICY protocol_phases_service_delete ON app.protocol_phases
 
 -- ------------------------------------------------------------------ grants --
 
--- Table-wide throughout: there is no column here that one role may see and
--- another may change, which is what the identity block's column grants exist for.
--- A verb absent from this list is a verb nobody holds; there are no default
--- privileges to fall back on.
+-- Per role, and where it matters per column. A verb absent from this list is a
+-- verb nobody holds: there are no default privileges to fall back on.
+--
+-- Three of the column lists below are on UPDATE and one is on SELECT, and the two
+-- kinds are there for different reasons — the UPDATE lists keep a row from
+-- changing owner, the SELECT list keeps a timestamp from being an oracle.
 
-GRANT SELECT ON app.compounds TO cadence_patient, cadence_doctor, cadence_service;
-GRANT INSERT ON app.compounds TO cadence_service;
+-- The reference is readable by column rather than by table. `code` says whether a
+-- compound was seeded or typed in by the clinic and `created_at` says when, so
+-- the two together tell a patient that somebody was prescribed something new, to
+-- the second. No row of another patient is reachable through it — but a channel
+-- that narrow is closed by naming five columns, which costs nothing.
+GRANT SELECT (id, name_ru, default_unit, route, icon)
+    ON app.compounds TO cadence_patient, cadence_doctor;
+GRANT SELECT, INSERT ON app.compounds TO cadence_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.compounds TO cadence_admin;
 
--- No DELETE for the service path: a course ends by becoming 'completed' or
--- 'cancelled', and its history has to survive that.
+-- The service path carries no row predicate, so what keeps it from moving a row
+-- across a patient boundary is the grant — and the grant is the only thing that
+-- can. A policy cannot say «patient_id did not change»: WITH CHECK sees the new
+-- row and there is no OLD to compare it against.
+--
+-- Measured before it was written this way: with a table-wide UPDATE, one
+-- statement moved another patient's item onto this patient's course, and the
+-- patient then read the moved row through their own policy — correct policy
+-- behaviour on a row that had become theirs. The same shape as 000006, where an
+-- escalation «Go will prevent» was closed in the database instead.
+--
+-- INSERT stays table-wide: it names the parent once, at creation, and editing a
+-- course replaces items and phases rather than repointing them.
+--
+-- No DELETE on protocols for the service path: a course ends by becoming
+-- 'completed' or 'cancelled', and its history has to survive that.
 GRANT SELECT ON app.protocols TO cadence_patient, cadence_doctor, cadence_service;
-GRANT INSERT, UPDATE ON app.protocols TO cadence_service;
+GRANT INSERT ON app.protocols TO cadence_service;
+GRANT UPDATE (start_date, duration_weeks, status, notes)
+    ON app.protocols TO cadence_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.protocols TO cadence_admin;
 
 GRANT SELECT ON app.protocol_items TO cadence_patient, cadence_doctor, cadence_service;
-GRANT INSERT, UPDATE, DELETE ON app.protocol_items TO cadence_service;
+GRANT INSERT, DELETE ON app.protocol_items TO cadence_service;
+GRANT UPDATE (kind, compound_id, cadence, days_of_week, times, loggable)
+    ON app.protocol_items TO cadence_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.protocol_items TO cadence_admin;
 
 GRANT SELECT ON app.protocol_phases TO cadence_patient, cadence_doctor, cadence_service;
-GRANT INSERT, UPDATE, DELETE ON app.protocol_phases TO cadence_service;
+GRANT INSERT, DELETE ON app.protocol_phases TO cadence_service;
+GRANT UPDATE (from_week, to_week, dose_value, dose_unit)
+    ON app.protocol_phases TO cadence_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.protocol_phases TO cadence_admin;
 
 -- Nothing on sequences, and there are none to grant on: every primary key here

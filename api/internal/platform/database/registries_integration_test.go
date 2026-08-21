@@ -77,8 +77,8 @@ func grantRegistry() map[string][]string {
 		// a course is written by the doctor about the patient, which is a
 		// cross-actor write — so no product role but the admin holds a verb
 		// other than SELECT.
-		"compounds/cadence_patient": {"SELECT"},
-		"compounds/cadence_doctor":  {"SELECT"},
+		"compounds/cadence_patient": nil,
+		"compounds/cadence_doctor":  nil,
 		"compounds/cadence_admin":   crud,
 		"compounds/cadence_service": {"INSERT", "SELECT"},
 		"compounds/cadence_owner":   everything,
@@ -87,19 +87,19 @@ func grantRegistry() map[string][]string {
 		"protocols/cadence_admin":   crud,
 		// No DELETE: a course ends by becoming completed or cancelled, and the
 		// dose history hangs off it.
-		"protocols/cadence_service":      {"INSERT", "SELECT", "UPDATE"},
+		"protocols/cadence_service":      {"INSERT", "SELECT"},
 		"protocols/cadence_owner":        everything,
 		"protocol_items/cadence_patient": {"SELECT"},
 		"protocol_items/cadence_doctor":  {"SELECT"},
 		"protocol_items/cadence_admin":   crud,
 		// DELETE here and not on protocols: editing a course removes items from
 		// it, which is a different act from ending the course.
-		"protocol_items/cadence_service":  {"DELETE", "INSERT", "SELECT", "UPDATE"},
+		"protocol_items/cadence_service":  {"DELETE", "INSERT", "SELECT"},
 		"protocol_items/cadence_owner":    everything,
 		"protocol_phases/cadence_patient": {"SELECT"},
 		"protocol_phases/cadence_doctor":  {"SELECT"},
 		"protocol_phases/cadence_admin":   crud,
-		"protocol_phases/cadence_service": {"DELETE", "INSERT", "SELECT", "UPDATE"},
+		"protocol_phases/cadence_service": {"DELETE", "INSERT", "SELECT"},
 		"protocol_phases/cadence_owner":   everything,
 	}
 
@@ -151,14 +151,29 @@ func TestTheGrantsAreTheOnesDeclared(t *testing.T) {
 }
 
 // columnGrantRegistry is where "may see" and "may change" come apart, and it is
-// the mechanism behind two acceptance criteria: a patient cannot change their
-// own role, and cannot write the clinical fields of their own card.
+// the mechanism behind four acceptance criteria: a patient cannot change their
+// own role, cannot write the clinical fields of their own card, cannot read when
+// a compound was added, and — on the service path — cannot move a row from one
+// patient to another.
 //
-// Only the columns a role may UPDATE without holding UPDATE on the table.
+// Keyed by verb, because SELECT joined UPDATE here in 000014 and a registry that
+// reads one of them leaves the other unreconciled: a column privilege nobody
+// declares is exactly what invariant 6 exists to catch.
+//
+// Only the columns a role holds the verb on without holding it on the table.
 func columnGrantRegistry() map[string][]string {
 	return map[string][]string{
-		"profiles/cadence_patient":         {"full_name", "locale", "timezone"},
-		"patient_profiles/cadence_patient": {"target_weight_kg"},
+		"UPDATE/profiles/cadence_patient":         {"full_name", "locale", "timezone"},
+		"UPDATE/patient_profiles/cadence_patient": {"target_weight_kg"},
+		// A row may not change owner: WITH CHECK sees no OLD row, so «patient_id
+		// did not change» is unsayable as a policy and the grant is the only tool.
+		"UPDATE/protocols/cadence_service":       {"duration_weeks", "notes", "start_date", "status"},
+		"UPDATE/protocol_items/cadence_service":  {"cadence", "compound_id", "days_of_week", "kind", "loggable", "times"},
+		"UPDATE/protocol_phases/cadence_service": {"dose_unit", "dose_value", "from_week", "to_week"},
+		// code and created_at are withheld: together they say a compound was typed
+		// in by the clinic, and when.
+		"SELECT/compounds/cadence_patient": {"default_unit", "icon", "id", "name_ru", "route"},
+		"SELECT/compounds/cadence_doctor":  {"default_unit", "icon", "id", "name_ru", "route"},
 	}
 }
 
@@ -168,15 +183,16 @@ func TestTheColumnGrantsAreTheOnesDeclared(t *testing.T) {
 	ctx := t.Context()
 
 	rows, err := conn.Query(ctx, `
-		SELECT c.relname, r.rolname, a.attname
+		SELECT v.verb, c.relname, r.rolname, a.attname
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
 		CROSS JOIN pg_roles r
+		CROSS JOIN (VALUES ('SELECT'), ('UPDATE'), ('INSERT'), ('REFERENCES')) AS v(verb)
 		WHERE n.nspname = $1 AND c.relkind = 'r' AND r.rolname = ANY($2)
-		  AND has_column_privilege(r.rolname, c.oid, a.attnum, 'UPDATE')
-		  AND NOT has_table_privilege(r.rolname, c.oid, 'UPDATE')
-		ORDER BY c.relname, r.rolname, a.attname
+		  AND has_column_privilege(r.rolname, c.oid, a.attnum, v.verb)
+		  AND NOT has_table_privilege(r.rolname, c.oid, v.verb)
+		ORDER BY v.verb, c.relname, r.rolname, a.attname
 	`, testsupport.AppSchema, testsupport.ChainRoles())
 	if err != nil {
 		t.Fatalf("reading the column grants: %v", err)
@@ -185,11 +201,12 @@ func TestTheColumnGrantsAreTheOnesDeclared(t *testing.T) {
 
 	found := map[string][]string{}
 	for rows.Next() {
-		var table, role, column string
-		if err := rows.Scan(&table, &role, &column); err != nil {
+		var verb, table, role, column string
+		if err := rows.Scan(&verb, &table, &role, &column); err != nil {
 			t.Fatalf("scanning: %v", err)
 		}
-		found[table+"/"+role] = append(found[table+"/"+role], column)
+		key := verb + "/" + table + "/" + role
+		found[key] = append(found[key], column)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterating: %v", err)
@@ -198,12 +215,12 @@ func TestTheColumnGrantsAreTheOnesDeclared(t *testing.T) {
 	declared := columnGrantRegistry()
 	for key, want := range declared {
 		if !slices.Equal(found[key], want) {
-			t.Errorf("%s: column UPDATE grants are %v, want %v", key, found[key], want)
+			t.Errorf("%s: column grants are %v, want %v", key, found[key], want)
 		}
 	}
 	for key, held := range found {
 		if _, ok := declared[key]; !ok {
-			t.Errorf("%s holds column UPDATE grants nobody declared: %v", key, held)
+			t.Errorf("%s holds column grants nobody declared: %v", key, held)
 		}
 	}
 
