@@ -460,10 +460,12 @@ func TestAPhaseOpeningBeforeTheCourseIsCutAtItsFirstDay(t *testing.T) {
 
 	assertSpans(t, []span{{quarter, bandsStart, NewDate(2026, time.June, 6)}}, spansOf(wholeCourse, washIn))
 
-	marks := ProtocolMarks(washIn, sema, wholeCourse)
-	if len(marks) != 0 {
-		t.Errorf("a mark standing a week before the course began: %v", marks)
-	}
+	// The band is clipped, not dropped — so it keeps its start mark, on the day it opens. A
+	// mark at WeekStart(0) would stand a week off the chart; no mark at all would leave a
+	// drawn band with nothing saying where the prescription began.
+	assertMarks(t, []ProtocolMark{
+		{Kind: MarkStart, Date: bandsStart, From: nil, To: quarter},
+	}, ProtocolMarks(washIn, sema, wholeCourse))
 }
 
 func TestTwoPhasesHoldingTheSameDoseAreNotATitration(t *testing.T) {

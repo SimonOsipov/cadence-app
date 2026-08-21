@@ -149,6 +149,34 @@ func TestADailyItemEmitsEveryTimeItIsScheduledFor(t *testing.T) {
 	}
 }
 
+func TestAnOccurrenceCarriesTheKindOfTheItemItCameFrom(t *testing.T) {
+	// Replacing Kind with a constant survives everything else: occurrencesEqual is its only
+	// reader, and in the completed-course test it compares two equally-mutated sides. The
+	// calendar draws a needle, a pill or a scale from this field.
+	day := NewDate(2026, time.May, 18)
+	weighIn := fixtureItems[1]
+	weighIn.ID = ProtocolItemID("scale")
+	weighIn.Kind = KindWeighIn
+	weighIn.Times = []Slot{{Hour: 9}}
+	plan := Plan{
+		Protocol: fixtureProtocol,
+		Items:    append(append([]ProtocolItem{}, fixtureItems...), weighIn),
+		Phases:   fixturePhases,
+	}
+
+	kinds := map[ProtocolItemID]ItemKind{}
+	for _, o := range OccurrencesFor(plan, nil, day, day) {
+		kinds[o.ItemID] = o.Kind
+	}
+
+	if kinds[bpc] != KindInjection {
+		t.Errorf("BPC-157 is an injection, got %v", kinds[bpc])
+	}
+	if kinds[weighIn.ID] != KindWeighIn {
+		t.Errorf("the weigh-in is a weigh-in, got %v", kinds[weighIn.ID])
+	}
+}
+
 func TestTheDoseFollowsTheTitrationPhaseForThatWeek(t *testing.T) {
 	// Boundary weeks are what an off-by-one gets wrong, so all six are asserted.
 	for _, c := range []struct {

@@ -143,8 +143,11 @@ func TestADoseThatArrivedThroughArithmeticReadsAsAChangeOfDose(t *testing.T) {
 	// break silently, and a comment cannot fail. Two phases both meant to hold 0,3 мг, one
 	// value computed rather than parsed: without the invariant this draws «Доза растёт:
 	// 0,3 мг → 0,3 мг», a change from a value to itself, rendered identically on both sides.
+	// Fatal, not Skip: Go pins float64 to IEEE-754 binary64, so this cannot legitimately
+	// happen. A Skip here would turn a drifting fixture into silence — falsify the premise and
+	// the suite reports ok, which is the failure mode this whole test exists to refuse.
 	if summedThird == literalThird {
-		t.Skip("this platform's float64 makes 0.1+0.2 exactly 0.3; the hazard cannot be shown")
+		t.Fatal("0.1+0.2 must not equal 0.3 — the hazard this pins is gone, or the fixture drifted")
 	}
 
 	drifted := titrationPlan
@@ -166,4 +169,29 @@ func TestADoseThatArrivedThroughArithmeticReadsAsAChangeOfDose(t *testing.T) {
 	// Named rather than asserted away: this is the failure the Dose doc warns about, and it
 	// is here so that the day someone computes a dose, this test says what changed.
 	t.Logf("a computed 0,3 мг and a parsed one differ: %.20f vs %.20f", steps[0].From.Value, steps[0].To.Value)
+}
+
+func TestTwoPhasesOpeningOnTheSameWeekKeepTheOrderTheyArrivedIn(t *testing.T) {
+	// Nothing else has two phases sharing a FromWeek, so sort.SliceStable survives being
+	// swapped for sort.Slice. It is load-bearing for a reason PhaseDose's own comment names:
+	// until step 2 adds the EXCLUDE, nothing forbids overlap, and an unstable sort makes the
+	// bands and the steps differ run to run on the same input.
+	duplicate := titrationPlan
+	duplicate.Phases = map[ProtocolItemID][]ProtocolPhase{
+		sema: {
+			{FromWeek: 1, ToWeek: 4, Dose: Dose{Value: 0.25, Unit: MG}},
+			{FromWeek: 5, ToWeek: 8, Dose: Dose{Value: 0.5, Unit: MG}},
+			{FromWeek: 5, ToWeek: 8, Dose: Dose{Value: 0.75, Unit: MG}},
+		},
+	}
+
+	for i := range 32 {
+		steps := TitrationSteps(duplicate, sema)
+		if len(steps) != 2 {
+			t.Fatalf("run %d: two boundaries, got %d", i, len(steps))
+		}
+		if steps[0].To != (Dose{Value: 0.5, Unit: MG}) || steps[1].From != (Dose{Value: 0.5, Unit: MG}) {
+			t.Fatalf("run %d: the arrival order of the tied phases moved: %v", i, steps)
+		}
+	}
 }

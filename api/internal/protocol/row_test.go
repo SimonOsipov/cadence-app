@@ -211,6 +211,30 @@ func TestTheRowCarriesTheKindTheStripDrawsItBy(t *testing.T) {
 	}
 }
 
+func TestTheRowCarriesTheCadenceAndEverySlotOfItsItem(t *testing.T) {
+	// Both survive being replaced by a constant otherwise: no test reads row.Cadence at all,
+	// and the aliasing test writes row.Times[0] without ever checking the slice is whole.
+	// The strip renders «еженедельно / ежедневно» from the first and draws a chip per slot
+	// from the second, so a truncation drops BPC-157's 20:00 injection off the row in silence.
+	rows := rowsOn(NewDate(2026, time.May, 20), nil, StatusActive)
+
+	weekly := rowFor(t, rows, sema)
+	if weekly.Cadence != CadenceWeekly {
+		t.Errorf("Семаглутид is weekly, got %v", weekly.Cadence)
+	}
+	if !slotsEqual(weekly.Times, []Slot{{Hour: 7}}) {
+		t.Errorf("one slot at 07:00, got %v", weekly.Times)
+	}
+
+	daily := rowFor(t, rows, bpc)
+	if daily.Cadence != CadenceDaily {
+		t.Errorf("BPC-157 is daily, got %v", daily.Cadence)
+	}
+	if !slotsEqual(daily.Times, []Slot{{Hour: 8}, {Hour: 20}}) {
+		t.Errorf("both slots, in order, got %v", daily.Times)
+	}
+}
+
 func TestACancelledProtocolHasNoStrip(t *testing.T) {
 	if got := rowsOn(NewDate(2026, time.May, 20), nil, StatusCancelled); len(got) != 0 {
 		t.Errorf("a cancelled course has no strip, got %v", got)
@@ -283,10 +307,9 @@ func TestTheStripCarriesWhichItemsCanBeLogged(t *testing.T) {
 }
 
 func TestARowOwnsWhatItCarriesRatherThanPointingIntoTheCallers(t *testing.T) {
-	// Kotlin's data classes made this safe by construction; a *Compound does not. The
-	// compound table is a repository cache shared between requests, so a row holding
-	// &compounds[i] hands every caller a write into the table — and every row that resolved
-	// the same compound shares one pointer.
+	// Kotlin's data classes made this safe by construction; Go pointers do not. A row holding
+	// &compounds[i] gives every row that resolved the same compound one shared pointer, and a
+	// write through any of them reaches the caller's own slice.
 	// Both sides are copied before the call, and that is not ceremony: with the regression
 	// present, the writes below land in whatever they were given. Handing over the package
 	// fixture made an unrelated test fail on two of five -shuffle seeds.
@@ -301,6 +324,15 @@ func TestARowOwnsWhatItCarriesRatherThanPointingIntoTheCallers(t *testing.T) {
 	rows := WeekProtocolRows(plan, compounds, nil, NewDate(2026, time.May, 31))
 
 	row := rowFor(t, rows, sema)
+	// Guarded like the Dose write below: with the regression present these dereference nil
+	// and an empty slice, and a panic takes the binary down — eleven of the package's tests
+	// reported nothing rather than failing.
+	if row.Compound == nil {
+		t.Fatal("the row has a compound to write through")
+	}
+	if len(row.Times) == 0 {
+		t.Fatal("the row has a slot to write through")
+	}
 	row.Compound.NameRU = "OVERWRITTEN"
 	if compounds[0].NameRU != "SEMA" {
 		t.Errorf("writing through the row edited the compound table: %v", compounds[0].NameRU)

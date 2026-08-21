@@ -36,20 +36,61 @@ func TestProtocolDoesNotImportItsCallers(t *testing.T) {
 	}
 }
 
-// The generator, named as the subject of the claim rather than as a filter. A list of
-// *transport* files would be the wrong shape: this project puts one aggregate per file with
-// the check, the transaction and the SQL mixed in — internal/identity has twelve such files
-// and only one of them is called handler.go — so step 6's protocols.go would fail a check it
-// conforms to, and the fix would be to keep widening the exemption.
+// The two halves of the package, reconciled against the directory below rather than merely
+// listed — the same reason internal/router reconciles its registry against internal/: a list
+// is a thing new files are absent from, and absence there means exemption.
 //
-// A file added here and not listed is caught by the floor below, not by this list.
-var generator = []string{
-	"calendar.go",
-	"types.go",
-	"occurrence.go",
-	"titration.go",
-	"bands.go",
-	"row.go",
+// A *denylist* of transport files would be the wrong shape: this project puts one aggregate
+// per file with the check, the transaction and the SQL mixed in — internal/identity has
+// twelve such files and only one is called handler.go — so step 6's protocols.go would fail
+// a check it conforms to, and the fix would be to keep widening the exemption.
+var (
+	generator = []string{
+		"calendar.go",
+		"types.go",
+		"occurrence.go",
+		"titration.go",
+		"bands.go",
+		"row.go",
+	}
+	transport = []string{
+		"routes.go",
+		"doc.go",
+	}
+)
+
+// A new file has to be classified rather than inherit an exemption. Without this, a
+// schedule.go added by step 9 is in neither list and so is checked by nothing — measured, and
+// it is the escape a lower-bound floor cannot close, because adding a file only makes a floor
+// easier to clear.
+func TestEveryFileInThePackageIsClassified(t *testing.T) {
+	onDisk, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("listing the package: %v", err)
+	}
+
+	classified := map[string]bool{}
+	for _, name := range append(append([]string{}, generator...), transport...) {
+		classified[name] = true
+	}
+
+	seen := 0
+	for _, name := range onDisk {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		seen++
+		if !classified[name] {
+			t.Errorf("%s is in neither generator nor transport: classify it", name)
+		}
+		delete(classified, name)
+	}
+	for name := range classified {
+		t.Errorf("%s is listed but not on disk", name)
+	}
+	if seen != len(generator)+len(transport) {
+		t.Errorf("walked %d files, the two lists name %d", seen, len(generator)+len(transport))
+	}
 }
 
 // No query and no request reaches the ported functions.
@@ -97,9 +138,10 @@ func TestNothingInThePackageReadsTheClock(t *testing.T) {
 		assertNoClock(t, name)
 	}
 	// Without this the guard passes an empty package: a rename of every file, or a glob that
-	// stops matching, would read exactly like purity.
-	if checked < len(generator) {
-		t.Fatalf("expected at least the %d generator files, walked %d", len(generator), checked)
+	// stops matching, would read exactly like purity. It bounds one direction only — files
+	// appearing is what TestEveryFileInThePackageIsClassified covers.
+	if checked < len(generator)+len(transport) {
+		t.Fatalf("expected %d files, walked %d", len(generator)+len(transport), checked)
 	}
 }
 
@@ -128,6 +170,11 @@ func assertNoClock(t *testing.T, name string) {
 		if spec.Name != nil {
 			local = spec.Name.Name
 		}
+	}
+	if local == "." {
+		// Nothing below can see it: Now() under a dot-import is a bare identifier, not a
+		// selector. Refuse the form rather than pass a file the check cannot read.
+		t.Fatalf("%s dot-imports time; the clock check cannot see through it", name)
 	}
 	if local == "" || local == "_" {
 		return
