@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -285,14 +286,17 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 		name string
 		sql  string
 		args []any
+		// Each form has its own legal number, and one bound over all three would
+		// lose the only one that is zero.
+		want int64
 	}{
-		{"naming the row", `UPDATE app.vials SET patient_id = $1 WHERE id = $2`, []any{patientA, c.vialB}},
+		{"naming the row", `UPDATE app.vials SET patient_id = $1 WHERE id = $2`, []any{patientA, c.vialB}, 0},
 		// No WHERE at all, and it is the form that matters most: it reads no
 		// column, so the SELECT policies are never added to the statement and
 		// vials_own_update's USING is the only thing standing in front of it. It is
 		// also a sweep rather than a theft — every vial in the table at once.
-		{"sweeping the table", `UPDATE app.vials SET patient_id = $1`, []any{patientA}},
-		{"with a predicate that reads nothing", `UPDATE app.vials SET patient_id = $1 WHERE true`, []any{patientA}},
+		{"sweeping the table", `UPDATE app.vials SET patient_id = $1`, []any{patientA}, 1},
+		{"with a predicate that reads nothing", `UPDATE app.vials SET patient_id = $1 WHERE true`, []any{patientA}, 1},
 	} {
 		var affected int64
 		if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
@@ -303,8 +307,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("%s: %v", theft.name, err)
 		}
-		if affected > 1 {
-			t.Errorf("%s: touched %d rows", theft.name, affected)
+		if affected != theft.want {
+			t.Errorf("%s: touched %d rows, want %d", theft.name, affected, theft.want)
 		}
 		if owner := c.ownerOf(t, c.vialB); owner != patientB {
 			t.Errorf("%s: the vial now belongs to %s, want %s", theft.name, owner, patientB)
@@ -444,6 +448,62 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 		args    []any
 		allowed bool
 	}{
+		{
+			"a key that climbs out of its own prefix",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/../" + patientB + "/label.jpg", c.vialA},
+			false,
+		},
+		{
+			"a key that climbs out twice over",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/x/../../" + patientB + "/label.jpg", c.vialA},
+			false,
+		},
+		{
+			"a key with an empty segment",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "//" + patientB + "/label.jpg", c.vialA},
+			false,
+		},
+		{
+			"a key with a newline in it",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/\n" + patientB + "/label.jpg", c.vialA},
+			false,
+		},
+		{
+			"a bare prefix naming no object",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/", c.vialA},
+			false,
+		},
+		{
+			// 36 for the uuid, then four segments of a hundred and one. One character
+			// past that is what a bound of five hundred would have accepted.
+			"a key past what the pattern admits",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/" + strings.Repeat("x", 102), c.vialA},
+			false,
+		},
+		{
+			"a key of five segments",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/a/b/c/d/e.jpg", c.vialA},
+			false,
+		},
+		{
+			"a key at the last character the pattern admits",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/" + strings.Repeat("x", 101), c.vialA},
+			true,
+		},
+		{
+			"a nested key under their own prefix",
+			`UPDATE app.vials SET label_photo_path = $1 WHERE id = $2`,
+			[]any{patientA + "/vials/label.jpg", c.vialA},
+			true,
+		},
 		{
 			"a key under another patient's prefix, at creation",
 			`INSERT INTO app.vials
@@ -806,6 +866,31 @@ func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
 		if affected := c.changed(t, adminID, "admin",
 			`UPDATE app.vials SET location_ru = 'сейф' WHERE id = $1`, c.vialB); affected != 1 {
 			t.Errorf("the admin wrote %d rows of a patient they are unassigned to, want 1", affected)
+		}
+
+		// The key travels with the row, and it does so because the constraint reads
+		// two columns. Nothing else asserts that, so an edit splitting it into a
+		// one-column form would lose the property silently.
+		if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				UPDATE app.vials SET label_photo_path = $1 WHERE id = $2
+			`, patientB+"/label.jpg", c.vialB)
+
+			return err
+		}); err != nil {
+			t.Fatalf("the admin could not attach a photo to a patient's vial: %v", err)
+		}
+
+		moved := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE app.vials SET patient_id = $1 WHERE id = $2`, patientA, c.vialB)
+
+			return err
+		})
+
+		var pgErr *pgconn.PgError
+		if !errors.As(moved, &pgErr) ||
+			pgErr.ConstraintName != "vials_photo_key_is_under_its_own_prefix" {
+			t.Errorf("moving a row and leaving its photo key behind: got %v, want the prefix constraint", moved)
 		}
 	})
 

@@ -94,9 +94,9 @@ func StatusOf(vial Vial, drawnFrom []VialID, today protocol.Date) VialStatus {
 // cannot catch this and the type has to. Patient B's sealed spare would otherwise
 // silence patient A's hint, and B's remaining doses would inflate A's weeks left.
 //
-// The field is unexported, so the only way to build one is the constructor, and the
-// only way to build one wrong is to name the wrong patient — which yields an empty
-// cabinet and no hint rather than a mixed answer.
+// The field is unexported, so the only way to build a non-empty one is the
+// constructor — a bare Cabinet{} is constructible anywhere and holds nothing, which
+// yields no hint rather than a mixed answer. Naming the wrong patient does the same.
 type Cabinet struct {
 	vials []Vial
 }

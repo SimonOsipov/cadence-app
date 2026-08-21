@@ -288,24 +288,26 @@ func TestAnotherPatientsVialsChangeNothing(t *testing.T) {
 	other := protocol.UserID("p-2")
 	mine := vial(4, day(2026, time.May, 1), farOff)
 
-	// A sealed spare of theirs would suppress the hint, and their remaining doses
-	// would inflate the weeks left. Both, so neither half can pass alone.
-	theirSpare := vial(30, nil, farOff)
-	theirSpare.PatientID = other
+	// Theirs is open and full, deliberately. A sealed one would be caught by the
+	// spare check before the sum is ever reached, so the half about inflating the
+	// weeks left would never run: unfiltered, thirty-four doses at one a week is
+	// thirty-four weeks and no hint at all.
+	theirs := vial(30, day(2026, time.May, 1), farOff)
+	theirs.PatientID = other
 
 	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, today)
 	mixed := ReorderHintFor(
-		weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, theirSpare}), nil, today)
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, theirs}), nil, today)
 
 	if alone == nil || mixed == nil || *alone != *mixed {
 		t.Fatalf("another patient's vials changed the answer: %v vs %v", alone, mixed)
 	}
 
-	// And the constructor is what does it, not the arithmetic: their cabinet holds
-	// only their own row.
-	if theirs := ReorderHintFor(
-		weeklyItem(sema, 1), CabinetOf(other, []Vial{mine, theirSpare}), nil, today,
-	); theirs != nil {
-		t.Errorf("the other patient has a sealed spare and no hint is due: got %v", theirs)
+	// And their cabinet holds only their own row, with their own number of weeks —
+	// different from the mixed answer, so this cannot pass on the same arithmetic.
+	if got := ReorderHintFor(
+		weeklyItem(sema, 1), CabinetOf(other, []Vial{mine, theirs}), nil, today,
+	); got != nil {
+		t.Errorf("thirty weeks of supply is no reorder hint: got %v", got)
 	}
 }
