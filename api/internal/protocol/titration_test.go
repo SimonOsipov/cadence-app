@@ -1,0 +1,106 @@
+package protocol
+
+import (
+	"testing"
+	"time"
+)
+
+var titrationPlan = Plan{
+	Protocol: Protocol{
+		ID:        ProtocolID("pr"),
+		PatientID: UserID("p"),
+		StartDate: NewDate(2026, time.May, 10),
+		Weeks:     12,
+		Status:    StatusActive,
+	},
+	Items: []ProtocolItem{
+		{
+			ID:         sema,
+			ProtocolID: ProtocolID("pr"),
+			Kind:       KindInjection,
+			CompoundID: compoundPtr("sema"),
+			Cadence:    CadenceWeekly,
+			DaysOfWeek: []time.Weekday{time.Sunday},
+			Times:      []Slot{{Hour: 7}},
+			Loggable:   true,
+		},
+	},
+	// Deliberately out of order: a sorted fixture lets a missing sort through.
+	Phases: map[ProtocolItemID][]ProtocolPhase{
+		sema: {
+			{FromWeek: 5, ToWeek: 8, Dose: Dose{Value: 0.5, Unit: MG}},
+			{FromWeek: 9, ToWeek: 12, Dose: Dose{Value: 1.0, Unit: MG}},
+			{FromWeek: 1, ToWeek: 4, Dose: Dose{Value: 0.25, Unit: MG}},
+		},
+	},
+}
+
+func TestTheNextStepIsTheOneAfterTheWeekYouAreIn(t *testing.T) {
+	step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.May, 31))
+
+	if step == nil {
+		t.Fatal("week 4 has a step ahead of it")
+	}
+	if step.Week != 5 {
+		t.Errorf("the week the new band begins: got %d", step.Week)
+	}
+	if step.From != (Dose{Value: 0.25, Unit: MG}) || step.To != (Dose{Value: 0.5, Unit: MG}) {
+		t.Errorf("0,25 → 0,5: got %v → %v", step.From, step.To)
+	}
+	// Week 5 begins seven days after week 4's Sunday.
+	if step.Date != NewDate(2026, time.June, 7) {
+		t.Errorf("7 June: got %v", step.Date)
+	}
+}
+
+func TestTheStepMovesOnOnceItIsPassed(t *testing.T) {
+	step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.June, 10))
+
+	if step == nil {
+		t.Fatal("week 5 still has week 9 ahead of it")
+	}
+	if step.From != (Dose{Value: 0.5, Unit: MG}) || step.To != (Dose{Value: 1.0, Unit: MG}) {
+		t.Errorf("0,5 → 1,0: got %v → %v", step.From, step.To)
+	}
+	if step.Date != NewDate(2026, time.July, 5) {
+		t.Errorf("5 July: got %v", step.Date)
+	}
+}
+
+func TestTheLastBandHasNoNextStep(t *testing.T) {
+	if step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.July, 20)); step != nil {
+		t.Errorf("nothing after the last band, got %v", step)
+	}
+}
+
+func TestAnItemWithOnePhaseNeverTitrates(t *testing.T) {
+	flat := titrationPlan
+	flat.Phases = map[ProtocolItemID][]ProtocolPhase{
+		sema: {{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 250.0, Unit: MCG}}},
+	}
+
+	if step := TitrationStepAfter(flat, sema, NewDate(2026, time.May, 31)); step != nil {
+		t.Errorf("one band never steps, got %v", step)
+	}
+}
+
+func TestADateOutsideTheCycleHasNoStep(t *testing.T) {
+	if step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.May, 9)); step != nil {
+		t.Errorf("bounded by the cycle, not the calendar, got %v", step)
+	}
+}
+
+func TestSortingThePhasesLeavesTheCallersOrderAlone(t *testing.T) {
+	// PhaseDose reads the phases as they arrive, so a sort in place here would change what
+	// dose another reader of the same plan sees.
+	before := append([]ProtocolPhase(nil), titrationPlan.Phases[sema]...)
+
+	TitrationSteps(titrationPlan, sema)
+
+	after := titrationPlan.Phases[sema]
+	for i := range before {
+		if before[i] != after[i] {
+			t.Fatalf("phase %d moved: was %v, now %v", i, before[i], after[i])
+		}
+	}
+}
