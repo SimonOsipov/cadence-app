@@ -112,20 +112,31 @@ CREATE TABLE app.protocol_items (
     ),
     CONSTRAINT protocol_items_has_a_slot
         CHECK (pg_catalog.cardinality(times) >= 1),
-    -- cardinality counts a NULL element, so «at least one slot» above accepts an
-    -- array holding nothing but NULL — measured, the row inserts. The generator
-    -- scans this into []Slot and would fail on a row already saved, which is the
-    -- read-time disagreement these constraints exist to prevent.
-    --
-    -- days_of_week needs no equivalent: <@ answers false, not NULL, for an array
-    -- with a NULL element. It does need the dimension check — a two-dimensional
-    -- array passes both <@ and cardinality.
-    CONSTRAINT protocol_items_slots_are_named
-        CHECK (pg_catalog.array_position(times, NULL) IS NULL),
-    CONSTRAINT protocol_items_days_are_a_flat_list
-        CHECK (pg_catalog.array_ndims(days_of_week) IS NULL OR pg_catalog.array_ndims(days_of_week) = 1),
-    CONSTRAINT protocol_items_times_are_a_flat_list
-        CHECK (pg_catalog.array_ndims(times) = 1)
+    -- One constraint and not two, and the CASE is the whole reason. cardinality
+    -- counts a NULL element, so «at least one slot» above accepts an array holding
+    -- nothing but NULL — but array_position refuses a multidimensional array
+    -- outright with 0A000, and Postgres evaluates CHECKs in constraint-name order.
+    -- Written as two, the NULL guard sorted first and raised feature_not_supported
+    -- before the dimension guard was reached: the second constraint could never
+    -- fire, and a two-dimensional list reached the caller as an error naming
+    -- nothing. Measured, then merged; the order is now the expression's, not the
+    -- alphabet's, and a rename cannot bring it back.
+    CONSTRAINT protocol_items_slots_are_a_named_flat_list CHECK (
+        CASE WHEN pg_catalog.array_ndims(times) = 1
+             THEN pg_catalog.array_position(times, NULL) IS NULL
+             ELSE false
+        END
+    ),
+    -- days_of_week needs no NULL guard — <@ answers false, not NULL, for an array
+    -- with a NULL element — but it needs the same dimension check, because a
+    -- two-dimensional array satisfies both <@ and cardinality. The IS NULL branch
+    -- is what keeps an empty list legal for a daily item: array_ndims of an empty
+    -- array is NULL, and a CHECK evaluating to NULL would pass anyway, so the
+    -- branch is written out rather than relied on.
+    CONSTRAINT protocol_items_days_are_a_flat_list CHECK (
+        pg_catalog.array_ndims(days_of_week) IS NULL
+        OR pg_catalog.array_ndims(days_of_week) = 1
+    )
 );
 
 CREATE INDEX protocol_items_by_protocol ON app.protocol_items (protocol_id);

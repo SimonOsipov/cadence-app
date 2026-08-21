@@ -165,17 +165,34 @@ CREATE POLICY protocol_phases_service_delete ON app.protocol_phases
 -- The reference is readable by column rather than by table. `code` says whether a
 -- compound was seeded or typed in by the clinic and `created_at` says when, so
 -- the two together tell a patient that somebody was prescribed something new, to
--- the second. No row of another patient is reachable through it — but a channel
--- that narrow is closed by naming five columns, which costs nothing.
+-- the second. No row of another patient is reachable through it.
+--
+-- Narrowed, not closed, and the difference is worth stating: an unordered SELECT
+-- still returns heap order, which is insertion order, so a patient who looks
+-- twice still sees which compound is new. What goes is the timestamp. The
+-- remaining precision depends on `id` staying random — a time-ordered uuid would
+-- put `created_at` back into a column the patient reads.
 GRANT SELECT (id, name_ru, default_unit, route, icon)
     ON app.compounds TO cadence_patient, cadence_doctor;
+-- No UPDATE, deliberately: a name collision must not rewrite a reference row that
+-- other patients' protocols already point at. The consequence for step 6, which
+-- has to resolve a typed-in compound to an existing id: the one-round-trip idiom
+-- `INSERT … ON CONFLICT … DO UPDATE … RETURNING` is refused here, so the shape is
+-- `INSERT … ON CONFLICT DO NOTHING` followed by a SELECT on the conflict path.
 GRANT SELECT, INSERT ON app.compounds TO cadence_service;
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.compounds TO cadence_admin;
 
 -- The service path carries no row predicate, so what keeps it from moving a row
--- across a patient boundary is the grant — and the grant is the only thing that
--- can. A policy cannot say «patient_id did not change»: WITH CHECK sees the new
--- row and there is no OLD to compare it against.
+-- across a patient boundary **in place** is the grant — and for that, the grant is
+-- the only thing that can. A policy cannot say «patient_id did not change»: WITH
+-- CHECK sees the new row and there is no OLD to compare it against.
+--
+-- In place is the whole of the claim. Copy-and-delete reaches the same end state
+-- and nothing here prevents it: INSERT … SELECT onto another patient's course,
+-- then DELETE the originals, all within the verbs the write path needs. DELETE
+-- has no column form, so a grant cannot narrow it, and the service path carries
+-- no row predicate by design. That half is Go's, in step 6 — measured, not
+-- assumed: the sequence was run and the rows moved.
 --
 -- Measured before it was written this way: with a table-wide UPDATE, one
 -- statement moved another patient's item onto this patient's course, and the
