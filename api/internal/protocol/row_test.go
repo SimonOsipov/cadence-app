@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -286,10 +287,18 @@ func TestARowOwnsWhatItCarriesRatherThanPointingIntoTheCallers(t *testing.T) {
 	// compound table is a repository cache shared between requests, so a row holding
 	// &compounds[i] hands every caller a write into the table — and every row that resolved
 	// the same compound shares one pointer.
+	// Both sides are copied before the call, and that is not ceremony: with the regression
+	// present, the writes below land in whatever they were given. Handing over the package
+	// fixture made an unrelated test fail on two of five -shuffle seeds.
 	compounds := append([]Compound{}, rowCompounds...)
 	plan := rowPlan(StatusActive)
+	plan.Items = slices.Clone(rowItems)
+	for i := range plan.Items {
+		plan.Items[i].Times = slices.Clone(plan.Items[i].Times)
+	}
+	plan.Phases = map[ProtocolItemID][]ProtocolPhase{sema: slices.Clone(rowPhases[sema])}
 
-	rows := WeekProtocolRows(plan, compounds, nil, NewDate(2026, time.May, 20))
+	rows := WeekProtocolRows(plan, compounds, nil, NewDate(2026, time.May, 31))
 
 	row := rowFor(t, rows, sema)
 	row.Compound.NameRU = "OVERWRITTEN"
@@ -299,6 +308,17 @@ func TestARowOwnsWhatItCarriesRatherThanPointingIntoTheCallers(t *testing.T) {
 
 	row.Times[0] = Slot{Hour: 23}
 	if plan.Items[0].Times[0] != (Slot{Hour: 7}) {
-		t.Errorf("writing through the row edited the plan: %v", plan.Items[0].Times[0])
+		t.Errorf("writing through the row edited the plan's slots: %v", plan.Items[0].Times[0])
+	}
+
+	// The third pointer field, and the one that matters most: ProtocolRow.Dose comes straight
+	// out of PhaseDose, so an aliasing PhaseDose lets a caller rewrite the prescription that
+	// the schedule, the bands and the marks all read next.
+	if row.Dose == nil {
+		t.Fatal("the row has a dose to write through")
+	}
+	row.Dose.Value = 99
+	if got := plan.Phases[sema][0].Dose.Value; got != 0.25 {
+		t.Errorf("writing through the row edited the protocol's own phase: %v", got)
 	}
 }

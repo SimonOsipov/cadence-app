@@ -87,8 +87,9 @@ func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today Date) []Occurrence 
 // It reads the phases in the order they arrive while DoseBands and TitrationSteps sort them,
 // and the two agree only while phases do not overlap. That is faithful to the Kotlin, which
 // does not sort here either — but it is a property nothing in this package holds. What holds
-// it is the EXCLUDE constraint of step 2; on overlapping phases the schedule and the dose
-// band under it would name different doses for one day.
+// it will be the EXCLUDE constraint step 2 adds — as of this step nothing holds it at all,
+// and api/migrations/ has no protocol tables yet. On overlapping phases the schedule and the
+// dose band under it name different doses for one day.
 func PhaseDose(plan Plan, itemID ProtocolItemID, d Date) *Dose {
 	if plan.Protocol.Status == StatusCancelled {
 		return nil

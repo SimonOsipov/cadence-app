@@ -5,7 +5,6 @@ import (
 	"go/build"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -37,52 +36,24 @@ func TestProtocolDoesNotImportItsCallers(t *testing.T) {
 	}
 }
 
-// The transport files, named as the exception rather than the generator being named as the
-// rule: a list of generator files is a list a new generator file steps around, and this check
-// has to keep meaning something after routes.go and the handlers of step 6 arrive.
-var transport = map[string]bool{
-	"routes.go":  true,
-	"doc.go":     true,
-	"handler.go": true,
+// The generator, named as the subject of the claim rather than as a filter. A list of
+// *transport* files would be the wrong shape: this project puts one aggregate per file with
+// the check, the transaction and the SQL mixed in — internal/identity has twelve such files
+// and only one of them is called handler.go — so step 6's protocols.go would fail a check it
+// conforms to, and the fix would be to keep widening the exemption.
+//
+// A file added here and not listed is caught by the floor below, not by this list.
+var generator = []string{
+	"calendar.go",
+	"types.go",
+	"occurrence.go",
+	"titration.go",
+	"bands.go",
+	"row.go",
 }
 
-// Purity is what makes the suite able to run this against a calendar: today arrives as a
-// parameter, and no query, no request and no clock reading reaches the generator.
-func TestTheGeneratorItselfTouchesNoDatabaseAndNoClock(t *testing.T) {
-	names, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("listing the package: %v", err)
-	}
-
-	checked := 0
-	for _, name := range names {
-		if transport[name] || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		checked++
-		assertPure(t, name)
-	}
-	// Without this the guard passes an empty package: a rename of every generator file, or
-	// a glob that stops matching, would read exactly like purity.
-	if checked < 6 {
-		t.Fatalf("expected the six generator files, walked %d", checked)
-	}
-}
-
-func assertPure(t *testing.T, name string) {
-	t.Helper()
-
-	source, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatalf("reading %s: %v", name, err)
-	}
-	file, err := parser.ParseFile(token.NewFileSet(), name, source, 0)
-	if err != nil {
-		t.Fatalf("parsing %s: %v", name, err)
-	}
-
-	// time is not on this list and cannot be: Date is built out of it. The clock is caught
-	// below, at the call rather than at the import.
+// No query and no request reaches the ported functions.
+func TestTheGeneratorImportsNoDatabaseAndNoTransport(t *testing.T) {
 	impure := []string{
 		"context",
 		"database/sql",
@@ -91,26 +62,91 @@ func assertPure(t *testing.T, name string) {
 		"github.com/danielgtaylor/huma",
 		"github.com/SimonOsipov/cadence-app/api/internal/platform/database",
 	}
-	for _, spec := range file.Imports {
-		path := strings.Trim(spec.Path.Value, `"`)
-		for _, deny := range impure {
-			if path == deny || strings.HasPrefix(path, deny+"/") {
-				t.Errorf("%s imports %s", name, path)
+
+	for _, name := range generator {
+		file := parse(t, name)
+		for _, spec := range file.Imports {
+			path := strings.Trim(spec.Path.Value, `"`)
+			for _, deny := range impure {
+				if path == deny || strings.HasPrefix(path, deny+"/") {
+					t.Errorf("%s imports %s", name, path)
+				}
 			}
 		}
 	}
+}
 
-	clock := map[string]bool{"Now": true, "Since": true, "Until": true}
+// Every non-test file in the package, transport included — a helper reading the clock in
+// routes.go and called from occurrence.go is the same defect one indirection away, and
+// exempting a file from the import check must not exempt it from this one.
+//
+// today arrives as a parameter, which is what lets the suite run the generator against a
+// calendar instead of against whatever day it is.
+func TestNothingInThePackageReadsTheClock(t *testing.T) {
+	names, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("listing the package: %v", err)
+	}
+
+	checked := 0
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		checked++
+		assertNoClock(t, name)
+	}
+	// Without this the guard passes an empty package: a rename of every file, or a glob that
+	// stops matching, would read exactly like purity.
+	if checked < len(generator) {
+		t.Fatalf("expected at least the %d generator files, walked %d", len(generator), checked)
+	}
+}
+
+func parse(t *testing.T, name string) *ast.File {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+	if err != nil {
+		t.Fatalf("parsing %s: %v", name, err)
+	}
+	return file
+}
+
+func assertNoClock(t *testing.T, name string) {
+	t.Helper()
+	file := parse(t, name)
+
+	// The local name of the time package, not the string "time": `import clock "time"` would
+	// otherwise walk straight through.
+	local := ""
+	for _, spec := range file.Imports {
+		if strings.Trim(spec.Path.Value, `"`) != "time" {
+			continue
+		}
+		local = "time"
+		if spec.Name != nil {
+			local = spec.Name.Name
+		}
+	}
+	if local == "" || local == "_" {
+		return
+	}
+
+	reads := map[string]bool{
+		"Now": true, "Since": true, "Until": true,
+		"After": true, "Tick": true, "NewTimer": true, "NewTicker": true, "AfterFunc": true,
+	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		selector, ok := node.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
 		pkg, ok := selector.X.(*ast.Ident)
-		if !ok || pkg.Name != "time" || !clock[selector.Sel.Name] {
+		if !ok || pkg.Name != local || !reads[selector.Sel.Name] {
 			return true
 		}
-		t.Errorf("%s reads the clock: time.%s", name, selector.Sel.Name)
+		t.Errorf("%s reads the clock: %s.%s", name, local, selector.Sel.Name)
 		return true
 	})
 }

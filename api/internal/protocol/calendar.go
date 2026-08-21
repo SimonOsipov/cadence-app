@@ -56,10 +56,14 @@ type Slot struct {
 	Minute int
 }
 
-// Range includes both edges, because a window is a set of days and not a subtraction. It
-// does not enforce that it runs forwards — Kotlin's TrendRange did, and the aggregates of
-// step 9, which build a window from a month parameter, are what need the checked
-// constructor back. Until then an inverted Range answers «no days» rather than refusing.
+// Range includes both edges, because a window is a set of days and not a subtraction. It does
+// not enforce that it runs forwards — Kotlin's TrendRange did (`require(from <= through)`),
+// and the aggregates of step 9, which build a window from a month parameter, are what need
+// the checked constructor back.
+//
+// Until then an inverted Range is not harmless: Contains answers false for every day, but
+// Days() returns a negative count — measured, −8 for a window inverted by nine days. Step 9
+// must not iterate or divide by it before the constructor lands.
 type Range struct {
 	From    Date
 	Through Date

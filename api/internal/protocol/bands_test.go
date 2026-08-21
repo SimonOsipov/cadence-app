@@ -450,6 +450,22 @@ func TestAnItemWhoseOnlyPhaseOpensPastTheCourseIsNotMarkedAtAll(t *testing.T) {
 	}
 }
 
+func TestAPhaseOpeningBeforeTheCourseIsCutAtItsFirstDay(t *testing.T) {
+	// The mirror of the clip at the far end, and it was missing: WeekStart(0) is a week
+	// before the protocol began, §03 leaves from_week as unjoined as to_week, and the day
+	// walk of TestTheBandCoveringADay… runs offsets 0..83 so it cannot look below day 0.
+	// PhaseDose answers nil out there, so an unclipped band drew a dose over a day the
+	// schedule says was never prescribed.
+	washIn := bandsPlan(StatusActive, []ProtocolPhase{{FromWeek: 0, ToWeek: 4, Dose: quarter}})
+
+	assertSpans(t, []span{{quarter, bandsStart, NewDate(2026, time.June, 6)}}, spansOf(wholeCourse, washIn))
+
+	marks := ProtocolMarks(washIn, sema, wholeCourse)
+	if len(marks) != 0 {
+		t.Errorf("a mark standing a week before the course began: %v", marks)
+	}
+}
+
 func TestTwoPhasesHoldingTheSameDoseAreNotATitration(t *testing.T) {
 	// §03 lets a course split its phase table without changing the dose. Two bands, one
 	// dose, no dashed line: «0,5 мг → 0,5 мг» is a change that didn't happen.

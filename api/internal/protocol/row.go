@@ -58,9 +58,9 @@ func compoundOf(compounds []Compound, id *CompoundID) *Compound {
 	}
 	for i := range compounds {
 		if compounds[i].ID == *id {
-			// A copy, like the three other pointer results in this package: the compound
-			// table is a repository cache shared between requests, and &compounds[i] hands
-			// every row a write into it.
+			// A copy, like the three other pointer results in this package: &compounds[i]
+			// would give every row that resolved this compound one shared pointer, and a
+			// write through any of them would reach the caller's own slice.
 			found := compounds[i]
 			return &found
 		}

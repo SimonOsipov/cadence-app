@@ -34,7 +34,11 @@ func DoseBands(plan Plan, itemID ProtocolItemID, r Range) []DoseBand {
 
 	var out []DoseBand
 	for _, phase := range sortedPhases(plan, itemID) {
-		opens := plan.Protocol.WeekStart(phase.FromWeek)
+		// Clipped at both ends of the course, not just the far one: §03 leaves from_week as
+		// unjoined as to_week, and WeekStart(0) is a week before the protocol began. PhaseDose
+		// answers nil there, so an unclipped band drew a dose over a day the schedule says was
+		// never prescribed. The Kotlin clips only the far end and has the same disagreement.
+		opens := MaxDate(plan.Protocol.WeekStart(phase.FromWeek), plan.Protocol.StartDate)
 		// The last day of ToWeek is the day before ToWeek + 1 opens.
 		closes := MinDate(plan.Protocol.WeekStart(phase.ToWeek+1).AddDays(-1), plan.Protocol.LastPrescribedDay())
 		from := MaxDate(opens, r.From)
@@ -70,11 +74,11 @@ func ProtocolMarks(plan Plan, itemID ProtocolItemID, r Range) []ProtocolMark {
 		marks = append(marks, ProtocolMark{Kind: MarkTitration, Date: step.Date, From: &from, To: step.To})
 	}
 
-	last := plan.Protocol.LastPrescribedDay()
+	first, last := plan.Protocol.StartDate, plan.Protocol.LastPrescribedDay()
 
 	var out []ProtocolMark
 	for _, m := range marks {
-		if !m.Date.After(last) && r.Contains(m.Date) {
+		if !m.Date.Before(first) && !m.Date.After(last) && r.Contains(m.Date) {
 			out = append(out, m)
 		}
 	}
