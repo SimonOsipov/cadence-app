@@ -422,6 +422,23 @@ func TestAMarkPastTheEndOfTheCourseIsDroppedLikeTheBandUnderIt(t *testing.T) {
 	}
 }
 
+func TestAnItemWhoseOnlyPhaseOpensPastTheCourseIsNotMarkedAtAll(t *testing.T) {
+	// Measured: with the clip in ProtocolMarks pushed a year out, every other test here
+	// stayed green. TitrationSteps carries its own clip, so it stands in for this one on
+	// every titration mark — and the start mark, which TitrationSteps never produces, was
+	// left with nothing checking it. The Kotlin suite has the same hole.
+	pastTheEnd := bandsPlan(StatusActive, []ProtocolPhase{{FromWeek: 13, ToWeek: 20, Dose: quarter}})
+
+	if got := ProtocolMarks(pastTheEnd, sema, wholeCourse); len(got) != 0 {
+		t.Errorf("a start mark standing past the course: %v", got)
+	}
+	// The band under it is already gone, which is what makes the stray mark stand over
+	// nothing rather than over a line.
+	if got := spansOf(wholeCourse, pastTheEnd); len(got) != 0 {
+		t.Errorf("a band past the course: %v", got)
+	}
+}
+
 func TestTwoPhasesHoldingTheSameDoseAreNotATitration(t *testing.T) {
 	// §03 lets a course split its phase table without changing the dose. Two bands, one
 	// dose, no dashed line: «0,5 мг → 0,5 мг» is a change that didn't happen.
