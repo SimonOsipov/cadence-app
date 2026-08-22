@@ -111,3 +111,34 @@ func TestADayAndASlotRenderFixedWidth(t *testing.T) {
 		}
 	}
 }
+
+// A day the type admits and the calendar does not. §03's calendar arithmetic runs through
+// time, and == runs over the fields, so an impossible date makes the two disagree: they call
+// it a different day and the same day at once, and a dose logged against it closes no
+// occurrence.
+func TestADayTheCalendarDoesNotHaveIsRefused(t *testing.T) {
+	for _, refused := range []Date{
+		{Year: 2026, Month: time.February, Day: 30},
+		{Year: 2026, Month: time.April, Day: 31},
+		{Year: 2026, Month: time.January, Day: 0},
+		{Year: 2026, Month: time.January, Day: 32},
+		{Year: 2026, Month: time.Month(0), Day: 1},
+		{Year: 2026, Month: time.Month(13), Day: 1},
+	} {
+		if refused.Valid() {
+			t.Errorf("%v passed as a day", refused)
+		}
+	}
+
+	// The leap day, which is the case a naive month-length table gets wrong.
+	for _, accepted := range []Date{
+		{Year: 2024, Month: time.February, Day: 29},
+		{Year: 2026, Month: time.February, Day: 28},
+		{Year: 2026, Month: time.December, Day: 31},
+		{Year: 2026, Month: time.January, Day: 1},
+	} {
+		if !accepted.Valid() {
+			t.Errorf("%v was refused as a day", accepted)
+		}
+	}
+}
