@@ -30,6 +30,11 @@ var (
 	ErrAlreadyRunning = errors.New("the patient already has a course running")
 
 	ErrNoSuchProtocol = errors.New("no such course")
+
+	// Refused before the seam opens: a cast that fails inside a transaction is a 500
+	// where a refusal belongs. It lives here rather than in Draft.Check because the
+	// generator may not import the database package, and IsUUIDShaped is its.
+	ErrMalformedIdentifier = errors.New("the identifier is not a UUID")
 )
 
 // Written is what the caller gets back: the identifiers the database chose, in the order the
@@ -49,6 +54,9 @@ type Written struct {
 func Create(ctx context.Context, pool *pgxpool.Pool, draft Draft) (Written, error) {
 	if err := draft.Check(); err != nil {
 		return Written{}, err
+	}
+	if !database.IsUUIDShaped(string(draft.PatientID)) {
+		return Written{}, fmt.Errorf("%q: %w", draft.PatientID, ErrMalformedIdentifier)
 	}
 
 	var written Written
@@ -83,18 +91,32 @@ func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft
 	if err := draft.Check(); err != nil {
 		return Written{}, err
 	}
+	for _, identifier := range []string{string(draft.PatientID), string(id)} {
+		if !database.IsUUIDShaped(identifier) {
+			return Written{}, fmt.Errorf("%q: %w", identifier, ErrMalformedIdentifier)
+		}
+	}
 
 	var written Written
 	err := database.WithService(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+		// Authorized on the path's patient before a row is read, and the order is the
+		// finding rather than a style: reading the owner first made the reply an
+		// oracle. An unassigned doctor holding a course id got 403 where the course
+		// existed and belonged to the named patient, and 404 otherwise — one bit of
+		// protocols.patient_id per request, to a caller RLS would show nothing.
+		// identity's own write path authorizes before it reads for the same reason.
+		if err := requireCaresFor(ctx, tx, draft.PatientID); err != nil {
+			return err
+		}
+
 		owner, err := ownerOf(ctx, tx, id)
 		if err != nil {
 			return err
 		}
+		// The owner is not named in the refusal: it is the one thing this caller must
+		// not learn, and the course id alone identifies the refusal in a log.
 		if owner != draft.PatientID {
-			return fmt.Errorf("course %s belongs to %s: %w", id, owner, ErrNoSuchProtocol)
-		}
-		if err := requireCaresFor(ctx, tx, owner); err != nil {
-			return err
+			return fmt.Errorf("course %s: %w", id, ErrNoSuchProtocol)
 		}
 
 		if _, err := tx.Exec(ctx, `

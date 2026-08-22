@@ -5,6 +5,7 @@ package protocol_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -251,10 +252,20 @@ func TestAnEditReachesOnlyTheCallersOwnPatients(t *testing.T) {
 		t.Fatalf("prescribing: %v", err)
 	}
 
-	if _, err := protocol.Replace(
-		as(t, writeDoctorB, "doctor"), pool, written.ProtocolID, draft,
-	); !errors.Is(err, protocol.ErrNotYourPatient) {
-		t.Errorf("the other doctor got %v", err)
+	// The same answer for a course that exists and for an identifier nobody holds,
+	// and this is the axis the first version of this test left open: reading the
+	// owner before authorizing made the reply 403 where the course existed and
+	// belonged to the named patient, and 404 otherwise. One bit of protocols.
+	// patient_id per request, to a caller RLS would show nothing.
+	for _, course := range []protocol.ProtocolID{
+		written.ProtocolID,
+		"5d4f3b7c-0000-4000-8000-00000000dead",
+	} {
+		if _, err := protocol.Replace(
+			as(t, writeDoctorB, "doctor"), pool, course, draft,
+		); !errors.Is(err, protocol.ErrNotYourPatient) {
+			t.Errorf("the other doctor got %v for course %s", err, course)
+		}
 	}
 
 	// And a course claimed for a patient it does not belong to, which is the same shape
@@ -267,6 +278,34 @@ func TestAnEditReachesOnlyTheCallersOwnPatients(t *testing.T) {
 	}
 	if owner := ownerOfCourse(t, pool, string(written.ProtocolID)); owner != writePatientA {
 		t.Errorf("the course now belongs to %s", owner)
+	}
+
+	// And the refusal names no owner: the course id identifies it in a log, and the
+	// patient it belongs to is the one thing this caller must not learn.
+	_, err = protocol.Replace(as(t, writeDoctorB, "doctor"), pool, written.ProtocolID, stolen)
+	if err != nil && strings.Contains(err.Error(), writePatientA) {
+		t.Errorf("the refusal names the owner: %q", err)
+	}
+}
+
+// A malformed identifier is refused before a connection is taken: a cast that fails inside a
+// policy is a 500 where a refusal belongs. Unreachable over HTTP, where huma validates the
+// path parameter — this guards the in-process callers, cmd/seed among them.
+func TestAMalformedIdentifierIsRefusedBeforeTheSeamOpens(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	malformed := aCourse("not-a-uuid")
+	if _, err := protocol.Create(
+		as(t, writeDoctorA, "doctor"), pool, malformed,
+	); !errors.Is(err, protocol.ErrMalformedIdentifier) {
+		t.Errorf("creating for a malformed patient gave %v", err)
+	}
+
+	good := aCourse(writePatientA)
+	if _, err := protocol.Replace(
+		as(t, writeDoctorA, "doctor"), pool, "not-a-uuid", good,
+	); !errors.Is(err, protocol.ErrMalformedIdentifier) {
+		t.Errorf("rewriting a malformed course gave %v", err)
 	}
 }
 

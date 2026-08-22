@@ -298,6 +298,8 @@ func answer(err error) error {
 		// The same answer for both, and deliberately: telling an unassigned doctor
 		// that the patient exists is a fact about somebody else's care team.
 		return huma.Error403Forbidden("this caller does not prescribe for this patient")
+	case errors.Is(err, ErrMalformedIdentifier):
+		return huma.Error422UnprocessableEntity("an identifier is not a UUID", err)
 	case errors.Is(err, ErrNoSuchProtocol):
 		return huma.Error404NotFound("no such course for this patient")
 	case errors.Is(err, ErrAlreadyRunning):
