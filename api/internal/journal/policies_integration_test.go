@@ -348,12 +348,21 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 		}
 	}
 
-	// The upsert of step 8, which no shape above reaches: RLS treats ON CONFLICT DO
-	// UPDATE unlike anything else — the arbiter lookup is not filtered, and the
-	// update's USING raises rather than filtering. It is safe here because
-	// patient_id is half the conflict target, so every row an upsert can meet is
-	// the caller's own. A later migration swapping the key for a surrogate would
-	// delete that property, and this is what would notice.
+	// The upsert of step 8, which no shape above reaches. What this measures is
+	// narrower than it first looks, and the narrower fact is the stronger one: the
+	// DO UPDATE arm is unreachable across the boundary **by construction**, because
+	// patient_id is half the arbiter and the INSERT's WITH CHECK is applied to
+	// every proposed row before a conflict is looked for. So the refusal below
+	// arrives from the INSERT side, and the arm is never entered.
+	//
+	// Which is why the message is asserted and not only the code: an INSERT-side
+	// refusal says «new row violates», a conflict-path one names the USING
+	// expression, and only that tells the two apart. Asserting 42501 alone would
+	// have read the same either way.
+	//
+	// The property is the arbiter's, not the key's: a surrogate id with the same
+	// uniqueness still keeps this green. **If step 8 ever upserts on a different
+	// arbiter, this control has to be rewritten then** — nothing here will notice.
 	err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
@@ -367,12 +376,16 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
 		t.Errorf("upserting onto another patient's day: got %v, want SQLSTATE 42501", err)
+	} else if !strings.Contains(pgErr.Message, "new row violates") {
+		t.Errorf("upserting onto another patient's day was refused with %q, "+
+			"want the INSERT side rather than the conflict path", pgErr.Message)
 	}
 	if mood := c.moodOf(t, patientB, dayA); mood != 3 {
 		t.Errorf("the other patient's day now reads mood %d, want the seeded 3", mood)
 	}
 
-	// And the positive control for the same statement, on their own day.
+	// Their own day, and the one statement in this file that does enter the arm:
+	// it is what refuses if journal_entries_own_update is ever dropped.
 	if affected := c.changed(t, patientA, "patient", `
 		INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
 		VALUES ($1, $2::date, 4, 'manual')

@@ -39,8 +39,8 @@ const (
 // Merging into a day that is not the one being written is a programmer error and
 // not a rejection: no caller has a sensible response to either.
 var (
-	ErrAnotherPatientsDay = errors.New("the entry being merged into belongs to another patient")
-	ErrAnotherDay         = errors.New("the entry being merged into is another day")
+	ErrAnotherPatientsDay = errors.New("a draft merges only into its own patient's entry")
+	ErrAnotherDay         = errors.New("a draft merges only into the entry for its own day")
 )
 
 // Entry is one day, and the day is the identity: a write updates it rather than
@@ -95,6 +95,10 @@ func (d CheckInDraft) ReadingsAreOnTheScale() bool {
 //     not stop being true by evening;
 //   - provenance is set once, so «born of a dose» stays true of the day it was born
 //     on however it is edited afterwards.
+//
+// `patient` is the token subject, never a field of the request: it is what the two
+// refusals below compare against, so a body field passed here would decide ownership
+// from the same place that is trying to cross it.
 //
 // Nothing is written through to `existing`: the caller holds the row it read, and a
 // merge that edited it in place would leave the two disagreeing if the write failed.

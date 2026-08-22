@@ -23,9 +23,12 @@ CREATE POLICY journal_entries_own_insert ON app.journal_entries
     FOR INSERT TO cadence_patient
     WITH CHECK (patient_id = app.jwt_subject());
 
--- The WITH CHECK is unreachable for this role as the grants stand — patient_id is
--- withheld from UPDATE, so a hand-away is refused as a permission before a policy
--- sees it (measured). It is the lock that holds if the column is ever granted.
+-- The WITH CHECK cannot fail for this role as the grants stand, which is not the
+-- same as never being asked: a standalone hand-away is refused as a permission
+-- before any policy sees it (patient_id is withheld from UPDATE, measured), but on
+-- the upsert of step 8 no grant is consulted for a column absent from the SET list,
+-- and this policy is what answers — over an unchanged patient_id, so both halves
+-- are the same expression. It is the lock that holds if the column is ever granted.
 CREATE POLICY journal_entries_own_update ON app.journal_entries
     FOR UPDATE TO cadence_patient
     USING (patient_id = app.jwt_subject())
