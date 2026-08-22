@@ -476,6 +476,45 @@ func TestTwoKeysAimingAtOneSlotAreOneDose(t *testing.T) {
 	}
 }
 
+// The one uniqueness surface here whose key carries no tenant column — and a
+// uniqueness check bypasses row security by design, reached at tuple insertion,
+// before the referential checks, which are AFTER ROW triggers. So with the slot key
+// as it first stood, the two refusals were distinguishable: 23505 meant the other
+// patient had logged a dose in that slot, 23503 meant they had not. One bit of
+// another patient's injection history per probe, iterable over dates. The diary met
+// the same shape one step earlier, through its primary key.
+//
+// Possessing the other patient's protocol_item_id is the precondition, and RLS never
+// discloses it — which is what kept this from being the whole boundary, not what
+// closed it. Closed by putting the caller in the key: the probe row then lands in a
+// key space of its own and cannot collide, so the ordering stops mattering rather
+// than being relied on.
+func TestAPatientMayNotProbeAnotherPatientsSlots(t *testing.T) {
+	c := newClinic(t)
+
+	// A slot the other patient has taken, and one nobody has. Both must be refused
+	// the same way, by the chain, for naming an item that is not the caller's.
+	for _, probe := range []struct{ name, date string }{
+		{"a slot the other patient took", dayA},
+		{"a slot nobody took", "2026-08-09"},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			code, name := c.refuse(t, patientA, "patient", `
+				INSERT INTO app.dose_events
+				    (patient_id, protocol_id, protocol_item_id, scheduled_for_date,
+				     scheduled_for_time, injected_at, dose_value, dose_unit, client_request_id)
+				VALUES ($1, $2, $3, $4::date, TIME '08:00',
+				        TIMESTAMPTZ '2026-08-09 08:00:00+05', 0.25, 'мг', $5)
+			`, patientA, c.protocol[patientA], c.item[patientB], probe.date,
+				"probe-"+probe.date)
+			if code != "23503" || name != "dose_events_answer_an_item_of_that_course" {
+				t.Errorf("refused by %s/%s, want 23503/dose_events_answer_an_item_of_that_course",
+					code, name)
+			}
+		})
+	}
+}
+
 // Every row-shape rule this migration adds, named by the constraint that has to
 // fire. The name and not only the SQLSTATE: two constraints on one column refuse
 // the same row, and in this schema one has already hidden behind another.
@@ -540,6 +579,35 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 			"dose_events_photo_key_is_under_its_own_prefix", "23514",
 		},
 		{
+			// The half the constraint is named for, and the half nothing measured:
+			// every other photo case is decided by the segment shape alone, so a
+			// pattern binding the key to any uuid rather than to this patient's
+			// agreed with the real one on all of them.
+			"a photo key under another patient's prefix", "dose_value, dose_unit, photo_path",
+			"0.25, 'мг', '" + patientB + "/site.jpg'",
+			"dose_events_photo_key_is_under_its_own_prefix", "23514",
+		},
+		{
+			"a photo key one segment too deep", "dose_value, dose_unit, photo_path",
+			"0.25, 'мг', '" + patientA + "/a/b/c/d/e'",
+			"dose_events_photo_key_is_under_its_own_prefix", "23514",
+		},
+		{
+			"a photo key with a segment past its bound", "dose_value, dose_unit, photo_path",
+			"0.25, 'мг', '" + patientA + "/' || pg_catalog.repeat('x', 102)",
+			"dose_events_photo_key_is_under_its_own_prefix", "23514",
+		},
+		{
+			"a client key one character past its bound", "dose_value, dose_unit, client_request_id",
+			"0.25, 'мг', pg_catalog.repeat('k', 129)",
+			"dose_events_client_request_id_check", "23514",
+		},
+		{
+			"a client key one character short of its bound", "dose_value, dose_unit, client_request_id",
+			"0.25, 'мг', pg_catalog.repeat('k', 7)",
+			"dose_events_client_request_id_check", "23514",
+		},
+		{
 			"a client key too short to be one", "dose_value, dose_unit, client_request_id",
 			"0.25, 'мг', 'abc'", "dose_events_client_request_id_check", "23514",
 		},
@@ -583,10 +651,13 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 	}{
 		{"the low end of everything", "2026-06-29", 1, 1, "12345678", "/a.jpg"},
 		{
+			// 128 exactly, and the segment 101 characters: a bound is only pinned by
+			// the value that sits on it. This key was 127 and the refusal was 3, so
+			// BETWEEN 4 AND 127 passed the whole suite.
 			"the high end of everything", "2026-06-30", 5, 2000,
 			"0123456789012345678901234567890123456789012345678901234567890123" +
-				"456789012345678901234567890123456789012345678901234567890123456",
-			"/a/b/c/d",
+				"4567890123456789012345678901234567890123456789012345678901234567",
+			"/a/b/c/" + strings.Repeat("d", 101),
 		},
 	} {
 		t.Run(day.name, func(t *testing.T) {
@@ -951,16 +1022,60 @@ func TestAPatientMayNotReachAnotherPatientsDose(t *testing.T) {
 	// cannot refuse — every reference is internally consistent, and the row is
 	// simply not the caller's. Only WITH CHECK stands here, and until this test
 	// existed only the predicate registry noticed when it was widened.
-	code, name := c.refuse(t, patientA, "patient", `
-		INSERT INTO app.dose_events
-		    (patient_id, protocol_id, protocol_item_id, vial_id,
-		     scheduled_for_date, injected_at, dose_value, dose_unit, client_request_id)
-		VALUES ($1, $2, $3, $4, DATE '2026-07-26',
-		        TIMESTAMPTZ '2026-07-26 08:00:00+05', 0.25, 'мг', 'onto-another-1')
-	`, patientB, c.protocol[patientB], c.item[patientB], c.vial[patientB])
-	if code != "42501" {
-		t.Errorf("logging a dose onto another patient: got %s/%s, want 42501", code, name)
+	// Once with a key nobody owns, and once with the key the other patient's seed
+	// row already carries: 000020 claims a borrowed key «collides with nothing and
+	// reveals nothing», and only the second case measures it. A uniqueness check
+	// bypasses row security, so if it answered first, 23505 would say «that patient
+	// used this key» — the shape closed on the slot index above.
+	for _, attempt := range []struct{ name, key string }{
+		{"with a key nobody owns", "onto-another-1"},
+		{"with the key that patient already used", "seed-" + patientB},
+	} {
+		err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.dose_events
+				    (patient_id, protocol_id, protocol_item_id, vial_id,
+				     scheduled_for_date, injected_at, dose_value, dose_unit, client_request_id)
+				VALUES ($1, $2, $3, $4, DATE '2026-07-26',
+				        TIMESTAMPTZ '2026-07-26 08:00:00+05', 0.25, 'мг', $5)
+			`, patientB, c.protocol[patientB], c.item[patientB], c.vial[patientB], attempt.key)
+
+			return err
+		})
+
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+			t.Errorf("logging onto another patient %s: got %v, want 42501", attempt.name, err)
+
+			continue
+		}
+		// Which of 42501's three causes: the policy, not a missing grant. Granting
+		// the column list away would keep a bare code assertion green.
+		if !strings.Contains(pgErr.Message, "row-level security") {
+			t.Errorf("%s: refused with %q, want the policy to be what refused", attempt.name, pgErr.Message)
+		}
 	}
+
+	// And the statement form the retry path will actually use, aimed at somebody
+	// else: an upsert is the one shape whose arbiter lookup is not RLS-filtered.
+	err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO app.dose_events
+			    (patient_id, protocol_id, protocol_item_id,
+			     scheduled_for_date, injected_at, dose_value, dose_unit, client_request_id)
+			VALUES ($1, $2, $3, DATE '2026-07-26',
+			        TIMESTAMPTZ '2026-07-26 08:00:00+05', 0.25, 'мг', $4)
+			ON CONFLICT (patient_id, client_request_id) DO NOTHING
+		`, patientB, c.protocol[patientB], c.item[patientB], "seed-"+patientB)
+
+		return err
+	})
+
+	var upsert *pgconn.PgError
+	if !errors.As(err, &upsert) || upsert.Code != "42501" {
+		t.Errorf("upserting onto another patient: got %v, want 42501", err)
+	}
+
 	if seen := c.visible(t, patientB, "patient",
 		`SELECT id::text FROM app.dose_events WHERE client_request_id = 'onto-another-1'`,
 	); len(seen) != 0 {
@@ -988,4 +1103,70 @@ func TestAPatientMayNotReachAnotherPatientsDose(t *testing.T) {
 			t.Errorf("%s: refused with %q, want it to name the missing grant", theft.name, pgErr.Message)
 		}
 	}
+}
+
+// What a delete of each parent does to a logged dose. Nothing exercised a
+// referential action at all, which is how the item key came to say CASCADE while
+// this table's own header said a dose is never deleted by anybody but the admin —
+// and a referential action runs as the owner, consulting neither grant nor policy.
+func TestALoggedDoseOutlivesTheEditOfItsCourse(t *testing.T) {
+	c := newClinic(t)
+
+	// Step 6's course editor is exactly this statement: cadence_service holds DELETE
+	// on protocol_items with USING (true).
+	for _, edit := range []struct{ name, sql string }{
+		{"removing the item it answers", `DELETE FROM app.protocol_items WHERE id = $1`},
+	} {
+		err := database.WithServiceJob(
+			t.Context(), c.service, seedJob,
+			func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, edit.sql, c.item[patientA])
+
+				return err
+			},
+		)
+
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
+			t.Errorf("%s: got %v, want 23503 — the dose history holds the line", edit.name, err)
+		}
+	}
+
+	if seen := c.visible(t, patientA, "patient",
+		`SELECT id::text FROM app.dose_events`); len(seen) != 1 {
+		t.Errorf("the patient's stream is %v after the edit, want their logged dose", seen)
+	}
+
+	// And the person: deleting a patient must still take their course and their doses
+	// with them, which RESTRICT could have blocked — profiles cascades to protocols,
+	// protocols would cascade to items, and an item RESTRICTed by a dose event would
+	// abort the whole delete. Measured rather than reasoned: which of a referenced
+	// table's referential triggers fires first is not something to argue about.
+	before := c.countingDoses(t)
+	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM app.profiles WHERE user_id = $1`, patientB)
+
+		return err
+	}); err != nil {
+		t.Fatalf("deleting a patient: %v", err)
+	}
+	if after := c.countingDoses(t); before != 2 || after != 1 {
+		t.Errorf("the stream went from %d doses to %d, want 2 to 1", before, after)
+	}
+}
+
+func (c clinic) countingDoses(t *testing.T) int {
+	t.Helper()
+
+	var doses int
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM app.dose_events`).Scan(&doses)
+		},
+	); err != nil {
+		t.Fatalf("counting the doses: %v", err)
+	}
+
+	return doses
 }

@@ -1,7 +1,5 @@
 package dosing
 
-import "github.com/SimonOsipov/cadence-app/api/internal/journal"
-
 // Site is the body zone an injection went into, and the code is what
 // dose_events.site_code stores.
 //
@@ -36,8 +34,3 @@ func Sites() []Site {
 		SiteLeftGlute, SiteRightGlute,
 	}
 }
-
-// SideEffect is journal's tag under the name §03 gives it here. One set, not two:
-// the same seven reach the diary and the dose event from one patient action, and a
-// second declaration is a second thing to forget to change.
-type SideEffect = journal.Tag

@@ -100,12 +100,21 @@ CREATE TABLE app.dose_events (
              ELSE false
         END
     ),
+    -- RESTRICT on all three, and the item's is the one that matters: cadence_service
+    -- holds DELETE on protocol_items with USING (true), which is how step 6's course
+    -- editor removes a line from a prescription — and a referential action runs as
+    -- the table owner, consulting neither grant nor policy. Under CASCADE, a doctor
+    -- dropping an item deleted every dose the patient had logged against it
+    -- (measured), silently returning those doses to the vial whose remaining count
+    -- is a subtraction over these rows. That contradicts this table's own rule: a
+    -- logged dose is a fact, and a mistake is corrected by the clinic rather than by
+    -- the row disappearing.
     CONSTRAINT dose_events_belong_to_their_course
         FOREIGN KEY (patient_id, protocol_id)
-        REFERENCES app.protocols (patient_id, id) ON DELETE CASCADE,
+        REFERENCES app.protocols (patient_id, id) ON DELETE RESTRICT,
     CONSTRAINT dose_events_answer_an_item_of_that_course
         FOREIGN KEY (protocol_id, protocol_item_id)
-        REFERENCES app.protocol_items (protocol_id, id) ON DELETE CASCADE,
+        REFERENCES app.protocol_items (protocol_id, id) ON DELETE RESTRICT,
     -- MATCH SIMPLE, which is the default and is wanted: with vial_id NULL the pair
     -- is not checked, and that is «no vial named» rather than «any vial will do».
     CONSTRAINT dose_events_drawn_from_their_own_vial
@@ -122,8 +131,20 @@ CREATE TABLE app.dose_events (
 -- (measured on postgres:16-alpine — two NULL slots accepted, two named ones
 -- refused). What the clause does is keep rows the index can never constrain out of
 -- the b-tree.
+--
+-- Led by patient_id, and that is not decoration. A uniqueness check bypasses row
+-- security by design and is reached at tuple insertion, before the referential
+-- checks, which are AFTER ROW triggers. Without the caller in the key, a patient
+-- naming another patient's item got 23505 where that patient had logged a dose and
+-- 23503 where they had not — one bit of somebody else's injection history per probe,
+-- iterable over dates (measured, before this line was written). With the caller
+-- leading, the probe lands in a key space of its own and cannot collide, so the
+-- ordering stops mattering instead of being relied on.
+--
+-- Uniqueness is unchanged: an item belongs to exactly one patient through the chain
+-- above, so the two keys accept and refuse the same rows.
 CREATE UNIQUE INDEX dose_events_one_per_slot
-    ON app.dose_events (protocol_item_id, scheduled_for_date, scheduled_for_time)
+    ON app.dose_events (patient_id, protocol_item_id, scheduled_for_date, scheduled_for_time)
     WHERE scheduled_for_time IS NOT NULL;
 
 -- Today and the schedule read a patient's window of days; the missed-dose sweep
