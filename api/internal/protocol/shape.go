@@ -40,6 +40,18 @@ var (
 	ErrCompoundOnAKindWithoutOne = errors.New("only an injection names a drug")
 )
 
+// shapeRefusals is every rule Check can break, and the transport maps the list rather than a
+// naming convention: an error added above and not added here reaches the doctor as a 500
+// about their own form.
+func shapeRefusals() []error {
+	return []error{
+		ErrWeeksOffRange, ErrNotADay, ErrUnknownStatus, ErrNoItems, ErrUnknownKind,
+		ErrUnknownCadence, ErrCadenceAgainstDays, ErrNoSlot, ErrInjectionWithoutCompound,
+		ErrCompoundOnAKindWithoutOne, ErrNoPhases, ErrPhaseRunsBackwards, ErrPhaseOffCourse,
+		ErrDoseOffRange, ErrUnknownDoseUnit, ErrPhasesOverlap, ErrCompoundRefUnclear,
+	}
+}
+
 // Draft is a course as the transport received it, before any of it is a row.
 type Draft struct {
 	PatientID civil.UserID

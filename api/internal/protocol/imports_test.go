@@ -51,9 +51,9 @@ var (
 		"titration.go",
 		"bands.go",
 		"row.go",
-		// The parsers are the generator's vocabulary hardened at its edge, not
-		// transport: nothing in them knows about HTTP, and the seed of step 11 is the
-		// other caller.
+		// The generator's vocabulary hardened at its edge: parse.go turns a string
+		// into a value of a closed set and shape.go refuses a course, and neither
+		// takes a connection or knows about HTTP.
 		"parse.go",
 		"shape.go",
 	}

@@ -1,6 +1,78 @@
 {
   "components": {
     "schemas": {
+      "Course": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "What is prescribed. A course with nothing in it is refused.",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "notes": {
+            "description": "The prescriber's own note about the course.",
+            "type": "string"
+          },
+          "start_date": {
+            "description": "The day the course begins, and the day every cycle week is counted from.",
+            "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "description": "A patient has at most one active course at a time.",
+            "enum": [
+              "active",
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "weeks": {
+            "description": "How long the course runs.",
+            "format": "int64",
+            "maximum": 104,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_date",
+          "weeks",
+          "status",
+          "items"
+        ],
+        "type": "object"
+      },
+      "CourseOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "item_ids": {
+            "description": "One per item, in the order they were sent.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "protocol_id": {
+            "description": "The course.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_id",
+          "item_ids"
+        ],
+        "type": "object"
+      },
       "CreatedPatient": {
         "additionalProperties": false,
         "properties": {
@@ -24,6 +96,106 @@
         },
         "required": [
           "user_id"
+        ],
+        "type": "object"
+      },
+      "Drug": {
+        "additionalProperties": false,
+        "properties": {
+          "default_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "description": "A drug already in the directory.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "name_ru": {
+            "description": "The drug's name, if it is not in the directory yet. A name already there resolves to that row whatever its case.",
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Item": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence": {
+            "enum": [
+              "weekly",
+              "daily",
+              "n_per_week"
+            ],
+            "type": "string"
+          },
+          "compound": {
+            "$ref": "#/components/schemas/Drug",
+            "description": "What is injected. Required for an injection and refused for anything else — a weigh-in is not a prescription of a drug."
+          },
+          "days_of_week": {
+            "description": "ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "injection",
+              "supplement",
+              "weigh_in"
+            ],
+            "type": "string"
+          },
+          "loggable": {
+            "description": "Whether the patient records taking it. False for a supplement the clinic tracks without asking.",
+            "type": "boolean"
+          },
+          "phases": {
+            "description": "The titration bands. They may leave gaps — a washout is deliberate — and may not overlap.",
+            "items": {
+              "$ref": "#/components/schemas/Phase"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "times": {
+            "description": "The slots within the day. Two of them is two occurrences, logged apart.",
+            "items": {
+              "format": "time",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "cadence",
+          "days_of_week",
+          "times",
+          "loggable",
+          "phases"
         ],
         "type": "object"
       },
@@ -136,6 +308,40 @@
         "required": [
           "email",
           "full_name"
+        ],
+        "type": "object"
+      },
+      "Phase": {
+        "additionalProperties": false,
+        "properties": {
+          "dose_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "dose_value": {
+            "exclusiveMinimum": 0,
+            "format": "double",
+            "type": "number"
+          },
+          "from_week": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "to_week": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_week",
+          "to_week",
+          "dose_value",
+          "dose_unit"
         ],
         "type": "object"
       },
@@ -649,6 +855,237 @@
         "summary": "Create a patient and invite them",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/v1/patients/{patientId}/protocols": {
+      "post": {
+        "description": "Writes a course, its items and their titration phases in one transaction, signed with an audit record. Only for a patient on the caller's own care team; an admin prescribes for anyone. A drug is named by its directory identifier or by its name — a name already in the directory resolves to the row it has, whatever its case and spacing, rather than entering a second one. Phases of one item may leave gaps between them and may not overlap. Answers 409 when the patient already has a course running: a course is ended by completing or cancelling it, not by being replaced.",
+        "operationId": "create-protocol",
+        "parameters": [
+          {
+            "description": "The patient the course is for.",
+            "in": "path",
+            "name": "patientId",
+            "required": true,
+            "schema": {
+              "description": "The patient the course is for.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Course"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseOutputBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Prescribe a course",
+        "tags": [
+          "protocol"
+        ]
+      }
+    },
+    "/v1/patients/{patientId}/protocols/{protocolId}": {
+      "put": {
+        "description": "Replaces a course's items and their phases, keeping the course and its identifier. The items are replaced rather than patched — the form sends a list, not a patch — except that an item the patient has already injected cannot be removed: the doses that answered it are the clinic's record, and such an item is stopped by marking it not loggable. Answers 404 for a course that is not this patient's, which is the same answer an identifier nobody holds gets.",
+        "operationId": "replace-protocol",
+        "parameters": [
+          {
+            "description": "The patient the course is for.",
+            "in": "path",
+            "name": "patientId",
+            "required": true,
+            "schema": {
+              "description": "The patient the course is for.",
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The course being rewritten.",
+            "in": "path",
+            "name": "protocolId",
+            "required": true,
+            "schema": {
+              "description": "The course being rewritten.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Course"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Rewrite a course",
+        "tags": [
+          "protocol"
         ]
       }
     },

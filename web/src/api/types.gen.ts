@@ -4,6 +4,40 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type Course = {
+    /**
+     * What is prescribed. A course with nothing in it is refused.
+     */
+    items: Array<Item> | null;
+    /**
+     * The prescriber's own note about the course.
+     */
+    notes?: string;
+    /**
+     * The day the course begins, and the day every cycle week is counted from.
+     */
+    start_date: string;
+    /**
+     * A patient has at most one active course at a time.
+     */
+    status: 'active' | 'completed' | 'cancelled';
+    /**
+     * How long the course runs.
+     */
+    weeks: number;
+};
+
+export type CourseOutputBody = {
+    /**
+     * One per item, in the order they were sent.
+     */
+    item_ids: Array<string> | null;
+    /**
+     * The course.
+     */
+    protocol_id: string;
+};
+
 export type CreatedPatient = {
     /**
      * The patient's id. The same value the invitation link signs the person in as.
@@ -16,6 +50,45 @@ export type CreatedProvider = {
      * The doctor's id. The same value the invitation link signs them in as.
      */
     user_id: string;
+};
+
+export type Drug = {
+    default_unit?: 'мг' | 'мкг';
+    icon?: string;
+    /**
+     * A drug already in the directory.
+     */
+    id?: string;
+    /**
+     * The drug's name, if it is not in the directory yet. A name already there resolves to that row whatever its case.
+     */
+    name_ru?: string;
+    route?: string;
+};
+
+export type Item = {
+    cadence: 'weekly' | 'daily' | 'n_per_week';
+    /**
+     * What is injected. Required for an injection and refused for anything else — a weigh-in is not a prescription of a drug.
+     */
+    compound?: Drug;
+    /**
+     * ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself.
+     */
+    days_of_week: Array<number> | null;
+    kind: 'injection' | 'supplement' | 'weigh_in';
+    /**
+     * Whether the patient records taking it. False for a supplement the clinic tracks without asking.
+     */
+    loggable: boolean;
+    /**
+     * The titration bands. They may leave gaps — a washout is deliberate — and may not overlap.
+     */
+    phases: Array<Phase> | null;
+    /**
+     * The slots within the day. Two of them is two occurrences, logged apart.
+     */
+    times: Array<string> | null;
 };
 
 export type Me = {
@@ -75,6 +148,13 @@ export type NewProviderBody = {
      * What the clinic calls them, in Russian. Shown to a patient beside the name on their care team.
      */
     title_ru?: string;
+};
+
+export type Phase = {
+    dose_unit: 'мг' | 'мкг';
+    dose_value: number;
+    from_week: number;
+    to_week: number;
 };
 
 export type Problem = {
@@ -347,6 +427,114 @@ export type CreatePatientResponses = {
 };
 
 export type CreatePatientResponse = CreatePatientResponses[keyof CreatePatientResponses];
+
+export type CreateProtocolData = {
+    body: Course;
+    path: {
+        /**
+         * The patient the course is for.
+         */
+        patientId: string;
+    };
+    query?: never;
+    url: '/v1/patients/{patientId}/protocols';
+};
+
+export type CreateProtocolErrors = {
+    /**
+     * Bad Request
+     */
+    400: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type CreateProtocolError = CreateProtocolErrors[keyof CreateProtocolErrors];
+
+export type CreateProtocolResponses = {
+    /**
+     * Created
+     */
+    201: CourseOutputBody;
+};
+
+export type CreateProtocolResponse = CreateProtocolResponses[keyof CreateProtocolResponses];
+
+export type ReplaceProtocolData = {
+    body: Course;
+    path: {
+        /**
+         * The patient the course is for.
+         */
+        patientId: string;
+        /**
+         * The course being rewritten.
+         */
+        protocolId: string;
+    };
+    query?: never;
+    url: '/v1/patients/{patientId}/protocols/{protocolId}';
+};
+
+export type ReplaceProtocolErrors = {
+    /**
+     * Bad Request
+     */
+    400: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReplaceProtocolError = ReplaceProtocolErrors[keyof ReplaceProtocolErrors];
+
+export type ReplaceProtocolResponses = {
+    /**
+     * OK
+     */
+    200: CourseOutputBody;
+};
+
+export type ReplaceProtocolResponse = ReplaceProtocolResponses[keyof ReplaceProtocolResponses];
 
 export type ListProvidersData = {
     body?: never;

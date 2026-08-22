@@ -82,7 +82,7 @@ func contexts(opts Options) []boundedContext {
 		{"messaging", messaging.Register},
 		{"notifications", notifications.Register},
 		{"nutrition", nutrition.Register},
-		{"protocol", protocol.Register},
+		{"protocol", protocol.NewService(opts.ServicePool).Register},
 	}
 }
 
