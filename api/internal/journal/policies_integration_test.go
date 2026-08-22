@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/journal"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
@@ -438,6 +439,47 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 	}
 	if owners := c.ownerOfTheDay(t, "2026-06-01"); len(owners) != 1 || owners[0] != patientA {
 		t.Errorf("the new day is owned by %v, want just the patient", owners)
+	}
+}
+
+// What Merge hands back has to survive the trip, and the tag list is where it can
+// fail: `tags` is NOT NULL DEFAULT '{}', and a Go nil slice is not the same thing as
+// an empty one on the wire. Measured rather than asserted in a comment — the claim
+// is about somebody else's library.
+func TestADayWithNoTagsIsStoredAsAnEmptyListAndNotAsNothing(t *testing.T) {
+	c := newClinic(t)
+
+	mood := 3
+	entry, err := journal.Merge(nil, civil.UserID(patientA), journal.CheckInDraft{
+		EntryDate: civil.NewDate(2026, 8, 15),
+		Mood:      &mood,
+	}, journal.SourceManual)
+	if err != nil {
+		t.Fatalf("merging a day with only a mood: %v", err)
+	}
+
+	// The nil case first, so the assertion below is known to be able to fail: a
+	// merge that returned nil would land here as NULL and 23502.
+	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO app.journal_entries (patient_id, entry_date, mood, tags, source)
+			VALUES ($1, DATE '2026-08-14', 3, $2, 'manual')
+		`, patientA, []journal.Tag(nil))
+
+		return err
+	}); err == nil {
+		t.Fatal("a nil tag list was accepted, so this test measures nothing")
+	}
+
+	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO app.journal_entries (patient_id, entry_date, mood, tags, source)
+			VALUES ($1, $2::date, $3, $4, $5)
+		`, patientA, "2026-08-15", entry.Mood, entry.Tags, string(entry.Source))
+
+		return err
+	}); err != nil {
+		t.Fatalf("storing a day with no tags: %v", err)
 	}
 }
 
