@@ -49,7 +49,10 @@ CREATE TABLE app.dose_events (
     -- and `dose_unit` so the number survives an edit of the course — attribution is
     -- the heavier clinical fact, and it was the one still riding on a mutable
     -- protocol_items.compound_id. Nullable because an item need not name one.
-    compound_id        uuid REFERENCES app.compounds (id) ON DELETE RESTRICT,
+    --
+    -- Its key is named and RESTRICT, below, and it is a fourth reference in a
+    -- category of its own: it guards the attribution rather than the tenant.
+    compound_id        uuid,
     -- The occurrence this event answers. There is no schedule table, so this is the
     -- whole of the match: a generated occurrence and a logged event meet on
     -- (item, date, slot). The time is absent for an item with no named slot.
@@ -96,8 +99,9 @@ CREATE TABLE app.dose_events (
         photo_path IS NULL
         OR photo_path ~ ('^' || patient_id::text || '(/[A-Za-z0-9][A-Za-z0-9._-]{0,100}){1,4}$')
     ),
-    -- cardinality and not array_length: array_length of an empty array is NULL, and
-    -- a CHECK evaluating to NULL passes. This schema has been bitten by that twice.
+    -- The CASE arm is not decoration: on flat input it is identical to a bare `<@`,
+    -- so without it a nested array of legal names is accepted (measured) and then
+    -- never decodes into a list of side effects again.
     CONSTRAINT dose_events_side_effects_are_a_flat_named_list CHECK (
         CASE WHEN pg_catalog.array_ndims(side_effects) IS NULL
                   OR pg_catalog.array_ndims(side_effects) = 1
@@ -106,7 +110,8 @@ CREATE TABLE app.dose_events (
              ELSE false
         END
     ),
-    -- RESTRICT on all three, and the item's is the one that matters: cadence_service
+    -- RESTRICT on all three of the ownership chain too, and the item's is the one
+    -- that matters most: cadence_service
     -- holds DELETE on protocol_items with USING (true), which is how step 6's course
     -- editor removes a line from a prescription — and a referential action runs as
     -- the table owner, consulting neither grant nor policy. Under CASCADE, a doctor
@@ -115,6 +120,12 @@ CREATE TABLE app.dose_events (
     -- is a subtraction over these rows. That contradicts this table's own rule: a
     -- logged dose is a fact, and a mistake is corrected by the clinic rather than by
     -- the row disappearing.
+    -- cadence_admin holds DELETE on compounds, and a dose logged with the vial
+    -- picker skipped, whose item was later re-prescribed, is referenced by nothing
+    -- but this column. Under CASCADE, deleting a reference row would erase the
+    -- injections attributed to it — the very fact the snapshot exists to protect.
+    CONSTRAINT dose_events_attributed_to_a_compound
+        FOREIGN KEY (compound_id) REFERENCES app.compounds (id) ON DELETE RESTRICT,
     CONSTRAINT dose_events_belong_to_their_course
         FOREIGN KEY (patient_id, protocol_id)
         REFERENCES app.protocols (patient_id, id) ON DELETE RESTRICT,
@@ -134,8 +145,8 @@ CREATE TABLE app.dose_events (
 -- The WHERE clause buys index size and not behaviour, and it is worth saying so
 -- because it reads like the thing that lets a slotless day carry two doses. It is
 -- not: NULLs are distinct in a unique index, so a total index would admit them too
--- (measured on postgres:16-alpine — two NULL slots accepted, two named ones
--- refused). What the clause does is keep rows the index can never constrain out of
+-- (measured on postgres:17-alpine, the image this project pins — two NULL slots
+-- accepted, two named ones refused). What the clause does is keep rows the index can never constrain out of
 -- the b-tree.
 --
 -- Led by patient_id, and that is not decoration. A uniqueness check bypasses row

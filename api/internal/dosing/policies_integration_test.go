@@ -656,7 +656,10 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 		key   string
 		photo string
 	}{
-		{"the low end of everything", "2026-06-29", 1, 1, "12345678", "/a.jpg"},
+		// The key exercises all four tail characters: the refusal direction is pinned
+		// and the accept direction was not, so narrowing the class to drop `.`, `_`
+		// or `:` passed everything — and a refused key is a dose that never lands.
+		{"the low end of everything", "2026-06-29", 1, 1, "a.b_c:d-0001", "/a.jpg"},
 		{
 			// 128 exactly, and the segment 101 characters: a bound is only pinned by
 			// the value that sits on it. This key was 127 and the refusal was 3, so
@@ -1184,6 +1187,49 @@ func TestALoggedDoseOutlivesTheEditOfItsCourse(t *testing.T) {
 		t.Errorf("deleting an injected course: got %v, want 23503/dose_events_belong_to_their_course", err)
 	}
 
+	// The fourth reference, in a category of its own: it guards the attribution
+	// rather than the tenant. A compound nothing else points at — §03 marks vial_id
+	// optional, and an item re-prescribed to another drug leaves the original
+	// referenced by the dose alone — so under CASCADE, deleting it would erase the
+	// injections attributed to it.
+	var only string
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			if err := tx.QueryRow(ctx, `
+				INSERT INTO app.compounds (name_ru, default_unit, route, icon)
+				VALUES ('Ретатрутид', 'мг', 'sc', 'syringe') RETURNING id::text
+			`).Scan(&only); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.dose_events
+				    (patient_id, protocol_id, protocol_item_id, compound_id,
+				     scheduled_for_date, injected_at, dose_value, dose_unit, client_request_id)
+				VALUES ($1, $2, $3, $4, DATE '2026-08-16',
+				        TIMESTAMPTZ '2026-08-16 08:00:00+05', 0.25, 'мг', 'only-the-dose')
+			`, patientA, c.protocol[patientA], c.item[patientA], only)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("logging a dose of a compound nothing else names: %v", err)
+	}
+
+	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM app.compounds WHERE id = $1`, only)
+
+		return err
+	}); err == nil {
+		t.Error("a compound a dose is attributed to was deleted")
+	} else {
+		var onCompound *pgconn.PgError
+		if !errors.As(err, &onCompound) || onCompound.Code != "23503" ||
+			onCompound.ConstraintName != "dose_events_attributed_to_a_compound" {
+			t.Errorf("deleting an attributed compound: got %v, want 23503/dose_events_attributed_to_a_compound", err)
+		}
+	}
+
 	// And the person: deleting a patient must still take their course and their doses
 	// with them, which RESTRICT could have blocked — profiles cascades to protocols,
 	// protocols would cascade to items, and an item RESTRICTed by a dose event would
@@ -1197,8 +1243,8 @@ func TestALoggedDoseOutlivesTheEditOfItsCourse(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("deleting a patient: %v", err)
 	}
-	if after := c.countingDoses(t); before != 2 || after != 1 {
-		t.Errorf("the stream went from %d doses to %d, want 2 to 1", before, after)
+	if after := c.countingDoses(t); before != 3 || after != 2 {
+		t.Errorf("the stream went from %d doses to %d, want 3 to 2", before, after)
 	}
 }
 
