@@ -114,9 +114,14 @@ CREATE TABLE app.dose_events (
 );
 
 -- The race the idempotency key cannot see: two different keys aiming at one slot,
--- which is what a patient tapping save on two devices produces. Partial, because an
--- item with no named time has no slot to collide on — its occurrences are a day, and
--- a day may legitimately carry two doses of a twice-daily item.
+-- which is what a patient tapping save on two devices produces.
+--
+-- The WHERE clause buys index size and not behaviour, and it is worth saying so
+-- because it reads like the thing that lets a slotless day carry two doses. It is
+-- not: NULLs are distinct in a unique index, so a total index would admit them too
+-- (measured on postgres:16-alpine — two NULL slots accepted, two named ones
+-- refused). What the clause does is keep rows the index can never constrain out of
+-- the b-tree.
 CREATE UNIQUE INDEX dose_events_one_per_slot
     ON app.dose_events (protocol_item_id, scheduled_for_date, scheduled_for_time)
     WHERE scheduled_for_time IS NOT NULL;

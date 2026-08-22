@@ -432,8 +432,12 @@ func TestTheClientKeyIsWhatMakesARepeatOneDose(t *testing.T) {
 }
 
 // The race the client key cannot see: two different keys aiming at one slot, which
-// is what saving on two devices produces. Partial on purpose — an item with no named
-// time has no slot to collide on, and its day may legitimately carry two doses.
+// is what saving on two devices produces — and the slotless day, which must stay
+// open, because two doses of a twice-daily item on one day is a real day.
+//
+// The slotless half is held by NULL distinctness in a unique index rather than by
+// the index's WHERE clause, so removing the clause leaves both halves green.
+// Measured, and said here because the two look like the same rule.
 func TestTwoKeysAimingAtOneSlotAreOneDose(t *testing.T) {
 	c := newClinic(t)
 
@@ -463,8 +467,7 @@ func TestTwoKeysAimingAtOneSlotAreOneDose(t *testing.T) {
 		}
 	}
 
-	// And the same pair with no slot named, which the partial index must let past:
-	// two doses of a twice-daily item on one day is a real day, not a race.
+	// And the same pair with no slot named, which must go through.
 	if err := log("device-one-0003", ""); err != nil {
 		t.Fatalf("a slotless dose: %v", err)
 	}
