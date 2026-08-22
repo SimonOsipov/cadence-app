@@ -946,6 +946,27 @@ func TestTheReachOfEachRoleOverTheDoseStream(t *testing.T) {
 func TestAPatientMayNotReachAnotherPatientsDose(t *testing.T) {
 	c := newClinic(t)
 
+	// Logging a dose as somebody else, with that somebody's own course and vial
+	// named so the composite keys are all satisfied. This is the one shape the keys
+	// cannot refuse — every reference is internally consistent, and the row is
+	// simply not the caller's. Only WITH CHECK stands here, and until this test
+	// existed only the predicate registry noticed when it was widened.
+	code, name := c.refuse(t, patientA, "patient", `
+		INSERT INTO app.dose_events
+		    (patient_id, protocol_id, protocol_item_id, vial_id,
+		     scheduled_for_date, injected_at, dose_value, dose_unit, client_request_id)
+		VALUES ($1, $2, $3, $4, DATE '2026-07-26',
+		        TIMESTAMPTZ '2026-07-26 08:00:00+05', 0.25, 'мг', 'onto-another-1')
+	`, patientB, c.protocol[patientB], c.item[patientB], c.vial[patientB])
+	if code != "42501" {
+		t.Errorf("logging a dose onto another patient: got %s/%s, want 42501", code, name)
+	}
+	if seen := c.visible(t, patientB, "patient",
+		`SELECT id::text FROM app.dose_events WHERE client_request_id = 'onto-another-1'`,
+	); len(seen) != 0 {
+		t.Errorf("the other patient's stream gained %v", seen)
+	}
+
 	for _, theft := range []struct{ name, sql string }{
 		{"naming the row", `UPDATE app.dose_events SET mood = 1 WHERE patient_id = '` + patientB + `'`},
 		{"sweeping the table", `UPDATE app.dose_events SET mood = 1`},
