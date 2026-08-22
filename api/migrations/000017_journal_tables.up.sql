@@ -25,7 +25,14 @@ CREATE TABLE app.journal_entries (
     -- dosing reads it, which is the direction the write already runs in — one patient
     -- action writes a dose event and this row.
     tags       text[] NOT NULL DEFAULT '{}',
-    note       text CHECK (note IS NULL OR pg_catalog.length(note) BETWEEN 1 AND 2000),
+    -- Non-blank as well as bounded, so that this and CheckInDraft.SaysNothing in Go
+    -- hold the same rule. Without it a note of spaces is «content» to the schema and
+    -- «nothing said» to Go, and on the service path — where the constraint is the
+    -- only guard — a seed would write a day the patient never filled.
+    note       text CHECK (
+        note IS NULL
+        OR (pg_catalog.length(note) BETWEEN 1 AND 2000 AND note ~ '[^[:space:]]')
+    ),
     -- §03's `source manual|dose`. Set once and never rewritten: an entry born of the
     -- dose wizard says so in the feed, and a later edit by hand does not make that
     -- untrue. The rule lives in the merge, in Go — the database cannot tell a handler

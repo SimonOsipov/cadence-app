@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -56,7 +58,6 @@ const (
 
 	seedJob = "test.journal"
 	dayA    = "2026-05-31"
-	dayB    = "2026-05-30"
 )
 
 type clinic struct {
@@ -132,8 +133,8 @@ func seed(ctx context.Context, tx pgx.Tx) error {
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
-			VALUES ($1, DATE '2026-05-31', 3, 'manual')
-		`, patient); err != nil {
+			VALUES ($1, $2::date, 3, 'manual')
+		`, patient, dayA); err != nil {
 			return fmt.Errorf("entry for %s: %w", patient, err)
 		}
 	}
@@ -266,15 +267,19 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 	c := newClinic(t)
 
 	for _, attempt := range []struct {
-		name string
-		sql  string
-		args []any
+		name    string
+		sql     string
+		args    []any
+		because string
 	}{
 		{
 			"creating one for another patient",
 			`INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
 			 VALUES ($1, DATE '2026-06-01', 4, 'manual')`,
 			[]any{patientB},
+			// The policy, not the grant: patient_id is insertable, and WITH CHECK is
+			// what refuses the value.
+			"row-level security",
 		},
 		{
 			// patient_id is not in the patient's UPDATE grant — half the primary key,
@@ -283,6 +288,9 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 			"handing their own away",
 			`UPDATE app.journal_entries SET patient_id = $1 WHERE patient_id = $2`,
 			[]any{patientB, patientA},
+			// The grant, before any policy: patient_id is not in the patient's UPDATE
+			// column list.
+			"permission denied",
 		},
 	} {
 		err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
@@ -294,6 +302,16 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
 			t.Errorf("%s: got %v, want SQLSTATE 42501", attempt.name, err)
+
+			continue
+		}
+		// 42501 has three causes here — a missing grant, a missing policy, forced
+		// RLS — and data-layer invariant 5 asks a refusal to name which. It matters
+		// on the second case especially: granting patient_id back on UPDATE keeps it
+		// green, because WITH CHECK refuses instead, so the column narrowing this
+		// step made deliberately would not be measured at all.
+		if !strings.Contains(pgErr.Message, attempt.because) {
+			t.Errorf("%s: refused with %q, want it to name %q", attempt.name, pgErr.Message, attempt.because)
 		}
 	}
 
@@ -354,11 +372,17 @@ func TestTheTagsTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
 	for i, tag := range declared {
 		tags[i] = string(tag)
 	}
-	if affected := c.changed(t, patientA, "patient", `
-		INSERT INTO app.journal_entries (patient_id, entry_date, tags, source)
-		VALUES ($1, DATE '2026-06-02', $2::text[], 'manual')
-	`, patientA, tags); affected != 1 {
-		t.Errorf("the schema refused a tag Go declares: wrote %d rows", affected)
+	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO app.journal_entries (patient_id, entry_date, tags, source)
+			VALUES ($1, DATE '2026-06-02', $2::text[], 'manual')
+		`, patientA, tags)
+
+		return err
+	}); err != nil {
+		// Asserted here rather than through c.changed, which fatals on error and
+		// would report the refusal as «writing as patient» instead of as itself.
+		t.Fatalf("the schema refused a tag Go declares: %v", err)
 	}
 
 	err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
@@ -387,15 +411,22 @@ func TestTheTagsTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
 			return tx.QueryRow(ctx, `
 				SELECT array_agg(literal[1] ORDER BY literal[1])
 				FROM pg_constraint,
-				     LATERAL regexp_matches(pg_get_constraintdef(oid), '''([a-z]+)''', 'g') AS literal
+				     LATERAL regexp_matches(pg_get_constraintdef(oid), '''([^'']*)''', 'g') AS literal
 				WHERE conname = 'journal_entries_tags_are_a_flat_named_list'
 			`).Scan(&accepted)
 		},
 	); err != nil {
 		t.Fatalf("reading the constraint: %v", err)
 	}
-	if len(accepted) != len(declared) {
-		t.Errorf("the schema names %d tags (%v), Go declares %d", len(accepted), accepted, len(declared))
+	// Element by element, not by length: a set the same size but differently spelled
+	// is exactly what a count cannot see.
+	want := make([]string, len(declared))
+	for i, tag := range declared {
+		want[i] = string(tag)
+	}
+	slices.Sort(want)
+	if !slices.Equal(accepted, want) {
+		t.Errorf("the schema names %v, Go declares %v", accepted, want)
 	}
 }
 
@@ -435,4 +466,326 @@ func TestADayThatSaysNothingIsRefusedByTheSchemaToo(t *testing.T) {
 			t.Errorf("a day whose only content is %s was refused", says.column)
 		}
 	}
+}
+
+// refuse runs one statement on the service path and returns the SQLSTATE and the
+// constraint that refused it. The name and not only the code: two constraints on one
+// column refuse the same row, and this schema has had one dead behind another.
+func (c clinic) refuse(t *testing.T, sql string, args ...any) (string, string) {
+	t.Helper()
+
+	err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, sql, args...)
+
+			return err
+		},
+	)
+	if err == nil {
+		t.Fatal("the statement was accepted")
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		t.Fatalf("refused by something that is not the database: %v", err)
+	}
+
+	return pgErr.Code, pgErr.ConstraintName
+}
+
+// Every row-shape rule this migration adds, named by the constraint that has to
+// fire. Six of them were exercised by nothing, and each could have been deleted from
+// the migration with the whole gate green — the primary key among them, which is
+// this step's headline decision and the component's first invariant.
+func TestEachRowShapeRuleOnADayFires(t *testing.T) {
+	c := newClinic(t)
+
+	for _, rule := range []struct {
+		name       string
+		columns    string
+		values     string
+		constraint string
+		code       string
+	}{
+		{
+			// «One entry per day, always». Nothing wrote the same key twice, so a
+			// migration that dropped the uniqueness would have shipped.
+			"a second entry for a day already written",
+			"entry_date, mood, source", "$2::date, 4, 'manual'",
+			"journal_entries_one_per_day", "23505",
+		},
+		{
+			"a mood below the scale", "entry_date, mood, source",
+			"DATE '2026-06-10', 0, 'manual'", "journal_entries_mood_check", "23514",
+		},
+		{
+			"an energy above the scale", "entry_date, energy, source",
+			"DATE '2026-06-11', 6, 'manual'", "journal_entries_energy_check", "23514",
+		},
+		{
+			"a sleep off the scale", "entry_date, sleep, source",
+			"DATE '2026-06-12', 9, 'manual'", "journal_entries_sleep_check", "23514",
+		},
+		{
+			"a note past its bound", "entry_date, note, source",
+			"DATE '2026-06-13', pg_catalog.repeat('x', 2001), 'manual'",
+			"journal_entries_note_check", "23514",
+		},
+		{
+			// A note of spaces is «nothing said» in Go, and the schema has to agree:
+			// the service path is the one writer Go does not stand in front of.
+			"a note of nothing but spaces", "entry_date, note, source",
+			"DATE '2026-06-14', '   ', 'manual'", "journal_entries_note_check", "23514",
+		},
+		{
+			// The second closed set written twice — here and as Go constants — and
+			// the one nothing reconciled.
+			"a source outside the set", "entry_date, mood, source",
+			"DATE '2026-06-15', 3, 'imported'", "journal_entries_source_check", "23514",
+		},
+	} {
+		t.Run(rule.name, func(t *testing.T) {
+			sql := fmt.Sprintf(`
+				INSERT INTO app.journal_entries (patient_id, %s) VALUES ($1, %s)
+			`, rule.columns, rule.values)
+
+			var code, name string
+			if rule.constraint == "journal_entries_one_per_day" {
+				code, name = c.refuse(t, sql, patientA, dayA)
+			} else {
+				code, name = c.refuse(t, sql, patientA)
+			}
+			if code != rule.code || name != rule.constraint {
+				t.Errorf("refused by %s/%s, want %s/%s", code, name, rule.code, rule.constraint)
+			}
+		})
+	}
+
+	// The accept side, at the bounds, which a suite of refusals cannot supply: a
+	// CHECK refusing everything would pass every case above.
+	t.Run("the ends of every scale and a note at its bound", func(t *testing.T) {
+		if err := database.WithServiceJob(
+			t.Context(), c.service, seedJob,
+			func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `
+					INSERT INTO app.journal_entries
+					    (patient_id, entry_date, mood, energy, sleep, note, source)
+					VALUES ($1, DATE '2026-06-20', 1, 5, 3, pg_catalog.repeat('x', 2000), 'dose')
+				`, patientA)
+
+				return err
+			},
+		); err != nil {
+			t.Fatalf("a day at the bounds was refused: %v", err)
+		}
+	})
+}
+
+// The other closed set written twice. Unlike the tags nothing reconciled it, so a
+// typo in a Go constant compared itself to itself and would first have failed as a
+// raw 23514 in production.
+func TestTheSourcesTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
+	c := newClinic(t)
+
+	declared := []journal.Source{journal.SourceManual, journal.SourceDose}
+	for i, source := range declared {
+		if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
+				VALUES ($1, $2::date, 3, $3)
+			`, patientA, fmt.Sprintf("2026-08-0%d", i+1), string(source))
+
+			return err
+		}); err != nil {
+			t.Fatalf("the schema refused the source %q Go declares: %v", source, err)
+		}
+	}
+
+	var accepted []string
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT array_agg(literal[1] ORDER BY literal[1])
+				FROM pg_constraint,
+				     LATERAL regexp_matches(pg_get_constraintdef(oid), '''([^'']*)''', 'g') AS literal
+				WHERE conname = 'journal_entries_source_check'
+			`).Scan(&accepted)
+		},
+	); err != nil {
+		t.Fatalf("reading the constraint: %v", err)
+	}
+
+	want := []string{string(journal.SourceDose), string(journal.SourceManual)}
+	slices.Sort(want)
+	if !slices.Equal(accepted, want) {
+		t.Errorf("the schema names %v, Go declares %v", accepted, want)
+	}
+}
+
+// The four controls the cabinet suite carries and this table had none of. The
+// crosswise half is measured above; this is the half a test asserting only the gain
+// would miss, plus the three policies nothing but the deparse registry exercised.
+//
+// A clinic each, because the first subtest reassigns a patient and the rest would
+// then be reading a world they did not set up.
+func TestTheReachOfEachRoleOverTheDiary(t *testing.T) {
+	t.Run("reassignment moves the doctor's reach both ways", func(t *testing.T) {
+		c := newClinic(t)
+
+		before := c.visible(t, doctorB, "doctor", `SELECT patient_id::text FROM app.journal_entries`)
+		if len(before) != 1 || before[0] != patientB {
+			t.Fatalf("the other doctor reads %v before the move, want [%s]", before, patientB)
+		}
+
+		if err := database.WithServiceJob(
+			t.Context(), c.service, seedJob,
+			func(ctx context.Context, tx pgx.Tx) error {
+				// Struck and reissued: the service path holds INSERT and DELETE on
+				// assignments and deliberately not UPDATE.
+				if _, err := tx.Exec(ctx,
+					`DELETE FROM app.care_team_assignments WHERE patient_id = $1`, patientA); err != nil {
+					return err
+				}
+				_, err := tx.Exec(ctx, `
+					INSERT INTO app.care_team_assignments (patient_id, provider_id, care_role, is_primary)
+					VALUES ($1, $2, 'endo', true)
+				`, patientA, doctorB)
+
+				return err
+			},
+		); err != nil {
+			t.Fatalf("reassigning: %v", err)
+		}
+
+		if after := c.visible(t, doctorB, "doctor",
+			`SELECT patient_id::text FROM app.journal_entries`); len(after) != 2 {
+			t.Errorf("the reassigned doctor reads %v, want both diaries", after)
+		}
+		if orphaned := c.visible(t, doctorA, "doctor",
+			`SELECT patient_id::text FROM app.journal_entries`); len(orphaned) != 0 {
+			t.Errorf("the former doctor still reads %v", orphaned)
+		}
+	})
+
+	t.Run("the admin reaches every diary and may write one", func(t *testing.T) {
+		c := newClinic(t)
+
+		if seen := c.visible(t, adminID, "admin",
+			`SELECT patient_id::text FROM app.journal_entries`); len(seen) != 2 {
+			t.Errorf("the admin reads %v, want both", seen)
+		}
+		// The WITH CHECK half of FOR ALL, which only an INSERT reaches: on an UPDATE
+		// both halves are `true` and removing one is indistinguishable from removing
+		// the other.
+		if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
+				VALUES ($1, DATE '2026-09-01', 4, 'manual')
+			`, patientB)
+
+			return err
+		}); err != nil {
+			t.Fatalf("the admin could not write a day for an unassigned patient: %v", err)
+		}
+	})
+
+	t.Run("a caller with no identity reaches nothing", func(t *testing.T) {
+		c := newClinic(t)
+
+		for subject, want := range map[string]error{
+			"":           database.ErrNoSubject,
+			"not-a-uuid": database.ErrInvalidSubject,
+		} {
+			err := c.as(t, subject, "patient", func(context.Context, pgx.Tx) error { return nil })
+			if !errors.Is(err, want) {
+				t.Errorf("subject %q: got %v, want %v", subject, err, want)
+			}
+		}
+
+		stranger := "8a1f3b7c-0000-4000-8000-00000000dead"
+		for _, role := range []string{"patient", "doctor"} {
+			if seen := c.visible(t, stranger, role,
+				`SELECT patient_id::text FROM app.journal_entries`); len(seen) != 0 {
+				t.Errorf("a stranger as %s read %v", role, seen)
+			}
+		}
+
+		// And the case the seam cannot be asked for: a real caller blanking their own
+		// claims inside their own transaction, which the USERSET context permits.
+		if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			var before int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM app.journal_entries`).Scan(&before); err != nil {
+				return err
+			}
+			if before == 0 {
+				t.Fatal("the caller read nothing before blanking, so this measures nothing")
+			}
+			if _, err := tx.Exec(ctx, `SELECT set_config('request.jwt.claims', '', true)`); err != nil {
+				return err
+			}
+
+			var subjectIsNull bool
+			if err := tx.QueryRow(ctx, `SELECT app.jwt_subject() IS NULL`).Scan(&subjectIsNull); err != nil {
+				return err
+			}
+			if !subjectIsNull {
+				t.Fatal("blanking left a subject in place, so the zero below is not the NULL case")
+			}
+
+			var after int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM app.journal_entries`).Scan(&after); err != nil {
+				return err
+			}
+			if after != 0 {
+				t.Errorf("claims blanked: the diary still returns %d row(s)", after)
+			}
+
+			return nil
+		}); err != nil {
+			t.Fatalf("blanking the claims: %v", err)
+		}
+	})
+
+	t.Run("the service path reads and inserts and does not rewrite or delete", func(t *testing.T) {
+		c := newClinic(t)
+
+		for _, forbidden := range []struct{ name, sql string }{
+			{"rewriting a day", `UPDATE app.journal_entries SET mood = 1 WHERE patient_id = $1`},
+			{"unwriting a day", `DELETE FROM app.journal_entries WHERE patient_id = $1`},
+		} {
+			err := database.WithServiceJob(
+				t.Context(), c.service, seedJob,
+				func(ctx context.Context, tx pgx.Tx) error {
+					_, err := tx.Exec(ctx, forbidden.sql, patientA)
+
+					return err
+				},
+			)
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+				t.Errorf("the service path succeeded at %s: got %v, want 42501", forbidden.name, err)
+			}
+		}
+
+		// And neither may the patient or their doctor unwrite one: a day is edited,
+		// not deleted, and the side-effect flag is computed off this history.
+		for _, caller := range []struct{ subject, role string }{
+			{patientA, "patient"},
+			{doctorA, "doctor"},
+		} {
+			err := c.as(t, caller.subject, caller.role, func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, `DELETE FROM app.journal_entries WHERE patient_id = $1`, patientA)
+
+				return err
+			})
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+				t.Errorf("%s deleted a day: got %v, want 42501", caller.role, err)
+			}
+		}
+	})
 }

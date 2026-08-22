@@ -1,6 +1,8 @@
 package journal
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -33,6 +35,13 @@ type Source string
 const (
 	SourceManual Source = "manual"
 	SourceDose   Source = "dose"
+)
+
+// Merging into a day that is not the one being written is a programmer error and
+// not a rejection: no caller has a sensible response to either.
+var (
+	ErrAnotherPatientsDay = errors.New("the entry being merged into belongs to another patient")
+	ErrAnotherDay         = errors.New("the entry being merged into is another day")
 )
 
 // Entry is one day, and the day is the identity: a write updates it rather than
@@ -90,14 +99,13 @@ func (d CheckInDraft) ReadingsAreOnTheScale() bool {
 //
 // Nothing is written through to `existing`: the caller holds the row it read, and a
 // merge that edited it in place would leave the two disagreeing if the write failed.
-func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Source) Entry {
+func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Source) (Entry, error) {
 	merged := Entry{
 		PatientID: patient,
 		EntryDate: draft.EntryDate,
 		Mood:      draft.Mood,
 		Energy:    draft.Energy,
 		Sleep:     draft.Sleep,
-		Tags:      slices.Clone(draft.Tags),
 		Source:    bornAs,
 	}
 	if !blank(draft.Note) {
@@ -105,7 +113,31 @@ func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Sou
 	}
 
 	if existing == nil {
-		return merged
+		// De-duplicated here too, and not only where the two lists meet. The Kotlin
+		// runs distinct() over the whole concatenation, so it collapses a repeat
+		// inside the draft as readily as one across the join; taking the draft's
+		// slice whole would store «тошнота, тошнота» on a first check-in and keep it
+		// forever, because every later merge finds the tag already present.
+		merged.Tags = distinct(nil, draft.Tags)
+
+		return merged, nil
+	}
+
+	// The ownership decision is made on `patient` and the content comes from
+	// `existing`, so the two disagreeing is a cross-tenant read laundered into a
+	// cross-tenant write: the row that lands is legitimately the caller's own, the
+	// policies accept it, their doctor reads it as their own symptom report, and
+	// nothing downstream can tell. The service seam reads this table with USING
+	// (true), so a repository that fetched the day by date alone would produce
+	// exactly that `existing`.
+	//
+	// Refused rather than documented, and loudly: no caller has a sensible response,
+	// which is what makes it a programmer error rather than a rejection.
+	if existing.PatientID != patient {
+		return Entry{}, fmt.Errorf("%w: %s into %s", ErrAnotherPatientsDay, existing.PatientID, patient)
+	}
+	if existing.EntryDate != draft.EntryDate {
+		return Entry{}, fmt.Errorf("%w: %v into %v", ErrAnotherDay, existing.EntryDate, draft.EntryDate)
 	}
 
 	if merged.Mood == nil {
@@ -124,15 +156,23 @@ func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Sou
 
 	// The earlier tags first and in their own order, so that two reads of one day
 	// list them the same way. A set would lose that.
-	tags := slices.Clone(existing.Tags)
-	for _, tag := range draft.Tags {
+	merged.Tags = distinct(existing.Tags, draft.Tags)
+
+	return merged, nil
+}
+
+// distinct concatenates and keeps the first occurrence of each, which is what the
+// Kotlin's distinct() does — including over a row that already holds a repeat,
+// written before this rule was enforced.
+func distinct(existing, draft []Tag) []Tag {
+	var tags []Tag
+	for _, tag := range slices.Concat(existing, draft) {
 		if !slices.Contains(tags, tag) {
 			tags = append(tags, tag)
 		}
 	}
-	merged.Tags = tags
 
-	return merged
+	return tags
 }
 
 func blank(s *string) bool { return s == nil || strings.TrimSpace(*s) == "" }
