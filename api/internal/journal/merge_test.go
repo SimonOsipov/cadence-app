@@ -217,28 +217,37 @@ func TestEveryReadingKeepsWhatTheDraftDoesNotName(t *testing.T) {
 		d.Sleep = number(4)
 	}), SourceManual)
 
-	mood := func(e Entry) *int { return e.Mood }
-	energy := func(e Entry) *int { return e.Energy }
-	sleep := func(e Entry) *int { return e.Sleep }
+	// Read back by value and not by presence. The morning's three are distinct on
+	// purpose, so a carry-over wired to the wrong field — Energy taking Sleep — is
+	// green against `!= nil` and fails here.
+	type reading struct {
+		name string
+		of   func(Entry) *int
+		was  int
+	}
+	mood := reading{"mood", func(e Entry) *int { return e.Mood }, 2}
+	energy := reading{"energy", func(e Entry) *int { return e.Energy }, 3}
+	sleep := reading{"sleep", func(e Entry) *int { return e.Sleep }, 4}
 
 	for _, c := range []struct {
 		name      string
 		fill      func(*CheckInDraft)
 		named     func(Entry) *int
-		untouched []func(Entry) *int
+		untouched []reading
 	}{
-		{"mood", func(d *CheckInDraft) { d.Mood = number(5) }, mood, []func(Entry) *int{energy, sleep}},
-		{"energy", func(d *CheckInDraft) { d.Energy = number(5) }, energy, []func(Entry) *int{mood, sleep}},
-		{"sleep", func(d *CheckInDraft) { d.Sleep = number(5) }, sleep, []func(Entry) *int{mood, energy}},
+		{"mood", func(d *CheckInDraft) { d.Mood = number(5) }, mood.of, []reading{energy, sleep}},
+		{"energy", func(d *CheckInDraft) { d.Energy = number(5) }, energy.of, []reading{mood, sleep}},
+		{"sleep", func(d *CheckInDraft) { d.Sleep = number(5) }, sleep.of, []reading{mood, energy}},
 	} {
 		evening := merged(t, &morning, patient, draftWith(c.fill), SourceManual)
 
 		if got := c.named(evening); got == nil || *got != 5 {
 			t.Errorf("%s named: got %v, want 5", c.name, got)
 		}
-		for i, untouched := range c.untouched {
-			if got := untouched(evening); got == nil {
-				t.Errorf("%s named: the other reading %d was erased", c.name, i)
+		for _, untouched := range c.untouched {
+			if got := untouched.of(evening); got == nil || *got != untouched.was {
+				t.Errorf("%s named: %s reads %v, want the morning's %d",
+					c.name, untouched.name, got, untouched.was)
 			}
 		}
 	}

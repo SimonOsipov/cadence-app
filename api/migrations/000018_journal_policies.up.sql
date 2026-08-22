@@ -2,7 +2,7 @@
 -- unlike the protocol: request seam, RLS, no audit row.
 --
 -- The predicate is written out in full rather than leaned on a parent, and that is
--- the rule step 3's record left for this step: a table may defer «whose» to the
+-- the rule step 2's record left for this step: a table may defer «whose» to the
 -- table it references only when it has no owner column of its own. This one has
 -- `patient_id`, so it answers for itself — and it is cheaper as well as clearer,
 -- because the column is half the primary key.

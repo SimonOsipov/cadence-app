@@ -537,6 +537,17 @@ func TestADayThatSaysNothingIsRefusedByTheSchemaToo(t *testing.T) {
 		t.Errorf("an empty day: got %v, want the say-something constraint", err)
 	}
 
+	// The day born of a dose, which is the one empty day that is allowed. An
+	// injection is a fact on its own, the KMP writes exactly this row and pins it,
+	// and step 8 writes the event and the day in one transaction — so without the
+	// exemption a check-in the patient skipped would roll the dose back.
+	if affected := c.changed(t, patientA, "patient", `
+		INSERT INTO app.journal_entries (patient_id, entry_date, source)
+		VALUES ($1, DATE '2026-07-04', 'dose')
+	`, patientA); affected != 1 {
+		t.Error("an injection with no context could not write its day")
+	}
+
 	// Each of the three things that count as saying something, on its own: the
 	// constraint is a disjunction, and a suite that only ever names all three could
 	// not tell which arm of it works.
@@ -601,17 +612,32 @@ func TestEachRowShapeRuleOnADayFires(t *testing.T) {
 			"entry_date, mood, source", "$2::date, 4, 'manual'",
 			"journal_entries_one_per_day", "23505",
 		},
+		// Each scale from both sides, and each just past its own end. One side per
+		// column left four widenings alive — mood to 9, energy from 0, sleep from 0
+		// and sleep to 8 — and widening is the direction these exist to stop.
 		{
 			"a mood below the scale", "entry_date, mood, source",
 			"DATE '2026-06-10', 0, 'manual'", "journal_entries_mood_check", "23514",
+		},
+		{
+			"a mood above the scale", "entry_date, mood, source",
+			"DATE '2026-06-17', 6, 'manual'", "journal_entries_mood_check", "23514",
+		},
+		{
+			"an energy below the scale", "entry_date, energy, source",
+			"DATE '2026-06-18', 0, 'manual'", "journal_entries_energy_check", "23514",
 		},
 		{
 			"an energy above the scale", "entry_date, energy, source",
 			"DATE '2026-06-11', 6, 'manual'", "journal_entries_energy_check", "23514",
 		},
 		{
-			"a sleep off the scale", "entry_date, sleep, source",
-			"DATE '2026-06-12', 9, 'manual'", "journal_entries_sleep_check", "23514",
+			"a sleep below the scale", "entry_date, sleep, source",
+			"DATE '2026-06-19', 0, 'manual'", "journal_entries_sleep_check", "23514",
+		},
+		{
+			"a sleep above the scale", "entry_date, sleep, source",
+			"DATE '2026-06-12', 6, 'manual'", "journal_entries_sleep_check", "23514",
 		},
 		{
 			"a note past its bound", "entry_date, note, source",
@@ -666,9 +692,12 @@ func TestEachRowShapeRuleOnADayFires(t *testing.T) {
 		name  string
 		date  string
 		value int
+		note  int
 	}{
-		{"the low end of every scale", "2026-06-20", 1},
-		{"the high end of every scale", "2026-06-21", 5},
+		// The note's own ends travel with them: BETWEEN 2 AND 2000 survived while
+		// nothing wrote a note of one character.
+		{"the low end of every scale", "2026-06-20", 1, 1},
+		{"the high end of every scale", "2026-06-21", 5, 2000},
 	} {
 		t.Run(day.name+" and a note at its bound", func(t *testing.T) {
 			if err := database.WithServiceJob(
@@ -677,8 +706,8 @@ func TestEachRowShapeRuleOnADayFires(t *testing.T) {
 					_, err := tx.Exec(ctx, `
 						INSERT INTO app.journal_entries
 						    (patient_id, entry_date, mood, energy, sleep, note, source)
-						VALUES ($1, $2::date, $3, $3, $3, pg_catalog.repeat('x', 2000), 'dose')
-					`, patientA, day.date, day.value)
+						VALUES ($1, $2::date, $3, $3, $3, pg_catalog.repeat('x', $4), 'dose')
+					`, patientA, day.date, day.value, day.note)
 
 					return err
 				},
@@ -731,7 +760,7 @@ func TestTheSourcesTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
 	}
 }
 
-// The four controls the cabinet suite carries and this table had none of. The
+// The five controls the cabinet suite carries and this table had none of. The
 // crosswise half is measured above; this is the half a test asserting only the gain
 // would miss, plus the three policies nothing but the deparse registry exercised.
 //

@@ -172,7 +172,9 @@ func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Sou
 // Kotlin's distinct() does — including over a row that already holds a repeat,
 // written before this rule was enforced.
 func distinct(existing, draft []Tag) []Tag {
-	var tags []Tag
+	// Empty rather than nil: pgx encodes a nil slice as SQL NULL, and the column is
+	// NOT NULL DEFAULT '{}', so a day with only a mood would fail with 23502.
+	tags := []Tag{}
 	for _, tag := range slices.Concat(existing, draft) {
 		if !slices.Contains(tags, tag) {
 			tags = append(tags, tag)

@@ -11,7 +11,8 @@
 -- One index, and it is the key's. The feed reads a patient's days newest first;
 -- measured on 40k rows, that plans as a backward scan of the primary key, so a
 -- second (patient_id, entry_date DESC) btree would cost every check-in a write for
--- nothing. 000015 declined the same index for the same reason.
+-- nothing. 000015 declines a second index too, but on the other mechanism: there
+-- the candidate was a strict prefix of the key, here it is the key read backwards.
 
 SET ROLE cadence_owner;
 
@@ -34,8 +35,10 @@ CREATE TABLE app.journal_entries (
     -- schema and «nothing said» to Go, and on the service path — where the
     -- constraint is the only guard — a seed would write a day nobody filled. Not
     -- quite the same rule as CheckInDraft.SaysNothing: measured, this accepts a
-    -- note of NBSP that TrimSpace calls empty, so Go is the stricter of the two on
-    -- the request path and the divergence runs in the harmless direction.
+    -- note of NBSP that TrimSpace calls empty, because PostgreSQL's [:space:] does
+    -- not include U+00A0. Harmless on the request path, where Go answers first —
+    -- and on the service path, the one this constraint exists for, the looser rule
+    -- is the only rule.
     note       text CHECK (
         note IS NULL
         OR (pg_catalog.length(note) BETWEEN 1 AND 2000 AND note ~ '[^[:space:]]')
@@ -59,8 +62,18 @@ CREATE TABLE app.journal_entries (
     -- An entry that says nothing would put a day the patient never filled into the
     -- feed and into the heatmap. Written as three total tests rather than a chain of
     -- comparisons, so that no branch of it can evaluate to NULL.
+    --
+    -- The dose path is exempt, and it has to be: an injection is a fact on its own,
+    -- so a patient who logs one and skips the optional check-in produces a day whose
+    -- every field is empty. The KMP writes exactly that row and pins it
+    -- (JournalWriteTest.anInjectionWithNoContextStillWritesItsDay). Step 8 writes the
+    -- event and the day in one transaction, so without the exemption the empty
+    -- check-in would fail with 23514 and roll the dose back with it — and skipping
+    -- the journal write instead would drop the «с дозой» mark the feed shows.
+    -- The guard stays where it is needed: on the hand-written door and on the seed.
     CONSTRAINT journal_entries_say_something CHECK (
-        pg_catalog.num_nonnulls(mood, energy, sleep) > 0
+        source = 'dose'
+        OR pg_catalog.num_nonnulls(mood, energy, sleep) > 0
         OR pg_catalog.cardinality(tags) > 0
         OR note IS NOT NULL
     )
