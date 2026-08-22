@@ -19,7 +19,10 @@ func TestCivilDependsOnNothingOfOurs(t *testing.T) {
 	}
 
 	const ours = "github.com/SimonOsipov/cadence-app/api/"
-	for _, imported := range append(append([]string{}, pkg.Imports...), pkg.TestImports...) {
+	// XTestImports as well: this file is in package civil_test, so an external test
+	// here could import a context without the compiler seeing a cycle.
+	all := append(append([]string{}, pkg.Imports...), pkg.TestImports...)
+	for _, imported := range append(all, pkg.XTestImports...) {
 		if strings.HasPrefix(imported, ours) {
 			t.Errorf("civil imports %s", imported)
 		}

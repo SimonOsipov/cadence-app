@@ -245,9 +245,9 @@ func TestEveryReadingKeepsWhatTheDraftDoesNotName(t *testing.T) {
 }
 
 func TestTheEntryDoesNotShareItsTagsWithTheDraft(t *testing.T) {
-	// The empty-day branch takes the draft's slice whole, and without the clone the
-	// caller's draft and the entry it got back are the same array — a caller that
-	// reuses a draft would change a row it has already written.
+	// The empty-day branch builds its own slice through distinct(); were it to take
+	// the draft's whole, the caller's draft and the entry it got back would be one
+	// array, and a caller that reuses a draft would change a row already written.
 	draft := draftWith(func(d *CheckInDraft) { d.Tags = []Tag{TagNausea} })
 
 	entry := merged(t, nil, patient, draft, SourceManual)

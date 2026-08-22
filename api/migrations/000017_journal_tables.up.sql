@@ -7,6 +7,11 @@
 --
 -- The cycle day is not here. It is derived from the protocol's start date, and a
 -- stored copy would go stale the first time a course is edited.
+--
+-- One index, and it is the key's. The feed reads a patient's days newest first;
+-- measured on 40k rows, that plans as a backward scan of the primary key, so a
+-- second (patient_id, entry_date DESC) btree would cost every check-in a write for
+-- nothing. 000015 declined the same index for the same reason.
 
 SET ROLE cadence_owner;
 
@@ -25,10 +30,12 @@ CREATE TABLE app.journal_entries (
     -- dosing reads it, which is the direction the write already runs in — one patient
     -- action writes a dose event and this row.
     tags       text[] NOT NULL DEFAULT '{}',
-    -- Non-blank as well as bounded, so that this and CheckInDraft.SaysNothing in Go
-    -- hold the same rule. Without it a note of spaces is «content» to the schema and
-    -- «nothing said» to Go, and on the service path — where the constraint is the
-    -- only guard — a seed would write a day the patient never filled.
+    -- Non-blank as well as bounded: without it a note of spaces is «content» to the
+    -- schema and «nothing said» to Go, and on the service path — where the
+    -- constraint is the only guard — a seed would write a day nobody filled. Not
+    -- quite the same rule as CheckInDraft.SaysNothing: measured, this accepts a
+    -- note of NBSP that TrimSpace calls empty, so Go is the stricter of the two on
+    -- the request path and the divergence runs in the harmless direction.
     note       text CHECK (
         note IS NULL
         OR (pg_catalog.length(note) BETWEEN 1 AND 2000 AND note ~ '[^[:space:]]')
@@ -58,12 +65,6 @@ CREATE TABLE app.journal_entries (
         OR note IS NOT NULL
     )
 );
-
--- The feed reads a patient's days newest first, and the trend charts read a window
--- of them. The primary key already orders by (patient, date) ascending; this is the
--- same relation read the other way.
-CREATE INDEX journal_entries_by_patient_newest_first
-    ON app.journal_entries (patient_id, entry_date DESC);
 
 ALTER TABLE app.journal_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.journal_entries FORCE  ROW LEVEL SECURITY;

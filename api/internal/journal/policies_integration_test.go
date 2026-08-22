@@ -617,6 +617,16 @@ func TestEachRowShapeRuleOnADayFires(t *testing.T) {
 			"a source outside the set", "entry_date, mood, source",
 			"DATE '2026-06-15', 3, 'imported'", "journal_entries_source_check", "23514",
 		},
+		{
+			// The flat half of the tag constraint, which nothing reached: every row
+			// the suite writes is flat or empty, and on flat input the CASE is
+			// exactly a bare `tags <@ ARRAY[…]`. Measured: `ARRAY[['nausea']]` is
+			// contained in the one-dimensional set, so without the arm a nested
+			// array of legal names is stored and then never decodes into []Tag.
+			"a nest of tags rather than a list", "entry_date, tags, source",
+			"DATE '2026-06-16', ARRAY[['nausea'],['fatigue']]::text[], 'manual'",
+			"journal_entries_tags_are_a_flat_named_list", "23514",
+		},
 	} {
 		t.Run(rule.name, func(t *testing.T) {
 			sql := fmt.Sprintf(`
@@ -785,9 +795,11 @@ func TestTheReachOfEachRoleOverTheDiary(t *testing.T) {
 			`SELECT patient_id::text FROM app.journal_entries`); len(seen) != 2 {
 			t.Errorf("the admin reads %v, want both", seen)
 		}
-		// The WITH CHECK half of FOR ALL, which only an INSERT reaches: on an UPDATE
-		// both halves are `true` and removing one is indistinguishable from removing
-		// the other.
+		// The admin writing a day for a patient nobody assigned them to — a real
+		// control, and not the one the name suggests: deleting `WITH CHECK (true)`
+		// leaves this green, because PostgreSQL falls back to USING when a policy
+		// has no WITH CHECK (measured). What catches that deletion is the deparse
+		// registry, and only it.
 		if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
 				INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
