@@ -2,6 +2,7 @@ package civil_test
 
 import (
 	"go/build"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -28,9 +29,12 @@ func TestCivilDependsOnNothingOfOurs(t *testing.T) {
 		}
 	}
 
-	// time is the one dependency it has, and it needs it: Month, Weekday and the
-	// arithmetic behind AddDays.
-	if len(pkg.Imports) != 1 || pkg.Imports[0] != "time" {
-		t.Errorf("civil imports %v, want exactly [time]", pkg.Imports)
+	// The whole list, and it is short on purpose: each entry is a decision, so adding
+	// one fails here and has to be argued rather than noticed later. time carries
+	// Month, Weekday and the arithmetic behind AddDays; fmt carries the two String
+	// methods, which are fixed-width because a variable-width date is another date.
+	want := []string{"fmt", "time"}
+	if !slices.Equal(pkg.Imports, want) {
+		t.Errorf("civil imports %v, want exactly %v", pkg.Imports, want)
 	}
 }

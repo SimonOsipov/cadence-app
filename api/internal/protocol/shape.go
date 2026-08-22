@@ -1,0 +1,151 @@
+package protocol
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
+)
+
+// Why these rules live here as well as in the schema, when the project's own rule is that a
+// fact written twice is fixed once: the two answers are different. The schema refuses with a
+// constraint name and no row, which reaches a doctor as «23514» over a form of twelve items.
+// This says which item and which field, in time for a 422.
+//
+// The database stays the authority. It holds the race Go cannot see — two doctors editing one
+// course — and the reconciliation below is what keeps the pair from drifting: every error
+// here is asserted against the constraint that would have refused the same row.
+var (
+	ErrWeeksOffRange            = errors.New("a course runs between one and 104 weeks")
+	ErrNotADay                  = errors.New("the calendar has no such day")
+	ErrUnknownStatus            = errors.New("the status is not one of active, completed, cancelled")
+	ErrNoItems                  = errors.New("a course prescribes something")
+	ErrUnknownKind              = errors.New("the kind is not one of injection, supplement, weigh_in")
+	ErrUnknownCadence           = errors.New("the cadence is not one of weekly, daily, n_per_week")
+	ErrCadenceAgainstDays       = errors.New("a daily item names no weekday, and any other names at least one")
+	ErrNoSlot                   = errors.New("an item is taken at a named time")
+	ErrInjectionWithoutCompound = errors.New("an injection names what is injected")
+	ErrNoPhases                 = errors.New("an item is dosed by at least one phase")
+	ErrPhaseRunsBackwards       = errors.New("a phase ends no earlier than it begins")
+	ErrPhaseOffCourse           = errors.New("a phase lies inside the weeks of its course")
+	ErrDoseOffRange             = errors.New("a dose is more than nothing")
+	ErrUnknownDoseUnit          = errors.New("the unit is not one of мг, мкг")
+	ErrPhasesOverlap            = errors.New("two phases of one item cover the same week")
+)
+
+// Draft is a course as the transport received it, before any of it is a row.
+type Draft struct {
+	PatientID civil.UserID
+	StartDate civil.Date
+	Weeks     int
+	Status    ProtocolStatus
+	Notes     *string
+	Items     []DraftItem
+}
+
+// DraftItem carries its phases: they arrive nested and are written in one transaction, and a
+// pair of parallel slices is where the fourth item gets the third item's doses.
+type DraftItem struct {
+	Kind       ItemKind
+	CompoundID *CompoundID
+	Cadence    Cadence
+	DaysOfWeek []time.Weekday
+	Times      []civil.Slot
+	Loggable   bool
+	Phases     []ProtocolPhase
+}
+
+// Check refuses everything refusable without the database, so a malformed course never takes
+// a connection and never spends a transaction.
+func (d Draft) Check() error {
+	if d.Weeks < 1 || d.Weeks > maxCourseWeeks {
+		return fmt.Errorf("the course runs %d weeks: %w", d.Weeks, ErrWeeksOffRange)
+	}
+	if !d.StartDate.Valid() {
+		return fmt.Errorf("the course starts %v: %w", d.StartDate, ErrNotADay)
+	}
+	if _, ok := ParseStatus(string(d.Status)); !ok {
+		return fmt.Errorf("the course is %q: %w", d.Status, ErrUnknownStatus)
+	}
+	if len(d.Items) == 0 {
+		return fmt.Errorf("the course prescribes nothing: %w", ErrNoItems)
+	}
+
+	for i, item := range d.Items {
+		if err := item.check(d.Weeks); err != nil {
+			return fmt.Errorf("item %d: %w", i+1, err)
+		}
+	}
+
+	return nil
+}
+
+func (i DraftItem) check(weeks int) error {
+	if _, ok := ParseKind(string(i.Kind)); !ok {
+		return fmt.Errorf("kind %q: %w", i.Kind, ErrUnknownKind)
+	}
+	if _, ok := ParseCadence(string(i.Cadence)); !ok {
+		return fmt.Errorf("cadence %q: %w", i.Cadence, ErrUnknownCadence)
+	}
+	if (i.Cadence == CadenceDaily) != (len(i.DaysOfWeek) == 0) {
+		return fmt.Errorf("cadence %q with %d weekday(s): %w",
+			i.Cadence, len(i.DaysOfWeek), ErrCadenceAgainstDays)
+	}
+	if len(i.Times) == 0 {
+		return ErrNoSlot
+	}
+	if i.Kind == KindInjection && i.CompoundID == nil {
+		return ErrInjectionWithoutCompound
+	}
+	if len(i.Phases) == 0 {
+		return ErrNoPhases
+	}
+
+	return i.checkPhases(weeks)
+}
+
+// checkPhases refuses overlap and says which two phases. Gaps are legal and deliberately
+// unchecked: BROKEN_PHASES in the KMP suite is a washout between bands, and a coverage check
+// here would refuse a course the product prescribes.
+func (i DraftItem) checkPhases(weeks int) error {
+	for n, phase := range i.Phases {
+		if phase.ToWeek < phase.FromWeek {
+			return fmt.Errorf("phase %d covers weeks %d..%d: %w",
+				n+1, phase.FromWeek, phase.ToWeek, ErrPhaseRunsBackwards)
+		}
+		if phase.FromWeek < 1 || phase.ToWeek > weeks {
+			return fmt.Errorf("phase %d covers weeks %d..%d of a %d-week course: %w",
+				n+1, phase.FromWeek, phase.ToWeek, weeks, ErrPhaseOffCourse)
+		}
+		if phase.Dose.Value <= 0 {
+			return fmt.Errorf("phase %d doses %v: %w", n+1, phase.Dose.Value, ErrDoseOffRange)
+		}
+		if _, ok := ParseDoseUnit(string(phase.Dose.Unit)); !ok {
+			return fmt.Errorf("phase %d in %q: %w", n+1, phase.Dose.Unit, ErrUnknownDoseUnit)
+		}
+	}
+
+	// Sorted by opening week and compared with the neighbour, rather than every pair
+	// against every other: the message has to name two phases, and adjacent ones in
+	// this order are the pair a doctor sees as adjacent on the form.
+	order := make([]int, len(i.Phases))
+	for n := range order {
+		order[n] = n
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return i.Phases[a].FromWeek - i.Phases[b].FromWeek })
+
+	for n := 1; n < len(order); n++ {
+		earlier, later := i.Phases[order[n-1]], i.Phases[order[n]]
+		if later.FromWeek <= earlier.ToWeek {
+			return fmt.Errorf("phases %d and %d both cover week %d: %w",
+				order[n-1]+1, order[n]+1, later.FromWeek, ErrPhasesOverlap)
+		}
+	}
+
+	return nil
+}
+
+// The schema's CHECK (duration_weeks BETWEEN 1 AND 104), and the two are reconciled by test.
+const maxCourseWeeks = 104

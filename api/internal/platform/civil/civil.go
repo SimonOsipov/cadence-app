@@ -14,7 +14,10 @@
 // exports no type for it. If identity ever does, this is the first thing to move.
 package civil
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Date is a calendar day with no location: a schedule is the patient's own, and carrying a
 // timestamp would make "the same day" a question about a timezone. Comparable with ==,
@@ -36,6 +39,21 @@ func (d Date) time() time.Time {
 func fromTime(t time.Time) Date {
 	return Date{Year: t.Year(), Month: t.Month(), Day: t.Day()}
 }
+
+// Valid reports whether the calendar has this day.
+//
+// The type admits days it does not: Date{2026, February, 30} is representable, and that is
+// worse than merely wrong — == compares the fields and says «a different day», while Before
+// and After go through time and say «the same day as 2 March». A dose logged against such a
+// date closes no occurrence, and its two readers disagree without either being able to say so.
+//
+// Measured rather than tabulated: time normalises an out-of-range day instead of refusing it,
+// so a round trip through it is the check, and February is right in a leap year for free.
+func (d Date) Valid() bool { return fromTime(d.time()) == d }
+
+// String is the ISO form, which is what both the wire and the database want. Fixed width:
+// a year under four digits or a month under two is a date PostgreSQL parses as another one.
+func (d Date) String() string { return fmt.Sprintf("%04d-%02d-%02d", d.Year, int(d.Month), d.Day) }
 
 func (d Date) AddDays(days int) Date { return fromTime(d.time().AddDate(0, 0, days)) }
 
@@ -69,6 +87,9 @@ type Slot struct {
 	Hour   int
 	Minute int
 }
+
+// String is the wire and database form. Fixed width for the same reason a date is.
+func (s Slot) String() string { return fmt.Sprintf("%02d:%02d", s.Hour, s.Minute) }
 
 // Range includes both edges, because a window is a set of days and not a subtraction. It does
 // not enforce that it runs forwards — Kotlin's TrendRange did (`require(from <= through)`),

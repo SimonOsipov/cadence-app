@@ -51,6 +51,11 @@ var (
 		"titration.go",
 		"bands.go",
 		"row.go",
+		// The parsers are the generator's vocabulary hardened at its edge, not
+		// transport: nothing in them knows about HTTP, and the seed of step 11 is the
+		// other caller.
+		"parse.go",
+		"shape.go",
 	}
 	transport = []string{
 		"routes.go",

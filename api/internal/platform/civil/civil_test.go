@@ -81,3 +81,33 @@ func TestMinAndMaxPickTheEarlierAndTheLater(t *testing.T) {
 		t.Error("two equal days are their own min and max")
 	}
 }
+
+func TestADayAndASlotRenderFixedWidth(t *testing.T) {
+	// The year and the month are what a variable width breaks: «26-5-4» is a date
+	// PostgreSQL parses, and not the one meant.
+	for _, day := range []struct {
+		date Date
+		want string
+	}{
+		{NewDate(2026, time.May, 4), "2026-05-04"},
+		{NewDate(926, time.December, 31), "0926-12-31"},
+		{NewDate(2026, time.January, 1), "2026-01-01"},
+	} {
+		if got := day.date.String(); got != day.want {
+			t.Errorf("%v rendered %q, want %q", day.date, got, day.want)
+		}
+	}
+
+	for _, slot := range []struct {
+		at   Slot
+		want string
+	}{
+		{Slot{Hour: 8}, "08:00"},
+		{Slot{Hour: 20, Minute: 30}, "20:30"},
+		{Slot{}, "00:00"},
+	} {
+		if got := slot.at.String(); got != slot.want {
+			t.Errorf("%v rendered %q, want %q", slot.at, got, slot.want)
+		}
+	}
+}
