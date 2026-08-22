@@ -204,3 +204,54 @@ func TestMergingDoesNotWriteThroughToTheDayItWasGiven(t *testing.T) {
 		t.Errorf("the earlier entry's tags are now %v", morning.Tags)
 	}
 }
+
+func TestEveryReadingKeepsWhatTheDraftDoesNotName(t *testing.T) {
+	// Mood and the note carried this rule alone, so energy and sleep were unmeasured:
+	// deleting either one's carry-over left the suite green. Three readings, each
+	// named on its own, so no one of them can pass for the others.
+	morning := Merge(nil, patient, draftWith(func(d *CheckInDraft) {
+		d.Mood = number(2)
+		d.Energy = number(3)
+		d.Sleep = number(4)
+	}), SourceManual)
+
+	mood := func(e Entry) *int { return e.Mood }
+	energy := func(e Entry) *int { return e.Energy }
+	sleep := func(e Entry) *int { return e.Sleep }
+
+	for _, c := range []struct {
+		name      string
+		fill      func(*CheckInDraft)
+		named     func(Entry) *int
+		untouched []func(Entry) *int
+	}{
+		{"mood", func(d *CheckInDraft) { d.Mood = number(5) }, mood, []func(Entry) *int{energy, sleep}},
+		{"energy", func(d *CheckInDraft) { d.Energy = number(5) }, energy, []func(Entry) *int{mood, sleep}},
+		{"sleep", func(d *CheckInDraft) { d.Sleep = number(5) }, sleep, []func(Entry) *int{mood, energy}},
+	} {
+		evening := Merge(&morning, patient, draftWith(c.fill), SourceManual)
+
+		if got := c.named(evening); got == nil || *got != 5 {
+			t.Errorf("%s named: got %v, want 5", c.name, got)
+		}
+		for i, untouched := range c.untouched {
+			if got := untouched(evening); got == nil {
+				t.Errorf("%s named: the other reading %d was erased", c.name, i)
+			}
+		}
+	}
+}
+
+func TestTheEntryDoesNotShareItsTagsWithTheDraft(t *testing.T) {
+	// The empty-day branch takes the draft's slice whole, and without the clone the
+	// caller's draft and the entry it got back are the same array — a caller that
+	// reuses a draft would change a row it has already written.
+	draft := draftWith(func(d *CheckInDraft) { d.Tags = []Tag{TagNausea} })
+
+	entry := Merge(nil, patient, draft, SourceManual)
+	draft.Tags[0] = TagHeadache
+
+	if len(entry.Tags) != 1 || entry.Tags[0] != TagNausea {
+		t.Errorf("the entry followed the draft: %v", entry.Tags)
+	}
+}
