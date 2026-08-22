@@ -2,13 +2,9 @@ package protocol
 
 import "slices"
 
-// The closed sets, each declared once and read by both the parser and the test that
-// reconciles it against the schema. A parser written from its own literal list is a second
-// copy of the set, and the two drift the first time a value is added.
-//
-// Sorted, because the reconciliation compares them element by element: a set is its members
-// and their number, and a suite that counted entries is how two invented values shipped
-// earlier in this project.
+// The closed sets, each declared once and read by both the parser and the integration test
+// that reconciles it against the CHECK the schema carries. Sorted, because that comparison is
+// element by element.
 
 func Statuses() []ProtocolStatus {
 	return []ProtocolStatus{StatusActive, StatusCancelled, StatusCompleted}

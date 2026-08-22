@@ -5,6 +5,7 @@ package protocol_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -45,36 +46,37 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 		name       string
 		item       protocol.DraftItem
 		weeks      int
+		status     protocol.ProtocolStatus
 		constraint string
 	}{
 		{
 			"a daily item that also names weekdays",
 			itemWith(func(i *protocol.DraftItem) { i.Cadence = protocol.CadenceDaily }),
-			12, "protocol_items_cadence_matches_days",
+			12, "", "protocol_items_cadence_matches_days",
 		},
 		{
 			"a weekly item that names no weekday",
 			itemWith(func(i *protocol.DraftItem) { i.DaysOfWeek = nil }),
-			12, "protocol_items_cadence_matches_days",
+			12, "", "protocol_items_cadence_matches_days",
 		},
 		{
 			"an item with no slot",
 			itemWith(func(i *protocol.DraftItem) { i.Times = nil }),
-			12, "protocol_items_has_a_slot",
+			12, "", "protocol_items_has_a_slot",
 		},
 		{
 			"a phase that runs backwards",
 			itemWith(func(i *protocol.DraftItem) {
 				i.Phases = []protocol.ProtocolPhase{{FromWeek: 4, ToWeek: 1, Dose: aDose}}
 			}),
-			12, "protocol_phases_runs_forwards",
+			12, "", "protocol_phases_runs_forwards",
 		},
 		{
 			"a phase opening before the course",
 			itemWith(func(i *protocol.DraftItem) {
 				i.Phases = []protocol.ProtocolPhase{{FromWeek: 0, ToWeek: 4, Dose: aDose}}
 			}),
-			12, "protocol_phases_from_week_check",
+			12, "", "protocol_phases_from_week_check",
 		},
 		{
 			"a dose of nothing",
@@ -84,7 +86,7 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 					Dose: protocol.Dose{Value: 0, Unit: protocol.MG},
 				}}
 			}),
-			12, "protocol_phases_dose_value_check",
+			12, "", "protocol_phases_dose_value_check",
 		},
 		{
 			"a dose in a unit nobody prescribes",
@@ -94,7 +96,7 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 					Dose: protocol.Dose{Value: 0.25, Unit: "ме"},
 				}}
 			}),
-			12, "protocol_phases_dose_unit_check",
+			12, "", "protocol_phases_dose_unit_check",
 		},
 		{
 			"phases that overlap",
@@ -104,10 +106,26 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 					{FromWeek: 4, ToWeek: 12, Dose: aDose},
 				}
 			}),
-			12, "protocol_phases_do_not_overlap",
+			12, "", "protocol_phases_do_not_overlap",
 		},
 		{
-			"a course of no weeks", itemWith(nil), 0, "protocols_duration_weeks_check",
+			"a course of no weeks", itemWith(nil), 0, "", "protocols_duration_weeks_check",
+		},
+		{
+			"a course in a status nobody set", itemWith(nil), 12, "paused", "protocols_status_check",
+		},
+		{
+			"a course longer than two years", itemWith(nil), 105, "", "protocols_duration_weeks_check",
+		},
+		{
+			"an item of an unknown kind",
+			itemWith(func(i *protocol.DraftItem) { i.Kind = "infusion" }),
+			12, "", "protocol_items_kind_check",
+		},
+		{
+			"an item on an unknown cadence",
+			itemWith(func(i *protocol.DraftItem) { i.Cadence = "monthly" }),
+			12, "", "protocol_items_cadence_check",
 		},
 	} {
 		t.Run(refused.name, func(t *testing.T) {
@@ -115,8 +133,11 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 				PatientID: shapePatient,
 				StartDate: civil.NewDate(2026, time.May, 4),
 				Weeks:     refused.weeks,
-				Status:    protocol.StatusActive,
+				Status:    refused.status,
 				Items:     []protocol.DraftItem{refused.item},
+			}
+			if draft.Status == "" {
+				draft.Status = protocol.StatusActive
 			}
 			if draft.Check() == nil {
 				t.Fatal("Go accepted it, so the schema is not being asked the same question")
@@ -271,4 +292,56 @@ func seedForShape(t *testing.T, pool *pgxpool.Pool) {
 	); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}
+}
+
+// The four closed sets are written twice — as a CHECK in 000013 and as constants in Go — and
+// this reads the schema rather than a literal beside it. The first version of this test
+// compared Go with a list written in the same file and called it a reconciliation: a fifth
+// status added by a future migration left the whole gate green while the API silently refused
+// a legitimate prescription.
+func TestTheSetsTheSchemaNamesAreTheOnesGoDeclares(t *testing.T) {
+	pool := resolving(t)
+
+	for _, set := range []struct {
+		constraint string
+		declared   []string
+	}{
+		{"protocols_status_check", asStrings(protocol.Statuses())},
+		{"protocol_items_cadence_check", asStrings(protocol.Cadences())},
+		{"protocol_items_kind_check", asStrings(protocol.Kinds())},
+		{"protocol_phases_dose_unit_check", asStrings(protocol.DoseUnits())},
+	} {
+		t.Run(set.constraint, func(t *testing.T) {
+			var accepted []string
+			if err := database.WithServiceJob(
+				t.Context(), pool, shapeJob,
+				func(ctx context.Context, tx pgx.Tx) error {
+					return tx.QueryRow(ctx, `
+						SELECT array_agg(literal[1] ORDER BY literal[1])
+						FROM pg_constraint,
+						     LATERAL regexp_matches(
+						         pg_get_constraintdef(oid), '''([^'']*)''', 'g') AS literal
+						WHERE conname = $1
+					`, set.constraint).Scan(&accepted)
+				},
+			); err != nil {
+				t.Fatalf("reading %s: %v", set.constraint, err)
+			}
+
+			want := append([]string(nil), set.declared...)
+			slices.Sort(want)
+			if !slices.Equal(accepted, want) {
+				t.Errorf("the schema names %v, Go declares %v", accepted, want)
+			}
+		})
+	}
+}
+
+func asStrings[T ~string](values []T) []string {
+	out := make([]string, len(values))
+	for i, value := range values {
+		out[i] = string(value)
+	}
+
+	return out
 }

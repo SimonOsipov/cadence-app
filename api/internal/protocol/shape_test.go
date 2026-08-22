@@ -102,6 +102,33 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 			ErrInjectionWithoutCompound,
 		},
 		{
+			"a drug entered by name with no unit",
+			func(d *Draft) {
+				d.Items[0].Compound = CompoundRef{New: &NewCompound{
+					NameRU: "Тирзепатид", Route: "sc", Icon: "syringe",
+				}}
+			},
+			ErrDrugNotDescribed,
+		},
+		{
+			"a drug entered by name with no route",
+			func(d *Draft) {
+				d.Items[0].Compound = CompoundRef{New: &NewCompound{
+					NameRU: "Тирзепатид", DefaultUnit: MG, Icon: "syringe",
+				}}
+			},
+			ErrDrugNotDescribed,
+		},
+		{
+			"a drug entered by name with no icon",
+			func(d *Draft) {
+				d.Items[0].Compound = CompoundRef{New: &NewCompound{
+					NameRU: "Тирзепатид", DefaultUnit: MG, Route: "sc",
+				}}
+			},
+			ErrDrugNotDescribed,
+		},
+		{
 			"a weigh-in that names a drug",
 			func(d *Draft) { d.Items[0].Kind = KindWeighIn }, ErrCompoundOnAKindWithoutOne,
 		},

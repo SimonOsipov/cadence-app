@@ -76,6 +76,10 @@ export type Item = {
      * ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself.
      */
     days_of_week: Array<number> | null;
+    /**
+     * The item being kept, from an earlier reply. Absent for an item just added.
+     */
+    id?: string;
     kind: 'injection' | 'supplement' | 'weigh_in';
     /**
      * Whether the patient records taking it. False for a supplement the clinic tracks without asking.
@@ -86,7 +90,7 @@ export type Item = {
      */
     phases: Array<Phase> | null;
     /**
-     * The slots within the day. Two of them is two occurrences, logged apart.
+     * The slots within the day, as HH:MM. Two of them is two occurrences, logged apart.
      */
     times: Array<string> | null;
 };

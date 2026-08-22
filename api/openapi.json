@@ -153,6 +153,11 @@
               "null"
             ]
           },
+          "id": {
+            "description": "The item being kept, from an earlier reply. Absent for an item just added.",
+            "format": "uuid",
+            "type": "string"
+          },
           "kind": {
             "enum": [
               "injection",
@@ -177,9 +182,9 @@
             ]
           },
           "times": {
-            "description": "The slots within the day. Two of them is two occurrences, logged apart.",
+            "description": "The slots within the day, as HH:MM. Two of them is two occurrences, logged apart.",
             "items": {
-              "format": "time",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
               "type": "string"
             },
             "minItems": 1,

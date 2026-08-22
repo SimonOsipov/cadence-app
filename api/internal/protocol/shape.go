@@ -14,9 +14,18 @@ import (
 // constraint name and no row, which reaches a doctor as «23514» over a form of twelve items.
 // This says which item and which field, in time for a 422.
 //
-// The database stays the authority. It holds the race Go cannot see — two doctors editing one
-// course — and the reconciliation below is what keeps the pair from drifting: every error
-// here is asserted against the constraint that would have refused the same row.
+// The database stays the authority for the ones it carries. It holds the race Go cannot see —
+// two doctors editing one course — and an integration test keeps the pair from drifting by
+// offering each of those refusals to the schema and requiring the named constraint.
+//
+// Five of them the schema does not express at all, and the list is worth naming so the next
+// reader does not expect the reconciliation to cover it: ErrNoItems and ErrNoPhases (a course
+// or an item with nothing in it is a row that simply is not there), ErrInjectionWithoutCompound
+// and ErrCompoundOnAKindWithoutOne (a CHECK across the pair would need the kind and the column
+// together, which it has — but §03 leaves compound_id nullable for the kinds that are not
+// drugs and the schema cannot tell which), and the upper half of ErrPhaseOffCourse: no
+// constraint ties to_week to the course's duration_weeks, because the two live in different
+// tables. Those five are held here alone.
 var (
 	ErrWeeksOffRange            = errors.New("a course runs between one and 104 weeks")
 	ErrNotADay                  = errors.New("the calendar has no such day")
@@ -38,6 +47,12 @@ var (
 	// is a form the doctor filled in for the wrong row, and accepting it would store a
 	// prescription nobody can see on any screen.
 	ErrCompoundOnAKindWithoutOne = errors.New("only an injection names a drug")
+
+	// The three the directory needs and no default can supply — a unit guessed here is a
+	// dose rendered wrong on every screen. Refused with the others, because reaching the
+	// INSERT with them empty produced a 23514 that classify does not know and answer
+	// turns into a 500 about the doctor's own form.
+	ErrDrugNotDescribed = errors.New("a drug entered by name carries a unit, a route and an icon")
 )
 
 // shapeRefusals is every rule Check can break, and the transport maps the list rather than a
@@ -49,6 +64,7 @@ func shapeRefusals() []error {
 		ErrUnknownCadence, ErrCadenceAgainstDays, ErrNoSlot, ErrInjectionWithoutCompound,
 		ErrCompoundOnAKindWithoutOne, ErrNoPhases, ErrPhaseRunsBackwards, ErrPhaseOffCourse,
 		ErrDoseOffRange, ErrUnknownDoseUnit, ErrPhasesOverlap, ErrCompoundRefUnclear,
+		ErrDrugNotDescribed,
 	}
 }
 
@@ -65,6 +81,12 @@ type Draft struct {
 // DraftItem carries its phases: they arrive nested and are written in one transaction, and a
 // pair of parallel slices is where the fourth item gets the third item's doses.
 type DraftItem struct {
+	// The row this item already is, when the course is being edited. Absent for one the
+	// doctor has just added — and absent throughout a Create, where there is nothing to
+	// keep. It is what makes titration during a course possible: an item somebody has
+	// injected is kept and rewritten rather than dropped and re-made.
+	ID *ProtocolItemID
+
 	Kind ItemKind
 	// What is injected, named by identifier or by name. Empty for the kinds that are
 	// not drugs — a weigh-in is not a prescription of anything.
@@ -127,6 +149,15 @@ func (i DraftItem) check(weeks int) error {
 		return fmt.Errorf("%d halves named: %w", named, ErrInjectionWithoutCompound)
 	case i.Kind != KindInjection && named != 0:
 		return fmt.Errorf("a %s names a drug: %w", i.Kind, ErrCompoundOnAKindWithoutOne)
+	}
+	if i.Compound.New != nil {
+		if _, ok := ParseDoseUnit(string(i.Compound.New.DefaultUnit)); !ok {
+			return fmt.Errorf("the drug's unit is %q: %w", i.Compound.New.DefaultUnit, ErrDrugNotDescribed)
+		}
+		if i.Compound.New.Route == "" || i.Compound.New.Icon == "" {
+			return fmt.Errorf("the drug names route %q and icon %q: %w",
+				i.Compound.New.Route, i.Compound.New.Icon, ErrDrugNotDescribed)
+		}
 	}
 	if len(i.Phases) == 0 {
 		return ErrNoPhases

@@ -31,6 +31,10 @@ var (
 
 	ErrNoSuchProtocol = errors.New("no such course")
 
+	// An item named by an identifier the course does not hold. Scoped to the course as
+	// well as to the row, so this also covers an item of somebody else's course.
+	ErrNoSuchItem = errors.New("no such item in this course")
+
 	// Refused before the seam opens: a cast that fails inside a transaction is a 500
 	// where a refusal belongs. It lives here rather than in Draft.Check because the
 	// generator may not import the database package, and IsUUIDShaped is its.
@@ -80,13 +84,20 @@ func Create(ctx context.Context, pool *pgxpool.Pool, draft Draft) (Written, erro
 	return written, nil
 }
 
-// Replace rewrites a course's items and phases, keeping the course row and its identifier.
+// Replace rewrites a course, keeping the course row and its identifier.
 //
-// Delete and insert rather than a diff. §03 gives an item no identity a client holds across
-// an edit — the form sends a list, not a patch — and the generator reads items and phases
-// together, so a half-applied edit is a schedule nobody prescribed. The dose events that
-// answered a removed item hold it in place: 000019 makes that reference RESTRICT, so an item
-// somebody has injected cannot be dropped, and the caller is told which.
+// An item the request names by its own identifier is rewritten in place; one it does not name
+// is added; one the course has and the request omits is dropped. That last is where 000019's
+// RESTRICT speaks: an item somebody has injected cannot be dropped, and the caller is told to
+// stop it by clearing `loggable` instead.
+//
+// The first version of this deleted every item unconditionally and re-inserted them, on the
+// argument that an item has no identity a client holds across an edit. It has one — Create
+// answers with the identifiers precisely so a form can hold them — and without it the whole
+// course became uneditable after the first logged dose: not merely the item, but the course's
+// status, so a course could be neither cancelled nor completed, and the `loggable` remedy the
+// refusal names needed the very statement that was refused. Titration during a course is this
+// product's main clinical loop, and it was impossible.
 func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft) (Written, error) {
 	if err := draft.Check(); err != nil {
 		return Written{}, err
@@ -126,13 +137,8 @@ func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft
 		`, string(id), draft.StartDate.String(), draft.Weeks, string(draft.Status), draft.Notes); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx,
-			`DELETE FROM app.protocol_items WHERE protocol_id = $1`, string(id)); err != nil {
-			return err
-		}
-
 		written.ProtocolID = id
-		if err := writeItems(ctx, tx, &written, draft); err != nil {
+		if err := rewriteItems(ctx, tx, &written, draft); err != nil {
 			return err
 		}
 
@@ -159,50 +165,146 @@ func write(ctx context.Context, tx pgx.Tx, draft Draft) (Written, error) {
 	return written, writeItems(ctx, tx, &written, draft)
 }
 
+// rewriteItems keeps what the request names, adds what it does not, and drops the rest.
+func rewriteItems(ctx context.Context, tx pgx.Tx, written *Written, draft Draft) error {
+	written.ItemIDs = make([]ProtocolItemID, 0, len(draft.Items))
+	kept := make([]string, 0, len(draft.Items))
+
+	for n, item := range draft.Items {
+		if item.ID == nil {
+			itemID, err := insertItem(ctx, tx, written.ProtocolID, item, n)
+			if err != nil {
+				return err
+			}
+			written.ItemIDs = append(written.ItemIDs, itemID)
+			kept = append(kept, string(itemID))
+
+			continue
+		}
+
+		if err := updateItem(ctx, tx, written.ProtocolID, item, n); err != nil {
+			return err
+		}
+		written.ItemIDs = append(written.ItemIDs, *item.ID)
+		kept = append(kept, string(*item.ID))
+	}
+
+	// Everything the request did not name. RESTRICT answers here if a dose refers to one.
+	_, err := tx.Exec(ctx,
+		`DELETE FROM app.protocol_items WHERE protocol_id = $1 AND NOT (id::text = ANY($2))`,
+		string(written.ProtocolID), kept)
+
+	return err
+}
+
+// updateItem is scoped to the course as well as to the row, and the pair is the point: an
+// identifier alone would let a doctor rewrite an item of a course they may not touch, since
+// the service seam carries no row predicate. RowsAffected is what says the pair matched —
+// a filtered UPDATE succeeds and reports nothing, which is data-layer invariant 5.
+func updateItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item DraftItem, n int) error {
+	compound, err := compoundFor(ctx, tx, item, n)
+	if err != nil {
+		return err
+	}
+	days, times := columnsOf(item)
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE app.protocol_items
+		SET kind = $3, compound_id = $4, cadence = $5, days_of_week = $6::smallint[],
+		    times = $7::time[], loggable = $8
+		WHERE id = $1 AND protocol_id = $2
+	`, string(*item.ID), string(protocolID), string(item.Kind), compound, string(item.Cadence),
+		days, times, item.Loggable)
+	if err != nil {
+		return fmt.Errorf("item %d: %w", n+1, err)
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("item %d names %s: %w", n+1, *item.ID, ErrNoSuchItem)
+	}
+
+	// The phases go and come back: they carry no identity of their own, and nothing
+	// references them, so there is no history to keep here.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM app.protocol_phases WHERE protocol_item_id = $1`, string(*item.ID)); err != nil {
+		return fmt.Errorf("item %d: %w", n+1, err)
+	}
+
+	return writePhases(ctx, tx, *item.ID, item, n)
+}
+
+func insertItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item DraftItem, n int) (ProtocolItemID, error) {
+	compound, err := compoundFor(ctx, tx, item, n)
+	if err != nil {
+		return "", err
+	}
+	days, times := columnsOf(item)
+
+	var itemID ProtocolItemID
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO app.protocol_items
+		    (protocol_id, kind, compound_id, cadence, days_of_week, times, loggable)
+		VALUES ($1, $2, $3, $4, $5::smallint[], $6::time[], $7)
+		RETURNING id::text
+	`, string(protocolID), string(item.Kind), compound, string(item.Cadence),
+		days, times, item.Loggable).Scan(&itemID); err != nil {
+		return "", fmt.Errorf("item %d: %w", n+1, err)
+	}
+
+	return itemID, writePhases(ctx, tx, itemID, item, n)
+}
+
+func writePhases(ctx context.Context, tx pgx.Tx, itemID ProtocolItemID, item DraftItem, n int) error {
+	for p, phase := range item.Phases {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app.protocol_phases
+			    (protocol_item_id, from_week, to_week, dose_value, dose_unit)
+			VALUES ($1, $2, $3, $4, $5)
+		`, string(itemID), phase.FromWeek, phase.ToWeek,
+			phase.Dose.Value, string(phase.Dose.Unit)); err != nil {
+			return fmt.Errorf("item %d, phase %d: %w", n+1, p+1, err)
+		}
+	}
+
+	return nil
+}
+
+func compoundFor(ctx context.Context, tx pgx.Tx, item DraftItem, n int) (*CompoundID, error) {
+	if item.Kind != KindInjection {
+		return nil, nil
+	}
+
+	resolved, err := ResolveCompound(ctx, tx, item.Compound)
+	if err != nil {
+		return nil, fmt.Errorf("item %d: %w", n+1, err)
+	}
+
+	return &resolved, nil
+}
+
+func columnsOf(item DraftItem) ([]int16, []string) {
+	days := make([]int16, len(item.DaysOfWeek))
+	for i, day := range item.DaysOfWeek {
+		days[i] = int16(civil.ISOWeekday(day))
+	}
+	times := make([]string, len(item.Times))
+	for i, slot := range item.Times {
+		times[i] = slot.String()
+	}
+
+	return days, times
+}
+
+// writeItems is Create's half: everything is new, and an identifier the request carried would
+// be an identifier for a course that does not exist yet.
 func writeItems(ctx context.Context, tx pgx.Tx, written *Written, draft Draft) error {
 	written.ItemIDs = make([]ProtocolItemID, 0, len(draft.Items))
 
 	for n, item := range draft.Items {
-		var compound *CompoundID
-		if item.Kind == KindInjection {
-			resolved, err := ResolveCompound(ctx, tx, item.Compound)
-			if err != nil {
-				return fmt.Errorf("item %d: %w", n+1, err)
-			}
-			compound = &resolved
-		}
-
-		days := make([]int16, len(item.DaysOfWeek))
-		for i, day := range item.DaysOfWeek {
-			days[i] = int16(civil.ISOWeekday(day))
-		}
-		times := make([]string, len(item.Times))
-		for i, slot := range item.Times {
-			times[i] = slot.String()
-		}
-
-		var itemID ProtocolItemID
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO app.protocol_items
-			    (protocol_id, kind, compound_id, cadence, days_of_week, times, loggable)
-			VALUES ($1, $2, $3, $4, $5::smallint[], $6::time[], $7)
-			RETURNING id::text
-		`, string(written.ProtocolID), string(item.Kind), compound, string(item.Cadence),
-			days, times, item.Loggable).Scan(&itemID); err != nil {
-			return fmt.Errorf("item %d: %w", n+1, err)
+		itemID, err := insertItem(ctx, tx, written.ProtocolID, item, n)
+		if err != nil {
+			return err
 		}
 		written.ItemIDs = append(written.ItemIDs, itemID)
-
-		for p, phase := range item.Phases {
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO app.protocol_phases
-				    (protocol_item_id, from_week, to_week, dose_value, dose_unit)
-				VALUES ($1, $2, $3, $4, $5)
-			`, string(itemID), phase.FromWeek, phase.ToWeek,
-				phase.Dose.Value, string(phase.Dose.Unit)); err != nil {
-				return fmt.Errorf("item %d, phase %d: %w", n+1, p+1, err)
-			}
-		}
 	}
 
 	return nil

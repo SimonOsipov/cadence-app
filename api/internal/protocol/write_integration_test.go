@@ -206,7 +206,7 @@ func TestACourseArrivesWholeAndSigned(t *testing.T) {
 // An edit replaces the items rather than patching them — but not the ones a patient has
 // already injected: 000019 holds those in place, and the caller is told why.
 func TestAnEditKeepsWhatThePatientHasAlreadyInjected(t *testing.T) {
-	pool, _ := prescribing(t)
+	pool, superuser := prescribing(t)
 	draft := aCourse(writePatientA)
 
 	written, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, draft)
@@ -214,30 +214,90 @@ func TestAnEditKeepsWhatThePatientHasAlreadyInjected(t *testing.T) {
 		t.Fatalf("prescribing: %v", err)
 	}
 
-	// The plain edit first, so the refusal below is known to be the dose and not the path.
+	logDose(t, pool, writePatientA, string(written.ProtocolID), string(written.ItemIDs[0]))
+
+	// Titration during a course, which is this product's main clinical loop and was
+	// impossible: the first version of Replace deleted every item unconditionally, so
+	// one logged dose made the whole course uneditable — its status included, and the
+	// `loggable` remedy the refusal names needed the very statement being refused.
+	kept := written.ItemIDs[0]
+	draft.Items[0].ID = &kept
 	draft.Weeks = 16
 	draft.Items[0].Phases[1].ToWeek = 16
+	draft.Items[0].Times = []civil.Slot{{Hour: 20}}
+
 	edited, err := protocol.Replace(as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, draft)
 	if err != nil {
-		t.Fatalf("editing: %v", err)
+		t.Fatalf("titrating a course with a dose logged against it: %v", err)
 	}
-	if edited.ItemIDs[0] == written.ItemIDs[0] {
-		t.Error("the item kept its identifier, so this measures a patch and not a replacement")
+	if edited.ItemIDs[0] != kept {
+		t.Errorf("the item became %s, want the one the dose answers", edited.ItemIDs[0])
 	}
 	if rows := countRows(t, pool, string(written.ProtocolID)); rows.items != 1 || rows.phases != 2 {
 		t.Errorf("after the edit: %d items and %d phases", rows.items, rows.phases)
 	}
+	if doses := dosesOn(t, pool, string(kept)); doses != 1 {
+		t.Errorf("the item now answers %d doses, want the one that was logged", doses)
+	}
+	if slot := slotOf(t, pool, string(kept)); slot != "20:00:00" {
+		t.Errorf("the item's slot is %s, want the edit to have landed", slot)
+	}
 
-	logDose(t, pool, writePatientA, string(written.ProtocolID), string(edited.ItemIDs[0]))
+	if actor, action, patient := auditFor(t, superuser, "protocol.replace"); actor != writeDoctorA ||
+		action != "protocol.replace" || patient != writePatientA {
+		t.Errorf("the edit's audit row reads %s/%s/%s", actor, action, patient)
+	}
 
-	draft.Items[0].Times = []civil.Slot{{Hour: 20}}
+	// Cancelling it, which is the other statement the unconditional delete foreclosed.
+	draft.Status = protocol.StatusCancelled
+	if _, err := protocol.Replace(
+		as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, draft,
+	); err != nil {
+		t.Fatalf("cancelling a course with a logged dose: %v", err)
+	}
+
+	// And the item itself still cannot be dropped: the doses that answered it are the
+	// clinic's record, and the way to stop it is to clear loggable.
+	draft.Items[0].ID = nil
 	if _, err := protocol.Replace(
 		as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, draft,
 	); !errors.Is(err, protocol.ErrItemHasBeenInjected) {
-		t.Errorf("editing an injected item gave %v, want ErrItemHasBeenInjected", err)
+		t.Errorf("dropping an injected item gave %v, want ErrItemHasBeenInjected", err)
 	}
 	if rows := countRows(t, pool, string(written.ProtocolID)); rows.items != 1 {
 		t.Errorf("the refused edit left %d items", rows.items)
+	}
+	if doses := dosesOn(t, pool, string(kept)); doses != 1 {
+		t.Errorf("the refused edit left %d doses", doses)
+	}
+}
+
+// An item of another course may not be rewritten by naming it: the service seam carries no
+// row predicate, so the UPDATE is scoped to the course as well as to the row and the caller
+// is told the course does not hold it.
+func TestAnItemOfAnotherCourseCannotBeNamed(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	mine, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, aCourse(writePatientA))
+	if err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+	theirs, err := protocol.Create(as(t, writeDoctorB, "doctor"), pool, aCourse(writePatientB))
+	if err != nil {
+		t.Fatalf("prescribing for the other patient: %v", err)
+	}
+
+	draft := aCourse(writePatientA)
+	borrowed := theirs.ItemIDs[0]
+	draft.Items[0].ID = &borrowed
+
+	if _, err := protocol.Replace(
+		as(t, writeDoctorA, "doctor"), pool, mine.ProtocolID, draft,
+	); !errors.Is(err, protocol.ErrNoSuchItem) {
+		t.Errorf("naming another course's item gave %v, want ErrNoSuchItem", err)
+	}
+	if slot := slotOf(t, pool, string(borrowed)); slot != "08:00:00" {
+		t.Errorf("the other patient's item now reads %s", slot)
 	}
 }
 
@@ -328,16 +388,18 @@ func countRows(t *testing.T, pool *pgxpool.Pool, id string) rowCounts {
 
 // The service role holds INSERT on audit_log and deliberately not SELECT — the path that
 // signs an act cannot read the trail back — so this reads as the superuser.
-func auditFor(t *testing.T, superuserURL, id string) (string, string, string) {
+func auditFor(t *testing.T, superuserURL, of string) (string, string, string) {
 	t.Helper()
 
 	conn := testsupport.Connect(t, superuserURL)
 
+	// By entity id or by action, because both questions arise: «what did this course
+	// collect» and «was the edit signed at all».
 	var actor, action, patient string
 	if err := conn.QueryRow(t.Context(), `
 		SELECT coalesce(actor_id::text, ''), action, coalesce(patient_id::text, '')
-		FROM app.audit_log WHERE entity_id = $1
-	`, id).Scan(&actor, &action, &patient); err != nil {
+		FROM app.audit_log WHERE entity_id::text = $1 OR action = $1
+	`, of).Scan(&actor, &action, &patient); err != nil {
 		t.Fatalf("reading the audit trail: %v", err)
 	}
 
@@ -391,6 +453,24 @@ func logDose(t *testing.T, pool *pgxpool.Pool, patient, course, item string) {
 	); err != nil {
 		t.Fatalf("logging a dose: %v", err)
 	}
+}
+
+func dosesOn(t *testing.T, pool *pgxpool.Pool, item string) int {
+	t.Helper()
+
+	var doses int
+	ask(t, pool, `SELECT count(*) FROM app.dose_events WHERE protocol_item_id = $1`, []any{item}, &doses)
+
+	return doses
+}
+
+func slotOf(t *testing.T, pool *pgxpool.Pool, item string) string {
+	t.Helper()
+
+	var slot string
+	ask(t, pool, `SELECT times[1]::text FROM app.protocol_items WHERE id = $1`, []any{item}, &slot)
+
+	return slot
 }
 
 func ask(t *testing.T, pool *pgxpool.Pool, query string, args []any, into ...any) {

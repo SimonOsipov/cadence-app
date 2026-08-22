@@ -18,7 +18,9 @@ func TestEachRefusalBecomesItsOwnStatus(t *testing.T) {
 	}{
 		{ErrNotAPrescriber, http.StatusForbidden},
 		{ErrNotYourPatient, http.StatusForbidden},
+		{ErrMalformedIdentifier, http.StatusUnprocessableEntity},
 		{ErrNoSuchProtocol, http.StatusNotFound},
+		{ErrNoSuchItem, http.StatusNotFound},
 		{ErrAlreadyRunning, http.StatusConflict},
 		{ErrItemHasBeenInjected, http.StatusConflict},
 		{ErrNoSuchCompound, http.StatusUnprocessableEntity},

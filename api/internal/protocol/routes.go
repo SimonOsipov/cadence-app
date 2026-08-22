@@ -98,13 +98,24 @@ type Course struct {
 
 // Item is one prescribed thing: an injection, a supplement or a weigh-in.
 type Item struct {
-	Kind       string   `json:"kind" enum:"injection,supplement,weigh_in"`
-	Compound   *Drug    `json:"compound,omitempty" doc:"What is injected. Required for an injection and refused for anything else — a weigh-in is not a prescription of a drug."`
-	Cadence    string   `json:"cadence" enum:"weekly,daily,n_per_week"`
-	DaysOfWeek []int    `json:"days_of_week" doc:"ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself."`
-	Times      []string `json:"times" format:"time" minItems:"1" doc:"The slots within the day. Two of them is two occurrences, logged apart."`
-	Loggable   bool     `json:"loggable" doc:"Whether the patient records taking it. False for a supplement the clinic tracks without asking."`
-	Phases     []Phase  `json:"phases" minItems:"1" doc:"The titration bands. They may leave gaps — a washout is deliberate — and may not overlap."`
+	// Present when this item already exists: the reply to a create carries the
+	// identifiers in order, and an editor sends back the ones it kept. An item named
+	// this way is rewritten in place, which is what lets a course be titrated after a
+	// dose has been logged against it.
+	ID *string `json:"id,omitempty" format:"uuid" doc:"The item being kept, from an earlier reply. Absent for an item just added."`
+
+	Kind       string `json:"kind" enum:"injection,supplement,weigh_in"`
+	Compound   *Drug  `json:"compound,omitempty" doc:"What is injected. Required for an injection and refused for anything else — a weigh-in is not a prescription of a drug."`
+	Cadence    string `json:"cadence" enum:"weekly,daily,n_per_week"`
+	DaysOfWeek []int  `json:"days_of_week" doc:"ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself."`
+	// A pattern and not format:"time", which huma reads as RFC 3339 full-time. Measured
+	// on huma v2.39.0: with the format keyword «08:00» is refused as not a time and
+	// «08:00:00» is accepted here and then fails the parse below — no value passed both,
+	// and the two operations answered nothing but 422. A slot is HH:MM in §03, in the
+	// KMP's LocalTime and in the prototype, so the pattern is the contract.
+	Times    []string `json:"times" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$" minItems:"1" doc:"The slots within the day, as HH:MM. Two of them is two occurrences, logged apart."`
+	Loggable bool     `json:"loggable" doc:"Whether the patient records taking it. False for a supplement the clinic tracks without asking."`
+	Phases   []Phase  `json:"phases" minItems:"1" doc:"The titration bands. They may leave gaps — a washout is deliberate — and may not overlap."`
 }
 
 // Drug names what is injected: an identifier from the directory, or a new entry.
@@ -264,6 +275,10 @@ func (i Item) draft() (DraftItem, error) {
 		Loggable:   i.Loggable,
 		Phases:     phases,
 	}
+	if i.ID != nil {
+		id := ProtocolItemID(*i.ID)
+		drafted.ID = &id
+	}
 	if i.Compound != nil {
 		drafted.Compound = i.Compound.ref()
 	}
@@ -302,6 +317,8 @@ func answer(err error) error {
 		return huma.Error422UnprocessableEntity("an identifier is not a UUID", err)
 	case errors.Is(err, ErrNoSuchProtocol):
 		return huma.Error404NotFound("no such course for this patient")
+	case errors.Is(err, ErrNoSuchItem):
+		return huma.Error404NotFound("no such item in this course")
 	case errors.Is(err, ErrAlreadyRunning):
 		return huma.Error409Conflict("this patient already has a course running")
 	case errors.Is(err, ErrItemHasBeenInjected):
