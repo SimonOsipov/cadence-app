@@ -1137,6 +1137,23 @@ func TestALoggedDoseOutlivesTheEditOfItsCourse(t *testing.T) {
 		t.Errorf("the patient's stream is %v after the edit, want their logged dose", seen)
 	}
 
+	// And the course itself, which only the admin can delete. The grant registry
+	// already says why it should not: «a course ends by becoming completed or
+	// cancelled, and the dose history hangs off it». Until this case existed the
+	// key's action was held by nothing — the item's reach is wider, so the item
+	// mutation killed itself and left this one alive.
+	err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM app.protocols WHERE id = $1`, c.protocol[patientA])
+
+		return err
+	})
+
+	var onCourse *pgconn.PgError
+	if !errors.As(err, &onCourse) || onCourse.Code != "23503" ||
+		onCourse.ConstraintName != "dose_events_belong_to_their_course" {
+		t.Errorf("deleting an injected course: got %v, want 23503/dose_events_belong_to_their_course", err)
+	}
+
 	// And the person: deleting a patient must still take their course and their doses
 	// with them, which RESTRICT could have blocked — profiles cascades to protocols,
 	// protocols would cascade to items, and an item RESTRICTed by a dose event would
