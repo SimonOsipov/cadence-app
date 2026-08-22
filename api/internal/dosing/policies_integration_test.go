@@ -612,6 +612,13 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 			"0.25, 'мг', 'abc'", "dose_events_client_request_id_check", "23514",
 		},
 		{
+			// The leading-character half, which '../secrets' does not reach — the
+			// slash refuses it first. Unlike the photo pattern, where `..` is a
+			// whole segment and does kill the equivalent widening.
+			"a client key opening with punctuation", "dose_value, dose_unit, client_request_id",
+			"0.25, 'мг', '-not-a-key'", "dose_events_client_request_id_check", "23514",
+		},
+		{
 			"a client key carrying a path", "dose_value, dose_unit, client_request_id",
 			"0.25, 'мг', '../secrets'", "dose_events_client_request_id_check", "23514",
 		},
@@ -802,11 +809,12 @@ func TestADoseKeepsTheDrugItWasGivenAsWhenTheCourseIsEdited(t *testing.T) {
 
 	attributed := c.visible(t, patientA, "patient", `
 		SELECT compound_id::text FROM app.dose_events WHERE client_request_id LIKE 'seed-%'`)
-	if len(attributed) != 1 || attributed[0] != compoundID {
-		t.Errorf("the logged dose is now attributed to %v, want the compound it was given as", attributed)
+	if len(attributed) != 1 {
+		t.Fatalf("the patient's stream is %v, want the one logged dose", attributed)
 	}
-	if attributed[0] == other {
-		t.Error("editing the course rewrote what the patient is recorded as having injected")
+	if attributed[0] != compoundID {
+		t.Errorf("the logged dose is attributed to %v, want the compound it was given as (%s was the edit)",
+			attributed[0], other)
 	}
 }
 
@@ -1074,6 +1082,11 @@ func TestAPatientMayNotReachAnotherPatientsDose(t *testing.T) {
 	var upsert *pgconn.PgError
 	if !errors.As(err, &upsert) || upsert.Code != "42501" {
 		t.Errorf("upserting onto another patient: got %v, want 42501", err)
+	} else if !strings.Contains(upsert.Message, "row-level security") {
+		// Green for the right reason only by accident of the grant list otherwise:
+		// dropping a column from the patient's INSERT grant would keep the code and
+		// stop measuring the arbiter path this case exists for.
+		t.Errorf("the upsert was refused with %q, want the policy to be what refused", upsert.Message)
 	}
 
 	if seen := c.visible(t, patientB, "patient",
@@ -1114,21 +1127,38 @@ func TestALoggedDoseOutlivesTheEditOfItsCourse(t *testing.T) {
 
 	// Step 6's course editor is exactly this statement: cadence_service holds DELETE
 	// on protocol_items with USING (true).
-	for _, edit := range []struct{ name, sql string }{
-		{"removing the item it answers", `DELETE FROM app.protocol_items WHERE id = $1`},
-	} {
-		err := database.WithServiceJob(
-			t.Context(), c.service, seedJob,
-			func(ctx context.Context, tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, edit.sql, c.item[patientA])
+	err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx,
+				`DELETE FROM app.protocol_items WHERE id = $1`, c.item[patientA])
 
-				return err
-			},
-		)
+			return err
+		},
+	)
 
-		var pgErr *pgconn.PgError
-		if !errors.As(err, &pgErr) || pgErr.Code != "23503" {
-			t.Errorf("%s: got %v, want 23503 — the dose history holds the line", edit.name, err)
+	var onItem *pgconn.PgError
+	if !errors.As(err, &onItem) || onItem.Code != "23503" ||
+		onItem.ConstraintName != "dose_events_answer_an_item_of_that_course" {
+		t.Errorf("removing an injected item: got %v, want 23503/dose_events_answer_an_item_of_that_course", err)
+	}
+
+	// The third reference, which the header groups with the other two and which
+	// nothing held: only the admin can delete a vial, and the cabinet suite's own
+	// clinic has no dose events in it. Under CASCADE, disposing of a vial by
+	// deleting the row would erase the doses drawn from it — and the remaining
+	// count is a subtraction over exactly those rows.
+	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `DELETE FROM app.vials WHERE id = $1`, c.vial[patientA])
+
+		return err
+	}); err == nil {
+		t.Error("a vial with doses drawn from it was deleted")
+	} else {
+		var onVial *pgconn.PgError
+		if !errors.As(err, &onVial) || onVial.Code != "23503" ||
+			onVial.ConstraintName != "dose_events_drawn_from_their_own_vial" {
+			t.Errorf("deleting a drawn-from vial: got %v, want 23503/dose_events_drawn_from_their_own_vial", err)
 		}
 	}
 
@@ -1142,7 +1172,7 @@ func TestALoggedDoseOutlivesTheEditOfItsCourse(t *testing.T) {
 	// cancelled, and the dose history hangs off it». Until this case existed the
 	// key's action was held by nothing — the item's reach is wider, so the item
 	// mutation killed itself and left this one alive.
-	err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+	err = c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `DELETE FROM app.protocols WHERE id = $1`, c.protocol[patientA])
 
 		return err

@@ -31,6 +31,12 @@ ALTER TABLE app.vials
 
 CREATE TABLE app.dose_events (
     id                 uuid PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid(),
+    -- This cascade is what lets the three RESTRICTs below coexist with deleting the
+    -- person: the after-trigger queue is FIFO across the event list, so a delete of
+    -- a profile queues this cascade in the same batch as protocols' and vials', and
+    -- the dose rows are gone before the nested cascades reach a RESTRICT. Shedding
+    -- it — the composite chain makes it look redundant — turns deleting a patient
+    -- into a 23503.
     patient_id         uuid NOT NULL REFERENCES app.profiles (user_id) ON DELETE CASCADE,
     protocol_id        uuid NOT NULL,
     protocol_item_id   uuid NOT NULL,
@@ -154,7 +160,9 @@ CREATE INDEX dose_events_by_patient_and_day
     ON app.dose_events (patient_id, scheduled_for_date DESC);
 
 -- remaining = total_doses − count(dose_events WHERE vial_id = …), which is a count
--- per vial and the one read that does not start from the patient.
+-- per vial and the one read that does not start from the patient. It is tenant-safe
+-- only because the composite key above makes vial_id determine patient_id — that key
+-- is load-bearing for this read, not only for the write.
 CREATE INDEX dose_events_by_vial ON app.dose_events (vial_id) WHERE vial_id IS NOT NULL;
 
 ALTER TABLE app.dose_events ENABLE ROW LEVEL SECURITY;

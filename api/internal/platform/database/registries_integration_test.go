@@ -122,8 +122,8 @@ func grantRegistry() map[string][]string {
 		"journal_entries/cadence_service": {"INSERT", "SELECT"},
 		"journal_entries/cadence_owner":   everything,
 
-		// The dose stream, and SELECT is the only verb the patient has here: a
-		// logged dose is a fact, so there is no UPDATE to narrow by column.
+		// The dose stream. SELECT only at table level for them, and the one write
+		// verb is by column: a logged dose is a fact, so there is no UPDATE at all.
 		"dose_events/cadence_patient": {"SELECT"},
 		"dose_events/cadence_doctor":  {"SELECT"},
 		"dose_events/cadence_admin":   crud,
