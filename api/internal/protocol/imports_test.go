@@ -57,9 +57,15 @@ var (
 		"parse.go",
 		"shape.go",
 	}
-	transport = []string{
+	// Everything that is deliberately not the generator: the write path holds the
+	// check, the transaction and the SQL in one file, which is this project's shape —
+	// internal/identity has twelve such files and one of them is called handler.go.
+	// Named for what it is rather than «transport», which compounds.go is not.
+	notTheGenerator = []string{
 		"routes.go",
 		"doc.go",
+		"compounds.go",
+		"write.go",
 	}
 )
 
@@ -74,7 +80,7 @@ func TestEveryFileInThePackageIsClassified(t *testing.T) {
 	}
 
 	classified := map[string]bool{}
-	for _, name := range append(append([]string{}, generator...), transport...) {
+	for _, name := range append(append([]string{}, generator...), notTheGenerator...) {
 		classified[name] = true
 	}
 
@@ -85,15 +91,15 @@ func TestEveryFileInThePackageIsClassified(t *testing.T) {
 		}
 		seen++
 		if !classified[name] {
-			t.Errorf("%s is in neither generator nor transport: classify it", name)
+			t.Errorf("%s is in neither list: classify it", name)
 		}
 		delete(classified, name)
 	}
 	for name := range classified {
 		t.Errorf("%s is listed but not on disk", name)
 	}
-	if seen != len(generator)+len(transport) {
-		t.Errorf("walked %d files, the two lists name %d", seen, len(generator)+len(transport))
+	if seen != len(generator)+len(notTheGenerator) {
+		t.Errorf("walked %d files, the two lists name %d", seen, len(generator)+len(notTheGenerator))
 	}
 }
 
@@ -144,8 +150,8 @@ func TestNothingInThePackageReadsTheClock(t *testing.T) {
 	// Without this the guard passes an empty package: a rename of every file, or a glob that
 	// stops matching, would read exactly like purity. It bounds one direction only — files
 	// appearing is what TestEveryFileInThePackageIsClassified covers.
-	if checked < len(generator)+len(transport) {
-		t.Fatalf("expected %d files, walked %d", len(generator)+len(transport), checked)
+	if checked < len(generator)+len(notTheGenerator) {
+		t.Fatalf("expected %d files, walked %d", len(generator)+len(notTheGenerator), checked)
 	}
 }
 

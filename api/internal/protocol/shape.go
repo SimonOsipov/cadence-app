@@ -33,6 +33,11 @@ var (
 	ErrDoseOffRange             = errors.New("a dose is more than nothing")
 	ErrUnknownDoseUnit          = errors.New("the unit is not one of мг, мкг")
 	ErrPhasesOverlap            = errors.New("two phases of one item cover the same week")
+
+	// The mirror of the rule above, and it is not pedantry: a weigh-in carrying a drug
+	// is a form the doctor filled in for the wrong row, and accepting it would store a
+	// prescription nobody can see on any screen.
+	ErrCompoundOnAKindWithoutOne = errors.New("only an injection names a drug")
 )
 
 // Draft is a course as the transport received it, before any of it is a row.
@@ -48,8 +53,10 @@ type Draft struct {
 // DraftItem carries its phases: they arrive nested and are written in one transaction, and a
 // pair of parallel slices is where the fourth item gets the third item's doses.
 type DraftItem struct {
-	Kind       ItemKind
-	CompoundID *CompoundID
+	Kind ItemKind
+	// What is injected, named by identifier or by name. Empty for the kinds that are
+	// not drugs — a weigh-in is not a prescription of anything.
+	Compound   CompoundRef
 	Cadence    Cadence
 	DaysOfWeek []time.Weekday
 	Times      []civil.Slot
@@ -96,8 +103,18 @@ func (i DraftItem) check(weeks int) error {
 	if len(i.Times) == 0 {
 		return ErrNoSlot
 	}
-	if i.Kind == KindInjection && i.CompoundID == nil {
-		return ErrInjectionWithoutCompound
+	named := 0
+	if i.Compound.ID != nil {
+		named++
+	}
+	if i.Compound.New != nil {
+		named++
+	}
+	switch {
+	case i.Kind == KindInjection && named != 1:
+		return fmt.Errorf("%d halves named: %w", named, ErrInjectionWithoutCompound)
+	case i.Kind != KindInjection && named != 0:
+		return fmt.Errorf("a %s names a drug: %w", i.Kind, ErrCompoundOnAKindWithoutOne)
 	}
 	if len(i.Phases) == 0 {
 		return ErrNoPhases

@@ -17,7 +17,7 @@ func aPlan(edit func(*Draft)) Draft {
 		Status:    StatusActive,
 		Items: []DraftItem{{
 			Kind:       KindInjection,
-			CompoundID: &compound,
+			Compound:   CompoundRef{ID: &compound},
 			Cadence:    CadenceWeekly,
 			DaysOfWeek: []time.Weekday{time.Sunday},
 			Times:      []civil.Slot{{Hour: 8}},
@@ -90,7 +90,20 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 		},
 		{
 			"an injection naming no compound",
-			func(d *Draft) { d.Items[0].CompoundID = nil }, ErrInjectionWithoutCompound,
+			func(d *Draft) { d.Items[0].Compound = CompoundRef{} }, ErrInjectionWithoutCompound,
+		},
+		{
+			"an injection naming a compound twice over",
+			func(d *Draft) {
+				d.Items[0].Compound.New = &NewCompound{
+					NameRU: "Семаглутид", DefaultUnit: MG, Route: "sc", Icon: "syringe",
+				}
+			},
+			ErrInjectionWithoutCompound,
+		},
+		{
+			"a weigh-in that names a drug",
+			func(d *Draft) { d.Items[0].Kind = KindWeighIn }, ErrCompoundOnAKindWithoutOne,
 		},
 		{
 			"a phase that runs backwards",
@@ -160,7 +173,7 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 	for _, kind := range []ItemKind{KindSupplement, KindWeighIn} {
 		plain := aPlan(func(d *Draft) {
 			d.Items[0].Kind = kind
-			d.Items[0].CompoundID = nil
+			d.Items[0].Compound = CompoundRef{}
 			d.Items[0].Loggable = false
 		})
 		if err := plain.Check(); err != nil {

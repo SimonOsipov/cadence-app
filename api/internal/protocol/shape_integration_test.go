@@ -41,7 +41,6 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 	t.Cleanup(pool.Close)
 	seedForShape(t, pool)
 
-	compound := protocol.CompoundID(shapeCompound)
 	for _, refused := range []struct {
 		name       string
 		item       protocol.DraftItem
@@ -142,7 +141,6 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 			Weeks:     12,
 			Status:    protocol.StatusActive,
 			Items: []protocol.DraftItem{itemWith(func(i *protocol.DraftItem) {
-				i.CompoundID = &compound
 				i.Phases = []protocol.ProtocolPhase{
 					{FromWeek: 1, ToWeek: 4, Dose: aDose},
 					{FromWeek: 9, ToWeek: 12, Dose: aDose},
@@ -164,7 +162,7 @@ func itemWith(edit func(*protocol.DraftItem)) protocol.DraftItem {
 	compound := protocol.CompoundID(shapeCompound)
 	item := protocol.DraftItem{
 		Kind:       protocol.KindInjection,
-		CompoundID: &compound,
+		Compound:   protocol.CompoundRef{ID: &compound},
 		Cadence:    protocol.CadenceWeekly,
 		DaysOfWeek: []time.Weekday{time.Sunday},
 		Times:      []civil.Slot{{Hour: 8}},
@@ -210,7 +208,7 @@ func offer(t *testing.T, pool *pgxpool.Pool, draft protocol.Draft) (string, stri
 					INSERT INTO app.protocol_items
 					    (protocol_id, kind, compound_id, cadence, days_of_week, times, loggable)
 					VALUES ($1, $2, $3, $4, $5::smallint[], $6::time[], $7) RETURNING id::text
-				`, protocolID, string(item.Kind), item.CompoundID, string(item.Cadence),
+				`, protocolID, string(item.Kind), item.Compound.ID, string(item.Cadence),
 					days, times, item.Loggable).Scan(&itemID); err != nil {
 					return err
 				}
