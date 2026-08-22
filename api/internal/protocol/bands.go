@@ -1,11 +1,13 @@
 package protocol
 
+import "github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
+
 // DoseBand is a prescription, not a history: no logged dose reaches this file. A band
 // vanishing because a week was missed would tell a patient their protocol changed when it
-// hadn't. Range is already clipped to the window it was asked about.
+// hadn't. civil.Range is already clipped to the window it was asked about.
 type DoseBand struct {
 	Dose  Dose
-	Range Range
+	Range civil.Range
 }
 
 type ProtocolMarkKind string
@@ -18,7 +20,7 @@ const (
 // ProtocolMark carries a nil From on MarkStart: there is no dose to have come up from.
 type ProtocolMark struct {
 	Kind ProtocolMarkKind
-	Date Date
+	Date civil.Date
 	From *Dose
 	To   Dose
 }
@@ -27,7 +29,7 @@ type ProtocolMark struct {
 // a last week and a dose. Phases are clipped to the protocol's own last day as well as to r,
 // because §03 leaves `to_week` and `weeks` unjoined and week 20 of a twelve-week course is
 // representable.
-func DoseBands(plan Plan, itemID ProtocolItemID, r Range) []DoseBand {
+func DoseBands(plan Plan, itemID ProtocolItemID, r civil.Range) []DoseBand {
 	if plan.Protocol.Status == StatusCancelled {
 		return nil
 	}
@@ -38,15 +40,15 @@ func DoseBands(plan Plan, itemID ProtocolItemID, r Range) []DoseBand {
 		// unjoined as to_week, and WeekStart(0) is a week before the protocol began. PhaseDose
 		// answers nil there, so an unclipped band drew a dose over a day the schedule says was
 		// never prescribed. The Kotlin clips only the far end and has the same disagreement.
-		opens := MaxDate(plan.Protocol.WeekStart(phase.FromWeek), plan.Protocol.StartDate)
+		opens := civil.MaxDate(plan.Protocol.WeekStart(phase.FromWeek), plan.Protocol.StartDate)
 		// The last day of ToWeek is the day before ToWeek + 1 opens.
-		closes := MinDate(plan.Protocol.WeekStart(phase.ToWeek+1).AddDays(-1), plan.Protocol.LastPrescribedDay())
-		from := MaxDate(opens, r.From)
-		through := MinDate(closes, r.Through)
+		closes := civil.MinDate(plan.Protocol.WeekStart(phase.ToWeek+1).AddDays(-1), plan.Protocol.LastPrescribedDay())
+		from := civil.MaxDate(opens, r.From)
+		through := civil.MinDate(closes, r.Through)
 		if from.After(through) {
 			continue
 		}
-		out = append(out, DoseBand{Dose: phase.Dose, Range: Range{From: from, Through: through}})
+		out = append(out, DoseBand{Dose: phase.Dose, Range: civil.Range{From: from, Through: through}})
 	}
 	return out
 }
@@ -55,7 +57,7 @@ func DoseBands(plan Plan, itemID ProtocolItemID, r Range) []DoseBand {
 // readily as it titrates, and a mark firing only upwards would leave a reduction
 // unexplained. The start sits on the first day of the first phase — the protocol's own start
 // when dosed from day one, the phase-opening day when the item is introduced mid-course.
-func ProtocolMarks(plan Plan, itemID ProtocolItemID, r Range) []ProtocolMark {
+func ProtocolMarks(plan Plan, itemID ProtocolItemID, r civil.Range) []ProtocolMark {
 	if plan.Protocol.Status == StatusCancelled {
 		return nil
 	}
@@ -72,7 +74,7 @@ func ProtocolMarks(plan Plan, itemID ProtocolItemID, r Range) []ProtocolMark {
 	//
 	// The window is the course, never r: a mark must not slide onto the left edge of whatever
 	// window was asked for. Clipping to r is the filter below.
-	course := Range{From: plan.Protocol.StartDate, Through: plan.Protocol.LastPrescribedDay()}
+	course := civil.Range{From: plan.Protocol.StartDate, Through: plan.Protocol.LastPrescribedDay()}
 	bands := DoseBands(plan, itemID, course)
 	if len(bands) == 0 {
 		return nil

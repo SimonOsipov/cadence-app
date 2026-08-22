@@ -3,13 +3,15 @@ package protocol
 import (
 	"testing"
 	"time"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
 var titrationPlan = Plan{
 	Protocol: Protocol{
 		ID:        ProtocolID("pr"),
-		PatientID: UserID("p"),
-		StartDate: NewDate(2026, time.May, 10),
+		PatientID: civil.UserID("p"),
+		StartDate: civil.NewDate(2026, time.May, 10),
 		Weeks:     12,
 		Status:    StatusActive,
 	},
@@ -21,7 +23,7 @@ var titrationPlan = Plan{
 			CompoundID: compoundPtr("sema"),
 			Cadence:    CadenceWeekly,
 			DaysOfWeek: []time.Weekday{time.Sunday},
-			Times:      []Slot{{Hour: 7}},
+			Times:      []civil.Slot{{Hour: 7}},
 			Loggable:   true,
 		},
 	},
@@ -36,7 +38,7 @@ var titrationPlan = Plan{
 }
 
 func TestTheNextStepIsTheOneAfterTheWeekYouAreIn(t *testing.T) {
-	step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.May, 31))
+	step := TitrationStepAfter(titrationPlan, sema, civil.NewDate(2026, time.May, 31))
 
 	if step == nil {
 		t.Fatal("week 4 has a step ahead of it")
@@ -48,13 +50,13 @@ func TestTheNextStepIsTheOneAfterTheWeekYouAreIn(t *testing.T) {
 		t.Errorf("0,25 → 0,5: got %v → %v", step.From, step.To)
 	}
 	// Week 5 begins seven days after week 4's Sunday.
-	if step.Date != NewDate(2026, time.June, 7) {
+	if step.Date != civil.NewDate(2026, time.June, 7) {
 		t.Errorf("7 June: got %v", step.Date)
 	}
 }
 
 func TestTheStepMovesOnOnceItIsPassed(t *testing.T) {
-	step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.June, 10))
+	step := TitrationStepAfter(titrationPlan, sema, civil.NewDate(2026, time.June, 10))
 
 	if step == nil {
 		t.Fatal("week 5 still has week 9 ahead of it")
@@ -62,13 +64,13 @@ func TestTheStepMovesOnOnceItIsPassed(t *testing.T) {
 	if step.From != (Dose{Value: 0.5, Unit: MG}) || step.To != (Dose{Value: 1.0, Unit: MG}) {
 		t.Errorf("0,5 → 1,0: got %v → %v", step.From, step.To)
 	}
-	if step.Date != NewDate(2026, time.July, 5) {
+	if step.Date != civil.NewDate(2026, time.July, 5) {
 		t.Errorf("5 July: got %v", step.Date)
 	}
 }
 
 func TestTheLastBandHasNoNextStep(t *testing.T) {
-	if step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.July, 20)); step != nil {
+	if step := TitrationStepAfter(titrationPlan, sema, civil.NewDate(2026, time.July, 20)); step != nil {
 		t.Errorf("nothing after the last band, got %v", step)
 	}
 }
@@ -79,13 +81,13 @@ func TestAnItemWithOnePhaseNeverTitrates(t *testing.T) {
 		sema: {{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 250.0, Unit: MCG}}},
 	}
 
-	if step := TitrationStepAfter(flat, sema, NewDate(2026, time.May, 31)); step != nil {
+	if step := TitrationStepAfter(flat, sema, civil.NewDate(2026, time.May, 31)); step != nil {
 		t.Errorf("one band never steps, got %v", step)
 	}
 }
 
 func TestADateOutsideTheCycleHasNoStep(t *testing.T) {
-	if step := TitrationStepAfter(titrationPlan, sema, NewDate(2026, time.May, 9)); step != nil {
+	if step := TitrationStepAfter(titrationPlan, sema, civil.NewDate(2026, time.May, 9)); step != nil {
 		t.Errorf("bounded by the cycle, not the calendar, got %v", step)
 	}
 }

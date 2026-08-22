@@ -3,10 +3,12 @@ package protocol
 import (
 	"testing"
 	"time"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
 var (
-	bandsStart = NewDate(2026, time.May, 10)
+	bandsStart = civil.NewDate(2026, time.May, 10)
 	weighIn    = ProtocolItemID("weigh")
 	quarter    = Dose{Value: 0.25, Unit: MG}
 	half       = Dose{Value: 0.5, Unit: MG}
@@ -31,7 +33,7 @@ func bandsPlan(status ProtocolStatus, phases []ProtocolPhase) Plan {
 	return Plan{
 		Protocol: Protocol{
 			ID:        ProtocolID("pr"),
-			PatientID: UserID("p"),
+			PatientID: civil.UserID("p"),
 			StartDate: bandsStart,
 			Weeks:     12,
 			Status:    status,
@@ -43,7 +45,7 @@ func bandsPlan(status ProtocolStatus, phases []ProtocolPhase) Plan {
 			CompoundID: compoundPtr("sema"),
 			Cadence:    CadenceWeekly,
 			DaysOfWeek: []time.Weekday{time.Sunday},
-			Times:      []Slot{{Hour: 7}},
+			Times:      []civil.Slot{{Hour: 7}},
 			Loggable:   true,
 		}},
 		Phases: map[ProtocolItemID][]ProtocolPhase{sema: phases},
@@ -53,15 +55,15 @@ func bandsPlan(status ProtocolStatus, phases []ProtocolPhase) Plan {
 func defaultBandsPlan() Plan { return bandsPlan(StatusActive, shuffledPhases) }
 
 // The whole course and a little either side, so nothing is clipped by accident.
-var wholeCourse = Range{From: NewDate(2026, time.May, 1), Through: NewDate(2026, time.August, 31)}
+var wholeCourse = civil.Range{From: civil.NewDate(2026, time.May, 1), Through: civil.NewDate(2026, time.August, 31)}
 
 type span struct {
 	dose    Dose
-	from    Date
-	through Date
+	from    civil.Date
+	through civil.Date
 }
 
-func spansOf(r Range, p Plan) []span {
+func spansOf(r civil.Range, p Plan) []span {
 	var out []span
 	for _, b := range DoseBands(p, sema, r) {
 		out = append(out, span{b.Dose, b.Range.From, b.Range.Through})
@@ -90,8 +92,8 @@ func seedPlan() Plan {
 	return Plan{
 		Protocol: Protocol{
 			ID:        ProtocolID("seed"),
-			PatientID: UserID("seed-p"),
-			StartDate: NewDate(2026, time.May, 10),
+			PatientID: civil.UserID("seed-p"),
+			StartDate: civil.NewDate(2026, time.May, 10),
 			Weeks:     12,
 			Status:    StatusActive,
 		},
@@ -103,7 +105,7 @@ func seedPlan() Plan {
 				CompoundID: compoundPtr("sema"),
 				Cadence:    CadenceWeekly,
 				DaysOfWeek: []time.Weekday{time.Sunday},
-				Times:      []Slot{{Hour: 7}},
+				Times:      []civil.Slot{{Hour: 7}},
 				Loggable:   true,
 			},
 			{
@@ -112,7 +114,7 @@ func seedPlan() Plan {
 				Kind:       KindInjection,
 				CompoundID: compoundPtr("bpc"),
 				Cadence:    CadenceDaily,
-				Times:      []Slot{{Hour: 8}, {Hour: 20}},
+				Times:      []civil.Slot{{Hour: 8}, {Hour: 20}},
 				Loggable:   true,
 			},
 		},
@@ -130,25 +132,25 @@ func seedPlan() Plan {
 var (
 	seedSema      = ProtocolItemID("item-sema")
 	seedBPC       = ProtocolItemID("item-bpc")
-	seededThrough = NewDate(2026, time.May, 30)
+	seededThrough = civil.NewDate(2026, time.May, 30)
 )
 
 // TrendWindow.CYCLE.rangeOn, inlined: bounded at both ends by the course itself.
-func cycleRange(p Protocol, today Date) (Range, bool) {
-	through := MinDate(today, p.LastPrescribedDay())
+func cycleRange(p Protocol, today civil.Date) (civil.Range, bool) {
+	through := civil.MinDate(today, p.LastPrescribedDay())
 	if through.Before(p.StartDate) {
-		return Range{}, false
+		return civil.Range{}, false
 	}
-	return Range{From: p.StartDate, Through: through}, true
+	return civil.Range{From: p.StartDate, Through: through}, true
 }
 
 func TestEachPhaseIsOneBandRunningFromItsFirstDayToItsLast(t *testing.T) {
 	// Week N begins (N-1)×7 days after start, matching schedule/data.ts. The trends
 	// module's DOSE_SPANS disagrees — see the seed test at the bottom of this file.
 	assertSpans(t, []span{
-		{quarter, NewDate(2026, time.May, 10), NewDate(2026, time.June, 6)},
-		{half, NewDate(2026, time.June, 7), NewDate(2026, time.July, 4)},
-		{whole, NewDate(2026, time.July, 5), NewDate(2026, time.August, 1)},
+		{quarter, civil.NewDate(2026, time.May, 10), civil.NewDate(2026, time.June, 6)},
+		{half, civil.NewDate(2026, time.June, 7), civil.NewDate(2026, time.July, 4)},
+		{whole, civil.NewDate(2026, time.July, 5), civil.NewDate(2026, time.August, 1)},
 	}, spansOf(wholeCourse, defaultBandsPlan()))
 }
 
@@ -163,7 +165,7 @@ func TestTheBandsMeetWithoutOverlappingAndCoverTheCourseExactly(t *testing.T) {
 	if bands[0].Range.From != bandsStart {
 		t.Errorf("the first band opens on day 0, got %v", bands[0].Range.From)
 	}
-	if last := bands[len(bands)-1].Range.Through; last != NewDate(2026, time.August, 1) {
+	if last := bands[len(bands)-1].Range.Through; last != civil.NewDate(2026, time.August, 1) {
 		t.Errorf("day 83, the last prescribed day: got %v", last)
 	}
 	for i := 1; i < len(bands); i++ {
@@ -214,12 +216,12 @@ func TestAGapBetweenTwoPhasesIsAGapBetweenTwoBands(t *testing.T) {
 	broken := bandsPlan(StatusActive, brokenPhases)
 
 	assertSpans(t, []span{
-		{quarter, NewDate(2026, time.May, 10), NewDate(2026, time.June, 6)},
-		{whole, NewDate(2026, time.July, 5), NewDate(2026, time.August, 1)},
+		{quarter, civil.NewDate(2026, time.May, 10), civil.NewDate(2026, time.June, 6)},
+		{whole, civil.NewDate(2026, time.July, 5), civil.NewDate(2026, time.August, 1)},
 	}, spansOf(wholeCourse, broken))
 
 	// Weeks 5–8 are prescribed nothing, and nothing is drawn over them.
-	gap := Range{From: NewDate(2026, time.June, 7), Through: NewDate(2026, time.July, 4)}
+	gap := civil.Range{From: civil.NewDate(2026, time.June, 7), Through: civil.NewDate(2026, time.July, 4)}
 	if got := spansOf(gap, broken); len(got) != 0 {
 		t.Errorf("nothing is drawn over a wash-out, got %v", got)
 	}
@@ -246,24 +248,24 @@ func TestABandIsWhatWasPrescribedAndNotWhatWasTaken(t *testing.T) {
 }
 
 func TestAWindowInsideOnePhaseSeesThatPhaseClippedToIt(t *testing.T) {
-	r := Range{From: NewDate(2026, time.May, 25), Through: NewDate(2026, time.May, 31)}
+	r := civil.Range{From: civil.NewDate(2026, time.May, 25), Through: civil.NewDate(2026, time.May, 31)}
 
 	assertSpans(t, []span{{quarter, r.From, r.Through}}, spansOf(r, defaultBandsPlan()))
 }
 
 func TestAWindowStraddlingATitrationSeesBothBandsAndTheJoinBetweenThem(t *testing.T) {
-	r := Range{From: NewDate(2026, time.June, 4), Through: NewDate(2026, time.June, 10)}
+	r := civil.Range{From: civil.NewDate(2026, time.June, 4), Through: civil.NewDate(2026, time.June, 10)}
 
 	assertSpans(t, []span{
-		{quarter, NewDate(2026, time.June, 4), NewDate(2026, time.June, 6)},
-		{half, NewDate(2026, time.June, 7), NewDate(2026, time.June, 10)},
+		{quarter, civil.NewDate(2026, time.June, 4), civil.NewDate(2026, time.June, 6)},
+		{half, civil.NewDate(2026, time.June, 7), civil.NewDate(2026, time.June, 10)},
 	}, spansOf(r, defaultBandsPlan()))
 }
 
 func TestAWindowThatMissesTheCourseEntirelyHasNoBands(t *testing.T) {
 	// Before it, and after it.
-	before := Range{From: NewDate(2026, time.March, 1), Through: NewDate(2026, time.May, 9)}
-	after := Range{From: NewDate(2026, time.August, 2), Through: NewDate(2026, time.September, 1)}
+	before := civil.Range{From: civil.NewDate(2026, time.March, 1), Through: civil.NewDate(2026, time.May, 9)}
+	after := civil.Range{From: civil.NewDate(2026, time.August, 2), Through: civil.NewDate(2026, time.September, 1)}
 
 	if got := spansOf(before, defaultBandsPlan()); len(got) != 0 {
 		t.Errorf("before the course: got %v", got)
@@ -277,12 +279,12 @@ func TestAWindowTouchingTheCourseByOneDaySeesOneDayOfIt(t *testing.T) {
 	// A one-day band is what «весь цикл» asks for on the day a course begins; an overlap
 	// test written `from >= through` would leave a patient's first day with no
 	// prescription under it.
-	opening := Range{From: NewDate(2026, time.March, 1), Through: bandsStart}
-	closing := Range{From: NewDate(2026, time.August, 1), Through: NewDate(2026, time.September, 1)}
+	opening := civil.Range{From: civil.NewDate(2026, time.March, 1), Through: bandsStart}
+	closing := civil.Range{From: civil.NewDate(2026, time.August, 1), Through: civil.NewDate(2026, time.September, 1)}
 
 	assertSpans(t, []span{{quarter, bandsStart, bandsStart}}, spansOf(opening, defaultBandsPlan()))
 	assertSpans(t, []span{
-		{whole, NewDate(2026, time.August, 1), NewDate(2026, time.August, 1)},
+		{whole, civil.NewDate(2026, time.August, 1), civil.NewDate(2026, time.August, 1)},
 	}, spansOf(closing, defaultBandsPlan()))
 }
 
@@ -290,18 +292,18 @@ func TestTheWeeksAreCountedFromWhicheverDayTheCourseBeganOn(t *testing.T) {
 	// Every other fixture here starts on 10 May 2026, so a baked-in date would pass them
 	// all. This one crosses a new year and a leap February — measured, not assumed.
 	leapYear := defaultBandsPlan()
-	leapYear.Protocol.StartDate = NewDate(2027, time.December, 20)
+	leapYear.Protocol.StartDate = civil.NewDate(2027, time.December, 20)
 	leapYear.Items = nil
-	window := Range{From: NewDate(2027, time.January, 1), Through: NewDate(2029, time.January, 1)}
+	window := civil.Range{From: civil.NewDate(2027, time.January, 1), Through: civil.NewDate(2029, time.January, 1)}
 
 	assertSpans(t, []span{
 		// Day 0 → 27, across the new year.
-		{quarter, NewDate(2027, time.December, 20), NewDate(2028, time.January, 16)},
+		{quarter, civil.NewDate(2027, time.December, 20), civil.NewDate(2028, time.January, 16)},
 		// Day 28 → 55.
-		{half, NewDate(2028, time.January, 17), NewDate(2028, time.February, 13)},
+		{half, civil.NewDate(2028, time.January, 17), civil.NewDate(2028, time.February, 13)},
 		// Day 56 → 83, across 29 February: 2028 is a leap year, so this band moves under a
 		// 365-day assumption.
-		{whole, NewDate(2028, time.February, 14), NewDate(2028, time.March, 12)},
+		{whole, civil.NewDate(2028, time.February, 14), civil.NewDate(2028, time.March, 12)},
 	}, spansOf(window, leapYear))
 }
 
@@ -341,7 +343,7 @@ func TestAPhaseReachingPastTheCourseIsCutAtItsLastDay(t *testing.T) {
 	// twelve-week course is representable.
 	overrun := bandsPlan(StatusActive, []ProtocolPhase{{FromWeek: 1, ToWeek: 20, Dose: quarter}})
 
-	assertSpans(t, []span{{quarter, bandsStart, NewDate(2026, time.August, 1)}}, spansOf(wholeCourse, overrun))
+	assertSpans(t, []span{{quarter, bandsStart, civil.NewDate(2026, time.August, 1)}}, spansOf(wholeCourse, overrun))
 }
 
 func TestTheCourseIsMarkedWhereItStartedAndWhereEachDoseWentUp(t *testing.T) {
@@ -349,8 +351,8 @@ func TestTheCourseIsMarkedWhereItStartedAndWhereEachDoseWentUp(t *testing.T) {
 
 	assertMarks(t, []ProtocolMark{
 		{Kind: MarkStart, Date: bandsStart, From: nil, To: quarter},
-		{Kind: MarkTitration, Date: NewDate(2026, time.June, 7), From: &quarter, To: half},
-		{Kind: MarkTitration, Date: NewDate(2026, time.July, 5), From: &half, To: whole},
+		{Kind: MarkTitration, Date: civil.NewDate(2026, time.June, 7), From: &quarter, To: half},
+		{Kind: MarkTitration, Date: civil.NewDate(2026, time.July, 5), From: &half, To: whole},
 	}, marks)
 }
 
@@ -381,7 +383,7 @@ func TestMarksOutsideTheWindowAreLeftOut(t *testing.T) {
 	// The seeded «весь цикл» window: three weeks lived, so the start is in and both
 	// titrations are still ahead.
 	seed := seedPlan()
-	cycle, ok := cycleRange(seed.Protocol, NewDate(2026, time.May, 31))
+	cycle, ok := cycleRange(seed.Protocol, civil.NewDate(2026, time.May, 31))
 	if !ok {
 		t.Fatal("the seeded course has a cycle window")
 	}
@@ -399,11 +401,11 @@ func TestMarksOutsideTheWindowAreLeftOut(t *testing.T) {
 func TestBothEdgesOfTheWindowKeepTheirMarks(t *testing.T) {
 	// A «7 дней» window can close exactly on the day a dose went up. The left edge is
 	// measured by the test above, where the start sits on range.From.
-	r := Range{From: NewDate(2026, time.June, 1), Through: NewDate(2026, time.June, 7)}
+	r := civil.Range{From: civil.NewDate(2026, time.June, 1), Through: civil.NewDate(2026, time.June, 7)}
 
 	marks := ProtocolMarks(defaultBandsPlan(), sema, r)
 
-	if len(marks) != 1 || marks[0].Date != NewDate(2026, time.June, 7) {
+	if len(marks) != 1 || marks[0].Date != civil.NewDate(2026, time.June, 7) {
 		t.Fatalf("the closing edge keeps its mark, got %v", marks)
 	}
 }
@@ -416,7 +418,7 @@ func TestAMarkPastTheEndOfTheCourseIsDroppedLikeTheBandUnderIt(t *testing.T) {
 		{FromWeek: 13, ToWeek: 20, Dose: half},
 	})
 
-	assertSpans(t, []span{{quarter, bandsStart, NewDate(2026, time.August, 1)}}, spansOf(wholeCourse, overrun))
+	assertSpans(t, []span{{quarter, bandsStart, civil.NewDate(2026, time.August, 1)}}, spansOf(wholeCourse, overrun))
 
 	marks := ProtocolMarks(overrun, sema, wholeCourse)
 	if len(marks) != 1 || marks[0].Kind != MarkStart {
@@ -428,7 +430,7 @@ func TestAMarkPastTheEndOfTheCourseIsDroppedLikeTheBandUnderIt(t *testing.T) {
 	if got := TitrationSteps(overrun, sema); len(got) != 0 {
 		t.Errorf("a step past the end: %v", got)
 	}
-	if got := TitrationStepAfter(overrun, sema, NewDate(2026, time.May, 31)); got != nil {
+	if got := TitrationStepAfter(overrun, sema, civil.NewDate(2026, time.May, 31)); got != nil {
 		t.Errorf("a next step past the end: %v", got)
 	}
 }
@@ -458,7 +460,7 @@ func TestAPhaseOpeningBeforeTheCourseIsCutAtItsFirstDay(t *testing.T) {
 	// schedule says was never prescribed.
 	washIn := bandsPlan(StatusActive, []ProtocolPhase{{FromWeek: 0, ToWeek: 4, Dose: quarter}})
 
-	assertSpans(t, []span{{quarter, bandsStart, NewDate(2026, time.June, 6)}}, spansOf(wholeCourse, washIn))
+	assertSpans(t, []span{{quarter, bandsStart, civil.NewDate(2026, time.June, 6)}}, spansOf(wholeCourse, washIn))
 
 	// The band is clipped, not dropped — so it keeps its start mark, on the day it opens. A
 	// mark at WeekStart(0) would stand a week off the chart; no mark at all would leave a
@@ -496,19 +498,19 @@ func TestACancelledCourseHasNoNextStepEither(t *testing.T) {
 	if got := TitrationSteps(cancelled, sema); len(got) != 0 {
 		t.Errorf("steps on a cancelled course: %v", got)
 	}
-	if got := TitrationStepAfter(cancelled, sema, NewDate(2026, time.May, 31)); got != nil {
+	if got := TitrationStepAfter(cancelled, sema, civil.NewDate(2026, time.May, 31)); got != nil {
 		t.Errorf("a next step on a cancelled course: %v", got)
 	}
 }
 
 func TestAWindowOpeningMidCourseCarriesNoStartMark(t *testing.T) {
-	r := Range{From: NewDate(2026, time.June, 1), Through: NewDate(2026, time.July, 31)}
+	r := civil.Range{From: civil.NewDate(2026, time.June, 1), Through: civil.NewDate(2026, time.July, 31)}
 
 	marks := ProtocolMarks(defaultBandsPlan(), sema, r)
 
 	if len(marks) != 2 ||
-		marks[0].Date != NewDate(2026, time.June, 7) ||
-		marks[1].Date != NewDate(2026, time.July, 5) {
+		marks[0].Date != civil.NewDate(2026, time.June, 7) ||
+		marks[1].Date != civil.NewDate(2026, time.July, 5) {
 		t.Fatalf("both titrations and nothing else, got %v", marks)
 	}
 	for _, m := range marks {
@@ -528,8 +530,8 @@ func TestAnItemDosedFromTheSecondWeekIsMarkedWhereItsFirstBandOpens(t *testing.T
 
 	assertMarks(t, []ProtocolMark{
 		// Day 7, not day 0.
-		{Kind: MarkStart, Date: NewDate(2026, time.May, 17), From: nil, To: quarter},
-		{Kind: MarkTitration, Date: NewDate(2026, time.June, 7), From: &quarter, To: half},
+		{Kind: MarkStart, Date: civil.NewDate(2026, time.May, 17), From: nil, To: quarter},
+		{Kind: MarkTitration, Date: civil.NewDate(2026, time.June, 7), From: &quarter, To: half},
 	}, ProtocolMarks(washIn, sema, wholeCourse))
 
 	// Bands under it: the first opens the same day as the mark, the last closes at its own
@@ -538,10 +540,10 @@ func TestAnItemDosedFromTheSecondWeekIsMarkedWhereItsFirstBandOpens(t *testing.T
 	if len(bands) != 2 {
 		t.Fatalf("two phases, two bands, got %d", len(bands))
 	}
-	if bands[0].Range.From != NewDate(2026, time.May, 17) {
+	if bands[0].Range.From != civil.NewDate(2026, time.May, 17) {
 		t.Errorf("the first band opens with the mark, got %v", bands[0].Range.From)
 	}
-	if last := bands[len(bands)-1].Range.Through; last != NewDate(2026, time.July, 4) {
+	if last := bands[len(bands)-1].Range.Through; last != civil.NewDate(2026, time.July, 4) {
 		t.Errorf("the last band closes at its own phase's end, got %v", last)
 	}
 }
@@ -571,8 +573,8 @@ func TestTheSeedTitratesOnTheDaysThePrototypesScheduleDoesAndNotItsChart(t *test
 	}
 
 	if len(titrations) != 2 ||
-		titrations[0].Date != NewDate(2026, time.June, 7) ||
-		titrations[1].Date != NewDate(2026, time.July, 5) {
+		titrations[0].Date != civil.NewDate(2026, time.June, 7) ||
+		titrations[1].Date != civil.NewDate(2026, time.July, 5) {
 		t.Fatalf("7 June and 5 July, got %v", titrations)
 	}
 	for i, want := range []int{28, 56} {

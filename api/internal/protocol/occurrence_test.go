@@ -3,6 +3,8 @@ package protocol
 import (
 	"testing"
 	"time"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
 // The minimal protocol §03 describes: a 12-week cycle starting Sunday
@@ -10,8 +12,8 @@ import (
 // BPC-157 daily at 08:00 and 20:00.
 
 var (
-	cycleStart = NewDate(2026, time.May, 10)
-	patient    = UserID("p-1")
+	cycleStart = civil.NewDate(2026, time.May, 10)
+	patient    = civil.UserID("p-1")
 	protocolID = ProtocolID("pr-1")
 	sema       = ProtocolItemID("sema")
 	bpc        = ProtocolItemID("bpc")
@@ -33,7 +35,7 @@ var fixtureItems = []ProtocolItem{
 		CompoundID: compoundPtr("sema"),
 		Cadence:    CadenceWeekly,
 		DaysOfWeek: []time.Weekday{time.Sunday},
-		Times:      []Slot{{Hour: 7}},
+		Times:      []civil.Slot{{Hour: 7}},
 		Loggable:   true,
 	},
 	{
@@ -42,7 +44,7 @@ var fixtureItems = []ProtocolItem{
 		Kind:       KindInjection,
 		CompoundID: compoundPtr("bpc"),
 		Cadence:    CadenceDaily,
-		Times:      []Slot{{Hour: 8}, {Hour: 20}},
+		Times:      []civil.Slot{{Hour: 8}, {Hour: 20}},
 		Loggable:   true,
 	},
 }
@@ -61,17 +63,17 @@ func compoundPtr(raw string) *CompoundID {
 	return &id
 }
 
-func slot(hour, minute int) *Slot { return &Slot{Hour: hour, Minute: minute} }
+func slot(hour, minute int) *civil.Slot { return &civil.Slot{Hour: hour, Minute: minute} }
 
 func fixturePlan() Plan {
 	return Plan{Protocol: fixtureProtocol, Items: fixtureItems, Phases: fixturePhases}
 }
 
-func occurrencesOn(d Date, logged []LoggedSlot, today Date) []Occurrence {
+func occurrencesOn(d civil.Date, logged []LoggedSlot, today civil.Date) []Occurrence {
 	return OccurrencesFor(fixturePlan(), logged, d, today)
 }
 
-func semaDoseOn(t *testing.T, d Date) Dose {
+func semaDoseOn(t *testing.T, d civil.Date) Dose {
 	t.Helper()
 	for _, o := range occurrencesOn(d, nil, d) {
 		if o.ItemID == sema {
@@ -87,14 +89,14 @@ func semaDoseOn(t *testing.T, d Date) Dose {
 
 func TestTheCycleWeekCountsFromTheProtocolStartAndNotFromAConstant(t *testing.T) {
 	for _, c := range []struct {
-		date Date
+		date civil.Date
 		week int
 	}{
-		{NewDate(2026, time.May, 10), 1},
-		{NewDate(2026, time.May, 16), 1},
-		{NewDate(2026, time.May, 17), 2},
-		{NewDate(2026, time.May, 31), 4},
-		{NewDate(2026, time.August, 1), 12},
+		{civil.NewDate(2026, time.May, 10), 1},
+		{civil.NewDate(2026, time.May, 16), 1},
+		{civil.NewDate(2026, time.May, 17), 2},
+		{civil.NewDate(2026, time.May, 31), 4},
+		{civil.NewDate(2026, time.August, 1), 12},
 	} {
 		week, ok := CycleWeek(fixtureProtocol, c.date)
 		if !ok || week != c.week {
@@ -104,8 +106,8 @@ func TestTheCycleWeekCountsFromTheProtocolStartAndNotFromAConstant(t *testing.T)
 }
 
 func TestADateOutsideTheCycleHasNoWeekAndNoOccurrences(t *testing.T) {
-	before := NewDate(2026, time.May, 9)
-	after := NewDate(2026, time.August, 2)
+	before := civil.NewDate(2026, time.May, 9)
+	after := civil.NewDate(2026, time.August, 2)
 
 	if _, ok := CycleWeek(fixtureProtocol, before); ok {
 		t.Error("the day before the protocol began")
@@ -122,8 +124,8 @@ func TestADateOutsideTheCycleHasNoWeekAndNoOccurrences(t *testing.T) {
 }
 
 func TestAWeeklyItemFallsOnItsWeekdayAndNowhereElse(t *testing.T) {
-	sunday := NewDate(2026, time.May, 17)
-	monday := NewDate(2026, time.May, 18)
+	sunday := civil.NewDate(2026, time.May, 17)
+	monday := civil.NewDate(2026, time.May, 18)
 
 	if got := countOf(occurrencesOn(sunday, nil, sunday), sema); got != 1 {
 		t.Errorf("one Семаглутид on its weekday, got %d", got)
@@ -134,16 +136,16 @@ func TestAWeeklyItemFallsOnItsWeekdayAndNowhereElse(t *testing.T) {
 }
 
 func TestADailyItemEmitsEveryTimeItIsScheduledFor(t *testing.T) {
-	day := NewDate(2026, time.May, 18)
+	day := civil.NewDate(2026, time.May, 18)
 
-	var times []Slot
+	var times []civil.Slot
 	for _, o := range occurrencesOn(day, nil, day) {
 		if o.ItemID == bpc {
 			times = append(times, o.Time)
 		}
 	}
 
-	want := []Slot{{Hour: 8}, {Hour: 20}}
+	want := []civil.Slot{{Hour: 8}, {Hour: 20}}
 	if !slotsEqual(times, want) {
 		t.Errorf("both slots, in order: want %v got %v", want, times)
 	}
@@ -153,11 +155,11 @@ func TestAnOccurrenceCarriesTheKindOfTheItemItCameFrom(t *testing.T) {
 	// Replacing Kind with a constant survives everything else: occurrencesEqual is its only
 	// reader, and in the completed-course test it compares two equally-mutated sides. The
 	// calendar draws a needle, a pill or a scale from this field.
-	day := NewDate(2026, time.May, 18)
+	day := civil.NewDate(2026, time.May, 18)
 	weighIn := fixtureItems[1]
 	weighIn.ID = ProtocolItemID("scale")
 	weighIn.Kind = KindWeighIn
-	weighIn.Times = []Slot{{Hour: 9}}
+	weighIn.Times = []civil.Slot{{Hour: 9}}
 	plan := Plan{
 		Protocol: fixtureProtocol,
 		Items:    append(append([]ProtocolItem{}, fixtureItems...), weighIn),
@@ -180,17 +182,17 @@ func TestAnOccurrenceCarriesTheKindOfTheItemItCameFrom(t *testing.T) {
 func TestTheDoseFollowsTheTitrationPhaseForThatWeek(t *testing.T) {
 	// Boundary weeks are what an off-by-one gets wrong, so all six are asserted.
 	for _, c := range []struct {
-		date Date
+		date civil.Date
 		dose Dose
 	}{
-		{NewDate(2026, time.May, 10), Dose{Value: 0.25, Unit: MG}},
-		{NewDate(2026, time.May, 31), Dose{Value: 0.25, Unit: MG}},
-		{NewDate(2026, time.June, 7), Dose{Value: 0.5, Unit: MG}},
-		{NewDate(2026, time.June, 28), Dose{Value: 0.5, Unit: MG}},
-		{NewDate(2026, time.July, 5), Dose{Value: 1.0, Unit: MG}},
+		{civil.NewDate(2026, time.May, 10), Dose{Value: 0.25, Unit: MG}},
+		{civil.NewDate(2026, time.May, 31), Dose{Value: 0.25, Unit: MG}},
+		{civil.NewDate(2026, time.June, 7), Dose{Value: 0.5, Unit: MG}},
+		{civil.NewDate(2026, time.June, 28), Dose{Value: 0.5, Unit: MG}},
+		{civil.NewDate(2026, time.July, 5), Dose{Value: 1.0, Unit: MG}},
 		// 26 July, not 1 August: the latter is a Saturday, and Семаглутид falls on the
 		// cycle's start weekday.
-		{NewDate(2026, time.July, 26), Dose{Value: 1.0, Unit: MG}},
+		{civil.NewDate(2026, time.July, 26), Dose{Value: 1.0, Unit: MG}},
 	} {
 		if got := semaDoseOn(t, c.date); got != c.dose {
 			t.Errorf("%v: want %v got %v", c.date, c.dose, got)
@@ -199,7 +201,7 @@ func TestTheDoseFollowsTheTitrationPhaseForThatWeek(t *testing.T) {
 }
 
 func TestALoggedEventMarksItsOccurrenceDoneAndLeavesTheOthersAlone(t *testing.T) {
-	date := NewDate(2026, time.May, 17)
+	date := civil.NewDate(2026, time.May, 17)
 
 	occurrences := occurrencesOn(date, []LoggedSlot{{ItemID: sema, Date: date, Time: slot(7, 0)}}, date)
 
@@ -215,8 +217,8 @@ func TestALoggedEventMarksItsOccurrenceDoneAndLeavesTheOthersAlone(t *testing.T)
 
 func TestAnEventOnAnotherDayDoesNotSatisfyTodaysOccurrence(t *testing.T) {
 	// Matching on item alone would mark every Sunday done for the rest of the cycle.
-	logged := LoggedSlot{ItemID: sema, Date: NewDate(2026, time.May, 17), Time: slot(7, 0)}
-	later := NewDate(2026, time.May, 24)
+	logged := LoggedSlot{ItemID: sema, Date: civil.NewDate(2026, time.May, 17), Time: slot(7, 0)}
+	later := civil.NewDate(2026, time.May, 24)
 
 	if got := statusOfItem(occurrencesOn(later, []LoggedSlot{logged}, later), sema); got == StatusDone {
 		t.Error("last Sunday's injection closed this Sunday's slot")
@@ -224,17 +226,17 @@ func TestAnEventOnAnotherDayDoesNotSatisfyTodaysOccurrence(t *testing.T) {
 }
 
 func TestAPastOccurrenceWithNoEventIsMissedAFutureOneScheduledAndTodaysPending(t *testing.T) {
-	today := NewDate(2026, time.May, 31)
+	today := civil.NewDate(2026, time.May, 31)
 
-	assertEveryStatus(t, occurrencesOn(NewDate(2026, time.May, 17), nil, today), StatusMissed)
-	assertEveryStatus(t, occurrencesOn(NewDate(2026, time.June, 7), nil, today), StatusScheduled)
+	assertEveryStatus(t, occurrencesOn(civil.NewDate(2026, time.May, 17), nil, today), StatusMissed)
+	assertEveryStatus(t, occurrencesOn(civil.NewDate(2026, time.June, 7), nil, today), StatusScheduled)
 	assertEveryStatus(t, occurrencesOn(today, nil, today), StatusPending)
 }
 
 func TestAnEventWithoutASlotSatisfiesNoOccurrence(t *testing.T) {
 	// Measured: one BPC event with a null scheduledForTime once marked both 08:00 and
 	// 20:00 DONE, telling a patient the evening injection was already done.
-	date := NewDate(2026, time.May, 18)
+	date := civil.NewDate(2026, time.May, 18)
 
 	for _, o := range occurrencesOn(date, []LoggedSlot{{ItemID: bpc, Date: date}}, date) {
 		if o.ItemID == bpc && o.Status == StatusDone {
@@ -244,14 +246,14 @@ func TestAnEventWithoutASlotSatisfiesNoOccurrence(t *testing.T) {
 }
 
 func TestAnEventMatchesOnlyTheSlotItWasLoggedAgainst(t *testing.T) {
-	date := NewDate(2026, time.May, 18)
+	date := civil.NewDate(2026, time.May, 18)
 
 	occurrences := occurrencesOn(date, []LoggedSlot{{ItemID: bpc, Date: date, Time: slot(8, 0)}}, date)
 
-	if got := statusAt(occurrences, bpc, Slot{Hour: 8}); got != StatusDone {
+	if got := statusAt(occurrences, bpc, civil.Slot{Hour: 8}); got != StatusDone {
 		t.Errorf("the morning slot is done, got %v", got)
 	}
-	if got := statusAt(occurrences, bpc, Slot{Hour: 20}); got == StatusDone {
+	if got := statusAt(occurrences, bpc, civil.Slot{Hour: 20}); got == StatusDone {
 		t.Error("the evening slot is still due")
 	}
 }
@@ -266,7 +268,7 @@ func TestAnItemScheduledSeveralDaysAWeekFallsOnEachOfThem(t *testing.T) {
 		CompoundID: compoundPtr("tb"),
 		Cadence:    CadenceNPerWeek,
 		DaysOfWeek: []time.Weekday{time.Monday, time.Wednesday, time.Friday},
-		Times:      []Slot{{Hour: 9}},
+		Times:      []civil.Slot{{Hour: 9}},
 		Loggable:   true,
 	}
 	plan := Plan{
@@ -275,15 +277,15 @@ func TestAnItemScheduledSeveralDaysAWeekFallsOnEachOfThem(t *testing.T) {
 		Phases:   map[ProtocolItemID][]ProtocolPhase{thrice.ID: fixturePhases[bpc]},
 	}
 
-	var hit []Date
+	var hit []civil.Date
 	for day := 18; day <= 24; day++ {
-		d := NewDate(2026, time.May, day)
+		d := civil.NewDate(2026, time.May, day)
 		if len(OccurrencesFor(plan, nil, d, d)) > 0 {
 			hit = append(hit, d)
 		}
 	}
 
-	want := []Date{NewDate(2026, time.May, 18), NewDate(2026, time.May, 20), NewDate(2026, time.May, 22)}
+	want := []civil.Date{civil.NewDate(2026, time.May, 18), civil.NewDate(2026, time.May, 20), civil.NewDate(2026, time.May, 22)}
 	if !datesEqual(hit, want) {
 		t.Errorf("want %v got %v", want, hit)
 	}
@@ -292,7 +294,7 @@ func TestAnItemScheduledSeveralDaysAWeekFallsOnEachOfThem(t *testing.T) {
 func TestACancelledProtocolGeneratesNothing(t *testing.T) {
 	// Measured: a stopped course once produced a full schedule and kept telling the
 	// patient to inject.
-	date := NewDate(2026, time.May, 18)
+	date := civil.NewDate(2026, time.May, 18)
 	cancelled := fixturePlan()
 	cancelled.Protocol.Status = StatusCancelled
 
@@ -304,7 +306,7 @@ func TestACancelledProtocolGeneratesNothing(t *testing.T) {
 func TestACompletedProtocolKeepsItsHistory(t *testing.T) {
 	// An earlier guard blanked COMPLETED too, and every patient reaches it after twelve
 	// weeks — their calendar would empty retroactively.
-	date := NewDate(2026, time.May, 18)
+	date := civil.NewDate(2026, time.May, 18)
 	done := fixturePlan()
 	done.Protocol.Status = StatusCompleted
 
@@ -343,11 +345,11 @@ func TestADoseLoggedForOneItemLeavesAnotherItemInTheSameSlotAlone(t *testing.T) 
 	// Measured: deleting `event.protocolItemId == item.id` from `statusOf` left the
 	// suite green, because no fixture put two items in the same (date, slot) before this
 	// one. Without the check, logging one of two same-slot injections greys both.
-	sunday := NewDate(2026, time.May, 17)
-	at := Slot{Hour: 8}
+	sunday := civil.NewDate(2026, time.May, 17)
+	at := civil.Slot{Hour: 8}
 	collide := make([]ProtocolItem, len(fixtureItems))
 	copy(collide, fixtureItems)
-	collide[0].Times = []Slot{at}
+	collide[0].Times = []civil.Slot{at}
 	plan := Plan{Protocol: fixtureProtocol, Items: collide, Phases: fixturePhases}
 
 	var eight []Occurrence
@@ -387,7 +389,7 @@ func statusOfItem(occurrences []Occurrence, item ProtocolItemID) OccurrenceStatu
 	return OccurrenceStatus("")
 }
 
-func statusAt(occurrences []Occurrence, item ProtocolItemID, at Slot) OccurrenceStatus {
+func statusAt(occurrences []Occurrence, item ProtocolItemID, at civil.Slot) OccurrenceStatus {
 	for _, o := range occurrences {
 		if o.ItemID == item && o.Time == at {
 			return o.Status
@@ -408,7 +410,7 @@ func assertEveryStatus(t *testing.T, occurrences []Occurrence, want OccurrenceSt
 	}
 }
 
-func slotsEqual(a, b []Slot) bool {
+func slotsEqual(a, b []civil.Slot) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -420,7 +422,7 @@ func slotsEqual(a, b []Slot) bool {
 	return true
 }
 
-func datesEqual(a, b []Date) bool {
+func datesEqual(a, b []civil.Date) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -459,8 +461,8 @@ func TestALoggedDoseStaysDoneOnceTheDayHasPassed(t *testing.T) {
 	// asks OccurrencesFor for (today, today), so the row suite cannot vary the axis at all.
 	// The schedule would grey out every injection the patient logged the moment midnight
 	// passed. The Kotlin suite has the identical hole.
-	injected := NewDate(2026, time.May, 17)
-	weeksLater := NewDate(2026, time.May, 31)
+	injected := civil.NewDate(2026, time.May, 17)
+	weeksLater := civil.NewDate(2026, time.May, 31)
 	logged := []LoggedSlot{{ItemID: sema, Date: injected, Time: slot(7, 0)}}
 
 	occurrences := occurrencesOn(injected, logged, weeksLater)
@@ -470,7 +472,7 @@ func TestALoggedDoseStaysDoneOnceTheDayHasPassed(t *testing.T) {
 	}
 	// The sibling has to stay missed, or the assertion above would pass on a function that
 	// simply never reports a miss.
-	if got := statusAt(occurrences, bpc, Slot{Hour: 8}); got != StatusMissed {
+	if got := statusAt(occurrences, bpc, civil.Slot{Hour: 8}); got != StatusMissed {
 		t.Errorf("the injection nobody logged that day is missed, got %v", got)
 	}
 }
@@ -481,9 +483,9 @@ func TestTwoSlotsInsideOneHourAreLoggedApart(t *testing.T) {
 	// tests green. §03's times[] admits 08:00 and 08:30 — the prototype already prescribes a
 	// :30 time — and one log would then close both. Same defect class as the slotless event
 	// above, on the half of the slot nothing measured.
-	day := NewDate(2026, time.May, 18)
+	day := civil.NewDate(2026, time.May, 18)
 	twice := fixtureItems[1]
-	twice.Times = []Slot{{Hour: 8}, {Hour: 8, Minute: 30}}
+	twice.Times = []civil.Slot{{Hour: 8}, {Hour: 8, Minute: 30}}
 	plan := Plan{Protocol: fixtureProtocol, Items: []ProtocolItem{twice}, Phases: fixturePhases}
 
 	occurrences := OccurrencesFor(plan, []LoggedSlot{{ItemID: bpc, Date: day, Time: slot(8, 0)}}, day, day)
@@ -491,10 +493,10 @@ func TestTwoSlotsInsideOneHourAreLoggedApart(t *testing.T) {
 	if len(occurrences) != 2 {
 		t.Fatalf("the fixture has to put two slots inside one hour, got %d", len(occurrences))
 	}
-	if got := statusAt(occurrences, bpc, Slot{Hour: 8}); got != StatusDone {
+	if got := statusAt(occurrences, bpc, civil.Slot{Hour: 8}); got != StatusDone {
 		t.Errorf("08:00 was logged, got %v", got)
 	}
-	if got := statusAt(occurrences, bpc, Slot{Hour: 8, Minute: 30}); got != StatusPending {
+	if got := statusAt(occurrences, bpc, civil.Slot{Hour: 8, Minute: 30}); got != StatusPending {
 		t.Errorf("08:30 was not, got %v", got)
 	}
 }
@@ -506,13 +508,13 @@ func TestACourseThatIsNotTwelveWeeksLongEndsWhereItsOwnLengthSays(t *testing.T) 
 	eight := fixtureProtocol
 	eight.Weeks = 8
 
-	if week, ok := CycleWeek(eight, NewDate(2026, time.July, 4)); !ok || week != 8 {
+	if week, ok := CycleWeek(eight, civil.NewDate(2026, time.July, 4)); !ok || week != 8 {
 		t.Errorf("4 July is week 8 of an eight-week course, got %d (%v)", week, ok)
 	}
-	if _, ok := CycleWeek(eight, NewDate(2026, time.July, 5)); ok {
+	if _, ok := CycleWeek(eight, civil.NewDate(2026, time.July, 5)); ok {
 		t.Error("5 July is past an eight-week course")
 	}
-	if got := eight.LastPrescribedDay(); got != NewDate(2026, time.July, 4) {
+	if got := eight.LastPrescribedDay(); got != civil.NewDate(2026, time.July, 4) {
 		t.Errorf("day 55 is the last an eight-week course prescribes, got %v", got)
 	}
 }
@@ -521,7 +523,7 @@ func TestEachOccurrenceOwnsItsDose(t *testing.T) {
 	// One *Dose hoisted out of the slot loop tied BPC-157's morning and evening occurrences
 	// together: a caller writing through one changed the other. Kotlin shared an immutable
 	// Dose and was safe; a pointer is not.
-	day := NewDate(2026, time.May, 18)
+	day := civil.NewDate(2026, time.May, 18)
 
 	occurrences := occurrencesOn(day, nil, day)
 	var bpcSlots []Occurrence

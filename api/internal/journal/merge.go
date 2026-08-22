@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
 // Tag is §03's «tags[] (7 fixed)», and the seven are the side effects.
@@ -38,8 +38,8 @@ const (
 // Entry is one day, and the day is the identity: a write updates it rather than
 // adding a second.
 type Entry struct {
-	PatientID protocol.UserID
-	EntryDate protocol.Date
+	PatientID civil.UserID
+	EntryDate civil.Date
 	Mood      *int
 	Energy    *int
 	Sleep     *int
@@ -51,7 +51,7 @@ type Entry struct {
 // CheckInDraft carries no source: the path decides it, so a caller cannot sign its
 // own write. Every field is optional — unnamed means «skipped», not «erase».
 type CheckInDraft struct {
-	EntryDate protocol.Date
+	EntryDate civil.Date
 	Mood      *int
 	Energy    *int
 	Sleep     *int
@@ -90,7 +90,7 @@ func (d CheckInDraft) ReadingsAreOnTheScale() bool {
 //
 // Nothing is written through to `existing`: the caller holds the row it read, and a
 // merge that edited it in place would leave the two disagreeing if the write failed.
-func Merge(existing *Entry, patient protocol.UserID, draft CheckInDraft, bornAs Source) Entry {
+func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Source) Entry {
 	merged := Entry{
 		PatientID: patient,
 		EntryDate: draft.EntryDate,

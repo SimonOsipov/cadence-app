@@ -1,6 +1,9 @@
 package inventory
 
-import "github.com/SimonOsipov/cadence-app/api/internal/protocol"
+import (
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
+	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
+)
 
 // §03: «low <25%», «expiring ≤14 d», «≤4 weeks supply».
 const (
@@ -16,18 +19,18 @@ type VialID string
 // migration that left them out.
 type Vial struct {
 	ID         VialID
-	PatientID  protocol.UserID
+	PatientID  civil.UserID
 	CompoundID protocol.CompoundID
 	// A label, not a number: «1 мг/мл» is what the vial says, and the clinic
 	// transcribes it rather than computing with it.
 	ConcentrationLabel string
 	TotalDoses         int
 	// Null until the vial is opened; that absence is the whole of «sealed».
-	OpenedAt       *protocol.Date
-	ExpiresOn      protocol.Date
+	OpenedAt       *civil.Date
+	ExpiresOn      civil.Date
 	Lot            *string
 	LocationRU     *string
-	DisposedAt     *protocol.Date
+	DisposedAt     *civil.Date
 	LabelPhotoPath *string
 }
 
@@ -69,7 +72,7 @@ const (
 // Expiring is tested before sealed deliberately. Unopened stock about to be wasted
 // is exactly the vial worth warning about, and an earlier order read sealed first
 // and said nothing.
-func StatusOf(vial Vial, drawnFrom []VialID, today protocol.Date) VialStatus {
+func StatusOf(vial Vial, drawnFrom []VialID, today civil.Date) VialStatus {
 	switch {
 	case vial.DisposedAt != nil:
 		return StatusDisposed
@@ -101,7 +104,7 @@ type Cabinet struct {
 	vials []Vial
 }
 
-func CabinetOf(patient protocol.UserID, vials []Vial) Cabinet {
+func CabinetOf(patient civil.UserID, vials []Vial) Cabinet {
 	var mine []Vial
 	for _, vial := range vials {
 		if vial.PatientID == patient {
@@ -132,7 +135,7 @@ func ReorderHintFor(
 	item protocol.ProtocolItem,
 	cabinet Cabinet,
 	drawnFrom []VialID,
-	today protocol.Date,
+	today civil.Date,
 ) *ReorderHint {
 	if item.CompoundID == nil {
 		return nil

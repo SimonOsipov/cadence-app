@@ -1,12 +1,15 @@
 package protocol
 
-import "time"
+import (
+	"time"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
+)
 
 // The typed ids of §03: eleven contexts hang off the same handful of foreign keys, and a
 // parameter list of strings is where a patient id ends up in a vial id's place with
 // everything still compiling.
 type (
-	UserID         string
 	CompoundID     string
 	ProtocolID     string
 	ProtocolItemID string
@@ -71,22 +74,22 @@ const (
 // prototype's hardcoded «week 4» against a frozen date is what it replaces.
 type Protocol struct {
 	ID        ProtocolID
-	PatientID UserID
-	StartDate Date
+	PatientID civil.UserID
+	StartDate civil.Date
 	Weeks     int
 	Status    ProtocolStatus
-	CreatedBy *UserID
+	CreatedBy *civil.UserID
 	Notes     *string
 }
 
 // WeekStart is the one place this arithmetic lives: three copies of «(N − 1) × 7» were
 // three chances to disagree.
-func (p Protocol) WeekStart(week int) Date {
+func (p Protocol) WeekStart(week int) civil.Date {
 	return p.StartDate.AddDays((week - 1) * daysPerWeek)
 }
 
 // LastPrescribedDay is day `weeks × 7 − 1`.
-func (p Protocol) LastPrescribedDay() Date {
+func (p Protocol) LastPrescribedDay() civil.Date {
 	return p.StartDate.AddDays(p.Weeks*daysPerWeek - 1)
 }
 
@@ -99,7 +102,7 @@ type ProtocolItem struct {
 	CompoundID *CompoundID
 	Cadence    Cadence
 	DaysOfWeek []time.Weekday
-	Times      []Slot
+	Times      []civil.Slot
 	Loggable   bool
 }
 
@@ -124,6 +127,6 @@ type Plan struct {
 // import runs one way, and protocol never learns what a dose event is.
 type LoggedSlot struct {
 	ItemID ProtocolItemID
-	Date   Date
-	Time   *Slot
+	Date   civil.Date
+	Time   *civil.Slot
 }

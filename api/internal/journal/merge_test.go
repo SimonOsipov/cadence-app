@@ -4,12 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
 var (
-	patient = protocol.UserID("p-1")
-	day     = protocol.NewDate(2026, time.May, 31)
+	patient = civil.UserID("p-1")
+	day     = civil.NewDate(2026, time.May, 31)
 )
 
 func text(s string) *string { return &s }

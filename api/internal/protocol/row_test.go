@@ -4,17 +4,19 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
 // The prototype's three rows: a weekly injection, a daily one, and a nightly supplement.
 
 var (
-	rowStart = NewDate(2026, time.May, 10)
+	rowStart = civil.NewDate(2026, time.May, 10)
 	rowPID   = ProtocolID("pr")
 	glycine  = ProtocolItemID("glycine")
 )
 
-func rowItem(id ProtocolItemID, kind ItemKind, times []Slot, days []time.Weekday) ProtocolItem {
+func rowItem(id ProtocolItemID, kind ItemKind, times []civil.Slot, days []time.Weekday) ProtocolItem {
 	cadence := CadenceDaily
 	if len(days) > 0 {
 		cadence = CadenceWeekly
@@ -33,9 +35,9 @@ func rowItem(id ProtocolItemID, kind ItemKind, times []Slot, days []time.Weekday
 }
 
 var rowItems = []ProtocolItem{
-	rowItem(sema, KindInjection, []Slot{{Hour: 7}}, []time.Weekday{time.Sunday}),
-	rowItem(bpc, KindInjection, []Slot{{Hour: 8}, {Hour: 20}}, nil),
-	rowItem(glycine, KindSupplement, []Slot{{Hour: 21, Minute: 30}}, nil),
+	rowItem(sema, KindInjection, []civil.Slot{{Hour: 7}}, []time.Weekday{time.Sunday}),
+	rowItem(bpc, KindInjection, []civil.Slot{{Hour: 8}, {Hour: 20}}, nil),
+	rowItem(glycine, KindSupplement, []civil.Slot{{Hour: 21, Minute: 30}}, nil),
 }
 
 var rowPhases = map[ProtocolItemID][]ProtocolPhase{
@@ -57,7 +59,7 @@ func rowPlan(status ProtocolStatus) Plan {
 	return Plan{
 		Protocol: Protocol{
 			ID:        rowPID,
-			PatientID: UserID("p"),
+			PatientID: civil.UserID("p"),
 			StartDate: rowStart,
 			Weeks:     12,
 			Status:    status,
@@ -67,7 +69,7 @@ func rowPlan(status ProtocolStatus) Plan {
 	}
 }
 
-func rowsOn(today Date, logged []LoggedSlot, status ProtocolStatus) []ProtocolRow {
+func rowsOn(today civil.Date, logged []LoggedSlot, status ProtocolStatus) []ProtocolRow {
 	return WeekProtocolRows(rowPlan(status), rowCompounds, logged, today)
 }
 
@@ -85,7 +87,7 @@ func rowFor(t *testing.T, rows []ProtocolRow, item ProtocolItemID) ProtocolRow {
 func TestEveryItemOfTheProtocolGetsARowWhateverDayItIs(t *testing.T) {
 	// The strip is «Протокол этой недели», not «сегодня»: a projection built from the day's
 	// occurrences would drop the weekly injection six days out of seven.
-	wednesday := NewDate(2026, time.May, 20)
+	wednesday := civil.NewDate(2026, time.May, 20)
 
 	rows := rowsOn(wednesday, nil, StatusActive)
 
@@ -104,12 +106,12 @@ func TestTheRowCarriesTheDoseOfTheWeekItIsIn(t *testing.T) {
 	// Not the protocol's first phase: the prototype's row is hardcoded «0,25 мг» for all
 	// twelve weeks.
 	for _, c := range []struct {
-		today Date
+		today civil.Date
 		dose  Dose
 	}{
-		{NewDate(2026, time.May, 31), Dose{Value: 0.25, Unit: MG}},
-		{NewDate(2026, time.June, 10), Dose{Value: 0.5, Unit: MG}},
-		{NewDate(2026, time.July, 8), Dose{Value: 1.0, Unit: MG}},
+		{civil.NewDate(2026, time.May, 31), Dose{Value: 0.25, Unit: MG}},
+		{civil.NewDate(2026, time.June, 10), Dose{Value: 0.5, Unit: MG}},
+		{civil.NewDate(2026, time.July, 8), Dose{Value: 1.0, Unit: MG}},
 	} {
 		row := rowFor(t, rowsOn(c.today, nil, StatusActive), sema)
 		if row.Dose == nil || *row.Dose != c.dose {
@@ -119,7 +121,7 @@ func TestTheRowCarriesTheDoseOfTheWeekItIsIn(t *testing.T) {
 }
 
 func TestAnItemWithNoPhasesHasNoDoseRatherThanAWrongOne(t *testing.T) {
-	row := rowFor(t, rowsOn(NewDate(2026, time.May, 20), nil, StatusActive), glycine)
+	row := rowFor(t, rowsOn(civil.NewDate(2026, time.May, 20), nil, StatusActive), glycine)
 
 	if row.Dose != nil {
 		t.Errorf("glycine has no phases and so no dose, got %v", *row.Dose)
@@ -127,7 +129,7 @@ func TestAnItemWithNoPhasesHasNoDoseRatherThanAWrongOne(t *testing.T) {
 }
 
 func TestTodaysStatusFollowsTheDayOccurrenceAndNotTheWeek(t *testing.T) {
-	sunday := NewDate(2026, time.May, 31)
+	sunday := civil.NewDate(2026, time.May, 31)
 	logged := []LoggedSlot{{ItemID: sema, Date: sunday, Time: slot(7, 0)}}
 
 	before := rowFor(t, rowsOn(sunday, nil, StatusActive), sema)
@@ -142,7 +144,7 @@ func TestTodaysStatusFollowsTheDayOccurrenceAndNotTheWeek(t *testing.T) {
 }
 
 func TestAnItemNotDueTodayHasNoStatusForToday(t *testing.T) {
-	wednesday := NewDate(2026, time.May, 20)
+	wednesday := civil.NewDate(2026, time.May, 20)
 	rows := rowsOn(wednesday, nil, StatusActive)
 
 	if row := rowFor(t, rows, sema); row.TodayStatus != nil {
@@ -154,7 +156,7 @@ func TestAnItemNotDueTodayHasNoStatusForToday(t *testing.T) {
 }
 
 func TestARowNamesItsCompoundRatherThanCarryingAnID(t *testing.T) {
-	row := rowFor(t, rowsOn(NewDate(2026, time.May, 20), nil, StatusActive), sema)
+	row := rowFor(t, rowsOn(civil.NewDate(2026, time.May, 20), nil, StatusActive), sema)
 
 	if row.Compound == nil || row.Compound.NameRU != "SEMA" {
 		t.Errorf("the row carries the name, got %v", row.Compound)
@@ -164,7 +166,7 @@ func TestARowNamesItsCompoundRatherThanCarryingAnID(t *testing.T) {
 func TestEachRowGetsItsOwnCompoundAndNotTheFirstOne(t *testing.T) {
 	// An earlier version passed an empty compound list, asserting "no compounds" rather
 	// than the per-row mapping.
-	rows := rowsOn(NewDate(2026, time.May, 20), nil, StatusActive)
+	rows := rowsOn(civil.NewDate(2026, time.May, 20), nil, StatusActive)
 
 	want := []string{"SEMA", "BPC", "GLYCINE"}
 	// Checked before indexing: a short slice here panics, and a panic takes the whole test
@@ -187,7 +189,7 @@ func TestAnItemReferencingAnUnknownCompoundHasNoneRatherThanTheWrongOne(t *testi
 		}
 	}
 
-	rows := WeekProtocolRows(rowPlan(StatusActive), onlyBPC, nil, NewDate(2026, time.May, 20))
+	rows := WeekProtocolRows(rowPlan(StatusActive), onlyBPC, nil, civil.NewDate(2026, time.May, 20))
 
 	if row := rowFor(t, rows, sema); row.Compound != nil {
 		t.Errorf("no compound rather than the wrong one, got %v", row.Compound)
@@ -198,7 +200,7 @@ func TestAnItemReferencingAnUnknownCompoundHasNoneRatherThanTheWrongOne(t *testi
 }
 
 func TestTheRowCarriesTheKindTheStripDrawsItBy(t *testing.T) {
-	rows := rowsOn(NewDate(2026, time.May, 20), nil, StatusActive)
+	rows := rowsOn(civil.NewDate(2026, time.May, 20), nil, StatusActive)
 
 	want := []ItemKind{KindInjection, KindInjection, KindSupplement}
 	if len(rows) != len(want) {
@@ -216,13 +218,13 @@ func TestTheRowCarriesTheCadenceAndEverySlotOfItsItem(t *testing.T) {
 	// and the aliasing test writes row.Times[0] without ever checking the slice is whole.
 	// The strip renders «еженедельно / ежедневно» from the first and draws a chip per slot
 	// from the second, so a truncation drops BPC-157's 20:00 injection off the row in silence.
-	rows := rowsOn(NewDate(2026, time.May, 20), nil, StatusActive)
+	rows := rowsOn(civil.NewDate(2026, time.May, 20), nil, StatusActive)
 
 	weekly := rowFor(t, rows, sema)
 	if weekly.Cadence != CadenceWeekly {
 		t.Errorf("Семаглутид is weekly, got %v", weekly.Cadence)
 	}
-	if !slotsEqual(weekly.Times, []Slot{{Hour: 7}}) {
+	if !slotsEqual(weekly.Times, []civil.Slot{{Hour: 7}}) {
 		t.Errorf("one slot at 07:00, got %v", weekly.Times)
 	}
 
@@ -230,22 +232,22 @@ func TestTheRowCarriesTheCadenceAndEverySlotOfItsItem(t *testing.T) {
 	if daily.Cadence != CadenceDaily {
 		t.Errorf("BPC-157 is daily, got %v", daily.Cadence)
 	}
-	if !slotsEqual(daily.Times, []Slot{{Hour: 8}, {Hour: 20}}) {
+	if !slotsEqual(daily.Times, []civil.Slot{{Hour: 8}, {Hour: 20}}) {
 		t.Errorf("both slots, in order, got %v", daily.Times)
 	}
 }
 
 func TestACancelledProtocolHasNoStrip(t *testing.T) {
-	if got := rowsOn(NewDate(2026, time.May, 20), nil, StatusCancelled); len(got) != 0 {
+	if got := rowsOn(civil.NewDate(2026, time.May, 20), nil, StatusCancelled); len(got) != 0 {
 		t.Errorf("a cancelled course has no strip, got %v", got)
 	}
 }
 
 func TestADateOutsideTheCycleHasNoStrip(t *testing.T) {
-	if got := rowsOn(NewDate(2026, time.May, 9), nil, StatusActive); len(got) != 0 {
+	if got := rowsOn(civil.NewDate(2026, time.May, 9), nil, StatusActive); len(got) != 0 {
 		t.Errorf("before the course, got %v", got)
 	}
-	if got := rowsOn(NewDate(2026, time.August, 3), nil, StatusActive); len(got) != 0 {
+	if got := rowsOn(civil.NewDate(2026, time.August, 3), nil, StatusActive); len(got) != 0 {
 		t.Errorf("after the course, got %v", got)
 	}
 }
@@ -253,7 +255,7 @@ func TestADateOutsideTheCycleHasNoStrip(t *testing.T) {
 func TestATwiceDailyItemIsNotDoneUntilBothSlotsAre(t *testing.T) {
 	// The first slot was read for the whole day once: logging the morning injection said
 	// «Сегодня · записано» with the 20:00 one still due.
-	day := NewDate(2026, time.May, 20)
+	day := civil.NewDate(2026, time.May, 20)
 	bpcStatus := func(logged []LoggedSlot) OccurrenceStatus {
 		row := rowFor(t, rowsOn(day, logged, StatusActive), bpc)
 		if row.TodayStatus == nil {
@@ -288,12 +290,12 @@ func TestTheStripCarriesWhichItemsCanBeLogged(t *testing.T) {
 	// of carried — measured, with the whole suite green. §03 gives `protocol_items.loggable`
 	// a column of its own, and an injection the clinic has stopped logging is what that
 	// column is for.
-	retired := rowItem(ProtocolItemID("retired"), KindInjection, []Slot{{Hour: 6}}, nil)
+	retired := rowItem(ProtocolItemID("retired"), KindInjection, []civil.Slot{{Hour: 6}}, nil)
 	retired.Loggable = false
 	plan := rowPlan(StatusActive)
 	plan.Items = append(append([]ProtocolItem{}, rowItems...), retired)
 
-	rows := WeekProtocolRows(plan, rowCompounds, nil, NewDate(2026, time.May, 20))
+	rows := WeekProtocolRows(plan, rowCompounds, nil, civil.NewDate(2026, time.May, 20))
 
 	want := map[ProtocolItemID]bool{sema: true, bpc: true, glycine: false, retired.ID: false}
 	if len(rows) != len(want) {
@@ -321,7 +323,7 @@ func TestARowOwnsWhatItCarriesRatherThanPointingIntoTheCallers(t *testing.T) {
 	}
 	plan.Phases = map[ProtocolItemID][]ProtocolPhase{sema: slices.Clone(rowPhases[sema])}
 
-	rows := WeekProtocolRows(plan, compounds, nil, NewDate(2026, time.May, 31))
+	rows := WeekProtocolRows(plan, compounds, nil, civil.NewDate(2026, time.May, 31))
 
 	row := rowFor(t, rows, sema)
 	// Guarded like the Dose write below: with the regression present these dereference nil
@@ -338,8 +340,8 @@ func TestARowOwnsWhatItCarriesRatherThanPointingIntoTheCallers(t *testing.T) {
 		t.Errorf("writing through the row edited the compound table: %v", compounds[0].NameRU)
 	}
 
-	row.Times[0] = Slot{Hour: 23}
-	if plan.Items[0].Times[0] != (Slot{Hour: 7}) {
+	row.Times[0] = civil.Slot{Hour: 23}
+	if plan.Items[0].Times[0] != (civil.Slot{Hour: 7}) {
 		t.Errorf("writing through the row edited the plan's slots: %v", plan.Items[0].Times[0])
 	}
 

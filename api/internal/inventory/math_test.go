@@ -5,17 +5,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
 
 var (
-	today   = protocol.NewDate(2026, time.May, 31)
-	patient = protocol.UserID("p-1")
+	today   = civil.NewDate(2026, time.May, 31)
+	patient = civil.UserID("p-1")
 	sema    = protocol.CompoundID("sema")
 	nextID  int
 )
 
-func vial(totalDoses int, openedAt *protocol.Date, expiresOn protocol.Date) Vial {
+func vial(totalDoses int, openedAt *civil.Date, expiresOn civil.Date) Vial {
 	nextID++
 
 	return Vial{
@@ -29,13 +30,13 @@ func vial(totalDoses int, openedAt *protocol.Date, expiresOn protocol.Date) Vial
 	}
 }
 
-func day(year int, month time.Month, d int) *protocol.Date {
-	date := protocol.NewDate(year, month, d)
+func day(year int, month time.Month, d int) *civil.Date {
+	date := civil.NewDate(year, month, d)
 
 	return &date
 }
 
-var farOff = protocol.NewDate(2026, time.December, 31)
+var farOff = civil.NewDate(2026, time.December, 31)
 
 // An item whose cadence gives the weekly rate each case needs.
 func weeklyItem(compound protocol.CompoundID, daysAWeek int) protocol.ProtocolItem {
@@ -51,7 +52,7 @@ func weeklyItem(compound protocol.CompoundID, daysAWeek int) protocol.ProtocolIt
 		CompoundID: &compound,
 		Cadence:    protocol.CadenceWeekly,
 		DaysOfWeek: days,
-		Times:      []protocol.Slot{{Hour: 7}},
+		Times:      []civil.Slot{{Hour: 7}},
 		Loggable:   true,
 	}
 }
@@ -134,8 +135,8 @@ func TestAVialBelowAQuarterIsLow(t *testing.T) {
 }
 
 func TestExpiryOutranksLowStock(t *testing.T) {
-	soon := vial(8, day(2026, time.May, 1), protocol.NewDate(2026, time.June, 10))
-	later := vial(8, day(2026, time.May, 1), protocol.NewDate(2026, time.July, 20))
+	soon := vial(8, day(2026, time.May, 1), civil.NewDate(2026, time.June, 10))
+	later := vial(8, day(2026, time.May, 1), civil.NewDate(2026, time.July, 20))
 
 	if got := StatusOf(soon, drawn(soon, 7), today); got != StatusExpiring {
 		t.Errorf("expiring soon: got %v, want expiring", got)
@@ -148,7 +149,7 @@ func TestExpiryOutranksLowStock(t *testing.T) {
 func TestASealedVialAboutToExpireSaysSo(t *testing.T) {
 	// Measured: it read SEALED. Unopened stock about to be wasted is exactly the vial
 	// worth warning about.
-	v := vial(4, nil, protocol.NewDate(2026, time.June, 3))
+	v := vial(4, nil, civil.NewDate(2026, time.June, 3))
 
 	if got := StatusOf(v, nil, today); got != StatusExpiring {
 		t.Errorf("got %v, want expiring", got)
@@ -285,7 +286,7 @@ func TestAnotherPatientsVialsChangeNothing(t *testing.T) {
 	// patient, so the function would behave identically with PatientID deleted. A
 	// doctor-side caller reads several cabinets in one result set, and the database
 	// cannot catch the mixing — every row is one they are entitled to.
-	other := protocol.UserID("p-2")
+	other := civil.UserID("p-2")
 	mine := vial(4, day(2026, time.May, 1), farOff)
 
 	// Theirs is open and full, deliberately. A sealed one would be caught by the

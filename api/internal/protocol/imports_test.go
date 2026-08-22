@@ -46,7 +46,6 @@ func TestProtocolDoesNotImportItsCallers(t *testing.T) {
 // a check it conforms to, and the fix would be to keep widening the exemption.
 var (
 	generator = []string{
-		"calendar.go",
 		"types.go",
 		"occurrence.go",
 		"titration.go",

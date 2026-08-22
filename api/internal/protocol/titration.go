@@ -3,6 +3,8 @@ package protocol
 import (
 	"slices"
 	"sort"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
 // TitrationStep is «Доза растёт: 0,25 мг → 0,5 мг», and the day it happens.
@@ -10,7 +12,7 @@ type TitrationStep struct {
 	Week int
 	From Dose
 	To   Dose
-	Date Date
+	Date civil.Date
 }
 
 // TitrationSteps derives the doses and the dates from the phases and the protocol's start
@@ -40,7 +42,7 @@ func TitrationSteps(plan Plan, itemID ProtocolItemID) []TitrationStep {
 
 // TitrationStepAfter is bounded by the cycle, not the calendar: a date outside the
 // protocol's window has no «next step», the same way it has no cycle week.
-func TitrationStepAfter(plan Plan, itemID ProtocolItemID, today Date) *TitrationStep {
+func TitrationStepAfter(plan Plan, itemID ProtocolItemID, today civil.Date) *TitrationStep {
 	week, ok := CycleWeek(plan.Protocol, today)
 	if !ok {
 		return nil

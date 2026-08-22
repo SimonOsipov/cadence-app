@@ -1,6 +1,10 @@
 package protocol
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
+)
 
 const daysPerWeek = 7
 
@@ -20,15 +24,15 @@ const (
 type Occurrence struct {
 	ItemID ProtocolItemID
 	Kind   ItemKind
-	Date   Date
-	Time   Slot
+	Date   civil.Date
+	Time   civil.Slot
 	Dose   *Dose
 	Status OccurrenceStatus
 }
 
 // CycleWeek counts week 1 as the seven days from the protocol's start; false means the date
 // lies outside the course altogether.
-func CycleWeek(p Protocol, d Date) (int, bool) {
+func CycleWeek(p Protocol, d civil.Date) (int, bool) {
 	offset := p.StartDate.DaysUntil(d)
 	if offset < 0 {
 		return 0, false
@@ -43,7 +47,7 @@ func CycleWeek(p Protocol, d Date) (int, bool) {
 // OccurrencesFor is the whole schedule: §03 has no materialized schedule table, so Today and
 // Schedule render the same call. `today` is a parameter rather than a clock reading, so this
 // can be tested against a calendar.
-func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today Date) []Occurrence {
+func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today civil.Date) []Occurrence {
 	// CANCELLED only, and the narrowing matters: a COMPLETED course is every patient after
 	// twelve weeks, and blanking it would erase the dots from days they actually injected.
 	if plan.Protocol.Status == StatusCancelled {
@@ -90,7 +94,7 @@ func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today Date) []Occurrence 
 // it will be the EXCLUDE constraint step 2 adds — as of this step nothing holds it at all,
 // and api/migrations/ has no protocol tables yet. On overlapping phases the schedule and the
 // dose band under it name different doses for one day.
-func PhaseDose(plan Plan, itemID ProtocolItemID, d Date) *Dose {
+func PhaseDose(plan Plan, itemID ProtocolItemID, d civil.Date) *Dose {
 	if plan.Protocol.Status == StatusCancelled {
 		return nil
 	}
@@ -121,7 +125,7 @@ func scheduledDaysPerWeek(item ProtocolItem) float64 {
 	return float64(len(item.DaysOfWeek))
 }
 
-func fallsOn(item ProtocolItem, d Date) bool {
+func fallsOn(item ProtocolItem, d civil.Date) bool {
 	if item.Cadence == CadenceDaily {
 		return true
 	}
@@ -131,7 +135,7 @@ func fallsOn(item ProtocolItem, d Date) bool {
 // The match must include item, date and slot: matching on item alone would mark every
 // remaining Sunday done after the first injection; without the slot, one BPC-157 event with
 // a null time closed both 08:00 and 20:00.
-func statusOf(item ProtocolItem, d Date, at Slot, logged []LoggedSlot, today Date) OccurrenceStatus {
+func statusOf(item ProtocolItem, d civil.Date, at civil.Slot, logged []LoggedSlot, today civil.Date) OccurrenceStatus {
 	for _, s := range logged {
 		if s.ItemID == item.ID && s.Date == d && s.Time != nil && *s.Time == at {
 			return StatusDone

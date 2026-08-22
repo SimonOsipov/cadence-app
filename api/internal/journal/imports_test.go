@@ -23,6 +23,11 @@ func TestJournalDoesNotImportItsCallers(t *testing.T) {
 	const prefix = "github.com/SimonOsipov/cadence-app/api/internal/"
 	callers := []string{"dosing", "measurements", "nutrition", "messaging"}
 
+	// protocol among them, and that is the point of the civil package: the diary
+	// imported the prescription for nothing but Date and UserID, which is a shared
+	// kernel by accident. Nothing about a day's mood depends on a course.
+	callers = append(callers, "protocol")
+
 	all := append(append(append([]string{}, pkg.Imports...), pkg.TestImports...), pkg.XTestImports...)
 	for _, imported := range all {
 		for _, caller := range callers {

@@ -1,6 +1,10 @@
 package protocol
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
+)
 
 // ProtocolRow is one line of the week's prescription strip. TodayStatus is nil when the item
 // is not due today at all — a claim about nothing.
@@ -11,7 +15,7 @@ type ProtocolRow struct {
 	// allowed a repository to look it up in.
 	Compound    *Compound
 	Dose        *Dose
-	Times       []Slot
+	Times       []civil.Slot
 	Cadence     Cadence
 	TodayStatus *OccurrenceStatus
 	Loggable    bool
@@ -21,7 +25,7 @@ type ProtocolRow struct {
 // is the week's prescription, so the weekly injection belongs on it every day. Today's state
 // comes from OccurrencesFor — the same call the schedule makes, so the two cannot disagree
 // by construction.
-func WeekProtocolRows(plan Plan, compounds []Compound, logged []LoggedSlot, today Date) []ProtocolRow {
+func WeekProtocolRows(plan Plan, compounds []Compound, logged []LoggedSlot, today civil.Date) []ProtocolRow {
 	if plan.Protocol.Status == StatusCancelled {
 		return nil
 	}
