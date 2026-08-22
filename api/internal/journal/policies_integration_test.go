@@ -195,6 +195,24 @@ func (c clinic) changed(t *testing.T, subject, role, sql string, args ...any) in
 	return affected
 }
 
+func (c clinic) moodOf(t *testing.T, patient, entryDate string) int {
+	t.Helper()
+
+	var mood int
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx,
+				`SELECT mood FROM app.journal_entries WHERE patient_id = $1 AND entry_date = $2::date`,
+				patient, entryDate).Scan(&mood)
+		},
+	); err != nil {
+		t.Fatalf("reading the day's mood: %v", err)
+	}
+
+	return mood
+}
+
 func (c clinic) ownerOfTheDay(t *testing.T, entryDate string) []string {
 	t.Helper()
 
@@ -282,6 +300,21 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 			"row-level security",
 		},
 		{
+			// The same statement on a day the other patient DOES own, and it has to
+			// be refused the same way. This is the first table here whose patient
+			// INSERT grant covers the whole primary key — it must, the key is
+			// (patient_id, entry_date) — and a uniqueness check bypasses row
+			// security by design. If 23505 could answer before WITH CHECK, telling
+			// the two dates apart would read one bit of another patient's health
+			// record per probe: did they write a diary entry on this day. Measured:
+			// the check runs after, and 42501 answers both.
+			"probing whether another patient wrote a day",
+			`INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
+			 VALUES ($1, $2::date, 4, 'manual')`,
+			[]any{patientB, dayA},
+			"row-level security",
+		},
+		{
 			// patient_id is not in the patient's UPDATE grant — half the primary key,
 			// and moving a day between patients is a different row rather than an
 			// edit of this one. The grant refuses before the policy is consulted.
@@ -315,6 +348,42 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 		}
 	}
 
+	// The upsert of step 8, which no shape above reaches: RLS treats ON CONFLICT DO
+	// UPDATE unlike anything else — the arbiter lookup is not filtered, and the
+	// update's USING raises rather than filtering. It is safe here because
+	// patient_id is half the conflict target, so every row an upsert can meet is
+	// the caller's own. A later migration swapping the key for a surrogate would
+	// delete that property, and this is what would notice.
+	err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
+			VALUES ($1, $2::date, 4, 'manual')
+			ON CONFLICT (patient_id, entry_date) DO UPDATE SET mood = 1
+		`, patientB, dayA)
+
+		return err
+	})
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+		t.Errorf("upserting onto another patient's day: got %v, want SQLSTATE 42501", err)
+	}
+	if mood := c.moodOf(t, patientB, dayA); mood != 3 {
+		t.Errorf("the other patient's day now reads mood %d, want the seeded 3", mood)
+	}
+
+	// And the positive control for the same statement, on their own day.
+	if affected := c.changed(t, patientA, "patient", `
+		INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
+		VALUES ($1, $2::date, 4, 'manual')
+		ON CONFLICT (patient_id, entry_date) DO UPDATE SET mood = 1
+	`, patientA, dayA); affected != 1 {
+		t.Errorf("upserting their own day touched %d rows, want 1", affected)
+	}
+	if mood := c.moodOf(t, patientA, dayA); mood != 1 {
+		t.Errorf("their own day reads mood %d after the upsert, want 1", mood)
+	}
+
 	// Taking another patient's day, in the three forms the vials suite measured: the
 	// one that names a row and the two that read no column, where the SELECT policies
 	// are never added and the update's USING is the only guard.
@@ -334,9 +403,13 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 		if affected := c.changed(t, patientA, "patient", theft.sql); affected != theft.want {
 			t.Errorf("%s: touched %d rows, want %d", theft.name, affected, theft.want)
 		}
+		// After each form and not once at the end: the thefts write a value, and a
+		// count of rows is exactly what a changed value cannot fail.
+		if mood := c.moodOf(t, patientB, dayA); mood != 3 {
+			t.Errorf("%s: the other patient's mood is now %d, want the seeded 3", theft.name, mood)
+		}
 	}
 
-	// And the other patient's day is untouched, read back on the service path.
 	if owners := c.ownerOfTheDay(t, dayA); len(owners) != 2 {
 		t.Errorf("the day is owned by %v, want both patients", owners)
 	}
@@ -562,24 +635,35 @@ func TestEachRowShapeRuleOnADayFires(t *testing.T) {
 		})
 	}
 
-	// The accept side, at the bounds, which a suite of refusals cannot supply: a
-	// CHECK refusing everything would pass every case above.
-	t.Run("the ends of every scale and a note at its bound", func(t *testing.T) {
-		if err := database.WithServiceJob(
-			t.Context(), c.service, seedJob,
-			func(ctx context.Context, tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `
-					INSERT INTO app.journal_entries
-					    (patient_id, entry_date, mood, energy, sleep, note, source)
-					VALUES ($1, DATE '2026-06-20', 1, 5, 3, pg_catalog.repeat('x', 2000), 'dose')
-				`, patientA)
+	// The accept side, which a suite of refusals cannot supply: a CHECK refusing
+	// everything would pass every case above. Both ends of every scale and not one
+	// row holding a mixture — with sleep at 3 the narrowing of its lower bound to 2
+	// survived, because the refusal case uses 9 and stays refused either way.
+	for _, day := range []struct {
+		name  string
+		date  string
+		value int
+	}{
+		{"the low end of every scale", "2026-06-20", 1},
+		{"the high end of every scale", "2026-06-21", 5},
+	} {
+		t.Run(day.name+" and a note at its bound", func(t *testing.T) {
+			if err := database.WithServiceJob(
+				t.Context(), c.service, seedJob,
+				func(ctx context.Context, tx pgx.Tx) error {
+					_, err := tx.Exec(ctx, `
+						INSERT INTO app.journal_entries
+						    (patient_id, entry_date, mood, energy, sleep, note, source)
+						VALUES ($1, $2::date, $3, $3, $3, pg_catalog.repeat('x', 2000), 'dose')
+					`, patientA, day.date, day.value)
 
-				return err
-			},
-		); err != nil {
-			t.Fatalf("a day at the bounds was refused: %v", err)
-		}
-	})
+					return err
+				},
+			); err != nil {
+				t.Fatalf("a day at the bounds was refused: %v", err)
+			}
+		})
+	}
 }
 
 // The other closed set written twice. Unlike the tags nothing reconciled it, so a
@@ -669,6 +753,31 @@ func TestTheReachOfEachRoleOverTheDiary(t *testing.T) {
 		}
 	})
 
+	t.Run("a doctor reads a day and may not write one", func(t *testing.T) {
+		c := newClinic(t)
+
+		// The registry pins journal_entries/cadence_doctor to {SELECT}, so a widened
+		// grant is caught — but nothing measured the refusal, and the cabinet suite
+		// does. A doctor writing a symptom into a patient's own diary is the one
+		// authority this table deliberately withholds from them.
+		for _, forbidden := range []struct{ name, sql string }{
+			{"rewriting a day", `UPDATE app.journal_entries SET mood = 1 WHERE patient_id = $1`},
+			{"writing one", `INSERT INTO app.journal_entries (patient_id, entry_date, mood, source)
+			 VALUES ($1, DATE '2026-07-01', 4, 'manual')`},
+		} {
+			err := c.as(t, doctorA, "doctor", func(ctx context.Context, tx pgx.Tx) error {
+				_, err := tx.Exec(ctx, forbidden.sql, patientA)
+
+				return err
+			})
+
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+				t.Errorf("the doctor succeeded at %s: got %v, want 42501", forbidden.name, err)
+			}
+		}
+	})
+
 	t.Run("the admin reaches every diary and may write one", func(t *testing.T) {
 		c := newClinic(t)
 
@@ -688,6 +797,17 @@ func TestTheReachOfEachRoleOverTheDiary(t *testing.T) {
 			return err
 		}); err != nil {
 			t.Fatalf("the admin could not write a day for an unassigned patient: %v", err)
+		}
+
+		// And the USING half, on a row the admin is assigned to nobody through: a
+		// count is what a filtered UPDATE cannot fake — it returns success and zero.
+		if affected := c.changed(t, adminID, "admin",
+			`UPDATE app.journal_entries SET mood = 2 WHERE patient_id = $1 AND entry_date = $2::date`,
+			patientA, dayA); affected != 1 {
+			t.Errorf("the admin's update touched %d rows, want 1", affected)
+		}
+		if mood := c.moodOf(t, patientA, dayA); mood != 2 {
+			t.Errorf("the day reads mood %d after the admin's update, want 2", mood)
 		}
 	})
 

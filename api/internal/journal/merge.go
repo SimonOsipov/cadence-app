@@ -2,7 +2,6 @@ package journal
 
 import (
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -133,11 +132,15 @@ func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Sou
 	//
 	// Refused rather than documented, and loudly: no caller has a sensible response,
 	// which is what makes it a programmer error rather than a rejection.
+	//
+	// Neither error carries the ids it compared. Both are `errors.Is`-able, which
+	// invites a handler to map them to a 4xx — and there the message reaches the
+	// caller, putting the other patient's identifier in this patient's response.
 	if existing.PatientID != patient {
-		return Entry{}, fmt.Errorf("%w: %s into %s", ErrAnotherPatientsDay, existing.PatientID, patient)
+		return Entry{}, ErrAnotherPatientsDay
 	}
 	if existing.EntryDate != draft.EntryDate {
-		return Entry{}, fmt.Errorf("%w: %v into %v", ErrAnotherDay, existing.EntryDate, draft.EntryDate)
+		return Entry{}, ErrAnotherDay
 	}
 
 	if merged.Mood == nil {
