@@ -52,9 +52,15 @@ func inventoryTables() []string {
 	return []string{"vials"}
 }
 
+// The wellbeing diary, added by 000017.
+func journalTables() []string {
+	return []string{"journal_entries"}
+}
+
 // Every table the chain creates, sorted the way the catalogue returns them.
 func appTables() []string {
-	all := append(append(append([]string{}, identityTables()...), protocolTables()...), inventoryTables()...)
+	all := append(append(append(append([]string{},
+		identityTables()...), protocolTables()...), inventoryTables()...), journalTables()...)
 	slices.Sort(all)
 	return all
 }
@@ -734,6 +740,20 @@ func identityColumns() map[string][]string {
 			"location_ru text NULL",
 			"disposed_at date NULL",
 			"label_photo_path text NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		// One entry per day, and the day is half the primary key. No cycle day: it is
+		// derived from the protocol's start date and a stored copy would go stale on
+		// the first edit.
+		"journal_entries": {
+			"patient_id uuid NOT NULL",
+			"entry_date date NOT NULL",
+			"mood smallint NULL",
+			"energy smallint NULL",
+			"sleep smallint NULL",
+			"tags ARRAY _text NOT NULL DEFAULT '{}'::text[]",
+			"note text NULL",
+			"source text NOT NULL",
 			"created_at timestamp with time zone NOT NULL DEFAULT now()",
 		},
 		"audit_log": {

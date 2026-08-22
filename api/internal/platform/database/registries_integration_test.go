@@ -114,6 +114,13 @@ func grantRegistry() map[string][]string {
 		"vials/cadence_admin":   crud,
 		"vials/cadence_service": {"INSERT", "SELECT"},
 		"vials/cadence_owner":   everything,
+		// The diary, written by the patient on the request path like the cabinet.
+		// SELECT only at table level for them: the two write verbs are by column.
+		"journal_entries/cadence_patient": {"SELECT"},
+		"journal_entries/cadence_doctor":  {"SELECT"},
+		"journal_entries/cadence_admin":   crud,
+		"journal_entries/cadence_service": {"INSERT", "SELECT"},
+		"journal_entries/cadence_owner":   everything,
 	}
 
 	// Everybody else holds nothing, stated rather than left out: an absent key
@@ -197,6 +204,15 @@ func columnGrantRegistry() map[string][]string {
 		"INSERT/vials/cadence_patient": {
 			"compound_id", "concentration_label", "disposed_at", "expires_on",
 			"label_photo_path", "location_ru", "lot", "opened_at", "patient_id", "total_doses",
+		},
+		// entry_date is writable: moving a day is an edit of which day the entry is
+		// about. patient_id is not — half the primary key, and moving a row between
+		// patients is a different row rather than an edit of this one.
+		"INSERT/journal_entries/cadence_patient": {
+			"energy", "entry_date", "mood", "note", "patient_id", "sleep", "source", "tags",
+		},
+		"UPDATE/journal_entries/cadence_patient": {
+			"energy", "entry_date", "mood", "note", "sleep", "source", "tags",
 		},
 		"UPDATE/vials/cadence_patient": {
 			"compound_id", "concentration_label", "disposed_at", "expires_on",
@@ -421,6 +437,19 @@ func policyPredicates() map[string]string {
 		"vials_own_update":     "(patient_id = app.jwt_subject()) | (patient_id = app.jwt_subject())",
 		"vials_service_insert": anyWrite,
 		"vials_service_read":   anything,
+		// The diary, and the shape is the cabinet's: the subject in both halves,
+		// written out in full rather than leaned on a parent, because the table has
+		// an owner column of its own.
+		"journal_entries_admin":          anythingRW,
+		"journal_entries_own_select":     "(patient_id = app.jwt_subject()) | -",
+		"journal_entries_own_insert":     "- | (patient_id = app.jwt_subject())",
+		"journal_entries_own_update":     "(patient_id = app.jwt_subject()) | (patient_id = app.jwt_subject())",
+		"journal_entries_service_insert": anyWrite,
+		"journal_entries_service_read":   anything,
+		"journal_entries_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
+			"WHERE ((care_team_assignments.patient_id = journal_entries.patient_id) AND " +
+			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
+
 		"vials_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
 			"WHERE ((care_team_assignments.patient_id = vials.patient_id) AND " +
 			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
@@ -556,6 +585,13 @@ func policyRegistry() []string {
 		"invites invites_doctor_insert INSERT {cadence_doctor}",
 		"invites invites_service_insert INSERT {cadence_service}",
 		"invites invites_service_read SELECT {cadence_service}",
+		"journal_entries journal_entries_admin ALL {cadence_admin}",
+		"journal_entries journal_entries_of_my_patients SELECT {cadence_doctor}",
+		"journal_entries journal_entries_own_insert INSERT {cadence_patient}",
+		"journal_entries journal_entries_own_select SELECT {cadence_patient}",
+		"journal_entries journal_entries_own_update UPDATE {cadence_patient}",
+		"journal_entries journal_entries_service_insert INSERT {cadence_service}",
+		"journal_entries journal_entries_service_read SELECT {cadence_service}",
 		"patient_profiles patient_profiles_admin ALL {cadence_admin}",
 		"patient_profiles patient_profiles_of_my_patients SELECT {cadence_doctor}",
 		"patient_profiles patient_profiles_own_select SELECT {cadence_patient}",
