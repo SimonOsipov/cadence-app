@@ -57,10 +57,16 @@ func journalTables() []string {
 	return []string{"journal_entries"}
 }
 
+// The clinical fact stream, added by 000019.
+func dosingTables() []string {
+	return []string{"dose_events"}
+}
+
 // Every table the chain creates, sorted the way the catalogue returns them.
 func appTables() []string {
-	all := append(append(append(append([]string{},
-		identityTables()...), protocolTables()...), inventoryTables()...), journalTables()...)
+	all := append(append(append(append(append([]string{},
+		identityTables()...), protocolTables()...), inventoryTables()...), journalTables()...),
+		dosingTables()...)
 	slices.Sort(all)
 	return all
 }
@@ -754,6 +760,30 @@ func identityColumns() map[string][]string {
 			"tags ARRAY _text NOT NULL DEFAULT '{}'::text[]",
 			"note text NULL",
 			"source text NOT NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		// The one clinical fact everything else is measured against. protocol_id is
+		// half a composite key and not stored derived state: it is what lets the
+		// chain of foreign keys bind a dose to its own patient's course, which no
+		// CHECK can express and no policy can hold on the service path.
+		"dose_events": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"patient_id uuid NOT NULL",
+			"protocol_id uuid NOT NULL",
+			"protocol_item_id uuid NOT NULL",
+			"vial_id uuid NULL",
+			"compound_id uuid NULL",
+			"scheduled_for_date date NOT NULL",
+			"scheduled_for_time time without time zone NULL",
+			"injected_at timestamp with time zone NOT NULL",
+			"dose_value numeric NOT NULL",
+			"dose_unit text NOT NULL",
+			"site_code text NULL",
+			"mood smallint NULL",
+			"side_effects ARRAY _text NOT NULL DEFAULT '{}'::text[]",
+			"note text NULL",
+			"photo_path text NULL",
+			"client_request_id text NOT NULL",
 			"created_at timestamp with time zone NOT NULL DEFAULT now()",
 		},
 		"audit_log": {

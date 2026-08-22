@@ -116,6 +116,12 @@ func grantRegistry() map[string][]string {
 		"vials/cadence_owner":   everything,
 		// The diary, written by the patient on the request path like the cabinet.
 		// SELECT only at table level for them: the two write verbs are by column.
+		"dose_events/cadence_patient": {"SELECT"},
+		"dose_events/cadence_doctor":  {"SELECT"},
+		"dose_events/cadence_admin":   crud,
+		"dose_events/cadence_service": {"INSERT", "SELECT"},
+		"dose_events/cadence_owner":   everything,
+
 		"journal_entries/cadence_patient": {"SELECT"},
 		"journal_entries/cadence_doctor":  {"SELECT"},
 		"journal_entries/cadence_admin":   crud,
@@ -213,6 +219,14 @@ func columnGrantRegistry() map[string][]string {
 		},
 		"UPDATE/journal_entries/cadence_patient": {
 			"energy", "entry_date", "mood", "note", "sleep", "source", "tags",
+		},
+		// Everything the wizard collects, and no UPDATE list at all: a logged dose is
+		// a fact, so the patient has no UPDATE grant to narrow. created_at is
+		// withheld as the row's provenance rather than a field of the form.
+		"INSERT/dose_events/cadence_patient": {
+			"client_request_id", "compound_id", "dose_unit", "dose_value", "injected_at",
+			"mood", "note", "patient_id", "photo_path", "protocol_id", "protocol_item_id",
+			"scheduled_for_date", "scheduled_for_time", "side_effects", "site_code", "vial_id",
 		},
 		"UPDATE/vials/cadence_patient": {
 			"compound_id", "concentration_label", "disposed_at", "expires_on",
@@ -450,6 +464,17 @@ func policyPredicates() map[string]string {
 			"WHERE ((care_team_assignments.patient_id = journal_entries.patient_id) AND " +
 			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
 
+		// The dose stream, and the shape is the diary's. No own_update: a logged dose
+		// is not edited, so there is no policy to declare.
+		"dose_events_admin":          anythingRW,
+		"dose_events_own_select":     "(patient_id = app.jwt_subject()) | -",
+		"dose_events_own_insert":     "- | (patient_id = app.jwt_subject())",
+		"dose_events_service_insert": anyWrite,
+		"dose_events_service_read":   anything,
+		"dose_events_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
+			"WHERE ((care_team_assignments.patient_id = dose_events.patient_id) AND " +
+			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
+
 		"vials_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
 			"WHERE ((care_team_assignments.patient_id = vials.patient_id) AND " +
 			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
@@ -581,6 +606,12 @@ func policyRegistry() []string {
 		"compounds compounds_read SELECT {cadence_doctor,cadence_patient}",
 		"compounds compounds_service_insert INSERT {cadence_service}",
 		"compounds compounds_service_read SELECT {cadence_service}",
+		"dose_events dose_events_admin ALL {cadence_admin}",
+		"dose_events dose_events_of_my_patients SELECT {cadence_doctor}",
+		"dose_events dose_events_own_insert INSERT {cadence_patient}",
+		"dose_events dose_events_own_select SELECT {cadence_patient}",
+		"dose_events dose_events_service_insert INSERT {cadence_service}",
+		"dose_events dose_events_service_read SELECT {cadence_service}",
 		"invites invites_admin_read SELECT {cadence_admin}",
 		"invites invites_doctor_insert INSERT {cadence_doctor}",
 		"invites invites_service_insert INSERT {cadence_service}",
