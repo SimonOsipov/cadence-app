@@ -84,6 +84,13 @@ func TestOneActionWritesBothFacts(t *testing.T) {
 	if event.scheduledDate != "2026-05-10" || event.scheduledTime != "08:00:00" {
 		t.Errorf("the event answers %s %s", event.scheduledDate, event.scheduledTime)
 	}
+	// injected_at is the instant and never the occurrence it answers, which is the guard
+	// step 7 handed here when its own copy of it became structural. The two differ in this
+	// fixture by construction: the moment is 19:30 UTC on the 9th and the slot is 08:00 on
+	// the 10th, so a write storing one for the other cannot pass.
+	if !event.injectedAt.Equal(theMoment) {
+		t.Errorf("the dose was injected at %v, want %v", event.injectedAt, theMoment)
+	}
 	// The compound is the item's, and the draft has no field to carry one — the guard is
 	// the shape of the type, so this asserts the resolution rather than a refusal.
 	if event.compound != compoundID {
@@ -204,6 +211,7 @@ func siteOf(code string) *dosing.Site {
 type storedEvent struct {
 	scheduledDate string
 	scheduledTime string
+	injectedAt    time.Time
 	compound      string
 	site          string
 	mood          int
@@ -214,10 +222,11 @@ func eventRow(t *testing.T, c clinic, id string) storedEvent {
 
 	var read storedEvent
 	ask(t, c, `
-		SELECT scheduled_for_date::text, coalesce(scheduled_for_time::text, ''),
+		SELECT scheduled_for_date::text, coalesce(scheduled_for_time::text, ''), injected_at,
 		       coalesce(compound_id::text, ''), coalesce(site_code, ''), coalesce(mood, 0)
 		FROM app.dose_events WHERE id = $1
-	`, []any{id}, &read.scheduledDate, &read.scheduledTime, &read.compound, &read.site, &read.mood)
+	`, []any{id}, &read.scheduledDate, &read.scheduledTime, &read.injectedAt,
+		&read.compound, &read.site, &read.mood)
 
 	return read
 }
