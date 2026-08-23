@@ -23,14 +23,21 @@ const (
 	SiteRightLowBack Site = "r-lback"
 )
 
-// Sites is every zone the body map can draw, and the order is the prototype's:
-// the front six as it lists them, then the back four.
+// Sites is every zone, and the order is load-bearing rather than cosmetic: it is the
+// rotation's tie-break, so it decides what a patient with no history is offered and what
+// they are offered when two zones are equally stale.
+//
+// It is the KMP enum's declaration order and deliberately not the prototype's drawing
+// order — the body map lists six front zones then four back ones, which is a rendering
+// concern of the client's panels. Reading that order into here would move the opening
+// suggestion from the left abdomen to the right deltoid, and the frozen prototype documents
+// `suggested: 'l-abdomen'` in log-dose/data.ts.
 func Sites() []Site {
 	return []Site{
-		SiteRightDeltoid, SiteLeftDeltoid,
-		SiteRightAbdomen, SiteLeftAbdomen,
-		SiteRightThigh, SiteLeftThigh,
-		SiteLeftLowBack, SiteRightLowBack,
+		SiteLeftAbdomen, SiteRightAbdomen,
+		SiteLeftDeltoid, SiteRightDeltoid,
 		SiteLeftGlute, SiteRightGlute,
+		SiteLeftThigh, SiteRightThigh,
+		SiteLeftLowBack, SiteRightLowBack,
 	}
 }
