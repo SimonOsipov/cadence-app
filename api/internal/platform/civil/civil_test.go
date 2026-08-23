@@ -159,3 +159,63 @@ func TestATimeTheClockDoesNotHaveIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// The constructor step 1 recorded as owed to step 9, and the reason: an inverted window
+// answers Contains false for every day and Days() a negative number, so a caller dividing by
+// it or iterating over it asks a question the value cannot answer.
+func TestAWindowThatRunsBackwardsIsRefused(t *testing.T) {
+	for _, refused := range []struct{ from, through Date }{
+		{NewDate(2026, time.May, 10), NewDate(2026, time.May, 1)},
+		{NewDate(2026, time.May, 10), NewDate(2025, time.May, 10)},
+		// An edge the calendar does not have, which Contains and Days would answer
+		// about as though it did.
+		{Date{Year: 2026, Month: time.February, Day: 30}, NewDate(2026, time.March, 5)},
+		{NewDate(2026, time.March, 1), Date{Year: 2026, Month: time.April, Day: 31}},
+	} {
+		if got, ok := NewRange(refused.from, refused.through); ok {
+			t.Errorf("NewRange(%v, %v) gave %v", refused.from, refused.through, got)
+		}
+	}
+
+	// One day is a window of one day, not an empty one — both edges are included.
+	one := NewDate(2026, time.May, 10)
+	if window, ok := NewRange(one, one); !ok || window.Days() != 1 {
+		t.Errorf("a single day gave %v, %v", window, ok)
+	}
+}
+
+// The window a month parameter means, and February is where a month-length table gets it
+// wrong: this steps back from the first of the next month instead.
+func TestTheWindowOfAMonthEndsOnItsLastDay(t *testing.T) {
+	for _, month := range []struct {
+		year int
+		of   time.Month
+		last int
+	}{
+		{2026, time.February, 28},
+		{2024, time.February, 29},
+		{2026, time.April, 30},
+		{2026, time.December, 31},
+		{2026, time.January, 31},
+	} {
+		window, ok := MonthOf(month.year, month.of)
+		if !ok {
+			t.Errorf("%v %d was refused", month.of, month.year)
+
+			continue
+		}
+		if window.From != NewDate(month.year, month.of, 1) {
+			t.Errorf("%v %d opens on %v", month.of, month.year, window.From)
+		}
+		if window.Through != NewDate(month.year, month.of, month.last) {
+			t.Errorf("%v %d ends on %v, want the %dth", month.of, month.year, window.Through, month.last)
+		}
+		if window.Days() != month.last {
+			t.Errorf("%v %d is %d days", month.of, month.year, window.Days())
+		}
+	}
+
+	if _, ok := MonthOf(2026, time.Month(13)); ok {
+		t.Error("a thirteenth month was accepted")
+	}
+}

@@ -99,17 +99,43 @@ func (s Slot) Valid() bool {
 // String is the wire and database form. Fixed width for the same reason a date is.
 func (s Slot) String() string { return fmt.Sprintf("%02d:%02d", s.Hour, s.Minute) }
 
-// Range includes both edges, because a window is a set of days and not a subtraction. It does
-// not enforce that it runs forwards — Kotlin's TrendRange did (`require(from <= through)`),
-// and the aggregates of step 9, which build a window from a month parameter, are what need
-// the checked constructor back.
+// Range includes both edges, because a window is a set of days and not a subtraction.
 //
-// Until then an inverted Range is not harmless: Contains answers false for every day, but
-// Days() returns a negative count — measured, −8 for a window inverted by nine days. Step 9
-// must not iterate or divide by it before the constructor lands.
+// An inverted one is not harmless: Contains answers false for every day, but Days() returns a
+// negative count — measured, −8 for a window inverted by nine days — so a caller dividing by
+// it or iterating over it is asking a question the value cannot answer. Kotlin's TrendRange
+// refused one in its constructor (`require(from <= through)`), and NewRange below is that
+// refusal returned, which is what step 1 recorded as owed to the step that builds a window
+// from a parameter.
+//
+// The struct stays constructible without it: a literal is how the suites write one, and a
+// type whose fields are public cannot promise more than its constructor is asked for. What
+// the constructor gives is one place for a caller taking a month from the wire to find out.
 type Range struct {
 	From    Date
 	Through Date
+}
+
+// NewRange is the checked constructor: it refuses a window that runs backwards, and a window
+// whose edges are not days the calendar has.
+func NewRange(from, through Date) (Range, bool) {
+	if !from.Valid() || !through.Valid() || through.Before(from) {
+		return Range{}, false
+	}
+
+	return Range{From: from, Through: through}, true
+}
+
+// MonthOf is the window a month parameter means: the first of that month through its last
+// day. The last day is found by stepping back from the first of the next one, so February
+// and the leap year come out right without a table.
+func MonthOf(year int, month time.Month) (Range, bool) {
+	first := NewDate(year, month, 1)
+	if !first.Valid() {
+		return Range{}, false
+	}
+
+	return NewRange(first, fromTime(first.time().AddDate(0, 1, -1)))
 }
 
 func (r Range) Contains(d Date) bool { return !d.Before(r.From) && !d.After(r.Through) }

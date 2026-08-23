@@ -387,6 +387,61 @@ func logOf(
 	return first, true, nil
 }
 
+// InjectionsOf is the history the rotation reads: which zone, and when it went in.
+//
+// `injected_at` and never `scheduled_for_date` — the guard step 7 handed here when its own
+// copy of it became structural. A dose from the retry queue answers an occurrence hours or
+// months old, and charging its zone to that occurrence's date would make a back-filled dose
+// look stale and move the suggestion off the zone it should be on. `created_at` would be
+// wrong the same way, one field over.
+//
+// A window rather than everything: the rotation is least-recently-used, so a zone whose last
+// use falls outside it reads as never used. Ninety days is long enough that a ten-zone
+// rotation on a weekly injection — seventy days to come round — is inside it, and it is
+// stated rather than assumed because that arithmetic is what makes it safe.
+func InjectionsOf(
+	ctx context.Context, tx pgx.Tx, patient civil.UserID, since time.Time,
+) ([]Injection, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT site_code, injected_at
+		FROM app.dose_events
+		WHERE patient_id = $1 AND injected_at >= $2
+		ORDER BY injected_at
+	`, string(patient), since)
+	if err != nil {
+		return nil, fmt.Errorf("reading the injections of %s: %w", patient, err)
+	}
+	defer rows.Close()
+
+	var history []Injection
+	for rows.Next() {
+		var (
+			injection Injection
+			code      *string
+		)
+		if err := rows.Scan(&code, &injection.At); err != nil {
+			return nil, err
+		}
+		if code != nil {
+			// Parsed and not cast: a value the schema accepts and Go does not is a
+			// set that drifted, and dropping it silently would move the rotation.
+			site, ok := parseSite(*code)
+			if !ok {
+				return nil, fmt.Errorf("a dose of %s names the zone %q", patient, *code)
+			}
+			injection.Site = &site
+		}
+		history = append(history, injection)
+	}
+
+	return history, rows.Err()
+}
+
+// RotationWindow is how far back InjectionsOf reads. Seventy days is a full ten-zone rotation
+// of a weekly injection; ninety leaves room for a missed week without a zone falling out of
+// the history and reading as never used.
+const RotationWindow = 90 * 24 * time.Hour
+
 // slotsLoggedOn reads what closes an occurrence, and it reads the *scheduled* slot rather
 // than injected_at: a dose logged from the retry queue answers the occurrence it was taken
 // for, not the moment the row arrived.

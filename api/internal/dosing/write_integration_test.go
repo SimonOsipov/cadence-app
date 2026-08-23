@@ -720,3 +720,90 @@ func TestADoseDoesNotOverwriteADayWrittenBesideIt(t *testing.T) {
 		t.Errorf("the day reads %s, want every tag that was written", day.tags)
 	}
 }
+
+// The history the rotation reads, and the field it reads it by. This is the half of step 7's
+// guard that could not live there: the KMP froze scheduledFor and createdAt in its fixture so
+// a rotation reaching for a neighbouring field would fail, and the Go type has neither — so
+// the discrimination moved to the row that has all three.
+func TestTheRotationReadsWhenTheDoseWentInAndNotWhatItAnswered(t *testing.T) {
+	c, pool := logging(t)
+
+	// A back-fill's shape: injected now, against an occurrence months old. The seeded
+	// clinic already holds one dose on 31 May against 08:00 that day.
+	if _, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, func(d *dosing.Draft) { d.Site = siteOf("r-glute") })); err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+
+	var history []dosing.Injection
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			history, err = dosing.InjectionsOf(
+				ctx, tx, civil.UserID(patientA), theMoment.Add(-dosing.RotationWindow))
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("reading the history: %v", err)
+	}
+
+	// Two: the clinic's seeded dose and this one. Both are inside the window, and the
+	// pair is what makes the field measurable — the seeded dose answers 31 May and went
+	// in at 08:12 that day, this one answers 10 May and went in at 19:30 on the 9th, so
+	// a read taking the scheduled date orders them the other way round and dates them
+	// differently.
+	if len(history) != 2 {
+		t.Fatalf("the history holds %d injections, want two", len(history))
+	}
+	if !history[0].At.Equal(theMoment) {
+		t.Errorf("the first injection is dated %v, want %v", history[0].At, theMoment)
+	}
+	if history[0].Site == nil || *history[0].Site != "r-glute" {
+		t.Errorf("the first injection is at %v", history[0].Site)
+	}
+	// Ordered by the instant, oldest first — and the seeded dose is the newer one here
+	// even though the day it answers is later than this one's scheduled day too.
+	if !history[1].At.After(history[0].At) {
+		t.Errorf("the history is ordered %v then %v", history[0].At, history[1].At)
+	}
+}
+
+// A dose logged with the zone step skipped is in the history and charged to no zone, which is
+// what the rotation's own suite pins in the pure half.
+func TestADoseWithNoZoneIsInTheHistoryWithoutOne(t *testing.T) {
+	c, pool := logging(t)
+
+	if _, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, nil)); err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+
+	var history []dosing.Injection
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			history, err = dosing.InjectionsOf(
+				ctx, tx, civil.UserID(patientA), theMoment.Add(-dosing.RotationWindow))
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("reading the history: %v", err)
+	}
+
+	// The one just logged is the older of the two and carries no zone; the clinic's
+	// seeded dose carries one, which is what says «no zone» is a property of the row
+	// rather than of the read.
+	if len(history) != 2 {
+		t.Fatalf("the history holds %d injections, want two", len(history))
+	}
+	if history[0].Site != nil {
+		t.Errorf("a dose logged with the zone skipped is charged to %v", *history[0].Site)
+	}
+	if history[1].Site == nil {
+		t.Error("the seeded dose lost its zone, so «no zone» is the read and not the row")
+	}
+}
