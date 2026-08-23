@@ -152,8 +152,16 @@ func TestEveryOccurrenceLoggedIsAlreadyLogged(t *testing.T) {
 
 // The dose that lands is the protocol's, not the draft's: a client that sent a number the
 // course does not prescribe would otherwise write it into the clinical record.
+//
+// The draft's dose has to differ from the prescribed one or the two cannot be told apart —
+// the first version of this test sent 0,25 мг against a course prescribing 0,25 мг, and
+// `Prescribed: draft.Dose` survived it.
 func TestTheSlotCarriesWhatTheCoursePrescribes(t *testing.T) {
-	slot, outcome := Resolve(aPlan(), nil, theDay, aDraft(nil))
+	sentSomethingElse := aDraft(func(d *Draft) {
+		d.Dose = &protocol.Dose{Value: 5, Unit: protocol.MCG}
+	})
+
+	slot, outcome := Resolve(aPlan(), nil, theDay, sentSomethingElse)
 	if outcome != Written {
 		t.Fatalf("got %q", outcome)
 	}
