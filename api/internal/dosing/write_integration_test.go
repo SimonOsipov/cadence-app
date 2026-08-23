@@ -663,3 +663,60 @@ func TestASlotAnotherDeviceTookIsAlreadyLogged(t *testing.T) {
 		t.Errorf("the day carries %d doses, want the one that won", doses)
 	}
 }
+
+// Two writes landing on one day. The merge happens in Go, so without a lock on the row it
+// reads, the second write merges onto a value that is already stale and its upsert overwrites
+// what the first wrote — and DO UPDATE makes that loss silent rather than an error.
+//
+// Interleaved deterministically rather than raced: another transaction takes the row and
+// changes it, the dose write starts and blocks on the lock, and only then does the other
+// commit. With the lock the dose reads the new value and merges onto it; without, it reads
+// the old one, merges onto that, and the other transaction's tag is gone.
+func TestADoseDoesNotOverwriteADayWrittenBesideIt(t *testing.T) {
+	c, pool := logging(t)
+
+	writeCheckIn(t, c, patientA, journal.CheckInDraft{
+		EntryDate: civil.NewDate(2026, time.May, 10),
+		Tags:      []journal.Tag{journal.TagNausea},
+	})
+
+	// The other writer: holds the row and adds a tag, uncommitted.
+	held := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- database.WithCaller(
+			t.Context(), c.request, database.Caller{Subject: patientA, Role: "patient"},
+			func(ctx context.Context, tx pgx.Tx) error {
+				if _, err := tx.Exec(ctx, `
+					UPDATE app.journal_entries
+					SET tags = ARRAY['nausea','fatigue']::text[]
+					WHERE patient_id = $1 AND entry_date = DATE '2026-05-10'
+				`, patientA); err != nil {
+					return err
+				}
+				close(held)
+				// Long enough that the dose write is certainly waiting on the row
+				// by the time this commits, and short enough not to stall the suite.
+				time.Sleep(300 * time.Millisecond)
+
+				return nil
+			},
+		)
+	}()
+	<-held
+
+	if _, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, func(d *dosing.Draft) {
+			d.Sides = []dosing.SideEffect{journal.TagSite}
+		})); err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("the other writer: %v", err)
+	}
+
+	// All three: the morning's, the one written beside the dose, and the dose's own.
+	if day := dayRow(t, c, patientA, "2026-05-10"); day.tags != "{nausea,fatigue,site}" {
+		t.Errorf("the day reads %s, want every tag that was written", day.tags)
+	}
+}
