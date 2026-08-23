@@ -41,7 +41,9 @@ func TestJournalDoesNotImportItsCallers(t *testing.T) {
 // The merge is pure: no query, no request, no clock. The day it is about arrives on
 // the draft, which is what lets the suite run it against a calendar.
 var (
-	merge     = []string{"merge.go"}
+	// parse.go joins the merge rather than the transport: it is the vocabulary the merge
+	// is written in, and nothing in it knows about HTTP — the seed is its other caller.
+	merge     = []string{"merge.go", "parse.go"}
 	transport = []string{"routes.go", "doc.go"}
 )
 

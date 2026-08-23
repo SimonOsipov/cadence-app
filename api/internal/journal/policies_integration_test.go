@@ -489,10 +489,7 @@ func TestADayWithNoTagsIsStoredAsAnEmptyListAndNotAsNothing(t *testing.T) {
 func TestTheTagsTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
 	c := newClinic(t)
 
-	declared := []journal.Tag{
-		journal.TagNausea, journal.TagFatigue, journal.TagHeadache, journal.TagBloating,
-		journal.TagInsomnia, journal.TagSite, journal.TagAppetite,
-	}
+	declared := journal.Tags()
 
 	// Every one of them, in one row: a CHECK that refused a member would fail here,
 	// and one that accepted anything would fail below.
@@ -766,7 +763,7 @@ func TestEachRowShapeRuleOnADayFires(t *testing.T) {
 func TestTheSourcesTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
 	c := newClinic(t)
 
-	declared := []journal.Source{journal.SourceManual, journal.SourceDose}
+	declared := journal.Sources()
 	for i, source := range declared {
 		if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
