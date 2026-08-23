@@ -63,6 +63,10 @@ func aDraft(edit func(*Draft)) Draft {
 // A closed set of outcomes and not a nullable id: «the day rolled over», «already logged»
 // and «the form is not filled in» are three different things for a screen to say, and one
 // nil makes them one.
+//
+// Incomplete is the one no HTTP request reaches — the generated schema refuses every draft
+// that would produce it — so this is where it is measured, and the transport suite says so
+// rather than claiming to reach all four.
 func TestADraftThatCannotMakeAnEventIsIncomplete(t *testing.T) {
 	for _, missing := range []struct {
 		name string
@@ -150,12 +154,14 @@ func TestEveryOccurrenceLoggedIsAlreadyLogged(t *testing.T) {
 	}
 }
 
-// The dose that lands is the protocol's, not the draft's: a client that sent a number the
-// course does not prescribe would otherwise write it into the clinical record.
+// The slot carries what the course prescribes — which is not what the event stores. The
+// event records what the patient took: the wizard's dose is editable, and a patient who
+// stepped down from what the course prescribes has done so. Keeping both is what lets the
+// two be compared; writing the prescription over the entry would make the difference
+// unsayable, in the history, in adherence and in the titration view.
 //
 // The draft's dose has to differ from the prescribed one or the two cannot be told apart —
-// the first version of this test sent 0,25 мг against a course prescribing 0,25 мг, and
-// `Prescribed: draft.Dose` survived it.
+// the first version of this test sent 0,25 мг against a course prescribing 0,25 мг.
 func TestTheSlotCarriesWhatTheCoursePrescribes(t *testing.T) {
 	sentSomethingElse := aDraft(func(d *Draft) {
 		d.Dose = &protocol.Dose{Value: 5, Unit: protocol.MCG}

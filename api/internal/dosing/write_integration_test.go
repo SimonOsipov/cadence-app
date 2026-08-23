@@ -4,6 +4,7 @@ package dosing_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/dosing"
+	"github.com/SimonOsipov/cadence-app/api/internal/journal"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
@@ -74,8 +76,6 @@ func TestOneActionWritesBothFacts(t *testing.T) {
 	if logged.JournalDate != civil.NewDate(2026, time.May, 10) {
 		t.Errorf("the day is %v", logged.JournalDate)
 	}
-	// The course's dose, not the draft's — the draft sent the same number here, and the
-	// unit test that tells them apart sends a different one.
 	if logged.Dose.Value != 0.25 || logged.Dose.Unit != protocol.MG {
 		t.Errorf("the dose reads %+v", logged.Dose)
 	}
@@ -106,6 +106,33 @@ func TestOneActionWritesBothFacts(t *testing.T) {
 	}
 	if day.mood != 4 || day.note != "спокойно" || day.tags != "{nausea}" {
 		t.Errorf("the day reads %+v", day)
+	}
+}
+
+// The dose recorded is the one the patient entered, not the one the course prescribes. The
+// wizard's stepper is editable — the KMP's own note says the prototype silently resets a
+// stepped-down dose and that this does not port it — so a patient who took 0,125 мг has a
+// row saying 0,125 мг. Writing the prescription over it would make the difference unsayable
+// to the doctor's history, to adherence and to the titration view.
+func TestTheDoseRecordedIsTheOneThePatientTook(t *testing.T) {
+	c, pool := logging(t)
+
+	steppedDown := draftFor(c, patientA, func(d *dosing.Draft) {
+		d.Dose = &protocol.Dose{Value: 0.125, Unit: protocol.MG}
+	})
+
+	logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment, steppedDown)
+	if err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+	if logged.Dose.Value != 0.125 {
+		t.Errorf("the reply says %v", logged.Dose.Value)
+	}
+
+	var value float64
+	ask(t, c, `SELECT dose_value FROM app.dose_events WHERE id = $1`, []any{logged.EventID}, &value)
+	if value != 0.125 {
+		t.Errorf("the record says the patient took %v, and they took 0,125", value)
 	}
 }
 
@@ -197,8 +224,8 @@ func TestAPatientWithNoZoneIsRefusedRatherThanGuessed(t *testing.T) {
 	moveTo(t, c, patientA, "")
 
 	if _, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
-		draftFor(c, patientA, nil)); err == nil {
-		t.Error("a patient with no zone was given the server's day")
+		draftFor(c, patientA, nil)); !errors.Is(err, dosing.ErrNoTimezone) {
+		t.Errorf("a patient with no zone gave %v, want ErrNoTimezone", err)
 	}
 }
 
@@ -234,6 +261,8 @@ func eventRow(t *testing.T, c clinic, id string) storedEvent {
 type storedDay struct {
 	source string
 	mood   int
+	energy int
+	sleep  int
 	note   string
 	tags   string
 }
@@ -243,9 +272,11 @@ func dayRow(t *testing.T, c clinic, patient, day string) storedDay {
 
 	var read storedDay
 	ask(t, c, `
-		SELECT source, coalesce(mood, 0), coalesce(note, ''), tags::text
+		SELECT source, coalesce(mood, 0), coalesce(energy, 0), coalesce(sleep, 0),
+		       coalesce(note, ''), tags::text
 		FROM app.journal_entries WHERE patient_id = $1 AND entry_date = $2::date
-	`, []any{patient, day}, &read.source, &read.mood, &read.note, &read.tags)
+	`, []any{patient, day}, &read.source, &read.mood, &read.energy, &read.sleep,
+		&read.note, &read.tags)
 
 	return read
 }
@@ -303,4 +334,217 @@ func daysOn(t *testing.T, c clinic, patient, day string) int {
 	`, []any{patient, day}, &days)
 
 	return days
+}
+
+// The vial is resolved and not chosen, which is the recorded invariant: exactly one open,
+// undisposed vial of the item's compound is the answer, and with two the server leaves it
+// empty rather than guessing. The KMP's mock takes the fullest of the two and admits in its
+// own comment that this is «at most wrong by one vial» — and a wrong vial is a wrong
+// remaining count, which is the number the patient reorders on.
+func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
+	for _, cabinet := range []struct {
+		name  string
+		open  int
+		named bool
+	}{
+		{"no open vial at all", 0, false},
+		{"one open vial", 1, true},
+		{"two open vials of the same compound", 2, false},
+	} {
+		t.Run(cabinet.name, func(t *testing.T) {
+			c, pool := logging(t)
+			openVials(t, c, patientA, cabinet.open)
+
+			logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+				draftFor(c, patientA, nil))
+			if err != nil {
+				t.Fatalf("logging: %v", err)
+			}
+			if (logged.VialID != nil) != cabinet.named {
+				t.Errorf("the dose names vial %v, want named=%v", logged.VialID, cabinet.named)
+			}
+			if cabinet.named && *logged.VialID != c.vial[patientA] {
+				t.Errorf("the dose names %s, want the patient's own open vial", *logged.VialID)
+			}
+		})
+	}
+}
+
+// A disposed vial is still on the shelf as history, and drawing from it would put a dose into
+// one the patient threw away.
+func TestADisposedVialIsNotDrawnFrom(t *testing.T) {
+	c, pool := logging(t)
+	openVials(t, c, patientA, 1)
+	disposeOf(t, c, c.vial[patientA])
+
+	logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, nil))
+	if err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+	if logged.VialID != nil {
+		t.Errorf("the dose was drawn from %s, which was thrown away", *logged.VialID)
+	}
+}
+
+// And the patient's own choice wins over the resolution when the picker did make one.
+func TestAVialTheAppNamedIsTheOneUsed(t *testing.T) {
+	c, pool := logging(t)
+	second := openVials(t, c, patientA, 2)
+
+	named := second
+	logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, func(d *dosing.Draft) { d.VialID = &named }))
+	if err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+	if logged.VialID == nil || *logged.VialID != second {
+		t.Errorf("the dose names %v, want the one the app chose", logged.VialID)
+	}
+}
+
+// openVials opens `count` vials of the seeded compound and answers the last one's id. The
+// clinic seeds one sealed vial per patient; a second is added when two are wanted.
+func openVials(t *testing.T, c clinic, patient string, count int) string {
+	t.Helper()
+
+	if count == 0 {
+		return ""
+	}
+
+	// As the patient, because opening a vial is the patient's own act: step 3 gave the
+	// service path SELECT and INSERT on vials and deliberately no UPDATE.
+	var last string
+	if err := database.WithCaller(
+		t.Context(), c.request, database.Caller{Subject: patient, Role: "patient"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `
+				UPDATE app.vials SET opened_at = DATE '2026-05-01' WHERE id = $1
+			`, c.vial[patient]); err != nil {
+				return err
+			}
+			last = c.vial[patient]
+			if count < 2 {
+				return nil
+			}
+
+			return tx.QueryRow(ctx, `
+				INSERT INTO app.vials
+				    (patient_id, compound_id, concentration_label, total_doses,
+				     opened_at, expires_on)
+				VALUES ($1, $2, '2,4 мг/0,75 мл', 4, DATE '2026-05-02', DATE '2026-12-31')
+				RETURNING id::text
+			`, patient, compoundID).Scan(&last)
+		},
+	); err != nil {
+		t.Fatalf("opening %d vials: %v", count, err)
+	}
+
+	return last
+}
+
+func disposeOf(t *testing.T, c clinic, vial string) {
+	t.Helper()
+
+	if err := database.WithCaller(
+		t.Context(), c.request, database.Caller{Subject: patientA, Role: "patient"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx,
+				`UPDATE app.vials SET disposed_at = DATE '2026-05-05' WHERE id = $1`, vial)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("disposing of %s: %v", vial, err)
+	}
+}
+
+// The ordinary sequence: a check-in in the morning, a dose in the evening. Nothing in this
+// step logged a dose onto a day that already had an entry, so the upsert's conflict branch
+// was held by nothing — replacing DO UPDATE with DO NOTHING left the package green — and
+// with it the three rules journal.Merge holds and the schema cannot express.
+//
+// Step 4 left this measurement here by name: «если шаг 8 станет апсертить по другому
+// арбитру, контроль надо переписывать тогда же — здесь этого не заметит ничто».
+func TestADoseMergesIntoTheDayTheCheckInAlreadyWrote(t *testing.T) {
+	c, pool := logging(t)
+
+	morning := journal.CheckInDraft{
+		EntryDate: civil.NewDate(2026, time.May, 10),
+		Mood:      pointTo(2),
+		Energy:    pointTo(3),
+		Sleep:     pointTo(4),
+		Tags:      []journal.Tag{journal.TagNausea},
+		Note:      pointTo("утром так себе"),
+	}
+	writeCheckIn(t, c, patientA, morning)
+
+	evening := 5
+	if _, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, func(d *dosing.Draft) {
+			d.Mood = &evening
+			d.Sides = []dosing.SideEffect{journal.TagNausea, journal.TagSite}
+		})); err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+
+	day := dayRow(t, c, patientA, "2026-05-10")
+
+	// Provenance is set once: the day was born of a hand-written check-in, and a dose
+	// logged against it later does not make that untrue.
+	if day.source != "manual" {
+		t.Errorf("the day's provenance is now %q", day.source)
+	}
+	// A named reading overrides, an unnamed one keeps what was there.
+	if day.mood != 5 {
+		t.Errorf("the mood is %d, want the evening's", day.mood)
+	}
+	if day.energy != 3 || day.sleep != 4 {
+		t.Errorf("energy and sleep read %d and %d, want the morning's", day.energy, day.sleep)
+	}
+	// A blank note is a skipped note, not an erased one.
+	if day.note != "утром так себе" {
+		t.Errorf("the note is %q", day.note)
+	}
+	// Tags accumulate without duplicates: nausea was reported twice and is one tag.
+	if day.tags != "{nausea,site}" {
+		t.Errorf("the tags read %s", day.tags)
+	}
+	if days := daysOn(t, c, patientA, "2026-05-10"); days != 1 {
+		t.Errorf("the day has %d rows", days)
+	}
+}
+
+func pointTo[T any](v T) *T { return &v }
+
+// writeCheckIn puts a hand-written day in, as the patient — which is the seam the diary's
+// own write path uses.
+func writeCheckIn(t *testing.T, c clinic, patient string, draft journal.CheckInDraft) {
+	t.Helper()
+
+	entry, err := journal.Merge(nil, civil.UserID(patient), draft, journal.SourceManual)
+	if err != nil {
+		t.Fatalf("merging: %v", err)
+	}
+
+	tags := make([]string, 0, len(entry.Tags))
+	for _, tag := range entry.Tags {
+		tags = append(tags, string(tag))
+	}
+
+	if err := database.WithCaller(
+		t.Context(), c.request, database.Caller{Subject: patient, Role: "patient"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.journal_entries
+				    (patient_id, entry_date, mood, energy, sleep, tags, note, source)
+				VALUES ($1, $2::date, $3, $4, $5, $6::text[], $7, $8)
+			`, patient, entry.EntryDate.String(), entry.Mood, entry.Energy, entry.Sleep,
+				tags, entry.Note, string(entry.Source))
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("writing the check-in: %v", err)
+	}
 }

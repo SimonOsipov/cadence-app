@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
 	"github.com/SimonOsipov/cadence-app/api/internal/journal"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
@@ -150,6 +151,18 @@ func record(
 		}
 	}
 
+	// The vial the patient named, or the one the cabinet resolves to. «Resolved, not
+	// chosen» is the recorded invariant: with two open vials of one compound the server
+	// leaves it empty rather than guessing, and the picker arrives in M4.
+	vial := draft.VialID
+	if vial == nil && compound != nil {
+		resolved, err := inventory.OpenVialFor(ctx, tx, patient, string(*compound))
+		if err != nil {
+			return Logged{}, err
+		}
+		vial = resolved
+	}
+
 	sides := make([]string, 0, len(draft.Sides))
 	for _, side := range draft.Sides {
 		sides = append(sides, string(side))
@@ -166,7 +179,7 @@ func record(
 		        $9, $10, $11, $12, $13::text[], $14, $15, $16)
 		RETURNING id::text
 	`, string(patient), string(plan.Protocol.ID), string(slot.ItemID), draft.VialID, compound,
-		slot.Date.String(), slotTime(slot), now, slot.Prescribed.Value, string(slot.Prescribed.Unit),
+		slot.Date.String(), slotTime(slot), now, draft.Dose.Value, string(draft.Dose.Unit),
 		siteCode(draft.Site), draft.Mood, sides, draft.Note, draft.PhotoPath,
 		draft.ClientRequestID).Scan(&eventID); err != nil {
 		return Logged{}, classify(err)
@@ -180,8 +193,8 @@ func record(
 		Outcome:     Written,
 		EventID:     eventID,
 		JournalDate: slot.Date,
-		Dose:        *slot.Prescribed,
-		VialID:      draft.VialID,
+		Dose:        *draft.Dose,
+		VialID:      vial,
 	}, nil
 }
 
@@ -246,9 +259,9 @@ type theFirstTime struct {
 //
 // The draft's own meaning and not the request's bytes, which is what the decision asks for:
 // a client that reordered its side effects or reformatted its JSON sent the same dose. The
-// dose value is compared as the draft sent it — not as the course prescribed it, which is
-// what the row stores — because that is the field the client controls and would have got
-// wrong.
+// dose is compared too, and it is the field a patient is most likely to correct before the
+// queue drains — a retry changing only the number would otherwise be accepted as a repeat and
+// answered with the old one, which is the fault the conflict exists to stop hiding.
 func (first theFirstTime) differsFrom(draft Draft) string {
 	sides := make([]string, 0, len(draft.Sides))
 	for _, side := range draft.Sides {
@@ -261,6 +274,8 @@ func (first theFirstTime) differsFrom(draft Draft) string {
 	switch {
 	case first.itemID != draft.ItemID:
 		return "protocol_item_id"
+	case first.Dose != *draft.Dose:
+		return "dose_value"
 	case !samePointer(first.VialID, draft.VialID):
 		return "vial_id"
 	case !samePointer(first.site, siteCode(draft.Site)):
@@ -356,9 +371,10 @@ func entryOn(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, day civil.Date,
 ) (*journal.Entry, error) {
 	var (
-		entry journal.Entry
-		on    time.Time
-		tags  []string
+		entry  journal.Entry
+		on     time.Time
+		tags   []string
+		source string
 	)
 	err := tx.QueryRow(ctx, `
 		SELECT patient_id::text, entry_date, mood, energy, sleep, tags, note, source
@@ -366,7 +382,7 @@ func entryOn(
 		WHERE patient_id = $1 AND entry_date = $2::date
 	`, string(patient), day.String()).Scan(
 		&entry.PatientID, &on, &entry.Mood, &entry.Energy, &entry.Sleep,
-		&tags, &entry.Note, &entry.Source)
+		&tags, &entry.Note, &source)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -375,6 +391,17 @@ func entryOn(
 	}
 
 	entry.EntryDate = civil.NewDate(on.Year(), on.Month(), on.Day())
+
+	// Parsed like the tags below it, and for the same reason. A stored value the schema
+	// accepts and Go does not is a set that drifted; the two are reconciled by test, so
+	// this cannot happen, and if it does it is louder than carrying an unknown provenance
+	// into a merge that decides whether to keep it.
+	parsed, ok := journal.ParseSource(source)
+	if !ok {
+		return nil, fmt.Errorf("the day of %v was born as %q", entry.EntryDate, source)
+	}
+	entry.Source = parsed
+
 	for _, stored := range tags {
 		// A value the schema accepts and Go does not is a set that drifted, and the two
 		// are reconciled by test — so this cannot happen, and if it does it is louder

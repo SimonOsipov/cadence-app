@@ -55,8 +55,11 @@ func (s *Service) Register(api huma.API) {
 			"the item has no occurrence in the patient's own day, which is what an app left " +
 			"open across midnight produces; `incomplete` means the draft cannot make an " +
 			"event. A repeat carrying the same client_request_id answers what the first " +
-			"answered and writes nothing. The dose recorded is the one the course " +
-			"prescribes, not the one the request carries.",
+			"answered and writes nothing, and one carrying a different draft is a 409 " +
+			"naming the field that differs. The dose recorded is the one the request " +
+			"carries: the wizard's dose is editable, and a patient who stepped down " +
+			"from what the course prescribes has done so — the prescription stays in " +
+			"the course, so the two can be compared.",
 		Tags: []string{"dosing"},
 		Errors: []int{
 			http.StatusBadRequest,
@@ -75,13 +78,13 @@ type LogDoseInput struct {
 	Body struct {
 		ItemID string `json:"protocol_item_id" format:"uuid" doc:"The prescribed item this dose answers."`
 
-		DoseValue float64 `json:"dose_value" exclusiveMinimum:"0" doc:"What the patient believes they took. The dose recorded is the course's; this is carried so a mismatch can be noticed rather than silently overwritten."`
+		DoseValue float64 `json:"dose_value" exclusiveMinimum:"0" doc:"What the patient took, which is what is recorded: the wizard's dose is editable, and a patient who steps down from what the course prescribes has done so. The prescription stays in the course, so the two can be compared."`
 		DoseUnit  string  `json:"dose_unit" enum:"мг,мкг"`
 
 		VialID    *string  `json:"vial_id,omitempty" format:"uuid" doc:"The vial it was drawn from. Absent when the picker was skipped, which costs that vial's count one dose — a truth about what is known."`
-		Site      *string  `json:"site_code,omitempty" doc:"The body zone, one of the ten the map draws."`
+		Site      *string  `json:"site_code,omitempty" enum:"l-abdomen,r-abdomen,l-delt,r-delt,l-glute,r-glute,l-thigh,r-thigh,l-lback,r-lback" doc:"The body zone, one of the ten the map draws."`
 		Mood      *int     `json:"mood,omitempty" minimum:"1" maximum:"5"`
-		Sides     []string `json:"side_effects,omitempty" doc:"The seven §03 names. The same set the diary's tags come from, because one action writes both rows."`
+		Sides     []string `json:"side_effects,omitempty" enum:"nausea,fatigue,headache,bloating,insomnia,site,appetite" doc:"The seven §03 names. The same set the diary's tags come from, because one action writes both rows."`
 		Note      *string  `json:"note,omitempty" maxLength:"2000"`
 		PhotoPath *string  `json:"photo_path,omitempty" doc:"The stored key of the photo, under the patient's own prefix."`
 
@@ -96,7 +99,7 @@ type LogDoseOutput struct {
 
 		EventID     string  `json:"dose_event_id,omitempty" doc:"Present when the outcome is written."`
 		JournalDate string  `json:"journal_date,omitempty" format:"date" doc:"The day whose diary entry this dose wrote. The entry has no id of its own — the day is its identity."`
-		DoseValue   float64 `json:"dose_value,omitempty" doc:"What the course prescribes for that occurrence, read back off the event."`
+		DoseValue   float64 `json:"dose_value,omitempty" doc:"Read back off the event: what was recorded as taken."`
 		DoseUnit    string  `json:"dose_unit,omitempty"`
 		VialID      *string `json:"vial_id,omitempty"`
 	}

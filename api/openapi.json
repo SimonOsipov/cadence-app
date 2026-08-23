@@ -222,7 +222,7 @@
             "type": "string"
           },
           "dose_value": {
-            "description": "What the patient believes they took. The dose recorded is the course's; this is carried so a mismatch can be noticed rather than silently overwritten.",
+            "description": "What the patient took, which is what is recorded: the wizard's dose is editable, and a patient who steps down from what the course prescribes has done so. The prescription stays in the course, so the two can be compared.",
             "exclusiveMinimum": 0,
             "format": "double",
             "type": "number"
@@ -249,6 +249,15 @@
           "side_effects": {
             "description": "The seven §03 names. The same set the diary's tags come from, because one action writes both rows.",
             "items": {
+              "enum": [
+                "nausea",
+                "fatigue",
+                "headache",
+                "bloating",
+                "insomnia",
+                "site",
+                "appetite"
+              ],
               "type": "string"
             },
             "type": [
@@ -258,6 +267,18 @@
           },
           "site_code": {
             "description": "The body zone, one of the ten the map draws.",
+            "enum": [
+              "l-abdomen",
+              "r-abdomen",
+              "l-delt",
+              "r-delt",
+              "l-glute",
+              "r-glute",
+              "l-thigh",
+              "r-thigh",
+              "l-lback",
+              "r-lback"
+            ],
             "type": "string"
           },
           "vial_id": {
@@ -285,7 +306,7 @@
             "type": "string"
           },
           "dose_value": {
-            "description": "What the course prescribes for that occurrence, read back off the event.",
+            "description": "Read back off the event: what was recorded as taken.",
             "format": "double",
             "type": "number"
           },
@@ -846,7 +867,7 @@
     },
     "/v1/me/dose-events": {
       "post": {
-        "description": "Writes the dose and the day's diary entry in one transaction — one action, two facts — and answers which of four things happened. The four are a 200 with a body and not HTTP errors: the client branches on them, so they are expected results rather than failures. `written` carries the identifiers; `already_logged` means every occurrence of that item today is recorded, so a repeat cannot take another dose out of the vial; `not_scheduled_today` means the item has no occurrence in the patient's own day, which is what an app left open across midnight produces; `incomplete` means the draft cannot make an event. A repeat carrying the same client_request_id answers what the first answered and writes nothing. The dose recorded is the one the course prescribes, not the one the request carries.",
+        "description": "Writes the dose and the day's diary entry in one transaction — one action, two facts — and answers which of four things happened. The four are a 200 with a body and not HTTP errors: the client branches on them, so they are expected results rather than failures. `written` carries the identifiers; `already_logged` means every occurrence of that item today is recorded, so a repeat cannot take another dose out of the vial; `not_scheduled_today` means the item has no occurrence in the patient's own day, which is what an app left open across midnight produces; `incomplete` means the draft cannot make an event. A repeat carrying the same client_request_id answers what the first answered and writes nothing, and one carrying a different draft is a 409 naming the field that differs. The dose recorded is the one the request carries: the wizard's dose is editable, and a patient who stepped down from what the course prescribes has done so — the prescription stays in the course, so the two can be compared.",
         "operationId": "log-dose",
         "requestBody": {
           "content": {

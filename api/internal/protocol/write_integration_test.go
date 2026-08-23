@@ -759,9 +759,11 @@ func TestTheActivePlanIsReadWholeOrNotAtAll(t *testing.T) {
 
 	draft := aCourse(writePatientA)
 	draft.Items = append(draft.Items, protocol.DraftItem{
-		Kind:     protocol.KindSupplement,
-		Cadence:  protocol.CadenceDaily,
-		Times:    []civil.Slot{{Hour: 8}, {Hour: 20}},
+		Kind:    protocol.KindSupplement,
+		Cadence: protocol.CadenceDaily,
+		// Descending on purpose: nothing orders this column, so a read taking it as
+		// stored would put the morning dose against the evening occurrence.
+		Times:    []civil.Slot{{Hour: 20}, {Hour: 8}},
 		Loggable: true,
 		Phases: []protocol.ProtocolPhase{
 			{FromWeek: 1, ToWeek: 6, Dose: protocol.Dose{Value: 250, Unit: protocol.MCG}},
@@ -837,8 +839,11 @@ func TestTheActivePlanIsReadWholeOrNotAtAll(t *testing.T) {
 	if supplement.CompoundID != nil {
 		t.Errorf("the supplement names a drug: %v", *supplement.CompoundID)
 	}
-	if len(supplement.Times) != 2 || supplement.Times[1] != (civil.Slot{Hour: 20}) {
-		t.Errorf("the supplement is at %v", supplement.Times)
+	// In clock order, whatever order the form sent. The fixture below sends them
+	// descending, so an implementation reading the column as stored fails.
+	if len(supplement.Times) != 2 ||
+		supplement.Times[0] != (civil.Slot{Hour: 8}) || supplement.Times[1] != (civil.Slot{Hour: 20}) {
+		t.Errorf("the supplement is at %v, want 08:00 then 20:00", supplement.Times)
 	}
 	if len(supplement.DaysOfWeek) != 0 {
 		t.Errorf("a daily item names weekdays: %v", supplement.DaysOfWeek)

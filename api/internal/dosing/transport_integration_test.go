@@ -98,8 +98,17 @@ func TestTheAppCanRecordADoseThroughTheTransport(t *testing.T) {
 	}
 }
 
-// Every outcome reached through the transport rather than asserted of a function: an outcome
-// no request can produce is a contract nobody honours, and all four are a 200.
+// Three of the four outcomes reached through the transport, and the fourth named rather than
+// claimed. `incomplete` is unreachable here: every draft that produces it is refused by the
+// generated schema first — an empty item id fails the uuid format, an empty key fails
+// minLength, a missing unit fails the enum, a dose of nothing fails exclusiveMinimum — so
+// over HTTP it is a 422 and never a 200 with that body.
+//
+// It stays in the set because Resolve is a Go function with its own callers: the seed of step
+// 11 builds drafts by hand and passes through no schema. What is wrong is publishing it to a
+// client that can never see it, and that is a step-12 question for the divergence register
+// rather than something to paper over here — a client branch never taken is exactly the
+// shape this feature's record keeps warning about.
 func TestEachOutcomeIsReachedThroughTheTransport(t *testing.T) {
 	c := newClinic(t)
 

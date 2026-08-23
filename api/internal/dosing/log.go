@@ -50,11 +50,13 @@ type Slot struct {
 	ItemID protocol.ProtocolItemID
 	Date   civil.Date
 
-	// Absent for an item with no named time; the schedule then matches on the day alone.
+	// Never absent in practice: protocol_items_has_a_slot keeps the array non-empty and
+	// the generator walks it, so every occurrence carries a time. A pointer because the
+	// column is nullable and the row shape has to be able to say so.
 	Time *civil.Slot
 
-	// The course's dose for that day, not the draft's. A client sending a number the
-	// course does not prescribe would otherwise write it into the clinical record.
+	// What the course prescribes for that occurrence. Not what is stored — the event
+	// records what the patient took — and carried so the two can be compared.
 	Prescribed *protocol.Dose
 }
 

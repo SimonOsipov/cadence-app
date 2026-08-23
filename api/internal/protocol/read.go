@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -92,6 +93,18 @@ func readItems(ctx context.Context, tx pgx.Tx, plan *Plan) error {
 		for _, slot := range at {
 			item.Times = append(item.Times, civil.Slot{Hour: slot.Hour(), Minute: slot.Minute()})
 		}
+		// Sorted, and nothing else orders them: the column keeps whatever order the
+		// doctor's form sent, and the generator walks the array as it is. A course
+		// entered «20:00, 08:00» would put the morning dose against the evening
+		// occurrence — «the first open slot» is a rule about the clock, not about the
+		// order of entry.
+		slices.SortFunc(item.Times, func(a, b civil.Slot) int {
+			if a.Hour != b.Hour {
+				return a.Hour - b.Hour
+			}
+
+			return a.Minute - b.Minute
+		})
 
 		plan.Items = append(plan.Items, item)
 	}

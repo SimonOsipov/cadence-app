@@ -102,7 +102,7 @@ export type LogDoseInputBody = {
     client_request_id: string;
     dose_unit: 'мг' | 'мкг';
     /**
-     * What the patient believes they took. The dose recorded is the course's; this is carried so a mismatch can be noticed rather than silently overwritten.
+     * What the patient took, which is what is recorded: the wizard's dose is editable, and a patient who steps down from what the course prescribes has done so. The prescription stays in the course, so the two can be compared.
      */
     dose_value: number;
     mood?: number;
@@ -118,11 +118,11 @@ export type LogDoseInputBody = {
     /**
      * The seven §03 names. The same set the diary's tags come from, because one action writes both rows.
      */
-    side_effects?: Array<string> | null;
+    side_effects?: Array<'nausea' | 'fatigue' | 'headache' | 'bloating' | 'insomnia' | 'site' | 'appetite'> | null;
     /**
      * The body zone, one of the ten the map draws.
      */
-    site_code?: string;
+    site_code?: 'l-abdomen' | 'r-abdomen' | 'l-delt' | 'r-delt' | 'l-glute' | 'r-glute' | 'l-thigh' | 'r-thigh' | 'l-lback' | 'r-lback';
     /**
      * The vial it was drawn from. Absent when the picker was skipped, which costs that vial's count one dose — a truth about what is known.
      */
@@ -136,7 +136,7 @@ export type LogDoseOutputBody = {
     dose_event_id?: string;
     dose_unit?: string;
     /**
-     * What the course prescribes for that occurrence, read back off the event.
+     * Read back off the event: what was recorded as taken.
      */
     dose_value?: number;
     /**
