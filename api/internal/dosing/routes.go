@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -115,10 +116,10 @@ func (s *Service) log(ctx context.Context, in *LogDoseInput) (*LogDoseOutput, er
 		return nil, huma.Error401Unauthorized("no verified principal on the request context")
 	}
 	// A patient-only surface, refused rather than left to the policies. For a doctor the
-	// answer would be a bland «not scheduled today», and for an admin every policy on the
-	// four tables in play is USING (true) — so the Go predicate would be the only
-	// boundary left on all five statements. Every neighbouring /v1/me surface refuses the
-	// same way.
+	// answer would be a bland «not scheduled today»; for an admin every policy on all
+	// seven tables this transaction touches is USING (true), so the subject Log fixes
+	// would be the only boundary on every one of its nine statements. Every neighbouring
+	// /v1/me surface refuses the same way.
 	if principal.Role != "patient" {
 		return nil, huma.Error403Forbidden("only a patient records their own doses")
 	}
@@ -161,7 +162,7 @@ func (s *Service) draft(in *LogDoseInput) (Draft, error) {
 		Dose:            &protocol.Dose{Value: in.Body.DoseValue, Unit: unit},
 		VialID:          in.Body.VialID,
 		Mood:            in.Body.Mood,
-		Note:            in.Body.Note,
+		Note:            blankIsAbsent(in.Body.Note),
 		PhotoPath:       in.Body.PhotoPath,
 		ClientRequestID: in.Body.ClientRequestID,
 	}
@@ -197,7 +198,8 @@ func answer(err error) error {
 		// A client error and not a repeat: the retry queue sends what it saved, so a
 		// divergence means it saved the wrong thing, and the message names the field.
 		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, ErrNoSuchVial), errors.Is(err, ErrPhotoNotTheirs):
+	case errors.Is(err, ErrNoSuchVial), errors.Is(err, ErrPhotoNotTheirs),
+		errors.Is(err, ErrNoteSaysNothing):
 		// The schema refuses both on every path; this is that refusal read back as the
 		// field the caller filled in rather than as a constraint they cannot see.
 		return huma.Error422UnprocessableEntity(err.Error())
@@ -211,6 +213,18 @@ func answer(err error) error {
 	default:
 		return huma.Error500InternalServerError("recording the dose", err)
 	}
+}
+
+// blankIsAbsent is journal.Merge's rule about a note, applied one layer earlier because this
+// path reaches a column that does not share it: dose_events refuses a note of nothing, so a
+// client serialising a cleared box as "" rather than omitting the field raised 23514 — an
+// unclassified 500, forever, because the offline queue would keep re-sending it.
+func blankIsAbsent(note *string) *string {
+	if note == nil || strings.TrimSpace(*note) == "" {
+		return nil
+	}
+
+	return note
 }
 
 // parseSite is the zones' own constructor, beside protocol's four and journal's two.

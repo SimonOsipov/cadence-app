@@ -45,6 +45,14 @@ type Draft struct {
 	ClientRequestID string
 }
 
+// incomplete is «this draft cannot make a dose event», and it is asked twice on purpose: by
+// Resolve, which is pure and has its own callers, and by the write before it takes a
+// connection — where a draft with no dose would otherwise reach a comparison that reads one.
+func (d Draft) incomplete() bool {
+	return d.ItemID == "" || d.ClientRequestID == "" ||
+		d.Dose == nil || d.Dose.Value <= 0 || d.Dose.Unit == ""
+}
+
 // Slot is the occurrence a draft resolved to, and what the course prescribes for it.
 type Slot struct {
 	ItemID protocol.ProtocolItemID
@@ -67,8 +75,7 @@ type Slot struct {
 // Pure, and separate from the write for the reason protocol's generator is: the four outcomes
 // are a decision about a plan and a history, and testing them should not need a database.
 func Resolve(plan protocol.Plan, logged []protocol.LoggedSlot, today civil.Date, draft Draft) (Slot, Outcome) {
-	if draft.ItemID == "" || draft.ClientRequestID == "" ||
-		draft.Dose == nil || draft.Dose.Value <= 0 || draft.Dose.Unit == "" {
+	if draft.incomplete() {
 		return Slot{}, Incomplete
 	}
 

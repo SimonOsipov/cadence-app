@@ -647,10 +647,10 @@ func TestASlotAnotherDeviceTookIsAlreadyLogged(t *testing.T) {
 		t.Fatalf("the other device: %v", err)
 	}
 
-	// This one resolves against a history it read before that row existed. Reproducing
-	// that ordering exactly needs two transactions interleaved; what this measures is the
-	// half that is reachable — the insert failing on the slot's uniqueness — which is the
-	// arm `classify` and the savepoint exist for.
+	// And this one is answered by Resolve, which sees that row: the insert is never
+	// reached, so neither classify's slot arm nor the savepoint is executed here. Saying
+	// otherwise is what the first version of this comment did, four lines under a header
+	// that already said the truth.
 	logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
 		draftFor(c, patientA, nil))
 	if err != nil {

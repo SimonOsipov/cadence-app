@@ -38,6 +38,11 @@ var (
 	// The photo key is not under the patient's own prefix. A prefix is where a key
 	// begins, and this constraint is about where it points.
 	ErrPhotoNotTheirs = errors.New("the photo key is not under this patient's prefix")
+
+	// A note of nothing. The transport drops one before it gets here, so this answers the
+	// in-process callers — and it is named rather than left as a 500 because the offline
+	// queue would re-send a request that always fails.
+	ErrNoteSaysNothing = errors.New("a note is either absent or says something")
 )
 
 // Logged is what the write answers. The identifiers are absent for every outcome but Written,
@@ -71,6 +76,15 @@ func Log(
 	// subject would make journal.Merge's ownership comparison, which is a Go string
 	// equality between the two, refuse the patient's own day.
 	patient := civil.UserID(strings.ToLower(caller.Subject))
+
+	// Before a connection is taken, and before the repeat lookup: differsFrom compares a
+	// draft field by field, and a draft with no dose has nothing to compare — an
+	// in-process caller reusing a key with a half-built draft would have panicked there.
+	// Resolve keeps its own copy of this check, because it is a pure function with its
+	// own callers.
+	if draft.incomplete() {
+		return Logged{Outcome: Incomplete}, nil
+	}
 
 	var logged Logged
 	err := database.WithCaller(ctx, pool, caller, func(ctx context.Context, tx pgx.Tx) error {
@@ -130,8 +144,12 @@ func Log(
 
 		logged, err = record(ctx, race, patient, plan, slot, now, draft)
 		if err != nil {
+			// Joined and not replaced: a failing rollback would otherwise turn a 422
+			// naming the caller's own field into an unexplained 500, and make the
+			// slot race unrecoverable — the cause has to survive as the errors.Is
+			// target whatever the savepoint does.
 			if rollback := race.Rollback(ctx); rollback != nil {
-				return rollback
+				return errors.Join(err, rollback)
 			}
 			if errors.Is(err, errLostTheSlot) {
 				// The other request wrote it between Resolve and the insert. The
@@ -175,7 +193,20 @@ func record(
 	// chosen» is the recorded invariant: with two open vials of one compound the server
 	// leaves it empty rather than guessing, and the picker arrives in M4.
 	vial := draft.VialID
-	if vial == nil && compound != nil {
+	switch {
+	case vial != nil && compound != nil:
+		// A named vial gets the same predicate the resolution uses, and not merely the
+		// composite key's «is it theirs»: a dose charged to a thrown-away vial or to
+		// another drug's is a wrong remaining count, which is the number the patient
+		// reorders on.
+		drawable, err := inventory.IsDrawableFor(ctx, tx, patient, string(*compound), *vial)
+		if err != nil {
+			return Logged{}, err
+		}
+		if !drawable {
+			return Logged{}, fmt.Errorf("%s: %w", *vial, ErrNoSuchVial)
+		}
+	case vial == nil && compound != nil:
 		resolved, err := inventory.OpenVialFor(ctx, tx, patient, string(*compound))
 		if err != nil {
 			return Logged{}, err
@@ -401,10 +432,15 @@ func entryOn(
 		tags   []string
 		source string
 	)
+	// FOR UPDATE because this is a read-modify-write: the merge happens in Go, and two
+	// writes landing on one day — a twice-daily item, or a dose against a day being
+	// written elsewhere — would both read the same row and the second would overwrite the
+	// first's merge instead of merging on top of it. DO UPDATE makes that loss silent.
 	err := tx.QueryRow(ctx, `
 		SELECT patient_id::text, entry_date, mood, energy, sleep, tags, note, source
 		FROM app.journal_entries
 		WHERE patient_id = $1 AND entry_date = $2::date
+		FOR UPDATE
 	`, string(patient), day.String()).Scan(
 		&entry.PatientID, &on, &entry.Mood, &entry.Energy, &entry.Sleep,
 		&tags, &entry.Note, &source)
@@ -485,6 +521,8 @@ func classify(err error) error {
 		return ErrNoSuchVial
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == photoIsUnderTheirPrefix:
 		return ErrPhotoNotTheirs
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == noteSaysSomething:
+		return ErrNoteSaysNothing
 	default:
 		return err
 	}
@@ -498,6 +536,7 @@ const (
 	oneDosePerSlot          = "dose_events_one_per_slot"
 	vialIsTheirOwn          = "dose_events_drawn_from_their_own_vial"
 	photoIsUnderTheirPrefix = "dose_events_photo_key_is_under_its_own_prefix"
+	noteSaysSomething       = "dose_events_note_check"
 )
 
 // errLostTheSlot never leaves this package: it is the race becoming the outcome that names

@@ -849,8 +849,21 @@ func TestTheActivePlanIsReadWholeOrNotAtAll(t *testing.T) {
 		t.Errorf("a daily item names weekdays: %v", supplement.DaysOfWeek)
 	}
 
-	// The phases, keyed by their item and in week order — the generator reads them by
-	// week, and a map keyed wrongly would give one item another's titration.
+	// The whole key set, not only the two entries read below: every assertion here
+	// indexes by an item id that came from the scoped item read, so another patient's
+	// phases would sit in the map unseen. That is the deputy — «every caller happens to
+	// index by a scoped key» — and step 9's aggregates need not.
+	if len(plan.Phases) != 2 {
+		t.Errorf("the plan carries phases for %d items, want 2", len(plan.Phases))
+	}
+	for keyed := range plan.Phases {
+		if keyed != injection.ID && keyed != supplement.ID {
+			t.Errorf("the plan carries phases for %s, which is not this course's", keyed)
+		}
+	}
+
+	// And in week order — the generator reads them by week, and a map keyed wrongly
+	// would give one item another's titration.
 	if bands := plan.Phases[supplement.ID]; len(bands) != 2 ||
 		bands[0].FromWeek != 1 || bands[1].Dose.Value != 500 || bands[1].Dose.Unit != protocol.MCG {
 		t.Errorf("the supplement's phases read %+v", bands)

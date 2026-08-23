@@ -316,9 +316,9 @@ func TestAVialOrAPhotoBelongingToAnotherPatientIsRefused(t *testing.T) {
 	}
 }
 
-// A patient-only surface. For a doctor the answer would be a bland «not scheduled today»,
-// and for an admin every policy on the four tables in play is USING (true) — so the Go
-// predicate would be the only boundary left.
+// A patient-only surface. For a doctor the answer would be a bland «not scheduled today»;
+// for an admin every policy on all seven tables this transaction touches is USING (true),
+// so the subject Log fixes would be the only boundary on every one of its nine statements.
 func TestOnlyAPatientRecordsTheirOwnDoses(t *testing.T) {
 	c := newClinic(t)
 
@@ -332,5 +332,63 @@ func TestOnlyAPatientRecordsTheirOwnDoses(t *testing.T) {
 				t.Errorf("a %s wrote %d doses", role, doses)
 			}
 		})
+	}
+}
+
+// A vial the request names gets the same predicate the resolution uses, minus «already
+// opened» — naming a sealed one is how a patient starts it. What it does not get is a
+// weaker one: a thrown-away vial, or one of another drug, is a wrong remaining count, and
+// that is the number the patient reorders on.
+func TestAVialTheRequestNamesIsHeldToTheSamePredicate(t *testing.T) {
+	c := newClinic(t)
+	disposed := openVials(t, c, patientB, 1)
+	disposeOf(t, c, c.vial[patientA])
+
+	for _, named := range []struct {
+		name string
+		vial string
+	}{
+		{"one they threw away", c.vial[patientA]},
+		{"one belonging to somebody else", disposed},
+	} {
+		t.Run(named.name, func(t *testing.T) {
+			status, body := send(t, c, patientA, aPayload(c, patientA, func(b map[string]any) {
+				b["vial_id"] = named.vial
+			}))
+			if status != http.StatusUnprocessableEntity {
+				t.Errorf("answered %d, want 422: %s", status, body)
+			}
+			if doses := dosesOn(t, c, patientA, "2026-05-10"); doses != 0 {
+				t.Errorf("the refused request left %d doses", doses)
+			}
+		})
+	}
+}
+
+// A note the patient typed into and then cleared. The column refuses a note of nothing, so
+// a client serialising an empty box as "" rather than omitting the field raised 23514 — an
+// unclassified 500, and the offline queue would have re-sent it forever.
+func TestANoteClearedToNothingIsNotANote(t *testing.T) {
+	c := newClinic(t)
+
+	for _, cleared := range []string{"", "   ", "\t\n"} {
+		status, body := send(t, c, patientA, aPayload(c, patientA, func(b map[string]any) {
+			b["note"] = cleared
+			b["client_request_id"] = "cleared-note-000"
+		}))
+		if status != http.StatusOK {
+			t.Fatalf("a note of %q answered %d: %s", cleared, status, body)
+		}
+	}
+
+	if day := dayRow(t, c, patientA, "2026-05-10"); day.note != "" {
+		t.Errorf("the day carries the note %q", day.note)
+	}
+	var stored string
+	ask(t, c, `
+		SELECT coalesce(note, '') FROM app.dose_events WHERE client_request_id = 'cleared-note-000'
+	`, nil, &stored)
+	if stored != "" {
+		t.Errorf("the event carries the note %q", stored)
 	}
 }
