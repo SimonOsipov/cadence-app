@@ -352,10 +352,9 @@ func (d Drug) ref() CompoundRef {
 
 // answer maps a refusal to a status. Every named error of this context appears here, and
 // anything unnamed is a 500 — a default that mapped the unknown onto 422 would tell a doctor
-// their form is wrong about a bug in this process.
-// answer maps a domain failure onto its status; doing is what the caller was attempting, and
-// it is a parameter because the same mapper serves the writes and the three reads — an
-// unrecognised failure on GET /v1/me/today reported itself as «writing the course».
+// their form is wrong about a bug in this process. doing is a parameter because the same
+// mapper serves the writes and the three reads, and an unrecognised failure on
+// GET /v1/me/today reported itself as «writing the course».
 func answer(doing string, err error) error {
 	switch {
 	case errors.Is(err, ErrNotAPrescriber), errors.Is(err, ErrNotYourPatient):
@@ -457,6 +456,42 @@ func (s *Service) registerReads(api huma.API) {
 			http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 		},
 	}, s.day)
+
+	admitNull(api, "TodayBody", "meal_macros", "targets")
+	admitNull(api, "RowBody", "compound")
+}
+
+// admitNull rewrites a property that is a bare $ref into «this object or null».
+//
+// huma cannot express it: `nullable:"true"` over a $ref panics outright (schema.go:623 —
+// «nullable is not supported for field … which is type '#/components/schemas/…'»), and
+// without the tag the published property is a plain $ref that a generator reads as
+// non-nullable and required. It is required — the field is always present — but its value
+// can be null, and a client generated from the unrewritten document types it MacrosBody and
+// throws on the first patient whose nutrition context does not exist.
+//
+// Scalars need none of this: huma writes them as type: [integer, null] on its own.
+func admitNull(api huma.API, schema string, properties ...string) {
+	registry := api.OpenAPI().Components.Schemas
+	target := registry.SchemaFromRef("#/components/schemas/" + schema)
+	if target == nil {
+		panic("admitNull: no schema named " + schema)
+	}
+	for _, name := range properties {
+		property, ok := target.Properties[name]
+		if !ok || property.Ref == "" {
+			panic("admitNull: " + schema + "." + name + " is not a $ref")
+		}
+		target.Properties[name] = &huma.Schema{
+			Description: property.Description,
+			OneOf: []*huma.Schema{
+				{Ref: property.Ref},
+				// huma names every type but this one, because it never emits it
+				// for a $ref — which is the whole reason this function exists.
+				{Type: "null"},
+			},
+		}
+	}
 }
 
 // TodayOutput is the hero screen.
@@ -519,8 +554,6 @@ type CompoundBody struct {
 	Icon   string `json:"icon"`
 }
 
-// RowBody is ProtocolRow's shape and not a flattening of it. There is no `title`: it would
-// be compound.name_ru a second time, free to disagree with it, and absent from the KMP type.
 func renderCompound(compound Compound) *CompoundBody {
 	return &CompoundBody{
 		ID: string(compound.ID), NameRU: compound.NameRU, Unit: string(compound.DefaultUnit),
@@ -528,6 +561,8 @@ func renderCompound(compound Compound) *CompoundBody {
 	}
 }
 
+// RowBody is ProtocolRow's shape and not a flattening of it. There is no `title`: it would
+// be compound.name_ru a second time, free to disagree with it, and absent from the KMP type.
 type RowBody struct {
 	ItemID      string        `json:"protocol_item_id"`
 	Kind        string        `json:"kind" enum:"injection,supplement,weigh_in"`

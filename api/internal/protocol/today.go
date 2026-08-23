@@ -177,15 +177,7 @@ func TodayFor(
 			// What the hero card names above the dose. Absent when the item names no
 			// drug, which an injection cannot — but the read is a join and a join can
 			// come back short, and a nil here says so rather than inventing a name.
-			if item.CompoundID != nil {
-				for i := range compounds {
-					if compounds[i].ID == *item.CompoundID {
-						today.NextDoseCompound = &compounds[i]
-
-						break
-					}
-				}
-			}
+			today.NextDoseCompound = compoundOf(compounds, item.CompoundID)
 		}
 	}
 

@@ -338,7 +338,7 @@ export type RowBody = {
     /**
      * Null when the item names no drug.
      */
-    compound: CompoundBody;
+    compound: CompoundBody | null;
     dose?: DoseBody;
     kind: 'injection' | 'supplement' | 'weigh_in';
     loggable: boolean;
@@ -414,7 +414,7 @@ export type TodayBody = {
     /**
      * Null until the nutrition context is built.
      */
-    meal_macros: MacrosBody;
+    meal_macros: MacrosBody | null;
     next_dose?: OccurrenceBody;
     next_dose_compound?: CompoundBody;
     next_titration?: StepBody;
@@ -431,7 +431,7 @@ export type TodayBody = {
     /**
      * Null until the nutrition context is built.
      */
-    targets: MacrosBody;
+    targets: MacrosBody | null;
     /**
      * Of the open vial. Absent when the patient holds none of that drug.
      */

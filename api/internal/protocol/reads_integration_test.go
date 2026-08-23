@@ -213,7 +213,10 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 		t.Errorf("with two vials open the count is %v, want three", shown(left))
 	}
 
-	sealASpare(t, requests, writePatientA, 9)
+	// Thrown away and not sealed: a sealed 9-dose vial stays in the cabinet, and the
+	// arithmetic below would then read 3+9+1 = thirteen weeks of supply and answer no hint
+	// for that reason instead of the rule under test. Disposal leaves the shelf as it was.
+	disposeAVial(t, requests, writePatientA, 9)
 
 	// One dose in the spare, deliberately: a large spare would silence the hint through
 	// the weeks arithmetic instead, and the rule under test — «0 sealed spares» — would be
@@ -501,6 +504,24 @@ func sealASpare(t *testing.T, requests *pgxpool.Pool, patient string, total int)
 	}
 }
 
+func disposeAVial(t *testing.T, requests *pgxpool.Pool, patient string, total int) {
+	t.Helper()
+
+	if err := database.WithCaller(
+		t.Context(), requests, database.Caller{Subject: patient, Role: "patient"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx,
+				`UPDATE app.vials SET disposed_at = DATE '2026-05-09'
+				  WHERE patient_id = $1 AND total_doses = $2`,
+				patient, total)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("disposing of the vial: %v", err)
+	}
+}
+
 // drawDoses logs n injections against the seeded course, each drawn from the open vial and
 // each on its own day — the slot's unique index is what makes the dates differ.
 func drawDoses(t *testing.T, service, requests *pgxpool.Pool, patient string, n int) {
@@ -560,10 +581,11 @@ func anotherCourse(patient string) protocol.Draft {
 }
 
 // Two patients, both with a running course and an open vial, asked the same three questions.
-// The fixture the transport reads were written against held one patient's data, and under it
-// the tenant predicate is a no-op: swapping s.requests for the service pool — where every
-// policy is USING (true) — kept every assertion green, because A's course was the only one
-// in the clinic. Nothing measured which of the two locks was holding.
+// What this kills is an answer assembled for the wrong caller — the fixture these reads were
+// written against held one patient's data, so every field could have come from anywhere.
+// Which of the two locks holds is measured elsewhere and not here: RLS by
+// policies_integration_test.go in this package, the Go argument by inventory's and dosing's
+// own suites on the service seam, where no policy answers at all.
 func TestTheThreeReadsAnswerEachPatientTheirOwn(t *testing.T) {
 	service, requests := prescribingWithRequests(t)
 
@@ -575,6 +597,14 @@ func TestTheThreeReadsAnswerEachPatientTheirOwn(t *testing.T) {
 	}
 	openAVial(t, service, requests, writePatientA, 6)
 	openAVialOf(t, service, requests, writePatientB, "Тирзепатид", 12)
+	// B also holds A's drug, opened earlier than A's own vial: without it the two cabinets
+	// share no compound and the read's compound filter answers correctly before anything
+	// about the patient is consulted. It is a trap and not a measurement — measured, the
+	// leak stays unreachable here because RLS filters vialsOf under the request pool
+	// whether or not its WHERE and CabinetOf's filter are there. Those two are witnessed
+	// on the service seam, in inventory's own suite, where no policy answers.
+	openAVialOn(t, service, requests, writePatientB, "Семаглутид", 40,
+		civil.NewDate(2026, time.April, 20))
 
 	for _, patient := range []struct {
 		name     string

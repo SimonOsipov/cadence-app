@@ -809,8 +809,15 @@
             "type": "string"
           },
           "compound": {
-            "$ref": "#/components/schemas/CompoundBody",
-            "description": "Null when the item names no drug."
+            "description": "Null when the item names no drug.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CompoundBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "dose": {
             "$ref": "#/components/schemas/DoseBody"
@@ -1014,8 +1021,15 @@
             ]
           },
           "meal_macros": {
-            "$ref": "#/components/schemas/MacrosBody",
-            "description": "Null until the nutrition context is built."
+            "description": "Null until the nutrition context is built.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MacrosBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "next_dose": {
             "$ref": "#/components/schemas/OccurrenceBody"
@@ -1063,8 +1077,15 @@
             ]
           },
           "targets": {
-            "$ref": "#/components/schemas/MacrosBody",
-            "description": "Null until the nutrition context is built."
+            "description": "Null until the nutrition context is built.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MacrosBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "vial_doses_left": {
             "description": "Of the open vial. Absent when the patient holds none of that drug.",
