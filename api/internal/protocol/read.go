@@ -173,8 +173,11 @@ func CompoundsFor(ctx context.Context, tx pgx.Tx, plan Plan) ([]Compound, error)
 		return nil, nil
 	}
 
+	// Without `code`, and that is the patient's grant speaking rather than a preference:
+	// step 2 kept the seed's key on the server and gave the request roles a column list
+	// that omits it. Selecting it here is a 42501 for every patient opening their day.
 	rows, err := tx.Query(ctx, `
-		SELECT id::text, coalesce(code, ''), name_ru, default_unit, route, icon
+		SELECT id::text, name_ru, default_unit, route, icon
 		FROM app.compounds
 		WHERE id = ANY($1::uuid[])
 	`, ids)
@@ -186,7 +189,7 @@ func CompoundsFor(ctx context.Context, tx pgx.Tx, plan Plan) ([]Compound, error)
 	var compounds []Compound
 	for rows.Next() {
 		var compound Compound
-		if err := rows.Scan(&compound.ID, &compound.Code, &compound.NameRU,
+		if err := rows.Scan(&compound.ID, &compound.NameRU,
 			&compound.DefaultUnit, &compound.Route, &compound.Icon); err != nil {
 			return nil, err
 		}

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -60,6 +61,10 @@ func contexts(opts Options) []boundedContext {
 	// nil check would pass while every call dereferenced nothing.
 	directory := identity.NewDirectory(opts.ServicePool)
 
+	// One value answering two of protocol's interfaces: both are questions about the same
+	// table, and splitting them would be two constructors over one connection.
+	history := dosing.NewHistory(time.Now)
+
 	var profiles identity.ProfileReader
 	if reader := identity.NewProfiles(opts.Pool); reader != nil {
 		profiles = reader
@@ -82,7 +87,13 @@ func contexts(opts Options) []boundedContext {
 		{"messaging", messaging.Register},
 		{"notifications", notifications.Register},
 		{"nutrition", nutrition.Register},
-		{"protocol", protocol.NewService(opts.ServicePool).Register},
+		{"protocol", protocol.NewService(protocol.Deps{
+			ServicePool: opts.ServicePool,
+			RequestPool: opts.Pool,
+			Doses:       history,
+			Rotation:    history,
+			Cabinet:     inventory.NewSupply(),
+		}).Register},
 	}
 }
 

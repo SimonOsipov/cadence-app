@@ -3,12 +3,16 @@ package protocol
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
@@ -19,9 +23,46 @@ import (
 // INSERT on any of these tables. The request pool would answer nothing here.
 type Service struct {
 	service *pgxpool.Pool
+
+	// The request pool, and the three neighbours, for the reads: a patient asking about
+	// their own day is answered under their own identity, so RLS is the boundary — unlike
+	// the writes above it, which are cross-actor and go through the service seam.
+	requests *pgxpool.Pool
+	doses    Doses
+	rotation Rotation
+	cabinet  Cabinet
+
+	// The clock, injected for the reason every day in this feature is: the summary is
+	// about the patient's own day, and a handler reading time.Now cannot be run against
+	// a calendar.
+	now func() time.Time
 }
 
-func NewService(servicePool *pgxpool.Pool) *Service { return &Service{service: servicePool} }
+// Deps is what this context's operations answer from. The three neighbours arrive as
+// interfaces this package declared, which is what keeps the dependency running one way.
+type Deps struct {
+	ServicePool *pgxpool.Pool
+	RequestPool *pgxpool.Pool
+	Doses       Doses
+	Rotation    Rotation
+	Cabinet     Cabinet
+	Now         func() time.Time
+}
+
+// NewService takes the clock from its caller and does not default it: the guard in this
+// package's own suite refuses any file here that reads the clock, for the reason the
+// generator's `today` parameter exists — a package that reads it cannot be run against a
+// calendar. A nil one is the document generator's assembly, and the handlers refuse.
+func NewService(deps Deps) *Service {
+	return &Service{
+		service:  deps.ServicePool,
+		requests: deps.RequestPool,
+		doses:    deps.Doses,
+		rotation: deps.Rotation,
+		cabinet:  deps.Cabinet,
+		now:      deps.Now,
+	}
+}
 
 // Register mounts this context's operations on the API.
 func (s *Service) Register(api huma.API) {
@@ -69,6 +110,8 @@ func (s *Service) Register(api huma.API) {
 			http.StatusServiceUnavailable,
 		},
 	}, s.replace)
+
+	s.registerReads(api)
 }
 
 // CourseInput is a prescription as the dashboard sends it.
@@ -313,6 +356,12 @@ func answer(err error) error {
 		// The same answer for both, and deliberately: telling an unassigned doctor
 		// that the patient exists is a fact about somebody else's care team.
 		return huma.Error403Forbidden("this caller does not prescribe for this patient")
+	case errors.Is(err, ErrNoTimezone):
+		// A provisioning fault rather than a bad request: the patient's account is
+		// missing something the clinic was meant to record.
+		return huma.Error500InternalServerError("the patient's timezone is not recorded", err)
+	case errors.Is(err, ErrNotADay):
+		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.Is(err, ErrMalformedIdentifier):
 		return huma.Error422UnprocessableEntity("an identifier is not a UUID", err)
 	case errors.Is(err, ErrNoSuchProtocol):
@@ -344,4 +393,447 @@ func isAShapeRefusal(err error) bool {
 	}
 
 	return false
+}
+
+// The three reads of the schedule. All on the request seam: a patient asking about their own
+// day is answered under their own identity, and RLS is the boundary rather than a Go
+// predicate — unlike the writes above, which are cross-actor.
+func (s *Service) registerReads(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "get-today",
+		Method:      http.MethodGet,
+		Path:        "/v1/me/today",
+		Summary:     "The patient's day",
+		Description: "Everything the hero screen draws: the day and the part of it in the " +
+			"patient's own zone, the cycle week, the next injection still open with the " +
+			"drug it names, the week's prescription strip, whether a dose was logged " +
+			"today, the open vial's remaining doses, a reorder hint, the next titration " +
+			"step and the injection zone to suggest. Fields of contexts that are not " +
+			"built — nutrition and measurements — are null rather than zero: an absent " +
+			"value is a dash on the screen, and a zero is a sentence about a " +
+			"prescription that does not exist. A patient with no running course still " +
+			"gets the day, the part of it and the suggested zone.",
+		Tags:   []string{"protocol"},
+		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable},
+	}, s.today)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-schedule-month",
+		Method:      http.MethodGet,
+		Path:        "/v1/me/schedule",
+		Summary:     "A month of the calendar",
+		Description: "One cell per day of the month, every day of it — days prescribing " +
+			"nothing included, because the calendar draws a month and the window's " +
+			"arithmetic is the server's: it came from the patient's own zone. Each cell " +
+			"carries the cycle week, whether an injection falls that day, whether " +
+			"anything is still pending and whether everything is done. A day with " +
+			"nothing prescribed and a day whose occurrences were all missed are both " +
+			"neither pending nor done; the client tells them apart by opening the day.",
+		Tags: []string{"protocol"},
+		Errors: []int{
+			http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
+		},
+	}, s.month)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-schedule-day",
+		Method:      http.MethodGet,
+		Path:        "/v1/me/schedule/day",
+		Summary:     "The occurrences of one day",
+		Description: "What the sheet that opens on a tap draws: every occurrence of that " +
+			"day with its time, its dose and its state. Generated rather than stored — " +
+			"there is no schedule table, so a course edited yesterday changes what " +
+			"yesterday's day says about tomorrow.",
+		Tags: []string{"protocol"},
+		Errors: []int{
+			http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
+		},
+	}, s.day)
+}
+
+// TodayOutput is the hero screen.
+type TodayOutput struct {
+	Body TodayBody
+}
+
+type TodayBody struct {
+	Date      string `json:"date" format:"date"`
+	PartOfDay string `json:"part_of_day" enum:"night,morning,afternoon,evening"`
+	CycleWeek *int   `json:"cycle_week,omitempty" doc:"Absent outside the course and for a cancelled one."`
+
+	NextDose         *OccurrenceBody `json:"next_dose,omitempty"`
+	NextDoseCompound *CompoundBody   `json:"next_dose_compound,omitempty"`
+	SuggestedSite    string          `json:"suggested_site" doc:"Computed from what was logged, not frozen."`
+	WeekProtocol     []RowBody       `json:"week_protocol"`
+	DoseLoggedToday  bool            `json:"dose_logged_today"`
+
+	VialDosesLeft *int         `json:"vial_doses_left,omitempty" doc:"Of the open vial. Absent when the patient holds none of that drug."`
+	Reorder       *ReorderBody `json:"reorder,omitempty"`
+	NextTitration *StepBody    `json:"next_titration,omitempty"`
+
+	MealCount      *int      `json:"meal_count" doc:"Null until the nutrition context is built."`
+	MealMacros     *Macros   `json:"meal_macros" doc:"Null until the nutrition context is built."`
+	Targets        *Macros   `json:"targets" doc:"Null until the nutrition context is built."`
+	WeightKG       *float64  `json:"weight_kg" doc:"Null until the measurements context is built."`
+	WeightSeries   []float64 `json:"weight_series" doc:"Null until the measurements context is built."`
+	TargetWeightKG *float64  `json:"target_weight_kg" doc:"Null until the measurements context is built."`
+}
+
+type OccurrenceBody struct {
+	ItemID string    `json:"protocol_item_id"`
+	Kind   string    `json:"kind"`
+	Date   string    `json:"date" format:"date"`
+	Time   string    `json:"time"`
+	Dose   *DoseBody `json:"dose,omitempty"`
+	Status string    `json:"status" enum:"done,pending,missed,scheduled"`
+}
+
+type DoseBody struct {
+	Value float64 `json:"value"`
+	Unit  string  `json:"unit"`
+}
+
+type CompoundBody struct {
+	ID     string `json:"id"`
+	NameRU string `json:"name_ru"`
+	Unit   string `json:"default_unit"`
+	Route  string `json:"route"`
+	Icon   string `json:"icon"`
+}
+
+type RowBody struct {
+	ItemID      string    `json:"protocol_item_id"`
+	Kind        string    `json:"kind"`
+	Title       string    `json:"title"`
+	Dose        *DoseBody `json:"dose,omitempty"`
+	Times       []string  `json:"times"`
+	TodayStatus *string   `json:"today_status,omitempty"`
+	Loggable    bool      `json:"loggable"`
+}
+
+type ReorderBody struct {
+	CompoundID string `json:"compound_id"`
+	WeeksLeft  int    `json:"weeks_left"`
+}
+
+type StepBody struct {
+	Week int      `json:"week"`
+	On   string   `json:"on" format:"date"`
+	From DoseBody `json:"from"`
+	To   DoseBody `json:"to"`
+}
+
+// ScheduleInput takes the month as a string rather than two numbers: «2026-05» is one field
+// the client cannot get half right, and a year without a month is a request that means
+// nothing.
+type ScheduleInput struct {
+	Month string `query:"month" pattern:"^[0-9]{4}-(0[1-9]|1[0-2])$" doc:"The month to draw, as YYYY-MM. Defaults to the one the patient is in."`
+}
+
+type ScheduleOutput struct {
+	Body struct {
+		Days []DayBody `json:"days"`
+	}
+}
+
+type DayBody struct {
+	Date         string `json:"date" format:"date"`
+	CycleWeek    *int   `json:"cycle_week,omitempty"`
+	HasInjection bool   `json:"has_injection"`
+	AnyPending   bool   `json:"any_pending"`
+	AllDone      bool   `json:"all_done"`
+}
+
+type DayInput struct {
+	Date string `query:"date" format:"date" doc:"The day to open. Defaults to the patient's today."`
+}
+
+type DayOutput struct {
+	Body struct {
+		Date        string           `json:"date" format:"date"`
+		CycleWeek   *int             `json:"cycle_week,omitempty"`
+		Occurrences []OccurrenceBody `json:"occurrences"`
+	}
+}
+
+func (s *Service) today(ctx context.Context, _ *struct{}) (*TodayOutput, error) {
+	patient, caller, err := s.patient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var body TodayBody
+	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
+		at, clock, err := s.dayOf(ctx, tx, patient)
+		if err != nil {
+			return err
+		}
+
+		plan, running, err := ActivePlanFor(ctx, tx, patient)
+		if err != nil {
+			return err
+		}
+		compounds, err := CompoundsFor(ctx, tx, plan)
+		if err != nil {
+			return err
+		}
+
+		summary, err := TodayFor(ctx, tx, patient, plan, compounds, running, at, clock,
+			s.doses, s.rotation, s.cabinet)
+		if err != nil {
+			return err
+		}
+		body = renderToday(summary)
+
+		return nil
+	}); err != nil {
+		return nil, answer(err)
+	}
+
+	return &TodayOutput{Body: body}, nil
+}
+
+func (s *Service) month(ctx context.Context, in *ScheduleInput) (*ScheduleOutput, error) {
+	patient, caller, err := s.patient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &ScheduleOutput{}
+	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
+		at, _, err := s.dayOf(ctx, tx, patient)
+		if err != nil {
+			return err
+		}
+
+		window, ok := monthAsked(in.Month, at)
+		if !ok {
+			return fmt.Errorf("%q: %w", in.Month, ErrNotADay)
+		}
+
+		plan, running, err := ActivePlanFor(ctx, tx, patient)
+		if err != nil {
+			return err
+		}
+
+		var logged []LoggedSlot
+		if running {
+			if logged, err = s.doses.LoggedSlotsIn(ctx, tx, patient, window); err != nil {
+				return err
+			}
+		}
+
+		for _, day := range ScheduleFor(plan, logged, window, at) {
+			out.Body.Days = append(out.Body.Days, DayBody{
+				Date:         day.Date.String(),
+				CycleWeek:    day.CycleWeek,
+				HasInjection: day.HasInjection,
+				AnyPending:   day.AnyPending,
+				AllDone:      day.AllDone,
+			})
+		}
+
+		return nil
+	}); err != nil {
+		return nil, answer(err)
+	}
+
+	return out, nil
+}
+
+func (s *Service) day(ctx context.Context, in *DayInput) (*DayOutput, error) {
+	patient, caller, err := s.patient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &DayOutput{}
+	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
+		at, _, err := s.dayOf(ctx, tx, patient)
+		if err != nil {
+			return err
+		}
+		asked := at
+		if in.Date != "" {
+			parsed, err := time.Parse(time.DateOnly, in.Date)
+			if err != nil {
+				return fmt.Errorf("%q: %w", in.Date, ErrNotADay)
+			}
+			asked = civil.NewDate(parsed.Year(), parsed.Month(), parsed.Day())
+		}
+
+		plan, running, err := ActivePlanFor(ctx, tx, patient)
+		if err != nil {
+			return err
+		}
+
+		out.Body.Date = asked.String()
+		if !running {
+			return nil
+		}
+		if week, inCourse := CycleWeek(plan.Protocol, asked); inCourse {
+			out.Body.CycleWeek = &week
+		}
+
+		oneDay, ok := civil.NewRange(asked, asked)
+		if !ok {
+			return fmt.Errorf("%v: %w", asked, ErrNotADay)
+		}
+		logged, err := s.doses.LoggedSlotsIn(ctx, tx, patient, oneDay)
+		if err != nil {
+			return err
+		}
+
+		for _, occurrence := range OccurrencesFor(plan, logged, asked, at) {
+			out.Body.Occurrences = append(out.Body.Occurrences, renderOccurrence(occurrence))
+		}
+
+		return nil
+	}); err != nil {
+		return nil, answer(err)
+	}
+
+	return out, nil
+}
+
+// patient is the caller, refused unless they are one. Every neighbouring /v1/me surface
+// refuses the same way, and here it matters twice: an admin's policies are USING (true) on
+// every table these reads touch, so the caller's own subject would be the only boundary.
+func (s *Service) patient(ctx context.Context) (civil.UserID, database.Caller, error) {
+	if s.requests == nil || s.now == nil || s.doses == nil || s.rotation == nil || s.cabinet == nil {
+		return "", database.Caller{},
+			huma.Error500InternalServerError("this API was assembled without its reads")
+	}
+
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return "", database.Caller{},
+			huma.Error401Unauthorized("no verified principal on the request context")
+	}
+	if principal.Role != "patient" {
+		return "", database.Caller{}, huma.Error403Forbidden("this is a patient's own day")
+	}
+
+	subject := strings.ToLower(principal.Subject)
+
+	return civil.UserID(subject), database.Caller{Subject: subject, Role: principal.Role}, nil
+}
+
+// dayOf is the patient's own day and the hour within it. There is no default zone: every
+// occurrence is generated in the patient's day, so the server's would answer about a
+// different one for half a clinic.
+func (s *Service) dayOf(
+	ctx context.Context, tx pgx.Tx, patient civil.UserID,
+) (civil.Date, civil.Slot, error) {
+	var zone *string
+	if err := tx.QueryRow(ctx,
+		`SELECT timezone FROM app.profiles WHERE user_id = $1`, string(patient)).Scan(&zone); err != nil {
+		return civil.Date{}, civil.Slot{}, fmt.Errorf("reading the timezone of %s: %w", patient, err)
+	}
+	if zone == nil || *zone == "" {
+		return civil.Date{}, civil.Slot{}, fmt.Errorf("%s: %w", patient, ErrNoTimezone)
+	}
+
+	where, err := time.LoadLocation(*zone)
+	if err != nil {
+		return civil.Date{}, civil.Slot{}, fmt.Errorf("the zone %q of %s: %w", *zone, patient, err)
+	}
+
+	local := s.now().In(where)
+
+	return civil.NewDate(local.Year(), local.Month(), local.Day()),
+		civil.Slot{Hour: local.Hour(), Minute: local.Minute()}, nil
+}
+
+// monthAsked is the window a month parameter means, or the patient's own month when it is
+// absent — the client opening the calendar has not chosen one yet.
+func monthAsked(asked string, at civil.Date) (civil.Range, bool) {
+	if asked == "" {
+		return civil.MonthOf(at.Year, at.Month)
+	}
+
+	parsed, err := time.Parse("2006-01", asked)
+	if err != nil {
+		return civil.Range{}, false
+	}
+
+	return civil.MonthOf(parsed.Year(), parsed.Month())
+}
+
+func renderToday(summary Today) TodayBody {
+	body := TodayBody{
+		Date:            summary.Date.String(),
+		PartOfDay:       string(summary.PartOfDay),
+		CycleWeek:       summary.CycleWeek,
+		SuggestedSite:   summary.SuggestedSite,
+		DoseLoggedToday: summary.DoseLoggedToday,
+		VialDosesLeft:   summary.VialDosesLeft,
+		WeekProtocol:    make([]RowBody, 0, len(summary.WeekProtocol)),
+	}
+
+	if summary.NextDose != nil {
+		occurrence := renderOccurrence(*summary.NextDose)
+		body.NextDose = &occurrence
+	}
+	if summary.NextDoseCompound != nil {
+		body.NextDoseCompound = &CompoundBody{
+			ID: string(summary.NextDoseCompound.ID), NameRU: summary.NextDoseCompound.NameRU,
+			Unit:  string(summary.NextDoseCompound.DefaultUnit),
+			Route: summary.NextDoseCompound.Route, Icon: summary.NextDoseCompound.Icon,
+		}
+	}
+	if summary.Reorder != nil {
+		body.Reorder = &ReorderBody{
+			CompoundID: string(summary.Reorder.CompoundID), WeeksLeft: summary.Reorder.WeeksLeft,
+		}
+	}
+	if summary.NextTitration != nil {
+		body.NextTitration = &StepBody{
+			Week: summary.NextTitration.Week, On: summary.NextTitration.Date.String(),
+			From: DoseBody{summary.NextTitration.From.Value, string(summary.NextTitration.From.Unit)},
+			To:   DoseBody{summary.NextTitration.To.Value, string(summary.NextTitration.To.Unit)},
+		}
+	}
+
+	for _, row := range summary.WeekProtocol {
+		rendered := RowBody{
+			ItemID:   string(row.ItemID),
+			Kind:     string(row.Kind),
+			Times:    make([]string, 0, len(row.Times)),
+			Loggable: row.Loggable,
+		}
+		if row.Compound != nil {
+			rendered.Title = row.Compound.NameRU
+		}
+		if row.Dose != nil {
+			rendered.Dose = &DoseBody{row.Dose.Value, string(row.Dose.Unit)}
+		}
+		for _, at := range row.Times {
+			rendered.Times = append(rendered.Times, at.String())
+		}
+		if row.TodayStatus != nil {
+			status := string(*row.TodayStatus)
+			rendered.TodayStatus = &status
+		}
+		body.WeekProtocol = append(body.WeekProtocol, rendered)
+	}
+
+	return body
+}
+
+func renderOccurrence(occurrence Occurrence) OccurrenceBody {
+	body := OccurrenceBody{
+		ItemID: string(occurrence.ItemID),
+		Kind:   string(occurrence.Kind),
+		Date:   occurrence.Date.String(),
+		Time:   occurrence.Time.String(),
+		Status: string(occurrence.Status),
+	}
+	if occurrence.Dose != nil {
+		body.Dose = &DoseBody{occurrence.Dose.Value, string(occurrence.Dose.Unit)}
+	}
+
+	return body
 }

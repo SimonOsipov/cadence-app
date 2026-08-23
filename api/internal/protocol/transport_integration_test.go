@@ -30,7 +30,7 @@ func send(t *testing.T, pool *pgxpool.Pool, caller auth.Principal, method, path,
 			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), caller)))
 		})
 	})
-	protocol.NewService(pool).Register(httpserver.NewAPI(mux))
+	protocol.NewService(protocol.Deps{ServicePool: pool}).Register(httpserver.NewAPI(mux))
 
 	req := httptest.NewRequest(method, path, strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")

@@ -39,6 +39,11 @@ var (
 	// where a refusal belongs. It lives here rather than in Draft.Check because the
 	// generator may not import the database package, and IsUUIDShaped is its.
 	ErrMalformedIdentifier = errors.New("the identifier is not a UUID")
+
+	// A patient whose profile carries no zone. Every occurrence is generated in their own
+	// day, so there is no safe default: the server's would answer about a different day
+	// for half a clinic, and refusing says which patient to fix.
+	ErrNoTimezone = errors.New("the patient's timezone is not recorded")
 )
 
 // Written is what the caller gets back: the identifiers the database chose, in the order the

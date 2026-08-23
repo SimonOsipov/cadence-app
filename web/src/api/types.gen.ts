@@ -4,6 +4,14 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type CompoundBody = {
+    default_unit: string;
+    icon: string;
+    id: string;
+    name_ru: string;
+    route: string;
+};
+
 export type Course = {
     /**
      * What is prescribed. A course with nothing in it is refused.
@@ -50,6 +58,25 @@ export type CreatedProvider = {
      * The doctor's id. The same value the invitation link signs them in as.
      */
     user_id: string;
+};
+
+export type DayBody = {
+    all_done: boolean;
+    any_pending: boolean;
+    cycle_week?: number;
+    date: string;
+    has_injection: boolean;
+};
+
+export type DayOutputBody = {
+    cycle_week?: number;
+    date: string;
+    occurrences: Array<OccurrenceBody> | null;
+};
+
+export type DoseBody = {
+    unit: string;
+    value: number;
 };
 
 export type Drug = {
@@ -147,6 +174,13 @@ export type LogDoseOutputBody = {
     vial_id?: string;
 };
 
+export type Macros = {
+    Carbs: number;
+    Fat: number;
+    Kcal: number;
+    Protein: number;
+};
+
 export type Me = {
     /**
      * When the presented token stops being accepted.
@@ -206,6 +240,15 @@ export type NewProviderBody = {
     title_ru?: string;
 };
 
+export type OccurrenceBody = {
+    date: string;
+    dose?: DoseBody;
+    kind: string;
+    protocol_item_id: string;
+    status: 'done' | 'pending' | 'missed' | 'scheduled';
+    time: string;
+};
+
 export type Phase = {
     dose_unit: 'мг' | 'мкг';
     dose_value: number;
@@ -255,6 +298,11 @@ export type ProblemDetail = {
     message: string;
 };
 
+export type ReorderBody = {
+    compound_id: string;
+    weeks_left: number;
+};
+
 export type RosterPage = {
     /**
      * Pass as cursor for the following page. Absent on the last one.
@@ -283,6 +331,20 @@ export type RosterRow = {
      * The patient's id, and the key every later request about them is made on.
      */
     user_id: string;
+};
+
+export type RowBody = {
+    dose?: DoseBody;
+    kind: string;
+    loggable: boolean;
+    protocol_item_id: string;
+    times: Array<string> | null;
+    title: string;
+    today_status?: string;
+};
+
+export type ScheduleOutputBody = {
+    days: Array<DayBody> | null;
 };
 
 export type SessionBody = {
@@ -325,6 +387,60 @@ export type StaffPage = {
      * Everyone who may be put on a care team, ordered by name.
      */
     staff: Array<StaffMember>;
+};
+
+export type StepBody = {
+    from: DoseBody;
+    on: string;
+    to: DoseBody;
+    week: number;
+};
+
+export type TodayBody = {
+    /**
+     * Absent outside the course and for a cancelled one.
+     */
+    cycle_week?: number;
+    date: string;
+    dose_logged_today: boolean;
+    /**
+     * Null until the nutrition context is built.
+     */
+    meal_count: number | null;
+    /**
+     * Null until the nutrition context is built.
+     */
+    meal_macros: Macros;
+    next_dose?: OccurrenceBody;
+    next_dose_compound?: CompoundBody;
+    next_titration?: StepBody;
+    part_of_day: 'night' | 'morning' | 'afternoon' | 'evening';
+    reorder?: ReorderBody;
+    /**
+     * Computed from what was logged, not frozen.
+     */
+    suggested_site: string;
+    /**
+     * Null until the measurements context is built.
+     */
+    target_weight_kg: number | null;
+    /**
+     * Null until the nutrition context is built.
+     */
+    targets: Macros;
+    /**
+     * Of the open vial. Absent when the patient holds none of that drug.
+     */
+    vial_doses_left?: number;
+    week_protocol: Array<RowBody> | null;
+    /**
+     * Null until the measurements context is built.
+     */
+    weight_kg: number | null;
+    /**
+     * Null until the measurements context is built.
+     */
+    weight_series: Array<number> | null;
 };
 
 export type DashboardOverviewData = {
@@ -463,6 +579,98 @@ export type LogDoseResponses = {
 
 export type LogDoseResponse = LogDoseResponses[keyof LogDoseResponses];
 
+export type GetScheduleMonthData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The month to draw, as YYYY-MM. Defaults to the one the patient is in.
+         */
+        month?: string;
+    };
+    url: '/v1/me/schedule';
+};
+
+export type GetScheduleMonthErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetScheduleMonthError = GetScheduleMonthErrors[keyof GetScheduleMonthErrors];
+
+export type GetScheduleMonthResponses = {
+    /**
+     * OK
+     */
+    200: ScheduleOutputBody;
+};
+
+export type GetScheduleMonthResponse = GetScheduleMonthResponses[keyof GetScheduleMonthResponses];
+
+export type GetScheduleDayData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The day to open. Defaults to the patient's today.
+         */
+        date?: string;
+    };
+    url: '/v1/me/schedule/day';
+};
+
+export type GetScheduleDayErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetScheduleDayError = GetScheduleDayErrors[keyof GetScheduleDayErrors];
+
+export type GetScheduleDayResponses = {
+    /**
+     * OK
+     */
+    200: DayOutputBody;
+};
+
+export type GetScheduleDayResponse = GetScheduleDayResponses[keyof GetScheduleDayResponses];
+
 export type RecordSessionData = {
     body: SessionBody;
     path?: never;
@@ -507,6 +715,43 @@ export type RecordSessionResponses = {
 };
 
 export type RecordSessionResponse = RecordSessionResponses[keyof RecordSessionResponses];
+
+export type GetTodayData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/me/today';
+};
+
+export type GetTodayErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetTodayError = GetTodayErrors[keyof GetTodayErrors];
+
+export type GetTodayResponses = {
+    /**
+     * OK
+     */
+    200: TodayBody;
+};
+
+export type GetTodayResponse = GetTodayResponses[keyof GetTodayResponses];
 
 export type CreatePatientData = {
     body: NewPatientBody;
