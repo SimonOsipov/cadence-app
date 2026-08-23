@@ -56,6 +56,7 @@ var (
 		// takes a connection or knows about HTTP.
 		"parse.go",
 		"shape.go",
+		"schedule.go",
 	}
 	// Everything that is deliberately not the generator: the write path holds the
 	// check, the transaction and the SQL in one file, which is this project's shape —

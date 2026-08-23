@@ -142,6 +142,15 @@ func (r Range) Contains(d Date) bool { return !d.Before(r.From) && !d.After(r.Th
 
 func (r Range) Days() int { return r.From.DaysUntil(r.Through) + 1 }
 
+// Each walks the window a day at a time, from its first to its last. A method rather than
+// arithmetic at each call site: «from, through, inclusive» written out is where one caller
+// writes `<` and stops a day early.
+func (r Range) Each(visit func(Date)) {
+	for d := r.From; !d.After(r.Through); d = d.AddDays(1) {
+		visit(d)
+	}
+}
+
 // ISOWeekday converts Go's Sunday-from-zero weekday to the 1..7 the schema stores.
 func ISOWeekday(day time.Weekday) int {
 	if day == time.Sunday {
