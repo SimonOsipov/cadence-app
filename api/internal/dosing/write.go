@@ -117,14 +117,34 @@ func Log(
 			return nil
 		}
 
-		logged, err = record(ctx, tx, patient, plan, slot, now, draft)
-		if errors.Is(err, errLostTheSlot) {
-			// The other request wrote it between Resolve and the insert. Rolled back
-			// whole, so the reply is the one it would have got a moment later.
-			logged, err = Logged{Outcome: AlreadyLogged}, nil
+		// Inside a savepoint, and that is the whole of why: a constraint violation
+		// aborts the transaction it happens in, so recovering from the slot race at
+		// this level would answer the outcome and then fail the commit — measured,
+		// pgx reports ErrTxCommitRollback, which is not a PgError and reaches the
+		// caller as a 500. The nested transaction is the savepoint; rolling it back
+		// leaves the outer one able to commit the nothing it has done.
+		race, err := tx.Begin(ctx)
+		if err != nil {
+			return err
 		}
 
-		return err
+		logged, err = record(ctx, race, patient, plan, slot, now, draft)
+		if err != nil {
+			if rollback := race.Rollback(ctx); rollback != nil {
+				return rollback
+			}
+			if errors.Is(err, errLostTheSlot) {
+				// The other request wrote it between Resolve and the insert. The
+				// reply is the one this request would have got a moment later.
+				logged = Logged{Outcome: AlreadyLogged}
+
+				return nil
+			}
+
+			return err
+		}
+
+		return race.Commit(ctx)
 	})
 	if err != nil {
 		return Logged{}, fmt.Errorf("logging a dose for %s: %w", patient, err)
@@ -178,7 +198,7 @@ func record(
 		VALUES ($1, $2, $3, $4, $5, $6::date, $7::time, $8,
 		        $9, $10, $11, $12, $13::text[], $14, $15, $16)
 		RETURNING id::text
-	`, string(patient), string(plan.Protocol.ID), string(slot.ItemID), draft.VialID, compound,
+	`, string(patient), string(plan.Protocol.ID), string(slot.ItemID), vial, compound,
 		slot.Date.String(), slotTime(slot), now, draft.Dose.Value, string(draft.Dose.Unit),
 		siteCode(draft.Site), draft.Mood, sides, draft.Note, draft.PhotoPath,
 		draft.ClientRequestID).Scan(&eventID); err != nil {
@@ -276,7 +296,12 @@ func (first theFirstTime) differsFrom(draft Draft) string {
 		return "protocol_item_id"
 	case first.Dose != *draft.Dose:
 		return "dose_value"
-	case !samePointer(first.VialID, draft.VialID):
+	// Only when this request names one. The row cannot tell «the client chose X» from
+	// «the server resolved X», so a repeat that names nothing is asking for the same
+	// resolution rather than disagreeing with it — comparing them unconditionally made
+	// every ordinary retry a conflict, which is the fault this comparison exists to
+	// avoid, one field over.
+	case draft.VialID != nil && !samePointer(first.VialID, draft.VialID):
 		return "vial_id"
 	case !samePointer(first.site, siteCode(draft.Site)):
 		return "site_code"

@@ -29,13 +29,13 @@ const (
 	writeJob      = "test.protocol.write"
 )
 
-// Two patients and two doctors assigned crosswise: «only their own patients» is not a
-// statement one patient can carry.
 // theRequestURL is the last clinic's request-seam URL. A package-level handoff rather than a
 // second return value, because only one test needs it and every other call site would carry
 // a parameter it ignores.
 var theRequestURL string
 
+// Two patients and two doctors assigned crosswise: «only their own patients» is not a
+// statement one patient can carry.
 func prescribing(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 
@@ -870,16 +870,32 @@ func TestAPatientWithNoRunningCourseHasNoPlan(t *testing.T) {
 		t.Errorf("a patient with no course: found=%v, err=%v", found, err)
 	}
 
-	written, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, aCourse(writePatientA))
-	if err != nil {
-		t.Fatalf("prescribing: %v", err)
+	// The argument and not the caller. This is the case that fails when the patient
+	// predicate is dropped: on the service seam every policy is USING (true), so with
+	// one active course in the clinic an unscoped read answers it to whoever asks —
+	// and the round-one repair, which gave the second patient a course, could not
+	// catch it, because A's course is created first and the query has no ORDER BY.
+	//
+	// Step 9's missed-dose sweep is the next caller and runs on that seam.
+	if _, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, aCourse(writePatientA)); err != nil {
+		t.Fatalf("prescribing for the first patient: %v", err)
+	}
+	if _, found, err := planFor(t, pool, writePatientB); err != nil || found {
+		t.Errorf("the other patient's course answered for %s: found=%v, err=%v", writePatientB, found, err)
+	}
+
+	written, found, err := planFor(t, pool, writePatientA)
+	if err != nil || !found {
+		t.Fatalf("reading the course just written: found=%v, err=%v", found, err)
 	}
 
 	cancelled := aCourse(writePatientA)
 	cancelled.Status = protocol.StatusCancelled
-	kept := written.ItemIDs[0]
+	kept := written.Items[0].ID
 	cancelled.Items[0].ID = &kept
-	if _, err := protocol.Replace(as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, cancelled); err != nil {
+	if _, err := protocol.Replace(
+		as(t, writeDoctorA, "doctor"), pool, written.Protocol.ID, cancelled,
+	); err != nil {
 		t.Fatalf("cancelling: %v", err)
 	}
 

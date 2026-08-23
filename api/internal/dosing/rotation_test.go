@@ -260,3 +260,20 @@ func TestTheFixtureRunsFromNewestToOldest(t *testing.T) {
 		t.Errorf("the gap is %v, want thirty days", gap)
 	}
 }
+
+// parseSite has no unit test beside it, unlike journal's ParseTag and protocol's four — and
+// over HTTP the schema's enum refuses an unknown zone before it is reached, so this is where
+// it is measured at all.
+func TestAZoneOffTheSetIsRefusedRatherThanRepresented(t *testing.T) {
+	for _, refused := range []string{"l-flank", "L-ABDOMEN", "", " l-abdomen", "abdomen"} {
+		if got, ok := parseSite(refused); ok {
+			t.Errorf("parseSite(%q) gave %q", refused, got)
+		}
+	}
+
+	for _, site := range Sites() {
+		if got, ok := parseSite(string(site)); !ok || got != site {
+			t.Errorf("parseSite(%q) gave %q, %v", site, got, ok)
+		}
+	}
+}

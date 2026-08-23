@@ -101,7 +101,7 @@ func TestTheAppCanRecordADoseThroughTheTransport(t *testing.T) {
 // Three of the four outcomes reached through the transport, and the fourth named rather than
 // claimed. `incomplete` is unreachable here: every draft that produces it is refused by the
 // generated schema first — an empty item id fails the uuid format, an empty key fails
-// minLength, a missing unit fails the enum, a dose of nothing fails exclusiveMinimum — so
+// minLength, a missing unit fails required, a dose of nothing fails exclusiveMinimum — so
 // over HTTP it is a 422 and never a 200 with that body.
 //
 // It stays in the set because Resolve is a Go function with its own callers: the seed of step
@@ -154,9 +154,13 @@ func TestEachOutcomeIsReachedThroughTheTransport(t *testing.T) {
 	}
 }
 
-// The three closed sets the wire carries, each refused rather than cast. The schema's enum
-// keyword is a courtesy to the generated client; a request that bypasses it reaches the
-// parser either way, which is what these measure.
+// The three closed sets the wire carries, refused before they become values — and by the
+// generated schema rather than by the parsers: huma validates `enum` on the body before the
+// handler runs, so none of these reaches parseSite, ParseTag or ParseDoseUnit. That is worth
+// saying rather than claiming the opposite, which the first version of this comment did.
+//
+// The parsers are what an in-process caller meets — the seed of step 11 builds drafts by hand
+// — and each has a unit test of its own beside its declaration.
 func TestAValueOffAClosedSetIsRefused(t *testing.T) {
 	c := newClinic(t)
 

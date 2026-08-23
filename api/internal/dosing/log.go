@@ -56,7 +56,9 @@ type Slot struct {
 	Time *civil.Slot
 
 	// What the course prescribes for that occurrence. Not what is stored — the event
-	// records what the patient took — and carried so the two can be compared.
+	// records what the patient took — and read by nothing in this package: it is here for
+	// the aggregates of step 9, which show the prescription beside the entry. The
+	// comparison the endpoint's text promises is made downstream, off the two tables.
 	Prescribed *protocol.Dose
 }
 

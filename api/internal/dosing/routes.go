@@ -147,9 +147,9 @@ func (s *Service) log(ctx context.Context, in *LogDoseInput) (*LogDoseOutput, er
 	return out, nil
 }
 
-// draft is where a string becomes a member of a closed set, and the two sets are parsed
-// rather than cast: the schema's enum keyword is a courtesy to the generated client, and a
-// request that bypasses it reaches here either way.
+// draft is where a string becomes a member of a closed set. Over HTTP the schema's enum
+// keyword refuses an unknown value first, so these parsers answer for the callers that reach
+// this package without one — and for the day the keyword is dropped from a field.
 func (s *Service) draft(in *LogDoseInput) (Draft, error) {
 	unit, ok := protocol.ParseDoseUnit(in.Body.DoseUnit)
 	if !ok {

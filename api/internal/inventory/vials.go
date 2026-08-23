@@ -21,6 +21,11 @@ import (
 // Open and not disposed: a disposed vial is still on the shelf as history, and drawing from
 // it would put a dose into one the patient threw away. Nothing to draw from is a truth about
 // the cabinet rather than a failure, so it is a nil and not an error.
+//
+// Callable on either seam, and the boundary differs by which. Under WithCaller the patient's
+// own policy answers and the predicate below is the second lock. On the service seam —
+// vials_service_read is USING (true), and 000016 says in its own comment that this read is
+// why — the predicate is the only one there is.
 func OpenVialFor(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string,
 ) (*string, error) {

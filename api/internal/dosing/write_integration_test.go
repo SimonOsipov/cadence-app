@@ -172,6 +172,7 @@ func TestAnInjectionWithNoCheckInStillWritesItsDay(t *testing.T) {
 // The idempotency §03 asks for: the repeat answers what the first answered and writes nothing.
 func TestARepeatOfOneRequestIsOneDose(t *testing.T) {
 	c, pool := logging(t)
+	openVials(t, c, patientA, 1)
 	draft := draftFor(c, patientA, nil)
 
 	first, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment, draft)
@@ -190,6 +191,15 @@ func TestARepeatOfOneRequestIsOneDose(t *testing.T) {
 	}
 	if again.JournalDate != first.JournalDate || again.Dose != first.Dose {
 		t.Errorf("the retry answered a different row: %+v against %+v", again, first)
+	}
+	// The vial too, read back off the row by logOf: with the resolved vial unwritten the
+	// first call named one and the retry named nothing, which is «the same result» being
+	// false in the one field the cabinet's arithmetic reads.
+	if !samePointer(again.VialID, first.VialID) {
+		t.Errorf("the retry was drawn from %v, the first from %v", again.VialID, first.VialID)
+	}
+	if first.VialID == nil {
+		t.Error("the fixture's vial is not open, so this measures nothing")
 	}
 	// Counted on the day, because the clinic's seed puts one dose on another day and
 	// «the patient has one dose» would then be false whatever the retry did.
@@ -337,6 +347,25 @@ func ask(t *testing.T, c clinic, query string, args []any, into ...any) {
 	}
 }
 
+func samePointer[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+
+	return *a == *b
+}
+
+func vialOn(t *testing.T, c clinic, event string) string {
+	t.Helper()
+
+	var vial string
+	ask(t, c, `
+		SELECT coalesce(vial_id::text, '') FROM app.dose_events WHERE id = $1
+	`, []any{event}, &vial)
+
+	return vial
+}
+
 func daysOn(t *testing.T, c clinic, patient, day string) int {
 	t.Helper()
 
@@ -356,28 +385,46 @@ func daysOn(t *testing.T, c clinic, patient, day string) int {
 // remaining count, which is the number the patient reorders on.
 func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 	for _, cabinet := range []struct {
-		name  string
-		open  int
-		named bool
+		name string
+		// How many of the caller's own vials are open, and whether the other
+		// patient's is — the second axis is what holds the read's patient predicate,
+		// and without it the seeded twin is sealed and can never be the answer.
+		open      int
+		otherOpen bool
+		named     bool
 	}{
-		{"no open vial at all", 0, false},
-		{"one open vial", 1, true},
-		{"two open vials of the same compound", 2, false},
+		{name: "no open vial at all"},
+		{name: "one open vial", open: 1, named: true},
+		{name: "two open vials of the same compound", open: 2},
+		{name: "only the other patient's vial is open", otherOpen: true},
+		{name: "one each, and theirs is not the answer", open: 1, otherOpen: true, named: true},
 	} {
 		t.Run(cabinet.name, func(t *testing.T) {
 			c, pool := logging(t)
 			openVials(t, c, patientA, cabinet.open)
+			if cabinet.otherOpen {
+				openVials(t, c, patientB, 1)
+			}
 
 			logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
 				draftFor(c, patientA, nil))
 			if err != nil {
 				t.Fatalf("logging: %v", err)
 			}
-			if (logged.VialID != nil) != cabinet.named {
-				t.Errorf("the dose names vial %v, want named=%v", logged.VialID, cabinet.named)
+			// The row and not the reply. The reply is the value the function just
+			// computed; the record is what a remaining count is subtracted over, and
+			// binding the request's vial instead of the resolved one passed every
+			// assertion here until they read the row.
+			stored := vialOn(t, c, logged.EventID)
+			want := ""
+			if cabinet.named {
+				want = c.vial[patientA]
 			}
-			if cabinet.named && *logged.VialID != c.vial[patientA] {
-				t.Errorf("the dose names %s, want the patient's own open vial", *logged.VialID)
+			if stored != want {
+				t.Errorf("the event was drawn from %q, want %q", stored, want)
+			}
+			if (logged.VialID != nil) != cabinet.named {
+				t.Errorf("the reply names vial %v, want named=%v", logged.VialID, cabinet.named)
 			}
 		})
 	}
@@ -395,8 +442,11 @@ func TestADisposedVialIsNotDrawnFrom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logging: %v", err)
 	}
+	if stored := vialOn(t, c, logged.EventID); stored != "" {
+		t.Errorf("the event was drawn from %s, which was thrown away", stored)
+	}
 	if logged.VialID != nil {
-		t.Errorf("the dose was drawn from %s, which was thrown away", *logged.VialID)
+		t.Errorf("the reply names %s, which was thrown away", *logged.VialID)
 	}
 }
 
@@ -411,8 +461,11 @@ func TestAVialTheAppNamedIsTheOneUsed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logging: %v", err)
 	}
+	if stored := vialOn(t, c, logged.EventID); stored != second {
+		t.Errorf("the event was drawn from %q, want the one the app chose", stored)
+	}
 	if logged.VialID == nil || *logged.VialID != second {
-		t.Errorf("the dose names %v, want the one the app chose", logged.VialID)
+		t.Errorf("the reply names %v, want the one the app chose", logged.VialID)
 	}
 }
 
@@ -559,5 +612,54 @@ func writeCheckIn(t *testing.T, c clinic, patient string, draft journal.CheckInD
 		},
 	); err != nil {
 		t.Fatalf("writing the check-in: %v", err)
+	}
+}
+
+// A slot another device already took, answered already_logged — and the honest note is which
+// half of that this measures. The colliding row is committed before this request starts, so
+// Resolve sees it and answers without reaching the insert. The other half — the row landing
+// between this request's read and its insert — needs the two transactions interleaved, and
+// nothing in this package can hold one open mid-way without a hook in production code.
+//
+// What guards that half is the savepoint in Log plus classify's slot arm; classify is
+// measured as a function below, and the savepoint's necessity was measured directly rather
+// than by test: without it the recovery answers the outcome and then fails the commit,
+// because a constraint violation aborts the transaction it happens in.
+func TestASlotAnotherDeviceTookIsAlreadyLogged(t *testing.T) {
+	c, pool := logging(t)
+
+	// The other device, first: same slot, its own key. Written on the service seam so it
+	// is a different connection and a different transaction.
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.dose_events
+				    (patient_id, protocol_id, protocol_item_id, scheduled_for_date,
+				     scheduled_for_time, injected_at, dose_value, dose_unit, client_request_id)
+				VALUES ($1, $2, $3, DATE '2026-05-10', TIME '08:00',
+				        TIMESTAMPTZ '2026-05-10 03:30:00+05', 0.25, 'мг', 'the-other-device')
+			`, patientA, c.protocol[patientA], c.item[patientA])
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("the other device: %v", err)
+	}
+
+	// This one resolves against a history it read before that row existed. Reproducing
+	// that ordering exactly needs two transactions interleaved; what this measures is the
+	// half that is reachable — the insert failing on the slot's uniqueness — which is the
+	// arm `classify` and the savepoint exist for.
+	logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, nil))
+	if err != nil {
+		t.Fatalf("the losing request: %v", err)
+	}
+	if logged.Outcome != dosing.AlreadyLogged {
+		t.Errorf("the loser was told %q, want already_logged", logged.Outcome)
+	}
+	if doses := dosesOn(t, c, patientA, "2026-05-10"); doses != 1 {
+		t.Errorf("the day carries %d doses, want the one that won", doses)
 	}
 }
