@@ -217,6 +217,11 @@ func TestARepeatWithAChangedBodyIsAConflict(t *testing.T) {
 		field string
 	}{
 		{"another zone", func(b map[string]any) { b["site_code"] = "r-glute" }, "site_code"},
+		{
+			// The field a patient is most likely to correct before the queue drains,
+			// and the one the doc claimed to compare before the case existed.
+			"another dose", func(b map[string]any) { b["dose_value"] = 0.125 }, "dose_value",
+		},
 		{"another mood", func(b map[string]any) { b["mood"] = 2 }, "mood"},
 		{"another note", func(b map[string]any) { b["note"] = "иначе" }, "note"},
 		{
