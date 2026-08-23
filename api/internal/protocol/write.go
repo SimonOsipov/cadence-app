@@ -141,9 +141,11 @@ func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft
 		}
 
 		// Scoped by the patient as well, so this file says the same thing everywhere.
-		// ownerOf ran three lines above and the column grant withholds patient_id, so
-		// it changes nothing today — and it is the shape the phase statements were
-		// corrected into, which is worth more than the line costs.
+		// Unlike the phase statements this is consistency and not a second lock:
+		// measured, removing it changes no test's behaviour, and it could not — with
+		// the comparison above gone it would update nothing rather than refuse, and a
+		// silent zero is what data-layer invariant 5 warns about. ownerOf is the lock;
+		// the column grant is what makes patient_id unwritable in the first place.
 		if _, err := tx.Exec(ctx, `
 			UPDATE app.protocols
 			SET start_date = $3::date, duration_weeks = $4, status = $5, notes = $6
