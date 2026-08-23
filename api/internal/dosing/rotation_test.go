@@ -102,11 +102,11 @@ func TestTheZonesAreInTheOrderTheTieBreakNeeds(t *testing.T) {
 	}
 }
 
-// Every position of that order reached, not only the first: with all ten zones used and one
-// of them stale, the answer is that zone — so a permutation anywhere in the set moves an
-// answer. The staleness walks the set rather than sitting at a fixed index, which is what a
-// fixture pinned to one position could not do.
-func TestEveryPositionOfTheOrderDecidesSomething(t *testing.T) {
+// The staleness rule reached at every position rather than at one. It does not pin the order
+// — the expectation walks with it, so any permutation passes — and the literal above is what
+// does that. What this adds is that no zone is special: a rule that worked for the first two
+// and not the eighth would pass the pin and fail here.
+func TestTheStalestZoneWinsWhicheverPositionItSitsIn(t *testing.T) {
 	for i, stalest := range Sites() {
 		history := make([]Injection, 0, len(Sites()))
 		for _, site := range Sites() {

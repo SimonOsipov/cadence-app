@@ -690,6 +690,30 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 // acceptedBy reads the literals a CHECK names, in order. The widest possible
 // pattern between the quotes: '([a-z]+)' would silently skip a value with a dash
 // in it and report agreement it had not measured.
+// acceptedInOrder is acceptedBy without the sort: the order a constraint lists its literals
+// in is meaningless for most sets and load-bearing for one.
+func (c clinic) acceptedInOrder(t *testing.T, constraint string) []string {
+	t.Helper()
+
+	var listed []string
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT array_agg(literal[1] ORDER BY ordinality)
+				FROM pg_constraint,
+				     LATERAL regexp_matches(
+				         pg_get_constraintdef(oid), '''([^'']*)''', 'g') WITH ORDINALITY AS literal
+				WHERE conname = $1
+			`, constraint).Scan(&listed)
+		},
+	); err != nil {
+		t.Fatalf("reading %s: %v", constraint, err)
+	}
+
+	return listed
+}
+
 func (c clinic) acceptedBy(t *testing.T, constraint string) []string {
 	t.Helper()
 
@@ -767,6 +791,18 @@ func TestTheZonesTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
 
 	if accepted := c.acceptedBy(t, "dose_events_site_code_check"); !slices.Equal(accepted, declared) {
 		t.Errorf("the schema names %v, Go declares %v", accepted, declared)
+	}
+
+	// And in the same order, which the sorted comparison above erases. The order is the
+	// rotation's tie-break, so it is a fact about behaviour rather than about layout —
+	// and this is the one witness for it that is not a literal copied beside the value:
+	// the migration lists the zones independently, and the two have to agree.
+	inOrder := []string{}
+	for _, site := range dosing.Sites() {
+		inOrder = append(inOrder, string(site))
+	}
+	if listed := c.acceptedInOrder(t, "dose_events_site_code_check"); !slices.Equal(listed, inOrder) {
+		t.Errorf("the migration lists %v, Go declares %v", listed, inOrder)
 	}
 
 	// Every one of them accepted, one row each: the reconciliation above compares
