@@ -202,7 +202,7 @@ func (s *Service) create(ctx context.Context, in *CourseInput) (*CourseOutput, e
 
 	written, err := Create(ctx, s.service, draft)
 	if err != nil {
-		return nil, answer(err)
+		return nil, answer("writing the course", err)
 	}
 
 	return output(written), nil
@@ -220,7 +220,7 @@ func (s *Service) replace(ctx context.Context, in *CourseUpdateInput) (*CourseOu
 
 	written, err := Replace(ctx, s.service, ProtocolID(in.ProtocolID), draft)
 	if err != nil {
-		return nil, answer(err)
+		return nil, answer("writing the course", err)
 	}
 
 	return output(written), nil
@@ -353,7 +353,10 @@ func (d Drug) ref() CompoundRef {
 // answer maps a refusal to a status. Every named error of this context appears here, and
 // anything unnamed is a 500 — a default that mapped the unknown onto 422 would tell a doctor
 // their form is wrong about a bug in this process.
-func answer(err error) error {
+// answer maps a domain failure onto its status; doing is what the caller was attempting, and
+// it is a parameter because the same mapper serves the writes and the three reads — an
+// unrecognised failure on GET /v1/me/today reported itself as «writing the course».
+func answer(doing string, err error) error {
 	switch {
 	case errors.Is(err, ErrNotAPrescriber), errors.Is(err, ErrNotYourPatient):
 		// The same answer for both, and deliberately: telling an unassigned doctor
@@ -382,7 +385,7 @@ func answer(err error) error {
 	case database.IsUnavailable(err):
 		return huma.Error503ServiceUnavailable("the database could not serve the request", err)
 	default:
-		return huma.Error500InternalServerError("writing the course", err)
+		return huma.Error500InternalServerError(doing, err)
 	}
 }
 
@@ -496,7 +499,7 @@ type MacrosBody struct {
 
 type OccurrenceBody struct {
 	ItemID string    `json:"protocol_item_id"`
-	Kind   string    `json:"kind"`
+	Kind   string    `json:"kind" enum:"injection,supplement,weigh_in"`
 	Date   string    `json:"date" format:"date"`
 	Time   string    `json:"time"`
 	Dose   *DoseBody `json:"dose,omitempty"`
@@ -505,25 +508,35 @@ type OccurrenceBody struct {
 
 type DoseBody struct {
 	Value float64 `json:"value"`
-	Unit  string  `json:"unit"`
+	Unit  string  `json:"unit" enum:"мг,мкг"`
 }
 
 type CompoundBody struct {
 	ID     string `json:"id"`
 	NameRU string `json:"name_ru"`
-	Unit   string `json:"default_unit"`
+	Unit   string `json:"default_unit" enum:"мг,мкг"`
 	Route  string `json:"route"`
 	Icon   string `json:"icon"`
 }
 
+// RowBody is ProtocolRow's shape and not a flattening of it. There is no `title`: it would
+// be compound.name_ru a second time, free to disagree with it, and absent from the KMP type.
+func renderCompound(compound Compound) *CompoundBody {
+	return &CompoundBody{
+		ID: string(compound.ID), NameRU: compound.NameRU, Unit: string(compound.DefaultUnit),
+		Route: compound.Route, Icon: compound.Icon,
+	}
+}
+
 type RowBody struct {
-	ItemID      string    `json:"protocol_item_id"`
-	Kind        string    `json:"kind"`
-	Title       string    `json:"title"`
-	Dose        *DoseBody `json:"dose,omitempty"`
-	Times       []string  `json:"times"`
-	TodayStatus *string   `json:"today_status,omitempty"`
-	Loggable    bool      `json:"loggable"`
+	ItemID      string        `json:"protocol_item_id"`
+	Kind        string        `json:"kind" enum:"injection,supplement,weigh_in"`
+	Compound    *CompoundBody `json:"compound" doc:"Null when the item names no drug."`
+	Dose        *DoseBody     `json:"dose,omitempty"`
+	Times       []string      `json:"times"`
+	Cadence     string        `json:"cadence" enum:"weekly,daily,n_per_week"`
+	TodayStatus *string       `json:"today_status,omitempty" enum:"done,pending,missed,scheduled"`
+	Loggable    bool          `json:"loggable"`
 }
 
 type ReorderBody struct {
@@ -602,7 +615,7 @@ func (s *Service) today(ctx context.Context, _ *struct{}) (*TodayOutput, error) 
 
 		return nil
 	}); err != nil {
-		return nil, answer(err)
+		return nil, answer("reading the day", err)
 	}
 
 	return &TodayOutput{Body: body}, nil
@@ -650,7 +663,7 @@ func (s *Service) month(ctx context.Context, in *ScheduleInput) (*ScheduleOutput
 
 		return nil
 	}); err != nil {
-		return nil, answer(err)
+		return nil, answer("reading the month", err)
 	}
 
 	return out, nil
@@ -708,7 +721,7 @@ func (s *Service) day(ctx context.Context, in *DayInput) (*DayOutput, error) {
 
 		return nil
 	}); err != nil {
-		return nil, answer(err)
+		return nil, answer("reading the day sheet", err)
 	}
 
 	return out, nil
@@ -794,11 +807,7 @@ func renderToday(summary Today) TodayBody {
 		body.NextDose = &occurrence
 	}
 	if summary.NextDoseCompound != nil {
-		body.NextDoseCompound = &CompoundBody{
-			ID: string(summary.NextDoseCompound.ID), NameRU: summary.NextDoseCompound.NameRU,
-			Unit:  string(summary.NextDoseCompound.DefaultUnit),
-			Route: summary.NextDoseCompound.Route, Icon: summary.NextDoseCompound.Icon,
-		}
+		body.NextDoseCompound = renderCompound(*summary.NextDoseCompound)
 	}
 	if summary.Reorder != nil {
 		body.Reorder = &ReorderBody{
@@ -818,10 +827,11 @@ func renderToday(summary Today) TodayBody {
 			ItemID:   string(row.ItemID),
 			Kind:     string(row.Kind),
 			Times:    make([]string, 0, len(row.Times)),
+			Cadence:  string(row.Cadence),
 			Loggable: row.Loggable,
 		}
 		if row.Compound != nil {
-			rendered.Title = row.Compound.NameRU
+			rendered.Compound = renderCompound(*row.Compound)
 		}
 		if row.Dose != nil {
 			rendered.Dose = &DoseBody{row.Dose.Value, string(row.Dose.Unit)}

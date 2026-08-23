@@ -50,6 +50,9 @@ func CycleWeek(p Protocol, d civil.Date) (int, bool) {
 func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today civil.Date) []Occurrence {
 	// CANCELLED only, and the narrowing matters: a COMPLETED course is every patient after
 	// twelve weeks, and blanking it would erase the dots from days they actually injected.
+	// The three read endpoints do not reach this branch today — ActivePlanFor selects the
+	// active course, so a finished one is answered as no course at all. That is the step's
+	// recorded divergence, not this function's rule.
 	if plan.Protocol.Status == StatusCancelled {
 		return nil
 	}

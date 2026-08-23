@@ -17,6 +17,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/dosing"
 	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
@@ -40,6 +41,25 @@ func get(t *testing.T, service, requests *pgxpool.Pool, subject, role, path stri
 				r.Context(), auth.Principal{Subject: subject, Role: role})))
 		})
 	})
+	history := dosing.NewHistory(func() time.Time { return theHour })
+	protocol.NewService(func() time.Time { return theHour }, protocol.Deps{
+		ServicePool: service,
+		RequestPool: requests,
+		Doses:       history,
+		Rotation:    history,
+		Cabinet:     inventory.NewSupply(),
+	}).Register(httpserver.NewAPI(mux))
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+
+	return rec.Code, rec.Body.String()
+}
+
+func getUnverified(t *testing.T, service, requests *pgxpool.Pool, path string) (int, string) {
+	t.Helper()
+
+	mux := chi.NewRouter()
 	history := dosing.NewHistory(func() time.Time { return theHour })
 	protocol.NewService(func() time.Time { return theHour }, protocol.Deps{
 		ServicePool: service,
@@ -80,7 +100,13 @@ func TestThePatientsDayIsAnsweredThroughTheTransport(t *testing.T) {
 			Status string `json:"status"`
 		} `json:"next_dose"`
 		WeekProtocol []struct {
-			Title string `json:"title"`
+			Kind     string `json:"kind"`
+			Cadence  string `json:"cadence"`
+			Compound *struct {
+				NameRU string `json:"name_ru"`
+				Route  string `json:"route"`
+				Icon   string `json:"icon"`
+			} `json:"compound"`
 		} `json:"week_protocol"`
 	}
 	if err := json.Unmarshal([]byte(body), &today); err != nil {
@@ -102,8 +128,21 @@ func TestThePatientsDayIsAnsweredThroughTheTransport(t *testing.T) {
 	if today.NextDose == nil || today.NextDose.Kind != "injection" || today.NextDose.Time != "08:00" {
 		t.Errorf("the next dose reads %+v", today.NextDose)
 	}
-	if len(today.WeekProtocol) != 1 || today.WeekProtocol[0].Title != "Семаглутид" {
-		t.Errorf("the strip reads %+v", today.WeekProtocol)
+	// ProtocolStrip draws compound.icon and compound.name_ru with route · cadence under
+	// them: a row carrying only a name renders as a beaker with no second line.
+	if len(today.WeekProtocol) != 1 {
+		t.Fatalf("the strip holds %d rows", len(today.WeekProtocol))
+	}
+	row := today.WeekProtocol[0]
+	if row.Kind != "injection" || row.Cadence != "weekly" {
+		t.Errorf("the row reads %q %q", row.Kind, row.Cadence)
+	}
+	if row.Compound == nil {
+		t.Fatal("the row names no drug")
+	}
+	if row.Compound.NameRU != "Семаглутид" || row.Compound.Route != "sc" ||
+		row.Compound.Icon != "syringe" {
+		t.Errorf("the row's drug reads %+v", *row.Compound)
 	}
 	// Null and not zero — and null and not *absent*, which a pointer cannot tell apart:
 	// adding omitempty to those fields would keep a nil check green while breaking the
@@ -143,7 +182,7 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 	// Six doses in the vial and none drawn: the count is a subtraction, and there is no
 	// column it could have come from.
 	if left == nil || *left != 6 {
-		t.Errorf("the open vial has %v doses left, want six", left)
+		t.Errorf("the open vial has %v doses left, want six", shown(left))
 	}
 	// Weekly injection, six doses: six weeks of supply, past the four-week threshold, so
 	// no hint. The pair is what says the number reached the rule rather than a constant.
@@ -156,11 +195,25 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 	left, reorder = supplyOn(t, service, requests, writePatientA)
 
 	if left == nil || *left != 3 {
-		t.Errorf("after three doses the vial has %v left, want three", left)
+		t.Errorf("after three doses the vial has %v left, want three", shown(left))
 	}
 	if reorder == nil || reorder.WeeksLeft != 3 {
 		t.Errorf("three weeks of supply answered %+v, want a hint", reorder)
 	}
+
+	// A second vial opened later, before it is sealed: with two open vials of one drug the
+	// answer is the earliest-opened's, which is what the read's ORDER BY decides. Without
+	// it the row that came back first won, and two requests for the same day could differ.
+	openAVialOn(t, service, requests, writePatientA, "Семаглутид", 9,
+		civil.NewDate(2026, time.May, 8))
+
+	left, _ = supplyOn(t, service, requests, writePatientA)
+
+	if left == nil || *left != 3 {
+		t.Errorf("with two vials open the count is %v, want three", shown(left))
+	}
+
+	sealASpare(t, requests, writePatientA, 9)
 
 	// One dose in the spare, deliberately: a large spare would silence the hint through
 	// the weeks arithmetic instead, and the rule under test — «0 sealed spares» — would be
@@ -173,7 +226,7 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 	// A sealed spare is not «doses left» — counting it is the prototype's own bug — and it
 	// is what silences the hint: «0 sealed spares & ≤4 weeks supply» is one condition.
 	if left == nil || *left != 3 {
-		t.Errorf("a sealed spare moved the count to %v", left)
+		t.Errorf("a sealed spare moved the count to %v", shown(left))
 	}
 	if reorder != nil {
 		t.Errorf("a hint with a spare on the shelf: %+v", reorder)
@@ -188,6 +241,15 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 	if left != nil {
 		t.Errorf("a cabinet with nothing open answered %v", *left)
 	}
+}
+
+// shown exists because %v over a *int prints its address, not the count.
+func shown(count *int) any {
+	if count == nil {
+		return "nothing"
+	}
+
+	return *count
 }
 
 func supplyOn(t *testing.T, service, requests *pgxpool.Pool, patient string) (*int, *protocol.ReorderHint) {
@@ -215,9 +277,183 @@ func supplyOn(t *testing.T, service, requests *pgxpool.Pool, patient string) (*i
 	}
 }
 
+func TestAMonthOfTheCalendarIsAnsweredThroughTheTransport(t *testing.T) {
+	service, requests := prescribingWithRequests(t)
+
+	if _, err := protocol.Create(as(t, writeDoctorA, "doctor"), service, aCourse(writePatientA)); err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	status, body := get(t, service, requests, writePatientA, "patient", "/v1/me/schedule?month=2026-05")
+	if status != http.StatusOK {
+		t.Fatalf("answered %d: %s", status, body)
+	}
+
+	var month struct {
+		Days []struct {
+			Date         string `json:"date"`
+			HasInjection bool   `json:"has_injection"`
+			AnyPending   bool   `json:"any_pending"`
+		} `json:"days"`
+	}
+	if err := json.Unmarshal([]byte(body), &month); err != nil {
+		t.Fatalf("reading the reply: %v", err)
+	}
+
+	if len(month.Days) != 31 {
+		t.Fatalf("May is %d days", len(month.Days))
+	}
+	if month.Days[0].Date != "2026-05-01" || month.Days[30].Date != "2026-05-31" {
+		t.Errorf("the month runs %s..%s", month.Days[0].Date, month.Days[30].Date)
+	}
+
+	// The Sundays of May 2026 are the 3rd, 10th, 17th, 24th and 31st, and the course
+	// starts on the 4th — so the 3rd carries no injection and the rest do.
+	for _, day := range month.Days {
+		sunday := day.Date == "2026-05-10" || day.Date == "2026-05-17" ||
+			day.Date == "2026-05-24" || day.Date == "2026-05-31"
+		if day.HasInjection != sunday {
+			t.Errorf("%s: injection %v, want %v", day.Date, day.HasInjection, sunday)
+		}
+	}
+
+	// A month the patient's course does not reach is every day and no dots, rather than
+	// an empty list: the calendar draws a month whatever is in it.
+	_, next := get(t, service, requests, writePatientA, "patient", "/v1/me/schedule?month=2027-01")
+	var later struct {
+		Days []struct {
+			HasInjection bool `json:"has_injection"`
+		} `json:"days"`
+	}
+	if err := json.Unmarshal([]byte(next), &later); err != nil {
+		t.Fatalf("reading the later month: %v", err)
+	}
+	if len(later.Days) != 31 {
+		t.Errorf("January is %d days", len(later.Days))
+	}
+	for _, day := range later.Days {
+		if day.HasInjection {
+			t.Error("a month past the course carries an injection")
+		}
+	}
+}
+
+func TestOneDayOfTheCalendarIsAnsweredThroughTheTransport(t *testing.T) {
+	service, requests := prescribingWithRequests(t)
+
+	if _, err := protocol.Create(as(t, writeDoctorA, "doctor"), service, aCourse(writePatientA)); err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	status, body := get(t, service, requests, writePatientA, "patient",
+		"/v1/me/schedule/day?date=2026-05-17")
+	if status != http.StatusOK {
+		t.Fatalf("answered %d: %s", status, body)
+	}
+
+	var day struct {
+		Date        string `json:"date"`
+		CycleWeek   *int   `json:"cycle_week"`
+		Occurrences []struct {
+			Kind   string `json:"kind"`
+			Time   string `json:"time"`
+			Status string `json:"status"`
+			Dose   *struct {
+				Value float64 `json:"value"`
+				Unit  string  `json:"unit"`
+			} `json:"dose"`
+		} `json:"occurrences"`
+	}
+	if err := json.Unmarshal([]byte(body), &day); err != nil {
+		t.Fatalf("reading the reply: %v", err)
+	}
+
+	if day.Date != "2026-05-17" || day.CycleWeek == nil || *day.CycleWeek != 2 {
+		t.Errorf("the day reads %q week %v", day.Date, day.CycleWeek)
+	}
+	if len(day.Occurrences) != 1 {
+		t.Fatalf("the day holds %d occurrences", len(day.Occurrences))
+	}
+	// A week ahead of the patient's today, so it is scheduled rather than pending.
+	if day.Occurrences[0].Status != "scheduled" || day.Occurrences[0].Time != "08:00" {
+		t.Errorf("the occurrence reads %+v", day.Occurrences[0])
+	}
+	if day.Occurrences[0].Dose == nil || day.Occurrences[0].Dose.Value != 0.25 {
+		t.Errorf("the dose reads %+v", day.Occurrences[0].Dose)
+	}
+}
+
+// A patient's own day, and nobody else's: every one of these reads runs under the caller's
+// identity, so a doctor asking gets a refusal rather than a patient's screen. The admin row
+// is the one that matters — every policy these reads touch is USING (true) for cadence_admin,
+// so the refusal here is the whole of the boundary for that role.
+func TestTheReadsAreAPatientsOwn(t *testing.T) {
+	service, requests := prescribingWithRequests(t)
+
+	for _, path := range []string{"/v1/me/today", "/v1/me/schedule", "/v1/me/schedule/day"} {
+		for _, role := range []string{"doctor", "admin", "", "PATIENT"} {
+			if status, body := get(t, service, requests, writeDoctorA, role, path); status != http.StatusForbidden {
+				t.Errorf("%s as %q answered %d: %s", path, role, status, body)
+			}
+		}
+		if status, body := getUnverified(t, service, requests, path); status != http.StatusUnauthorized {
+			t.Errorf("%s with no principal answered %d: %s", path, status, body)
+		}
+	}
+}
+
+// The two parameters a client can get wrong. Both are parsed by hand behind huma's own
+// validation, and this project has already shipped a pair of endpoints where the two
+// disagreed and nothing but 422 ever came back — so what is asserted is that the malformed
+// value is refused *and* that the well-formed one is not.
+func TestAMalformedWindowIsRefusedRatherThanCrashing(t *testing.T) {
+	service, requests := prescribingWithRequests(t)
+
+	if _, err := protocol.Create(as(t, writeDoctorA, "doctor"), service, aCourse(writePatientA)); err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	for _, asked := range []struct {
+		path string
+		want int
+	}{
+		{"/v1/me/schedule?month=2026-13", http.StatusUnprocessableEntity},
+		{"/v1/me/schedule?month=мая", http.StatusUnprocessableEntity},
+		{"/v1/me/schedule?month=2026-05", http.StatusOK},
+		{"/v1/me/schedule", http.StatusOK},
+		{"/v1/me/schedule/day?date=2026-02-30", http.StatusUnprocessableEntity},
+		{"/v1/me/schedule/day?date=17.05.2026", http.StatusUnprocessableEntity},
+		{"/v1/me/schedule/day?date=2026-05-17", http.StatusOK},
+		{"/v1/me/schedule/day", http.StatusOK},
+	} {
+		if status, body := get(
+			t, service, requests, writePatientA, "patient", asked.path,
+		); status != asked.want {
+			t.Errorf("%s answered %d, want %d: %s", asked.path, status, asked.want, body)
+		}
+	}
+}
+
 // openAVial gives the patient an opened vial of the seeded compound. As the patient, because
 // the service path holds no UPDATE on vials — opening one is their own act.
 func openAVial(t *testing.T, service, requests *pgxpool.Pool, patient string, total int) {
+	t.Helper()
+
+	openAVialOn(t, service, requests, patient, "Семаглутид", total, civil.NewDate(2026, time.May, 1))
+}
+
+func openAVialOf(
+	t *testing.T, service, requests *pgxpool.Pool, patient, drug string, total int,
+) {
+	t.Helper()
+
+	openAVialOn(t, service, requests, patient, drug, total, civil.NewDate(2026, time.May, 1))
+}
+
+func openAVialOn(
+	t *testing.T, service, requests *pgxpool.Pool, patient, drug string, total int,
+	opened civil.Date,
+) {
 	t.Helper()
 
 	var compound string
@@ -225,7 +461,7 @@ func openAVial(t *testing.T, service, requests *pgxpool.Pool, patient string, to
 		t.Context(), service, writeJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx,
-				`SELECT id::text FROM app.compounds WHERE name_ru = 'Семаглутид'`).Scan(&compound)
+				`SELECT id::text FROM app.compounds WHERE name_ru = $1`, drug).Scan(&compound)
 		},
 	); err != nil {
 		t.Fatalf("finding the compound: %v", err)
@@ -238,8 +474,8 @@ func openAVial(t *testing.T, service, requests *pgxpool.Pool, patient string, to
 				INSERT INTO app.vials
 				    (patient_id, compound_id, concentration_label, total_doses,
 				     opened_at, expires_on)
-				VALUES ($1, $2, '2,4 мг/0,75 мл', $3, DATE '2026-05-01', DATE '2026-12-31')
-			`, patient, compound, total)
+				VALUES ($1, $2, '2,4 мг/0,75 мл', $3, $4::date, DATE '2026-12-31')
+			`, patient, compound, total, opened.String())
 
 			return err
 		},
@@ -297,5 +533,149 @@ func drawDoses(t *testing.T, service, requests *pgxpool.Pool, patient string, n 
 		},
 	); err != nil {
 		t.Fatalf("drawing doses: %v", err)
+	}
+}
+
+// anotherCourse differs from aCourse in every field a read answers with, so that an answer
+// assembled for the wrong patient cannot pass for the right one.
+func anotherCourse(patient string) protocol.Draft {
+	return protocol.Draft{
+		PatientID: civil.UserID(patient),
+		StartDate: civil.NewDate(2026, time.May, 4),
+		Weeks:     12,
+		Status:    protocol.StatusActive,
+		Items: []protocol.DraftItem{{
+			Kind: protocol.KindInjection,
+			Compound: protocol.CompoundRef{New: &protocol.NewCompound{
+				NameRU: "Тирзепатид", DefaultUnit: protocol.MG, Route: "im", Icon: "vial",
+			}},
+			Cadence:  protocol.CadenceDaily,
+			Times:    []civil.Slot{{Hour: 20}},
+			Loggable: true,
+			Phases: []protocol.ProtocolPhase{
+				{FromWeek: 1, ToWeek: 12, Dose: protocol.Dose{Value: 5, Unit: protocol.MG}},
+			},
+		}},
+	}
+}
+
+// Two patients, both with a running course and an open vial, asked the same three questions.
+// The fixture the transport reads were written against held one patient's data, and under it
+// the tenant predicate is a no-op: swapping s.requests for the service pool — where every
+// policy is USING (true) — kept every assertion green, because A's course was the only one
+// in the clinic. Nothing measured which of the two locks was holding.
+func TestTheThreeReadsAnswerEachPatientTheirOwn(t *testing.T) {
+	service, requests := prescribingWithRequests(t)
+
+	if _, err := protocol.Create(as(t, writeDoctorA, "doctor"), service, aCourse(writePatientA)); err != nil {
+		t.Fatalf("prescribing for A: %v", err)
+	}
+	if _, err := protocol.Create(as(t, writeDoctorB, "doctor"), service, anotherCourse(writePatientB)); err != nil {
+		t.Fatalf("prescribing for B: %v", err)
+	}
+	openAVial(t, service, requests, writePatientA, 6)
+	openAVialOf(t, service, requests, writePatientB, "Тирзепатид", 12)
+
+	for _, patient := range []struct {
+		name     string
+		subject  string
+		drug     string
+		slot     string
+		dose     float64
+		left     int
+		everyDay bool
+	}{
+		{"A", writePatientA, "Семаглутид", "08:00", 0.25, 6, false},
+		{"B", writePatientB, "Тирзепатид", "20:00", 5, 12, true},
+	} {
+		t.Run(patient.name, func(t *testing.T) {
+			_, body := get(t, service, requests, patient.subject, "patient", "/v1/me/today")
+
+			var today struct {
+				VialDosesLeft *int `json:"vial_doses_left"`
+				NextDose      *struct {
+					Time string `json:"time"`
+					Dose *struct {
+						Value float64 `json:"value"`
+					} `json:"dose"`
+				} `json:"next_dose"`
+				NextDoseCompound *struct {
+					NameRU string `json:"name_ru"`
+				} `json:"next_dose_compound"`
+				WeekProtocol []struct {
+					Compound *struct {
+						NameRU string `json:"name_ru"`
+					} `json:"compound"`
+				} `json:"week_protocol"`
+			}
+			if err := json.Unmarshal([]byte(body), &today); err != nil {
+				t.Fatalf("reading the day: %v", err)
+			}
+
+			if today.NextDose == nil || today.NextDose.Time != patient.slot {
+				t.Fatalf("the card names %+v", today.NextDose)
+			}
+			if today.NextDose.Dose == nil || today.NextDose.Dose.Value != patient.dose {
+				t.Errorf("the dose reads %+v", today.NextDose.Dose)
+			}
+			if today.NextDoseCompound == nil || today.NextDoseCompound.NameRU != patient.drug {
+				t.Errorf("the card's drug is %+v", today.NextDoseCompound)
+			}
+			if len(today.WeekProtocol) != 1 || today.WeekProtocol[0].Compound == nil ||
+				today.WeekProtocol[0].Compound.NameRU != patient.drug {
+				t.Errorf("the strip reads %+v", today.WeekProtocol)
+			}
+			// The cabinet's number is the one that crosses two context boundaries to be
+			// answered, and the two vials differ by six doses.
+			if today.VialDosesLeft == nil || *today.VialDosesLeft != patient.left {
+				t.Errorf("the vial has %v doses left, want %d", shown(today.VialDosesLeft), patient.left)
+			}
+
+			_, monthBody := get(t, service, requests, patient.subject, "patient",
+				"/v1/me/schedule?month=2026-05")
+
+			var month struct {
+				Days []struct {
+					Date         string `json:"date"`
+					HasInjection bool   `json:"has_injection"`
+				} `json:"days"`
+			}
+			if err := json.Unmarshal([]byte(monthBody), &month); err != nil {
+				t.Fatalf("reading the month: %v", err)
+			}
+			if len(month.Days) != 31 {
+				t.Fatalf("May is %d days", len(month.Days))
+			}
+			// A's weekly course dots four Sundays; B's daily one dots every day from the
+			// 4th. The two calendars share no shape, so a month answered for the wrong
+			// patient cannot pass for the right one.
+			dots := 0
+			for _, day := range month.Days {
+				if day.HasInjection {
+					dots++
+				}
+			}
+			if want := 4; !patient.everyDay && dots != want {
+				t.Errorf("the weekly course dots %d days, want %d", dots, want)
+			}
+			if want := 28; patient.everyDay && dots != want {
+				t.Errorf("the daily course dots %d days, want %d", dots, want)
+			}
+
+			_, dayBody := get(t, service, requests, patient.subject, "patient",
+				"/v1/me/schedule/day?date=2026-05-17")
+
+			var day struct {
+				Occurrences []struct {
+					Time string `json:"time"`
+				} `json:"occurrences"`
+			}
+			if err := json.Unmarshal([]byte(dayBody), &day); err != nil {
+				t.Fatalf("reading the day sheet: %v", err)
+			}
+			if len(day.Occurrences) != 1 || day.Occurrences[0].Time != patient.slot {
+				t.Errorf("the sheet reads %+v", day.Occurrences)
+			}
+		})
 	}
 }

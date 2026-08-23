@@ -274,3 +274,109 @@ func TestTheNeighboursAreAskedAboutTheCaller(t *testing.T) {
 		}
 	}
 }
+
+// Two injectables on one day is what this product is for, and the card names one of them.
+// The rule is the clock, not the order the items came back in — items are read ORDER BY id,
+// so «the first open one» offered whichever uuid sorted first, which could be the evening
+// dose while the morning one was still open. Both orders are run because a fixture whose
+// item order already agrees with the clock cannot tell the two rules apart.
+func TestTheNextDoseIsTheEarliestOpenOneByTheClock(t *testing.T) {
+	compound := CompoundID(theCompound.ID)
+	morning := ProtocolItem{
+		ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
+		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+		Times: []civil.Slot{{Hour: 8}}, Loggable: true,
+	}
+	evening := ProtocolItem{
+		ID: "item-evening", Kind: KindInjection, CompoundID: &compound,
+		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+		Times: []civil.Slot{{Hour: 20}}, Loggable: true,
+	}
+	dose := Dose{Value: 0.25, Unit: MG}
+
+	sameHour := morning
+	sameHour.ID = "item-half-past"
+	sameHour.Times = []civil.Slot{{Hour: 8, Minute: 30}}
+
+	for _, order := range []struct {
+		name  string
+		items []ProtocolItem
+	}{
+		{"the evening item first", []ProtocolItem{evening, morning}},
+		{"the morning item first", []ProtocolItem{morning, evening}},
+		// Same hour, different minute: without the minute the comparison answers
+		// «not earlier» for both, and the item order decides again.
+		{"a later slot of the same hour first", []ProtocolItem{sameHour, morning}},
+	} {
+		t.Run(order.name, func(t *testing.T) {
+			plan := Plan{
+				Protocol: Protocol{
+					StartDate: civil.NewDate(2026, time.May, 4), Weeks: 12, Status: StatusActive,
+				},
+				Items: order.items,
+				Phases: map[ProtocolItemID][]ProtocolPhase{
+					"item-morning":   {{FromWeek: 1, ToWeek: 12, Dose: dose}},
+					"item-evening":   {{FromWeek: 1, ToWeek: 12, Dose: dose}},
+					"item-half-past": {{FromWeek: 1, ToWeek: 12, Dose: dose}},
+				},
+			}
+			n := &stubNeighbours{site: "l-abdomen"}
+
+			today := todayFor(t, plan, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n)
+
+			if today.NextDose == nil {
+				t.Fatal("no dose is named on a day prescribing two")
+			}
+			if today.NextDose.ItemID != "item-morning" || today.NextDose.Time.Hour != 8 {
+				t.Errorf("the card names %s at %v", today.NextDose.ItemID, today.NextDose.Time)
+			}
+			// The cabinet is asked about the item the card names and no other: two
+			// injectables mean two possible answers, and the wrong one is the wrong
+			// remaining count on the screen.
+			if len(n.askedFor) != 1 || n.askedFor[0] != "item-morning" {
+				t.Errorf("the cabinet was asked about %v", n.askedFor)
+			}
+		})
+	}
+}
+
+// The morning dose logged, the evening one still open: the card moves on rather than staying
+// on the earliest slot of the day, and «доза записана» is true from the first of the two.
+func TestTheCardMovesToTheEveningOnceTheMorningIsLogged(t *testing.T) {
+	compound := CompoundID(theCompound.ID)
+	dose := Dose{Value: 0.25, Unit: MG}
+	plan := Plan{
+		Protocol: Protocol{
+			StartDate: civil.NewDate(2026, time.May, 4), Weeks: 12, Status: StatusActive,
+		},
+		Items: []ProtocolItem{
+			{
+				ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
+				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+				Times: []civil.Slot{{Hour: 8}}, Loggable: true,
+			},
+			{
+				ID: "item-evening", Kind: KindInjection, CompoundID: &compound,
+				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+				Times: []civil.Slot{{Hour: 20}}, Loggable: true,
+			},
+		},
+		Phases: map[ProtocolItemID][]ProtocolPhase{
+			"item-morning": {{FromWeek: 1, ToWeek: 12, Dose: dose}},
+			"item-evening": {{FromWeek: 1, ToWeek: 12, Dose: dose}},
+		},
+	}
+	n := &stubNeighbours{site: "l-abdomen", logged: []LoggedSlot{{
+		ItemID: "item-morning", Date: civil.NewDate(2026, time.May, 10),
+		Time: &civil.Slot{Hour: 8},
+	}}}
+
+	today := todayFor(t, plan, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 9}, n)
+
+	if today.NextDose == nil || today.NextDose.ItemID != "item-evening" {
+		t.Errorf("the card names %+v", today.NextDose)
+	}
+	if !today.DoseLoggedToday {
+		t.Error("the day is not marked as carrying a dose")
+	}
+}

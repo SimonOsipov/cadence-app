@@ -5,7 +5,7 @@ export type ClientOptions = {
 };
 
 export type CompoundBody = {
-    default_unit: string;
+    default_unit: 'мг' | 'мкг';
     icon: string;
     id: string;
     name_ru: string;
@@ -75,7 +75,7 @@ export type DayOutputBody = {
 };
 
 export type DoseBody = {
-    unit: string;
+    unit: 'мг' | 'мкг';
     value: number;
 };
 
@@ -243,7 +243,7 @@ export type NewProviderBody = {
 export type OccurrenceBody = {
     date: string;
     dose?: DoseBody;
-    kind: string;
+    kind: 'injection' | 'supplement' | 'weigh_in';
     protocol_item_id: string;
     status: 'done' | 'pending' | 'missed' | 'scheduled';
     time: string;
@@ -334,13 +334,17 @@ export type RosterRow = {
 };
 
 export type RowBody = {
+    cadence: 'weekly' | 'daily' | 'n_per_week';
+    /**
+     * Null when the item names no drug.
+     */
+    compound: CompoundBody;
     dose?: DoseBody;
-    kind: string;
+    kind: 'injection' | 'supplement' | 'weigh_in';
     loggable: boolean;
     protocol_item_id: string;
     times: Array<string> | null;
-    title: string;
-    today_status?: string;
+    today_status?: 'done' | 'pending' | 'missed' | 'scheduled';
 };
 
 export type ScheduleOutputBody = {

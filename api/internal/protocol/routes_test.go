@@ -28,7 +28,7 @@ func TestEachRefusalBecomesItsOwnStatus(t *testing.T) {
 		{errors.New("something nobody named"), http.StatusInternalServerError},
 	} {
 		var status huma.StatusError
-		if !errors.As(answer(mapped.err), &status) {
+		if !errors.As(answer("under test", mapped.err), &status) {
 			t.Errorf("%v did not become a status", mapped.err)
 
 			continue
@@ -46,7 +46,7 @@ func TestEachRefusalBecomesItsOwnStatus(t *testing.T) {
 func TestEveryShapeRefusalIsA422(t *testing.T) {
 	for _, refusal := range shapeRefusals() {
 		var status huma.StatusError
-		if !errors.As(answer(refusal), &status) || status.GetStatus() != http.StatusUnprocessableEntity {
+		if !errors.As(answer("under test", refusal), &status) || status.GetStatus() != http.StatusUnprocessableEntity {
 			t.Errorf("%v is not a 422", refusal)
 		}
 	}

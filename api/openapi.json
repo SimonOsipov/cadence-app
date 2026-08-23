@@ -5,6 +5,10 @@
         "additionalProperties": false,
         "properties": {
           "default_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
             "type": "string"
           },
           "icon": {
@@ -187,6 +191,10 @@
         "additionalProperties": false,
         "properties": {
           "unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
             "type": "string"
           },
           "value": {
@@ -585,6 +593,11 @@
             "$ref": "#/components/schemas/DoseBody"
           },
           "kind": {
+            "enum": [
+              "injection",
+              "supplement",
+              "weigh_in"
+            ],
             "type": "string"
           },
           "protocol_item_id": {
@@ -787,10 +800,27 @@
       "RowBody": {
         "additionalProperties": false,
         "properties": {
+          "cadence": {
+            "enum": [
+              "weekly",
+              "daily",
+              "n_per_week"
+            ],
+            "type": "string"
+          },
+          "compound": {
+            "$ref": "#/components/schemas/CompoundBody",
+            "description": "Null when the item names no drug."
+          },
           "dose": {
             "$ref": "#/components/schemas/DoseBody"
           },
           "kind": {
+            "enum": [
+              "injection",
+              "supplement",
+              "weigh_in"
+            ],
             "type": "string"
           },
           "loggable": {
@@ -808,18 +838,22 @@
               "null"
             ]
           },
-          "title": {
-            "type": "string"
-          },
           "today_status": {
+            "enum": [
+              "done",
+              "pending",
+              "missed",
+              "scheduled"
+            ],
             "type": "string"
           }
         },
         "required": [
           "protocol_item_id",
           "kind",
-          "title",
+          "compound",
           "times",
+          "cadence",
           "loggable"
         ],
         "type": "object"
