@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
@@ -973,4 +975,60 @@ func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
 			t.Errorf("the service path rewrote a vial: got %v, want SQLSTATE 42501", err)
 		}
 	})
+}
+
+// The read step 8 resolves a dose's vial through, exercised on the service seam — which is
+// the seam it was written for: 000016 grants vials_service_read USING (true) and says in its
+// own comment that this read is why. There the Go predicate is the only boundary there is,
+// and under WithCaller it is the second lock behind vials_own_select.
+//
+// Measured through the dose write, the predicate survives every mutation: the caller's own
+// policy answers first, so dropping it changes nothing. This is where it can fail.
+func TestTheCabinetReadIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) {
+	c := newClinic(t)
+
+	// Both patients hold one open, undisposed vial of the same compound.
+	// Opened by their owners: the service path holds SELECT and INSERT on vials and
+	// deliberately no UPDATE, because opening a vial is the patient's own act.
+	for _, owner := range []struct{ patient, vial string }{
+		{patientA, c.vialA},
+		{patientB, c.vialB},
+	} {
+		if err := c.as(t, owner.patient, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx,
+				`UPDATE app.vials SET opened_at = DATE '2026-05-01' WHERE id = $1`, owner.vial)
+
+			return err
+		}); err != nil {
+			t.Fatalf("opening %s: %v", owner.vial, err)
+		}
+	}
+
+	for _, who := range []struct {
+		name    string
+		patient string
+		want    string
+	}{
+		{"the first patient", patientA, c.vialA},
+		{"the second patient", patientB, c.vialB},
+	} {
+		t.Run(who.name, func(t *testing.T) {
+			var got *string
+			if err := database.WithServiceJob(
+				t.Context(), c.service, seedJob,
+				func(ctx context.Context, tx pgx.Tx) error {
+					var err error
+					got, err = inventory.OpenVialFor(
+						ctx, tx, civil.UserID(who.patient), c.compound)
+
+					return err
+				},
+			); err != nil {
+				t.Fatalf("resolving: %v", err)
+			}
+			if got == nil || *got != who.want {
+				t.Errorf("resolved %v, want %s", got, who.want)
+			}
+		})
+	}
 }
