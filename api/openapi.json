@@ -204,6 +204,114 @@
         ],
         "type": "object"
       },
+      "LogDoseInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "description": "The client's own key. A retry from the offline queue carries the key generated when the patient tapped save, and the repeat answers what the first answered.",
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "dose_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "dose_value": {
+            "description": "What the patient believes they took. The dose recorded is the course's; this is carried so a mismatch can be noticed rather than silently overwritten.",
+            "exclusiveMinimum": 0,
+            "format": "double",
+            "type": "number"
+          },
+          "mood": {
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "photo_path": {
+            "description": "The stored key of the photo, under the patient's own prefix.",
+            "type": "string"
+          },
+          "protocol_item_id": {
+            "description": "The prescribed item this dose answers.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "side_effects": {
+            "description": "The seven §03 names. The same set the diary's tags come from, because one action writes both rows.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "site_code": {
+            "description": "The body zone, one of the ten the map draws.",
+            "type": "string"
+          },
+          "vial_id": {
+            "description": "The vial it was drawn from. Absent when the picker was skipped, which costs that vial's count one dose — a truth about what is known.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_item_id",
+          "dose_value",
+          "dose_unit",
+          "client_request_id"
+        ],
+        "type": "object"
+      },
+      "LogDoseOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "dose_event_id": {
+            "description": "Present when the outcome is written.",
+            "type": "string"
+          },
+          "dose_unit": {
+            "type": "string"
+          },
+          "dose_value": {
+            "description": "What the course prescribes for that occurrence, read back off the event.",
+            "format": "double",
+            "type": "number"
+          },
+          "journal_date": {
+            "description": "The day whose diary entry this dose wrote. The entry has no id of its own — the day is its identity.",
+            "format": "date",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "written",
+              "incomplete",
+              "not_scheduled_today",
+              "already_logged"
+            ],
+            "type": "string"
+          },
+          "vial_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
       "Me": {
         "additionalProperties": false,
         "properties": {
@@ -733,6 +841,88 @@
         "summary": "The authenticated caller",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/v1/me/dose-events": {
+      "post": {
+        "description": "Writes the dose and the day's diary entry in one transaction — one action, two facts — and answers which of four things happened. The four are a 200 with a body and not HTTP errors: the client branches on them, so they are expected results rather than failures. `written` carries the identifiers; `already_logged` means every occurrence of that item today is recorded, so a repeat cannot take another dose out of the vial; `not_scheduled_today` means the item has no occurrence in the patient's own day, which is what an app left open across midnight produces; `incomplete` means the draft cannot make an event. A repeat carrying the same client_request_id answers what the first answered and writes nothing. The dose recorded is the one the course prescribes, not the one the request carries.",
+        "operationId": "log-dose",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogDoseInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogDoseOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Record a dose",
+        "tags": [
+          "dosing"
         ]
       }
     },

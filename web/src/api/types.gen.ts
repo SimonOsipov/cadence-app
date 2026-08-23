@@ -95,6 +95,58 @@ export type Item = {
     times: Array<string> | null;
 };
 
+export type LogDoseInputBody = {
+    /**
+     * The client's own key. A retry from the offline queue carries the key generated when the patient tapped save, and the repeat answers what the first answered.
+     */
+    client_request_id: string;
+    dose_unit: 'мг' | 'мкг';
+    /**
+     * What the patient believes they took. The dose recorded is the course's; this is carried so a mismatch can be noticed rather than silently overwritten.
+     */
+    dose_value: number;
+    mood?: number;
+    note?: string;
+    /**
+     * The stored key of the photo, under the patient's own prefix.
+     */
+    photo_path?: string;
+    /**
+     * The prescribed item this dose answers.
+     */
+    protocol_item_id: string;
+    /**
+     * The seven §03 names. The same set the diary's tags come from, because one action writes both rows.
+     */
+    side_effects?: Array<string> | null;
+    /**
+     * The body zone, one of the ten the map draws.
+     */
+    site_code?: string;
+    /**
+     * The vial it was drawn from. Absent when the picker was skipped, which costs that vial's count one dose — a truth about what is known.
+     */
+    vial_id?: string;
+};
+
+export type LogDoseOutputBody = {
+    /**
+     * Present when the outcome is written.
+     */
+    dose_event_id?: string;
+    dose_unit?: string;
+    /**
+     * What the course prescribes for that occurrence, read back off the event.
+     */
+    dose_value?: number;
+    /**
+     * The day whose diary entry this dose wrote. The entry has no id of its own — the day is its identity.
+     */
+    journal_date?: string;
+    outcome: 'written' | 'incomplete' | 'not_scheduled_today' | 'already_logged';
+    vial_id?: string;
+};
+
 export type Me = {
     /**
      * When the presented token stops being accepted.
@@ -361,6 +413,47 @@ export type GetMeResponses = {
 };
 
 export type GetMeResponse = GetMeResponses[keyof GetMeResponses];
+
+export type LogDoseData = {
+    body: LogDoseInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/dose-events';
+};
+
+export type LogDoseErrors = {
+    /**
+     * Bad Request
+     */
+    400: Problem;
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type LogDoseError = LogDoseErrors[keyof LogDoseErrors];
+
+export type LogDoseResponses = {
+    /**
+     * OK
+     */
+    200: LogDoseOutputBody;
+};
+
+export type LogDoseResponse = LogDoseResponses[keyof LogDoseResponses];
 
 export type RecordSessionData = {
     body: SessionBody;

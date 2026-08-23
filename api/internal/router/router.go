@@ -68,7 +68,7 @@ func contexts(opts Options) []boundedContext {
 	return []boundedContext{
 		{"audit", audit.Register},
 		{"content", content.Register},
-		{"dosing", dosing.Register},
+		{"dosing", dosing.NewService(opts.Pool).Register},
 		{"identity", identity.NewService(identity.Deps{
 			Onboarding: onboarding,
 			Sessions:   sessions,

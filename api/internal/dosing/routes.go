@@ -1,11 +1,204 @@
 package dosing
 
-import "github.com/danielgtaylor/huma/v2"
+import (
+	"context"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/journal"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
+)
+
+// Service is this context's operations together with what they need to answer.
+//
+// The request pool alone: a dose is the patient writing about themselves, so the write runs
+// under their own identity and RLS answers. Nothing here reaches the service seam.
+type Service struct {
+	requests *pgxpool.Pool
+
+	// The clock, injected. Every occurrence is generated in the patient's own day, and a
+	// handler reading time.Now directly is a handler the suite cannot run against a
+	// calendar — which is the same argument the generator's `today` parameter makes.
+	now func() time.Time
+}
+
+func NewService(requestPool *pgxpool.Pool) *Service {
+	return NewServiceAt(requestPool, time.Now)
+}
+
+// NewServiceAt is NewService with the clock named, for the suite that has to run this against
+// a calendar rather than against whatever day it is.
+func NewServiceAt(requestPool *pgxpool.Pool, now func() time.Time) *Service {
+	return &Service{requests: requestPool, now: now}
+}
 
 // Register mounts this context's operations on the API.
-//
-// It is empty until the context has its first endpoint. It exists now so that
-// the endpoint arrives as a call in a place that is already wired, reviewed and
-// covered by the registry test in internal/router — rather than as a call plus
-// a decision about where routing lives, made under the pressure of a feature.
-func Register(huma.API) {}
+func (s *Service) Register(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "log-dose",
+		Method:        http.MethodPost,
+		Path:          "/v1/me/dose-events",
+		DefaultStatus: http.StatusOK,
+		Summary:       "Record a dose",
+		Description: "Writes the dose and the day's diary entry in one transaction — one " +
+			"action, two facts — and answers which of four things happened. The four are a " +
+			"200 with a body and not HTTP errors: the client branches on them, so they are " +
+			"expected results rather than failures. `written` carries the identifiers; " +
+			"`already_logged` means every occurrence of that item today is recorded, so a " +
+			"repeat cannot take another dose out of the vial; `not_scheduled_today` means " +
+			"the item has no occurrence in the patient's own day, which is what an app left " +
+			"open across midnight produces; `incomplete` means the draft cannot make an " +
+			"event. A repeat carrying the same client_request_id answers what the first " +
+			"answered and writes nothing. The dose recorded is the one the course " +
+			"prescribes, not the one the request carries.",
+		Tags: []string{"dosing"},
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable,
+		},
+	}, s.log)
+}
+
+// LogDoseInput is the wizard's payload. Everything but the item, the dose and the key is
+// optional: §03's last step is «всё по желанию».
+type LogDoseInput struct {
+	Body struct {
+		ItemID string `json:"protocol_item_id" format:"uuid" doc:"The prescribed item this dose answers."`
+
+		DoseValue float64 `json:"dose_value" exclusiveMinimum:"0" doc:"What the patient believes they took. The dose recorded is the course's; this is carried so a mismatch can be noticed rather than silently overwritten."`
+		DoseUnit  string  `json:"dose_unit" enum:"мг,мкг"`
+
+		VialID    *string  `json:"vial_id,omitempty" format:"uuid" doc:"The vial it was drawn from. Absent when the picker was skipped, which costs that vial's count one dose — a truth about what is known."`
+		Site      *string  `json:"site_code,omitempty" doc:"The body zone, one of the ten the map draws."`
+		Mood      *int     `json:"mood,omitempty" minimum:"1" maximum:"5"`
+		Sides     []string `json:"side_effects,omitempty" doc:"The seven §03 names. The same set the diary's tags come from, because one action writes both rows."`
+		Note      *string  `json:"note,omitempty" maxLength:"2000"`
+		PhotoPath *string  `json:"photo_path,omitempty" doc:"The stored key of the photo, under the patient's own prefix."`
+
+		ClientRequestID string `json:"client_request_id" minLength:"8" maxLength:"128" pattern:"^[A-Za-z0-9][A-Za-z0-9._:-]*$" doc:"The client's own key. A retry from the offline queue carries the key generated when the patient tapped save, and the repeat answers what the first answered."`
+	}
+}
+
+// LogDoseOutput is the closed set of outcomes, with the identifiers the written one carries.
+type LogDoseOutput struct {
+	Body struct {
+		Outcome string `json:"outcome" enum:"written,incomplete,not_scheduled_today,already_logged"`
+
+		EventID     string  `json:"dose_event_id,omitempty" doc:"Present when the outcome is written."`
+		JournalDate string  `json:"journal_date,omitempty" format:"date" doc:"The day whose diary entry this dose wrote. The entry has no id of its own — the day is its identity."`
+		DoseValue   float64 `json:"dose_value,omitempty" doc:"What the course prescribes for that occurrence, read back off the event."`
+		DoseUnit    string  `json:"dose_unit,omitempty"`
+		VialID      *string `json:"vial_id,omitempty"`
+	}
+}
+
+func (s *Service) log(ctx context.Context, in *LogDoseInput) (*LogDoseOutput, error) {
+	if s.requests == nil {
+		return nil, huma.Error500InternalServerError("this API was assembled without a request pool")
+	}
+
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no verified principal on the request context")
+	}
+
+	draft, err := s.draft(in)
+	if err != nil {
+		return nil, err
+	}
+
+	logged, err := Log(ctx, s.requests,
+		database.Caller{Subject: principal.Subject, Role: principal.Role}, s.now(), draft)
+	if err != nil {
+		return nil, answer(err)
+	}
+
+	out := &LogDoseOutput{}
+	out.Body.Outcome = string(logged.Outcome)
+	if logged.Outcome == Written {
+		out.Body.EventID = logged.EventID
+		out.Body.JournalDate = logged.JournalDate.String()
+		out.Body.DoseValue = logged.Dose.Value
+		out.Body.DoseUnit = string(logged.Dose.Unit)
+		out.Body.VialID = logged.VialID
+	}
+
+	return out, nil
+}
+
+// draft is where a string becomes a member of a closed set, and the two sets are parsed
+// rather than cast: the schema's enum keyword is a courtesy to the generated client, and a
+// request that bypasses it reaches here either way.
+func (s *Service) draft(in *LogDoseInput) (Draft, error) {
+	unit, ok := protocol.ParseDoseUnit(in.Body.DoseUnit)
+	if !ok {
+		return Draft{}, huma.Error422UnprocessableEntity("dose_unit is not one this API knows: " + in.Body.DoseUnit)
+	}
+
+	draft := Draft{
+		ItemID:          protocol.ProtocolItemID(in.Body.ItemID),
+		Dose:            &protocol.Dose{Value: in.Body.DoseValue, Unit: unit},
+		VialID:          in.Body.VialID,
+		Mood:            in.Body.Mood,
+		Note:            in.Body.Note,
+		PhotoPath:       in.Body.PhotoPath,
+		ClientRequestID: in.Body.ClientRequestID,
+	}
+
+	if in.Body.Site != nil {
+		site, ok := parseSite(*in.Body.Site)
+		if !ok {
+			return Draft{}, huma.Error422UnprocessableEntity("site_code is not a zone the body map draws: " + *in.Body.Site)
+		}
+		draft.Site = &site
+	}
+
+	for _, reported := range in.Body.Sides {
+		side, ok := journal.ParseTag(reported)
+		if !ok {
+			return Draft{}, huma.Error422UnprocessableEntity("side_effects carries one this API does not know: " + reported)
+		}
+		draft.Sides = append(draft.Sides, side)
+	}
+
+	return draft, nil
+}
+
+// answer maps a refusal to a status. The four outcomes are not here: they are results, and
+// they travel in the body with a 200.
+func answer(err error) error {
+	switch {
+	case errors.Is(err, ErrNoTimezone):
+		// A provisioning fault rather than a bad request: the patient's account is
+		// missing something the clinic was meant to record.
+		return huma.Error500InternalServerError("the patient's timezone is not recorded", err)
+	case errors.Is(err, journal.ErrAnotherPatientsDay), errors.Is(err, journal.ErrAnotherDay):
+		// Programmer errors by that package's own account, and the record owed this
+		// step a 500 for them: a 4xx would tell a patient their form is wrong about a
+		// bug in this process, and put another patient's identifier in the reply.
+		return huma.Error500InternalServerError("the day being merged is not the one being written", err)
+	case database.IsUnavailable(err):
+		return huma.Error503ServiceUnavailable("the database could not serve the request", err)
+	default:
+		return huma.Error500InternalServerError("recording the dose", err)
+	}
+}
+
+// parseSite is the zones' own constructor, beside protocol's four and journal's two.
+func parseSite(s string) (Site, bool) {
+	for _, site := range Sites() {
+		if site == Site(s) {
+			return site, true
+		}
+	}
+
+	return "", false
+}
