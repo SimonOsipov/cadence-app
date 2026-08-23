@@ -91,10 +91,23 @@ func TestOneActionWritesBothFacts(t *testing.T) {
 	if !event.injectedAt.Equal(theMoment) {
 		t.Errorf("the dose was injected at %v, want %v", event.injectedAt, theMoment)
 	}
-	// The compound is the item's, and the draft has no field to carry one — the guard is
-	// the shape of the type, so this asserts the resolution rather than a refusal.
+	// The compound is the resolved item's. The clinic seeds two loggable items of two
+	// drugs on the same day precisely so this can vary: with one of each, «the resolved
+	// item's compound» and «the plan's first» are the same value, and that mutation
+	// survived the whole suite.
 	if event.compound != compoundID {
 		t.Errorf("the dose is attributed to %s", event.compound)
+	}
+	other, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, func(d *dosing.Draft) {
+			d.ItemID = protocol.ProtocolItemID(c.otherItem[patientA])
+			d.ClientRequestID = "wizard-the-other-drug"
+		}))
+	if err != nil {
+		t.Fatalf("logging the second item: %v", err)
+	}
+	if attributed := eventRow(t, c, other.EventID).compound; attributed != otherCompoundID {
+		t.Errorf("the second item's dose is attributed to %s", attributed)
 	}
 	if event.site != "l-abdomen" || event.mood != 4 {
 		t.Errorf("the event reads site %q mood %d", event.site, event.mood)

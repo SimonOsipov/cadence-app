@@ -57,7 +57,8 @@ const (
 	doctorB  = "9b2f3b7c-0000-4000-8000-0000000000b2"
 	adminID  = "9b2f3b7c-0000-4000-8000-0000000000c1"
 
-	compoundID = "9b2f3b7c-0000-4000-8000-0000000000d1"
+	compoundID      = "9b2f3b7c-0000-4000-8000-0000000000d1"
+	otherCompoundID = "9b2f3b7c-0000-4000-8000-0000000000d2"
 
 	seedJob = "test.dosing"
 	dayA    = "2026-05-31"
@@ -70,9 +71,10 @@ type clinic struct {
 	service *pgxpool.Pool
 	request *pgxpool.Pool
 
-	protocol map[string]string
-	item     map[string]string
-	vial     map[string]string
+	protocol  map[string]string
+	item      map[string]string
+	otherItem map[string]string
+	vial      map[string]string
 }
 
 func newClinic(t *testing.T) clinic {
@@ -101,11 +103,12 @@ func newClinic(t *testing.T) clinic {
 	}
 
 	c := clinic{
-		service:  service,
-		request:  request,
-		protocol: map[string]string{},
-		item:     map[string]string{},
-		vial:     map[string]string{},
+		service:   service,
+		request:   request,
+		protocol:  map[string]string{},
+		item:      map[string]string{},
+		otherItem: map[string]string{},
+		vial:      map[string]string{},
 	}
 	if err := database.WithServiceJob(
 		t.Context(), service, seedJob,
@@ -129,9 +132,10 @@ func (c clinic) seed(ctx context.Context, tx pgx.Tx) error {
 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO app.compounds (id, name_ru, default_unit, route, icon)
-		VALUES ($1, 'Семаглутид', 'мг', 'sc', 'syringe')
-	`, compoundID); err != nil {
-		return fmt.Errorf("compound: %w", err)
+		VALUES ($1, 'Семаглутид', 'мг', 'sc', 'syringe'),
+		       ($2, 'Тирзепатид', 'мкг', 'sc', 'syringe')
+	`, compoundID, otherCompoundID); err != nil {
+		return fmt.Errorf("compounds: %w", err)
 	}
 
 	for patient, doctor := range map[string]string{patientA: doctorA, patientB: doctorB} {
@@ -173,6 +177,27 @@ func (c clinic) seed(ctx context.Context, tx pgx.Tx) error {
 			return fmt.Errorf("item %s: %w", patient, err)
 		}
 		c.item[patient] = itemID
+
+		// A second loggable item of a second drug, on the same days. With one item and
+		// one compound in the clinic, «the resolved item's compound» and «the plan's
+		// first» are the same value — measured, that mutation survived the suite.
+		var otherItem string
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO app.protocol_items
+			    (protocol_id, kind, compound_id, cadence, days_of_week, times, loggable)
+			VALUES ($1, 'injection', $2, 'weekly', ARRAY[7]::smallint[], ARRAY['09:00']::time[], true)
+			RETURNING id::text
+		`, protocolID, otherCompoundID).Scan(&otherItem); err != nil {
+			return fmt.Errorf("second item %s: %w", patient, err)
+		}
+		c.otherItem[patient] = otherItem
+
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app.protocol_phases (protocol_item_id, from_week, to_week, dose_value, dose_unit)
+			VALUES ($1, 1, 12, 500, 'мкг')
+		`, otherItem); err != nil {
+			return fmt.Errorf("second phase %s: %w", patient, err)
+		}
 
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO app.protocol_phases (protocol_item_id, from_week, to_week, dose_value, dose_unit)
@@ -822,7 +847,7 @@ func TestADoseKeepsTheDrugItWasGivenAsWhenTheCourseIsEdited(t *testing.T) {
 		func(ctx context.Context, tx pgx.Tx) error {
 			if err := tx.QueryRow(ctx, `
 				INSERT INTO app.compounds (name_ru, default_unit, route, icon)
-				VALUES ('Тирзепатид', 'мг', 'sc', 'syringe') RETURNING id::text
+				VALUES ('Ретатрутид', 'мг', 'sc', 'syringe') RETURNING id::text
 			`).Scan(&other); err != nil {
 				return err
 			}
