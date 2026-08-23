@@ -90,6 +90,17 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 			func(d *Draft) { d.Items[0].Times = nil }, ErrNoSlot,
 		},
 		{
+			// Unreachable over HTTP, where the pattern guards it, and guarded here
+			// for the same reason the identifier's shape is: cmd/seed builds these
+			// by hand, and «99:00» reaches the column as an unclassified 22007.
+			"an hour the clock does not have",
+			func(d *Draft) { d.Items[0].Times = []civil.Slot{{Hour: 99}} }, ErrNotASlot,
+		},
+		{
+			"a minute the clock does not have",
+			func(d *Draft) { d.Items[0].Times = []civil.Slot{{Hour: 8, Minute: 60}} }, ErrNotASlot,
+		},
+		{
 			"an injection naming no compound",
 			func(d *Draft) { d.Items[0].Compound = CompoundRef{} }, ErrInjectionWithoutCompound,
 		},

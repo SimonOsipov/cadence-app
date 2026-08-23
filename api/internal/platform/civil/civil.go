@@ -88,6 +88,14 @@ type Slot struct {
 	Minute int
 }
 
+// Valid reports whether the clock has this time, for the reason Date.Valid exists: the type
+// admits Slot{Hour: 99}, which renders as «99:00» and reaches a time column as a 22007 that
+// no caller classifies. Written out rather than round-tripped — unlike a date, a time has no
+// normalising constructor to compare against.
+func (s Slot) Valid() bool {
+	return s.Hour >= 0 && s.Hour <= 23 && s.Minute >= 0 && s.Minute <= 59
+}
+
 // String is the wire and database form. Fixed width for the same reason a date is.
 func (s Slot) String() string { return fmt.Sprintf("%02d:%02d", s.Hour, s.Minute) }
 

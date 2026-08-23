@@ -142,3 +142,20 @@ func TestADayTheCalendarDoesNotHaveIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestATimeTheClockDoesNotHaveIsRefused(t *testing.T) {
+	for _, refused := range []Slot{
+		{Hour: 24}, {Hour: -1}, {Hour: 99}, {Hour: 8, Minute: 60}, {Hour: 8, Minute: -1},
+	} {
+		if refused.Valid() {
+			t.Errorf("%v passed as a time", refused)
+		}
+	}
+
+	// Both ends, and midnight, which a bound written as «> 0» would refuse.
+	for _, accepted := range []Slot{{}, {Hour: 23, Minute: 59}, {Hour: 8}, {Hour: 20, Minute: 30}} {
+		if !accepted.Valid() {
+			t.Errorf("%v was refused as a time", accepted)
+		}
+	}
+}

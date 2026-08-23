@@ -19,17 +19,18 @@ import (
 // two doctors editing one course — and an integration test keeps the pair from drifting by
 // offering each of those refusals to the schema and requiring the named constraint.
 //
-// Six of them the schema does not express at all, and the list is worth naming so the next
-// reader does not expect the reconciliation to cover it: ErrNoItems and ErrNoPhases (a course
-// or an item with nothing in it is a row that simply is not there), ErrInjectionWithoutCompound
-// and ErrCompoundOnAKindWithoutOne (§03 leaves compound_id nullable for the kinds that are not
-// drugs, and a CHECK cannot tell which), ErrItemNamedTwice (two rows of a request, and the
-// schema sees one row at a time), and the upper half of ErrPhaseOffCourse: no constraint ties
-// to_week to the course's duration_weeks, because the two live in different tables. Those six
-// are held here alone.
+// Five of them the schema does not express at all, plus the upper half of a sixth, and the
+// list is worth naming so the next reader does not expect the reconciliation to cover it:
+// ErrNoItems and ErrNoPhases (a course or an item with nothing in it is a row that simply is
+// not there), ErrInjectionWithoutCompound and ErrCompoundOnAKindWithoutOne (§03 leaves
+// compound_id nullable for the kinds that are not drugs, and a CHECK cannot tell which),
+// ErrItemNamedTwice (two rows of one request, and the schema sees one row at a time), and
+// to_week against duration_weeks, which live in different tables. Those are held here alone.
 //
-// The list was wrong twice, and both times the same way: a rule was added here and the
-// partition was not revisited, so the record described a pair the test did not implement.
+// The partition was stated wrongly three times running, always the same way — a rule added
+// here, the list not revisited, and once a count taken from the test's rows rather than from
+// the rules. The sets were right every time; the arithmetic was not, and nothing in a gate
+// checks arithmetic written in prose.
 var (
 	ErrWeeksOffRange            = errors.New("a course runs between one and 104 weeks")
 	ErrNotADay                  = errors.New("the calendar has no such day")
@@ -39,6 +40,7 @@ var (
 	ErrUnknownCadence           = errors.New("the cadence is not one of weekly, daily, n_per_week")
 	ErrCadenceAgainstDays       = errors.New("a daily item names no weekday, and any other names at least one")
 	ErrNoSlot                   = errors.New("an item is taken at a named time")
+	ErrNotASlot                 = errors.New("the clock has no such time")
 	ErrInjectionWithoutCompound = errors.New("an injection names what is injected")
 	ErrNoPhases                 = errors.New("an item is dosed by at least one phase")
 	ErrPhaseRunsBackwards       = errors.New("a phase ends no earlier than it begins")
@@ -78,7 +80,7 @@ func shapeRefusals() []error {
 		ErrUnknownCadence, ErrCadenceAgainstDays, ErrNoSlot, ErrInjectionWithoutCompound,
 		ErrCompoundOnAKindWithoutOne, ErrNoPhases, ErrPhaseRunsBackwards, ErrPhaseOffCourse,
 		ErrDoseOffRange, ErrUnknownDoseUnit, ErrPhasesOverlap, ErrCompoundRefUnclear,
-		ErrDrugNotDescribed, ErrItemNamedTwice, ErrDrugNameTooLong,
+		ErrDrugNotDescribed, ErrItemNamedTwice, ErrDrugNameTooLong, ErrNotASlot,
 	}
 }
 
@@ -158,6 +160,11 @@ func (i DraftItem) check(weeks int) error {
 	}
 	if len(i.Times) == 0 {
 		return ErrNoSlot
+	}
+	for n, slot := range i.Times {
+		if !slot.Valid() {
+			return fmt.Errorf("slot %d is %v: %w", n+1, slot, ErrNotASlot)
+		}
 	}
 	named := 0
 	if i.Compound.ID != nil {

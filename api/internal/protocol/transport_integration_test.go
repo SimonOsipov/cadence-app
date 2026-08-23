@@ -3,6 +3,7 @@
 package protocol_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,8 +72,60 @@ func TestTheDashboardCanPrescribeThroughTheTransport(t *testing.T) {
 	}
 }
 
-// The statuses the route declares, each reached through the transport rather than asserted
-// of a mapping function: a status that no request can produce is a contract nobody honours.
+// Rewriting through the transport: the PUT was declared and never driven, so its 404 — the
+// only place ErrNoSuchProtocol and ErrNoSuchItem become a wire status — was measured nowhere,
+// and the round-one critical was exactly a route nothing had ever sent a request to.
+func TestACourseIsRewrittenThroughTheTransport(t *testing.T) {
+	pool, _ := prescribing(t)
+	doctorA := auth.Principal{Subject: writeDoctorA, Role: "doctor"}
+
+	status, body := send(t, pool, doctorA,
+		http.MethodPost, "/v1/patients/"+writePatientA+"/protocols", aWirePayload)
+	if status != http.StatusCreated {
+		t.Fatalf("prescribing answered %d: %s", status, body)
+	}
+
+	var created struct {
+		ProtocolID string   `json:"protocol_id"`
+		ItemIDs    []string `json:"item_ids"`
+	}
+	if err := json.Unmarshal([]byte(body), &created); err != nil {
+		t.Fatalf("reading the reply: %v", err)
+	}
+
+	kept := strings.Replace(aWirePayload, `"kind": "injection",`,
+		`"id": "`+created.ItemIDs[0]+`", "kind": "injection",`, 1)
+	path := "/v1/patients/" + writePatientA + "/protocols/"
+
+	if status, body := send(t, pool, doctorA, http.MethodPut, path+created.ProtocolID, kept); status != http.StatusOK {
+		t.Errorf("rewriting answered %d: %s", status, body)
+	}
+
+	for _, missing := range []struct {
+		name    string
+		course  string
+		payload string
+	}{
+		{"a course nobody holds", "5d4f3b7c-0000-4000-8000-00000000dead", aWirePayload},
+		{
+			"an item this course does not hold", created.ProtocolID,
+			strings.Replace(aWirePayload, `"kind": "injection",`,
+				`"id": "5d4f3b7c-0000-4000-8000-00000000beef", "kind": "injection",`, 1),
+		},
+	} {
+		t.Run(missing.name, func(t *testing.T) {
+			if status, body := send(t, pool, doctorA, http.MethodPut,
+				path+missing.course, missing.payload); status != http.StatusNotFound {
+				t.Errorf("answered %d, want 404: %s", status, body)
+			}
+		})
+	}
+}
+
+// The statuses the create route declares, each reached through the transport rather than
+// asserted of a mapping function: a status that no request can produce is a contract nobody
+// honours. 400 and 503 are declared and not driven here — the first is huma's own parse
+// failure and the second needs the database gone.
 func TestEachDeclaredStatusIsReachable(t *testing.T) {
 	pool, _ := prescribing(t)
 
@@ -95,12 +148,6 @@ func TestEachDeclaredStatusIsReachable(t *testing.T) {
 		{
 			"phases that overlap", doctorA,
 			strings.Replace(aWirePayload, `"from_week": 5`, `"from_week": 4`, 1),
-			http.StatusUnprocessableEntity,
-		},
-		{
-			// The schema's own guard rather than Check's: minItems on the list.
-			"a course with no items", doctorA,
-			strings.Replace(aWirePayload, `"items": [{`, `"items": [], "unused": [{`, 1),
 			http.StatusUnprocessableEntity,
 		},
 		{

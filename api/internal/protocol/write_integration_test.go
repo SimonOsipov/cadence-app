@@ -154,8 +154,11 @@ func TestOnlyTheCareTeamPrescribes(t *testing.T) {
 	}
 
 	// And with no principal at all, which is a wiring mistake rather than a caller.
-	if _, err := protocol.Create(t.Context(), pool, draft); err == nil {
-		t.Error("a request with no verified caller wrote a course")
+	// The seam refuses it before requireCaresFor is reached, and naming that is the
+	// point: by here a course is already running, so «some error» is what the partial
+	// index would answer with every guard gone.
+	if _, err := protocol.Create(t.Context(), pool, draft); !errors.Is(err, database.ErrNoPrincipal) {
+		t.Errorf("a request with no verified caller gave %v", err)
 	}
 }
 
