@@ -6,13 +6,10 @@ import "time"
 // protocol.LoggedSlot is: this function is pure, and a dose event carries a dozen fields it
 // has no business reading.
 type Injection struct {
-	// Absent for a dose logged with the zone step skipped, and for an oral item that has
-	// no zone at all. Also where an unrecognised site_code lands, refused at the boundary
-	// rather than crashing a screen.
+	// Absent when the wizard's zone step was skipped, and for an item that has no zone.
 	Site *Site
 
-	// When the injection happened, which is not when the row was written: a dose from the
-	// retry queue lands hours later, and a back-fill answers an occurrence months old.
+	// When the injection happened, never when the row was written.
 	At time.Time
 }
 
@@ -36,9 +33,8 @@ func SuggestNextSite(recent []Injection) Site {
 		}
 	}
 
-	// Presence in the map rather than a zero time as «never used»: the zero Time is a
-	// real instant that a back-dated row could carry, and comparing against it would make
-	// «injected in year one» and «never injected» the same answer.
+	// Presence in the map and not a zero time as «never used»: the zero Time is a real
+	// instant, so the two would be one answer.
 	best := Sites()[0]
 	bestAt, bestUsed := lastUsed[best]
 
@@ -46,8 +42,7 @@ func SuggestNextSite(recent []Injection) Site {
 		at, used := lastUsed[site]
 		switch {
 		case !bestUsed:
-			// The first unused zone in the set's order already wins outright, and
-			// nothing later can beat it — ties keep the set's order.
+			// Nothing later can beat an unused zone; ties keep the set's order.
 			return best
 		case !used:
 			best, bestAt, bestUsed = site, at, false

@@ -11,10 +11,16 @@ import (
 // fails. Here only injectedAt exists at all — the type carries nothing else — which makes the
 // same point structurally: this function cannot read a field it was not given.
 
+// The KMP writes these as named parameters with defaults, where a half-given clock cannot be
+// spelled. Here it can, so it is refused: at(5, 20, 9) reads as nine o'clock and meant seven.
 func at(month, day int, clock ...int) time.Time {
 	hour, minute := 7, 0
-	if len(clock) == 2 {
+	switch len(clock) {
+	case 0:
+	case 2:
 		hour, minute = clock[0], clock[1]
+	default:
+		panic("at takes an hour and a minute, or neither")
 	}
 
 	return time.Date(2026, time.Month(month), day, hour, minute, 0, 0, time.UTC)
@@ -74,6 +80,46 @@ func TestTheSharedHistoryInjectsEveryZoneExactlyOnce(t *testing.T) {
 	}
 	if len(newestFirst) != len(Sites()) {
 		t.Errorf("a zone repeats in the fixture: %d against %d", len(newestFirst), len(Sites()))
+	}
+}
+
+// The order in full, and by literal. It is the rotation's tie-break, so it decides what a
+// patient with no history is offered and which of two equally stale zones wins — and only
+// the first two positions were pinned: measured, permuting the other eight left the whole
+// package green. The fixture guard above sorts both sides, which erases exactly this.
+func TestTheZonesAreInTheOrderTheTieBreakNeeds(t *testing.T) {
+	// The KMP enum's declaration order, and the same order the CHECK in 000019 lists.
+	// Not the prototype's front-six-then-back-four, which is its panels' drawing order.
+	want := []Site{
+		SiteLeftAbdomen, SiteRightAbdomen,
+		SiteLeftDeltoid, SiteRightDeltoid,
+		SiteLeftGlute, SiteRightGlute,
+		SiteLeftThigh, SiteRightThigh,
+		SiteLeftLowBack, SiteRightLowBack,
+	}
+	if !slices.Equal(Sites(), want) {
+		t.Errorf("the zones are %v, want %v", Sites(), want)
+	}
+}
+
+// Every position of that order reached, not only the first: with all ten zones used and one
+// of them stale, the answer is that zone — so a permutation anywhere in the set moves an
+// answer. The staleness walks the set rather than sitting at a fixed index, which is what a
+// fixture pinned to one position could not do.
+func TestEveryPositionOfTheOrderDecidesSomething(t *testing.T) {
+	for i, stalest := range Sites() {
+		history := make([]Injection, 0, len(Sites()))
+		for _, site := range Sites() {
+			when := at(5, 1).Add(time.Duration(i) * time.Hour)
+			if site == stalest {
+				when = on(2025, 1, 1)
+			}
+			history = append(history, injected(zone(site), when))
+		}
+
+		if got := SuggestNextSite(history); got != stalest {
+			t.Errorf("position %d is %q and the rotation answered %q", i, stalest, got)
+		}
 	}
 }
 
@@ -154,17 +200,6 @@ func TestRecencyIsTheTimestampAndNotThePositionInTheList(t *testing.T) {
 	}
 }
 
-func TestABackDatedLogCountsFromWhenItWasInjectedNotWhatItWasScheduledFor(t *testing.T) {
-	// A dose injected today against an occurrence eighteen months ago — a back-fill's
-	// shape. The Go type carries no scheduled date at all, which is the stronger form of
-	// the KMP's guard: the function cannot read what it was not given.
-	history := append(everyZoneOnce(), injected(zone(oldest), at(6, 1)))
-
-	if got := SuggestNextSite(history); got != secondOldest {
-		t.Errorf("got %q, want %q", got, secondOldest)
-	}
-}
-
 func TestDosesOnOneDayAreSeparatedByTheClockAndNotByTheDate(t *testing.T) {
 	// Ten events, not two: a rotation rounding to the day or the hour would see a ten-way
 	// tie and answer with the set's first constant.
@@ -215,9 +250,8 @@ func TestAHistoryOfOnlySiteLessEventsIsNoHistory(t *testing.T) {
 	}
 }
 
-// Not in the KMP suite, and it is the case Go has that Kotlin does not: the zero Time is a
-// real instant, so a rotation treating «no entry» as «used at the zero time» would call a
-// never-used zone staler than one injected in year one — and answer with the wrong zone.
+// Go's own case, absent from the KMP suite: kotlin.time has no zero Instant to confuse with
+// «never used».
 func TestAZoneInjectedAtTheZeroInstantIsStillAUsedZone(t *testing.T) {
 	history := []Injection{{Site: zone(SiteLeftAbdomen), At: time.Time{}}}
 

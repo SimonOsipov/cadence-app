@@ -27,11 +27,12 @@ const (
 // rotation's tie-break, so it decides what a patient with no history is offered and what
 // they are offered when two zones are equally stale.
 //
-// It is the KMP enum's declaration order and deliberately not the prototype's drawing
-// order — the body map lists six front zones then four back ones, which is a rendering
-// concern of the client's panels. Reading that order into here would move the opening
-// suggestion from the left abdomen to the right deltoid, and the frozen prototype documents
-// `suggested: 'l-abdomen'` in log-dose/data.ts.
+// It is the KMP enum's declaration order — the same order 000019's CHECK lists — and
+// deliberately not the prototype's drawing order, which groups six front zones then four
+// back ones for its panels. Reading that in here would move the opening suggestion from the
+// left abdomen to the right deltoid. What log-dose/data.ts documents is narrower and still
+// decides it: `suggested: 'l-abdomen'` beside `lastUsed: ['r-abdomen']`, the answer after one
+// injection rather than none.
 func Sites() []Site {
 	return []Site{
 		SiteLeftAbdomen, SiteRightAbdomen,
