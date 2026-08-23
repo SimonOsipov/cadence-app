@@ -204,6 +204,19 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 		t.Errorf("a plain course was refused: %v", err)
 	}
 
+	// A legal Russian name long enough to pass 200 bytes and not 200 characters, which
+	// is the only input that tells the two counts apart: 150 Cyrillic letters is 300
+	// bytes, the schema takes it, and a byte bound here would refuse a drug the clinic
+	// is allowed to enter.
+	long := aPlan(func(d *Draft) {
+		d.Items[0].Compound = CompoundRef{New: &NewCompound{
+			NameRU: strings.Repeat("я", 150), DefaultUnit: MG, Route: "sc", Icon: "syringe",
+		}}
+	})
+	if err := long.Check(); err != nil {
+		t.Errorf("a 150-character name was refused: %v", err)
+	}
+
 	// The kinds that are not injections, which need no compound and are not logged.
 	for _, kind := range []ItemKind{KindSupplement, KindWeighIn} {
 		plain := aPlan(func(d *Draft) {

@@ -231,12 +231,12 @@ func updateItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item Draf
 	// The phases go and come back: they carry no identity of their own, and nothing
 	// references them, so there is no history to keep here.
 	//
-	// Joined to the item's course rather than taking the identifier alone. The guard
-	// above would refuse first, so this is the second lock — and the asymmetry is the
-	// reason: with the scope only in Go, a later edit to that guard leaves the UPDATE
-	// safe and unscopes these two silently, and what they would then do is a
-	// cross-tenant write. A phase inserted onto another patient's item is a titration
-	// band they read as their own, and their real bands are gone with no trace.
+	// Joined to the item's course rather than taking the identifier alone, and it is a
+	// second lock rather than decoration. Measured: with the RowsAffected guard above
+	// removed, this scope still refuses; with both removed, the caller's phases land on
+	// another patient's item and their own bands are gone — the cross-course test reads
+	// 1,5 мг where the other patient was prescribed 0,25 and 0,5. A cross-tenant write,
+	// and one with no trace, since phases carry no history and nothing references them.
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM app.protocol_phases p
 		USING app.protocol_items i
