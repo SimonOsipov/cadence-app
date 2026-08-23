@@ -774,8 +774,20 @@ func TestTheActivePlanIsReadWholeOrNotAtAll(t *testing.T) {
 		t.Fatalf("prescribing: %v", err)
 	}
 
+	// A second patient with a course of their own, because with one course in the clinic
+	// `WHERE patient_id = $1` is indistinguishable from its absence — and that predicate
+	// is the whole tenant boundary of this read on the service seam, where every policy
+	// is USING (true). Everything below inherits its tenancy from the row it returns.
+	theirs, err := protocol.Create(as(t, writeDoctorB, "doctor"), pool, aCourse(writePatientB))
+	if err != nil {
+		t.Fatalf("prescribing for the other patient: %v", err)
+	}
+
 	plan := readPlan(t, pool, writePatientA)
 
+	if plan.Protocol.ID == theirs.ProtocolID {
+		t.Fatal("the read answered the other patient's course")
+	}
 	if plan.Protocol.ID != written.ProtocolID || plan.Protocol.PatientID != writePatientA {
 		t.Errorf("the plan is %s for %s", plan.Protocol.ID, plan.Protocol.PatientID)
 	}
@@ -798,6 +810,13 @@ func TestTheActivePlanIsReadWholeOrNotAtAll(t *testing.T) {
 	slices.Sort(wrote)
 	if !slices.Equal(read, wrote) {
 		t.Errorf("the plan holds %v, the write answered %v", read, wrote)
+	}
+	// The identifiers and not merely the count: two courses of two items each would
+	// satisfy «two items» with the other patient's rows.
+	for _, mine := range read {
+		if slices.Contains(theirs.ItemIDs, mine) {
+			t.Errorf("item %s belongs to the other patient's course", mine)
+		}
 	}
 
 	injection := byKind(t, plan, protocol.KindInjection)
@@ -880,7 +899,9 @@ func TestThePlanIsReadUnderTheCallersOwnIdentity(t *testing.T) {
 		found   bool
 	}{
 		{"the patient themselves", writePatientA, "patient", true},
+		{"their own doctor", writeDoctorA, "doctor", true},
 		{"the other patient", writePatientB, "patient", false},
+		{"the other patient's doctor", writeDoctorB, "doctor", false},
 		{"a doctor of nobody", "5d4f3b7c-0000-4000-8000-00000000dead", "doctor", false},
 	} {
 		t.Run(caller.name, func(t *testing.T) {

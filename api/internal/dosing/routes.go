@@ -61,6 +61,8 @@ func (s *Service) Register(api huma.API) {
 		Errors: []int{
 			http.StatusBadRequest,
 			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusConflict,
 			http.StatusUnprocessableEntity,
 			http.StatusServiceUnavailable,
 		},
@@ -108,6 +110,14 @@ func (s *Service) log(ctx context.Context, in *LogDoseInput) (*LogDoseOutput, er
 	principal, ok := auth.PrincipalFrom(ctx)
 	if !ok {
 		return nil, huma.Error401Unauthorized("no verified principal on the request context")
+	}
+	// A patient-only surface, refused rather than left to the policies. For a doctor the
+	// answer would be a bland «not scheduled today», and for an admin every policy on the
+	// four tables in play is USING (true) — so the Go predicate would be the only
+	// boundary left on all five statements. Every neighbouring /v1/me surface refuses the
+	// same way.
+	if principal.Role != "patient" {
+		return nil, huma.Error403Forbidden("only a patient records their own doses")
 	}
 
 	draft, err := s.draft(in)
@@ -180,6 +190,14 @@ func answer(err error) error {
 		// A provisioning fault rather than a bad request: the patient's account is
 		// missing something the clinic was meant to record.
 		return huma.Error500InternalServerError("the patient's timezone is not recorded", err)
+	case errors.Is(err, ErrRequestChanged):
+		// A client error and not a repeat: the retry queue sends what it saved, so a
+		// divergence means it saved the wrong thing, and the message names the field.
+		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, ErrNoSuchVial), errors.Is(err, ErrPhotoNotTheirs):
+		// The schema refuses both on every path; this is that refusal read back as the
+		// field the caller filled in rather than as a constraint they cannot see.
+		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.Is(err, journal.ErrAnotherPatientsDay), errors.Is(err, journal.ErrAnotherDay):
 		// Programmer errors by that package's own account, and the record owed this
 		// step a 500 for them: a 4xx would tell a patient their form is wrong about a

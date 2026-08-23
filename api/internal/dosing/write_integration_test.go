@@ -292,3 +292,15 @@ func ask(t *testing.T, c clinic, query string, args []any, into ...any) {
 		t.Fatalf("reading: %v", err)
 	}
 }
+
+func daysOn(t *testing.T, c clinic, patient, day string) int {
+	t.Helper()
+
+	var days int
+	ask(t, c, `
+		SELECT count(*) FROM app.journal_entries
+		WHERE patient_id = $1 AND entry_date = $2::date
+	`, []any{patient, day}, &days)
+
+	return days
+}

@@ -431,6 +431,14 @@ export type LogDoseErrors = {
      */
     401: Problem;
     /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
      * Unprocessable Entity
      */
     422: Problem;

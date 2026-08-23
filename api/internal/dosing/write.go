@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/journal"
@@ -18,7 +21,23 @@ import (
 // ErrNoTimezone is a patient whose profile carries no zone. Every occurrence is generated in
 // the patient's own day, so there is no safe default: the server's zone would put a dose on
 // the wrong date for half the clinic, and refusing says which patient to fix.
-var ErrNoTimezone = errors.New("the patient's timezone is not recorded")
+var (
+	ErrNoTimezone = errors.New("the patient's timezone is not recorded")
+
+	// The same key with a different draft is a client error and not a repeat, and the
+	// approved decision of 2026-08-15 says so: returning the first result silently would
+	// hide the fault in the one path that exists for an unreliable network. The retry
+	// queue sends what it saved, so a divergence means it saved the wrong thing.
+	ErrRequestChanged = errors.New("this request key was used for a different dose")
+
+	// The vial named is not one this patient holds. The composite key refuses it on every
+	// path; this is the same refusal read as a field the caller filled in.
+	ErrNoSuchVial = errors.New("no such vial in this patient's cabinet")
+
+	// The photo key is not under the patient's own prefix. A prefix is where a key
+	// begins, and this constraint is about where it points.
+	ErrPhotoNotTheirs = errors.New("the photo key is not under this patient's prefix")
+)
 
 // Logged is what the write answers. The identifiers are absent for every outcome but Written,
 // because there is nothing to name.
@@ -46,7 +65,11 @@ type Logged struct {
 func Log(
 	ctx context.Context, pool *pgxpool.Pool, caller database.Caller, now time.Time, draft Draft,
 ) (Logged, error) {
-	patient := civil.UserID(caller.Subject)
+	// Lower-cased once, here. IsUUIDShaped accepts a non-canonical spelling deliberately,
+	// and the database answers patient_id::text in canonical lowercase — so an uppercase
+	// subject would make journal.Merge's ownership comparison, which is a Go string
+	// equality between the two, refuse the patient's own day.
+	patient := civil.UserID(strings.ToLower(caller.Subject))
 
 	var logged Logged
 	err := database.WithCaller(ctx, pool, caller, func(ctx context.Context, tx pgx.Tx) error {
@@ -58,7 +81,10 @@ func Log(
 			return err
 		}
 		if found {
-			logged = repeat
+			if differs := repeat.differsFrom(draft); differs != "" {
+				return fmt.Errorf("%s: %w", differs, ErrRequestChanged)
+			}
+			logged = repeat.Logged
 
 			return nil
 		}
@@ -91,6 +117,11 @@ func Log(
 		}
 
 		logged, err = record(ctx, tx, patient, plan, slot, now, draft)
+		if errors.Is(err, errLostTheSlot) {
+			// The other request wrote it between Resolve and the insert. Rolled back
+			// whole, so the reply is the one it would have got a moment later.
+			logged, err = Logged{Outcome: AlreadyLogged}, nil
+		}
 
 		return err
 	})
@@ -138,7 +169,7 @@ func record(
 		slot.Date.String(), slotTime(slot), now, slot.Prescribed.Value, string(slot.Prescribed.Unit),
 		siteCode(draft.Site), draft.Mood, sides, draft.Note, draft.PhotoPath,
 		draft.ClientRequestID).Scan(&eventID); err != nil {
-		return Logged{}, err
+		return Logged{}, classify(err)
 	}
 
 	if err := writeTheDay(ctx, tx, patient, slot.Date, draft); err != nil {
@@ -198,32 +229,91 @@ func writeTheDay(
 	return err
 }
 
+// theFirstTime is what a key already wrote, read back far enough to tell a repeat from a
+// client that reused a key for a different dose.
+type theFirstTime struct {
+	Logged
+
+	itemID protocol.ProtocolItemID
+	site   *string
+	mood   *int
+	sides  []string
+	note   *string
+	photo  *string
+}
+
+// differsFrom names the field a repeat disagrees on, or the empty string when it is one.
+//
+// The draft's own meaning and not the request's bytes, which is what the decision asks for:
+// a client that reordered its side effects or reformatted its JSON sent the same dose. The
+// dose value is compared as the draft sent it — not as the course prescribed it, which is
+// what the row stores — because that is the field the client controls and would have got
+// wrong.
+func (first theFirstTime) differsFrom(draft Draft) string {
+	sides := make([]string, 0, len(draft.Sides))
+	for _, side := range draft.Sides {
+		sides = append(sides, string(side))
+	}
+	slices.Sort(sides)
+	stored := slices.Clone(first.sides)
+	slices.Sort(stored)
+
+	switch {
+	case first.itemID != draft.ItemID:
+		return "protocol_item_id"
+	case !samePointer(first.VialID, draft.VialID):
+		return "vial_id"
+	case !samePointer(first.site, siteCode(draft.Site)):
+		return "site_code"
+	case !samePointer(first.mood, draft.Mood):
+		return "mood"
+	case !slices.Equal(stored, sides):
+		return "side_effects"
+	case !samePointer(first.note, draft.Note):
+		return "note"
+	case !samePointer(first.photo, draft.PhotoPath):
+		return "photo_path"
+	default:
+		return ""
+	}
+}
+
+func samePointer[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+
+	return *a == *b
+}
+
 // logOf is the idempotency. The key is the client's own and unique per patient, so a repeat
 // finds the row and answers what it answered before rather than resolving again.
 func logOf(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, key string,
-) (Logged, bool, error) {
+) (theFirstTime, bool, error) {
 	var (
-		logged Logged
-		day    time.Time
+		first theFirstTime
+		day   time.Time
 	)
 	err := tx.QueryRow(ctx, `
-		SELECT id::text, scheduled_for_date, dose_value, dose_unit, vial_id::text
+		SELECT id::text, scheduled_for_date, dose_value, dose_unit, vial_id::text,
+		       protocol_item_id::text, site_code, mood, side_effects, note, photo_path
 		FROM app.dose_events
 		WHERE patient_id = $1 AND client_request_id = $2
 	`, string(patient), key).Scan(
-		&logged.EventID, &day, &logged.Dose.Value, &logged.Dose.Unit, &logged.VialID)
+		&first.EventID, &day, &first.Dose.Value, &first.Dose.Unit, &first.VialID,
+		&first.itemID, &first.site, &first.mood, &first.sides, &first.note, &first.photo)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Logged{}, false, nil
+		return theFirstTime{}, false, nil
 	}
 	if err != nil {
-		return Logged{}, false, fmt.Errorf("looking up request %q: %w", key, err)
+		return theFirstTime{}, false, fmt.Errorf("looking up request %q: %w", key, err)
 	}
 
-	logged.Outcome = Written
-	logged.JournalDate = civil.NewDate(day.Year(), day.Month(), day.Day())
+	first.Outcome = Written
+	first.JournalDate = civil.NewDate(day.Year(), day.Month(), day.Day())
 
-	return logged, true, nil
+	return first, true, nil
 }
 
 // slotsLoggedOn reads what closes an occurrence, and it reads the *scheduled* slot rather
@@ -323,6 +413,44 @@ func todayFor(
 
 	return civil.NewDate(local.Year(), local.Month(), local.Day()), nil
 }
+
+// classify turns the constraints that answer a legitimate request into named errors, and
+// only those: a catch-all here is how a bug becomes a refusal the client retries forever.
+//
+// The slot's uniqueness is the race Resolve cannot see — two devices with different keys
+// aiming at one occurrence — and the outcome set already has the word for it. Without this
+// the loser got a 500 where already_logged is exactly what happened.
+func classify(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return err
+	}
+
+	switch {
+	case pgErr.Code == uniqueViolation && pgErr.ConstraintName == oneDosePerSlot:
+		return errLostTheSlot
+	case pgErr.Code == foreignKeyViolation && pgErr.ConstraintName == vialIsTheirOwn:
+		return ErrNoSuchVial
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == photoIsUnderTheirPrefix:
+		return ErrPhotoNotTheirs
+	default:
+		return err
+	}
+}
+
+const (
+	uniqueViolation     = "23505"
+	foreignKeyViolation = "23503"
+	checkViolation      = "23514"
+
+	oneDosePerSlot          = "dose_events_one_per_slot"
+	vialIsTheirOwn          = "dose_events_drawn_from_their_own_vial"
+	photoIsUnderTheirPrefix = "dose_events_photo_key_is_under_its_own_prefix"
+)
+
+// errLostTheSlot never leaves this package: it is the race becoming the outcome that names
+// it, and a caller has nothing to do about it that «already logged» does not already say.
+var errLostTheSlot = errors.New("another request took this slot first")
 
 func slotTime(slot Slot) *string {
 	if slot.Time == nil {
