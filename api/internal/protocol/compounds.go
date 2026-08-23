@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -51,6 +52,50 @@ type NewCompound struct {
 // service path on purpose — a name collision must not rewrite a reference row that other
 // patients' courses already point at — and DO UPDATE needs it. The extra round trip is the
 // price of that decision, and it is recorded here so the next reader does not «fix» it.
+// EnterNewDrugs inserts every drug a draft names by name, in one pass and in a fixed order.
+//
+// The order is the point, and it is a cross-tenant one. app.compounds is the single table on
+// this path that every patient shares, so two transactions writing courses for two different
+// patients take index locks on it in whatever order the requests listed their items: doctor A
+// prescribing {X, Y} and doctor B prescribing {Y, X} at the same moment deadlock on
+// compounds_one_row_per_name, and one patient's write fails because of another's. Sorted by
+// the normalised name, every transaction takes them the same way round and cannot cycle.
+//
+// It runs before any item is written, so the whole of a course's contention with other
+// tenants is over before the course's own rows are touched.
+func EnterNewDrugs(ctx context.Context, tx pgx.Tx, items []DraftItem) error {
+	names := make([]string, 0, len(items))
+	described := make(map[string]NewCompound, len(items))
+
+	for _, item := range items {
+		if item.Compound.New == nil {
+			continue
+		}
+		name := normaliseName(item.Compound.New.NameRU)
+		if name == "" {
+			return fmt.Errorf("the name is blank: %w", ErrCompoundRefUnclear)
+		}
+		if _, seen := described[name]; !seen {
+			names = append(names, name)
+			described[name] = *item.Compound.New
+		}
+	}
+
+	slices.Sort(names)
+	for _, name := range names {
+		drug := described[name]
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app.compounds (name_ru, default_unit, route, icon)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT DO NOTHING
+		`, name, string(drug.DefaultUnit), drug.Route, drug.Icon); err != nil {
+			return fmt.Errorf("entering %q into the directory: %w", name, err)
+		}
+	}
+
+	return nil
+}
+
 func ResolveCompound(ctx context.Context, tx pgx.Tx, ref CompoundRef) (CompoundID, error) {
 	named := 0
 	if ref.ID != nil {
@@ -72,6 +117,9 @@ func ResolveCompound(ctx context.Context, tx pgx.Tx, ref CompoundRef) (CompoundI
 		return "", fmt.Errorf("the name is blank: %w", ErrCompoundRefUnclear)
 	}
 
+	// The insert is EnterNewDrugs' business on the write path, which does it in a fixed
+	// order for every transaction. Kept here for the callers that resolve one reference
+	// on its own — the seed of step 11 — where there is no second name to order against.
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO app.compounds (name_ru, default_unit, route, icon)
 		VALUES ($1, $2, $3, $4)

@@ -70,6 +70,10 @@ func Create(ctx context.Context, pool *pgxpool.Pool, draft Draft) (Written, erro
 		}
 
 		var err error
+		if err := EnterNewDrugs(ctx, tx, draft.Items); err != nil {
+			return err
+		}
+
 		written, err = write(ctx, tx, draft)
 		if err != nil {
 			return err
@@ -136,13 +140,22 @@ func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft
 			return fmt.Errorf("course %s: %w", id, ErrNoSuchProtocol)
 		}
 
+		// Scoped by the patient as well, so this file says the same thing everywhere.
+		// ownerOf ran three lines above and the column grant withholds patient_id, so
+		// it changes nothing today — and it is the shape the phase statements were
+		// corrected into, which is worth more than the line costs.
 		if _, err := tx.Exec(ctx, `
 			UPDATE app.protocols
-			SET start_date = $2::date, duration_weeks = $3, status = $4, notes = $5
-			WHERE id = $1
-		`, string(id), draft.StartDate.String(), draft.Weeks, string(draft.Status), draft.Notes); err != nil {
+			SET start_date = $3::date, duration_weeks = $4, status = $5, notes = $6
+			WHERE id = $1 AND patient_id = $2
+		`, string(id), string(draft.PatientID), draft.StartDate.String(), draft.Weeks,
+			string(draft.Status), draft.Notes); err != nil {
 			return err
 		}
+		if err := EnterNewDrugs(ctx, tx, draft.Items); err != nil {
+			return err
+		}
+
 		written.ProtocolID = id
 		if err := rewriteItems(ctx, tx, &written, draft); err != nil {
 			return err
@@ -196,8 +209,16 @@ func rewriteItems(ctx context.Context, tx pgx.Tx, written *Written, draft Draft)
 	}
 
 	// Everything the request did not name. RESTRICT answers here if a dose refers to one.
+	//
+	// Compared as uuid and not as text. `id::text` is always the canonical lowercase
+	// form uuid_out produces, while `kept` carries the caller's own spelling — and both
+	// IsUUIDShaped and huma's format:"uuid" accept an uppercase one. So an item named
+	// «5D4F3B7C-…» was updated in place by the statement above, which compares uuids,
+	// and then deleted by this one, which compared strings: the doctor asked to keep it
+	// and it went, with its phases; if a dose referenced it they got a 409 telling them
+	// to clear `loggable` on an item they never asked to remove.
 	_, err := tx.Exec(ctx,
-		`DELETE FROM app.protocol_items WHERE protocol_id = $1 AND NOT (id::text = ANY($2))`,
+		`DELETE FROM app.protocol_items WHERE protocol_id = $1 AND NOT (id = ANY($2::uuid[]))`,
 		string(written.ProtocolID), kept)
 
 	return err

@@ -235,6 +235,17 @@ func TestACourseOfThreeKindsIsWrittenAndThenEditedInPlace(t *testing.T) {
 		t.Errorf("%d items name a drug, want the injection alone", named)
 	}
 
+	// A second patient with a course of their own, because every fixture here has held
+	// exactly one: with one course in the database, `DELETE … WHERE protocol_id = $1
+	// AND NOT (id = ANY(…))` is indistinguishable from the same statement without its
+	// first predicate — and without it, an edit deletes every protocol item in the
+	// database that this request did not name.
+	theirs, err := protocol.Create(as(t, writeDoctorB, "doctor"), pool, aCourse(writePatientB))
+	if err != nil {
+		t.Fatalf("prescribing for the other patient: %v", err)
+	}
+	before := countRows(t, pool, string(theirs.ProtocolID))
+
 	// The mixed edit: keep the supplement and rewrite it, add a second injection, drop
 	// the weigh-in and the first injection.
 	kept := written.ItemIDs[1]
@@ -269,6 +280,37 @@ func TestACourseOfThreeKindsIsWrittenAndThenEditedInPlace(t *testing.T) {
 		if stillThere(t, pool, string(dropped)) {
 			t.Errorf("item %s outlived an edit that omitted it", dropped)
 		}
+	}
+	if after := countRows(t, pool, string(theirs.ProtocolID)); after != before {
+		t.Errorf("the other patient's course went from %+v to %+v", before, after)
+	}
+}
+
+// The caller's own spelling of an identifier is not the database's. Both IsUUIDShaped and
+// huma accept an uppercase uuid, and the sweep used to compare `id::text` — always canonical
+// lowercase — against what the caller sent: the item was rewritten in place by one statement
+// and deleted by the next, with its phases, having been named to keep it.
+func TestAnItemKeptUnderAnotherSpellingIsStillKept(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	written, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, aCourse(writePatientA))
+	if err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	shouted := protocol.ProtocolItemID(strings.ToUpper(string(written.ItemIDs[0])))
+	draft := aCourse(writePatientA)
+	draft.Items[0].ID = &shouted
+	draft.Items[0].Times = []civil.Slot{{Hour: 20}}
+
+	if _, err := protocol.Replace(as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, draft); err != nil {
+		t.Fatalf("editing under an uppercase identifier: %v", err)
+	}
+	if !stillThere(t, pool, string(written.ItemIDs[0])) {
+		t.Fatal("the item the request named to keep was deleted")
+	}
+	if slot := slotOf(t, pool, string(written.ItemIDs[0])); slot != "20:00:00" {
+		t.Errorf("the kept item reads %s", slot)
 	}
 }
 

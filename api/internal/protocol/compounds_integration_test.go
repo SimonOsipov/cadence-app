@@ -213,3 +213,58 @@ func describe(t *testing.T, pool *pgxpool.Pool, id protocol.CompoundID) (string,
 
 	return unit, route
 }
+
+// The order two transactions take the shared table in. app.compounds is the one table on
+// this path every patient shares, so a course naming new drugs takes index locks another
+// patient's course may want — and in the request's own order, which is the caller's. Sorted
+// by normalised name, every transaction takes them the same way round and cannot cycle.
+//
+// Asserted on the statements rather than by racing two transactions: a deadlock test that
+// passes because the scheduler happened to serialize them measures nothing.
+func TestTheDirectoryIsEnteredInOneFixedOrder(t *testing.T) {
+	pool := resolving(t)
+
+	drug := func(name string) protocol.DraftItem {
+		return protocol.DraftItem{Compound: protocol.CompoundRef{New: &protocol.NewCompound{
+			NameRU: name, DefaultUnit: protocol.MG, Route: "sc", Icon: "syringe",
+		}}}
+	}
+
+	// Two requests naming the same drugs the opposite way round, each in its own
+	// transaction, and the rows they leave have to carry the same creation order.
+	for _, order := range [][]protocol.DraftItem{
+		{drug("  Тирзепатид "), drug("Ретатрутид"), drug("Тирзепатид")},
+		{drug("Ретатрутид"), drug("Тирзепатид")},
+	} {
+		if err := database.WithServiceJob(
+			t.Context(), pool, shapeJob,
+			func(ctx context.Context, tx pgx.Tx) error {
+				return protocol.EnterNewDrugs(ctx, tx, order)
+			},
+		); err != nil {
+			t.Fatalf("entering %d drugs: %v", len(order), err)
+		}
+	}
+
+	// Ретатрутид sorts before Тирзепатид, so it is the older row whichever request ran
+	// first — and the repeat, spelled twice and padded once, entered one row.
+	var order string
+	if err := database.WithServiceJob(
+		t.Context(), pool, shapeJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT string_agg(name_ru, ',' ORDER BY created_at, name_ru)
+				FROM app.compounds WHERE name_ru IN ('Ретатрутид', 'Тирзепатид')
+			`).Scan(&order)
+		},
+	); err != nil {
+		t.Fatalf("reading the directory: %v", err)
+	}
+	if order != "Ретатрутид,Тирзепатид" {
+		t.Errorf("the directory was entered as %s", order)
+	}
+
+	if count := compoundsNamed(t, pool, "тирзепатид"); count != 1 {
+		t.Errorf("the repeated name entered %d rows", count)
+	}
+}
