@@ -5,6 +5,7 @@ package protocol_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,11 @@ const (
 
 // Two patients and two doctors assigned crosswise: «only their own patients» is not a
 // statement one patient can carry.
+// theRequestURL is the last clinic's request-seam URL. A package-level handoff rather than a
+// second return value, because only one test needs it and every other call site would carry
+// a parameter it ignores.
+var theRequestURL string
+
 func prescribing(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 
@@ -87,7 +93,24 @@ func prescribing(t *testing.T) (*pgxpool.Pool, string) {
 		t.Fatalf("seeding the admin: %v", err)
 	}
 
+	theRequestURL = db.AppURL
+
 	return pool, db.SuperuserURL
+}
+
+// prescribingWithRequests is the same clinic with the request pool as well, for the reads
+// that run under the caller's own identity rather than through the service seam.
+func prescribingWithRequests(t *testing.T) (*pgxpool.Pool, *pgxpool.Pool) {
+	t.Helper()
+
+	service, _ := prescribing(t)
+	requests, err := database.NewPool(t.Context(), theRequestURL)
+	if err != nil {
+		t.Fatalf("opening the request pool: %v", err)
+	}
+	t.Cleanup(requests.Close)
+
+	return service, requests
 }
 
 func as(t *testing.T, subject, role string) context.Context {
@@ -726,4 +749,204 @@ func ask(t *testing.T, pool *pgxpool.Pool, query string, args []any, into ...any
 	); err != nil {
 		t.Fatalf("reading: %v", err)
 	}
+}
+
+// The plan as the generator wants it, read in one place. dosing needs it to decide which
+// occurrence a dose answers, and a bounded context does not read its neighbour's tables —
+// so the read lives here, with the schema it belongs to.
+func TestTheActivePlanIsReadWholeOrNotAtAll(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	draft := aCourse(writePatientA)
+	draft.Items = append(draft.Items, protocol.DraftItem{
+		Kind:     protocol.KindSupplement,
+		Cadence:  protocol.CadenceDaily,
+		Times:    []civil.Slot{{Hour: 8}, {Hour: 20}},
+		Loggable: true,
+		Phases: []protocol.ProtocolPhase{
+			{FromWeek: 1, ToWeek: 6, Dose: protocol.Dose{Value: 250, Unit: protocol.MCG}},
+			{FromWeek: 7, ToWeek: 12, Dose: protocol.Dose{Value: 500, Unit: protocol.MCG}},
+		},
+	})
+
+	written, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, draft)
+	if err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	plan := readPlan(t, pool, writePatientA)
+
+	if plan.Protocol.ID != written.ProtocolID || plan.Protocol.PatientID != writePatientA {
+		t.Errorf("the plan is %s for %s", plan.Protocol.ID, plan.Protocol.PatientID)
+	}
+	if plan.Protocol.StartDate != civil.NewDate(2026, time.May, 4) || plan.Protocol.Weeks != 12 {
+		t.Errorf("the course reads %v for %d weeks", plan.Protocol.StartDate, plan.Protocol.Weeks)
+	}
+	if plan.Protocol.Status != protocol.StatusActive {
+		t.Errorf("the course is %q", plan.Protocol.Status)
+	}
+
+	if len(plan.Items) != 2 {
+		t.Fatalf("the plan holds %d items, want 2", len(plan.Items))
+	}
+	// The set, not the order: protocol_items carries no position, so the order the course
+	// was written in is not recoverable and the read's is stable-but-arbitrary. Asserting
+	// the write's order here would pin a property the schema does not hold.
+	read := []protocol.ProtocolItemID{plan.Items[0].ID, plan.Items[1].ID}
+	slices.Sort(read)
+	wrote := slices.Clone(written.ItemIDs)
+	slices.Sort(wrote)
+	if !slices.Equal(read, wrote) {
+		t.Errorf("the plan holds %v, the write answered %v", read, wrote)
+	}
+
+	injection := byKind(t, plan, protocol.KindInjection)
+	if injection.Kind != protocol.KindInjection || injection.CompoundID == nil {
+		t.Errorf("the injection reads %+v", injection)
+	}
+	if len(injection.DaysOfWeek) != 1 || injection.DaysOfWeek[0] != time.Sunday {
+		t.Errorf("the injection falls on %v, want Sunday", injection.DaysOfWeek)
+	}
+	if len(injection.Times) != 1 || injection.Times[0] != (civil.Slot{Hour: 8}) {
+		t.Errorf("the injection is at %v", injection.Times)
+	}
+	if !injection.Loggable {
+		t.Error("the injection is not loggable")
+	}
+
+	supplement := byKind(t, plan, protocol.KindSupplement)
+	if supplement.CompoundID != nil {
+		t.Errorf("the supplement names a drug: %v", *supplement.CompoundID)
+	}
+	if len(supplement.Times) != 2 || supplement.Times[1] != (civil.Slot{Hour: 20}) {
+		t.Errorf("the supplement is at %v", supplement.Times)
+	}
+	if len(supplement.DaysOfWeek) != 0 {
+		t.Errorf("a daily item names weekdays: %v", supplement.DaysOfWeek)
+	}
+
+	// The phases, keyed by their item and in week order — the generator reads them by
+	// week, and a map keyed wrongly would give one item another's titration.
+	if bands := plan.Phases[supplement.ID]; len(bands) != 2 ||
+		bands[0].FromWeek != 1 || bands[1].Dose.Value != 500 || bands[1].Dose.Unit != protocol.MCG {
+		t.Errorf("the supplement's phases read %+v", bands)
+	}
+	if bands := plan.Phases[injection.ID]; len(bands) != 2 || bands[0].Dose.Value != 0.25 {
+		t.Errorf("the injection's phases read %+v", bands)
+	}
+}
+
+// A patient with no course at all, and one whose course was cancelled: both answer «no plan»
+// rather than an empty one, because an empty plan generates an empty schedule and reads as a
+// patient who is prescribed nothing.
+func TestAPatientWithNoRunningCourseHasNoPlan(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	if _, found, err := planFor(t, pool, writePatientB); err != nil || found {
+		t.Errorf("a patient with no course: found=%v, err=%v", found, err)
+	}
+
+	written, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, aCourse(writePatientA))
+	if err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	cancelled := aCourse(writePatientA)
+	cancelled.Status = protocol.StatusCancelled
+	kept := written.ItemIDs[0]
+	cancelled.Items[0].ID = &kept
+	if _, err := protocol.Replace(as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, cancelled); err != nil {
+		t.Fatalf("cancelling: %v", err)
+	}
+
+	if _, found, err := planFor(t, pool, writePatientA); err != nil || found {
+		t.Errorf("a cancelled course: found=%v, err=%v", found, err)
+	}
+}
+
+// And the boundary: one patient's plan is not another's. The read runs on the request seam,
+// so RLS answers — which is the whole reason it is a read and not a service call.
+func TestThePlanIsReadUnderTheCallersOwnIdentity(t *testing.T) {
+	pool, requests := prescribingWithRequests(t)
+
+	if _, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, aCourse(writePatientA)); err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	for _, caller := range []struct {
+		name    string
+		subject string
+		role    string
+		found   bool
+	}{
+		{"the patient themselves", writePatientA, "patient", true},
+		{"the other patient", writePatientB, "patient", false},
+		{"a doctor of nobody", "5d4f3b7c-0000-4000-8000-00000000dead", "doctor", false},
+	} {
+		t.Run(caller.name, func(t *testing.T) {
+			var found bool
+			if err := database.WithCaller(
+				t.Context(), requests,
+				database.Caller{Subject: caller.subject, Role: caller.role},
+				func(ctx context.Context, tx pgx.Tx) error {
+					var err error
+					_, found, err = protocol.ActivePlanFor(ctx, tx, civil.UserID(writePatientA))
+
+					return err
+				},
+			); err != nil {
+				t.Fatalf("reading: %v", err)
+			}
+			if found != caller.found {
+				t.Errorf("found=%v, want %v", found, caller.found)
+			}
+		})
+	}
+}
+
+func byKind(t *testing.T, plan protocol.Plan, kind protocol.ItemKind) protocol.ProtocolItem {
+	t.Helper()
+
+	for _, item := range plan.Items {
+		if item.Kind == kind {
+			return item
+		}
+	}
+	t.Fatalf("the plan holds no %s", kind)
+
+	return protocol.ProtocolItem{}
+}
+
+func readPlan(t *testing.T, pool *pgxpool.Pool, patient string) protocol.Plan {
+	t.Helper()
+
+	plan, found, err := planFor(t, pool, patient)
+	if err != nil {
+		t.Fatalf("reading the plan: %v", err)
+	}
+	if !found {
+		t.Fatal("no running course")
+	}
+
+	return plan
+}
+
+func planFor(t *testing.T, pool *pgxpool.Pool, patient string) (protocol.Plan, bool, error) {
+	t.Helper()
+
+	var (
+		plan  protocol.Plan
+		found bool
+	)
+	err := database.WithServiceJob(
+		t.Context(), pool, writeJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			plan, found, err = protocol.ActivePlanFor(ctx, tx, civil.UserID(patient))
+
+			return err
+		},
+	)
+
+	return plan, found, err
 }

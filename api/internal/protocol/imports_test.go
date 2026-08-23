@@ -66,6 +66,7 @@ var (
 		"doc.go",
 		"compounds.go",
 		"write.go",
+		"read.go",
 	}
 )
 
