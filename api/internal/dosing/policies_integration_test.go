@@ -687,11 +687,12 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 	}
 }
 
-// acceptedBy reads the literals a CHECK names, in order. The widest possible
-// pattern between the quotes: '([a-z]+)' would silently skip a value with a dash
-// in it and report agreement it had not measured.
-// acceptedInOrder is acceptedBy without the sort: the order a constraint lists its literals
-// in is meaningless for most sets and load-bearing for one.
+// acceptedInOrder reads the literals a CHECK names, in the order it names them. The widest
+// possible pattern between the quotes: '([a-z]+)' would silently skip a value with a dash in
+// it and report an agreement it had not measured.
+//
+// The order is meaningless for most sets and load-bearing for one — the zones, where it is
+// the rotation's tie-break — so it is read here and sorted by the caller that does not care.
 func (c clinic) acceptedInOrder(t *testing.T, constraint string) []string {
 	t.Helper()
 
@@ -717,20 +718,8 @@ func (c clinic) acceptedInOrder(t *testing.T, constraint string) []string {
 func (c clinic) acceptedBy(t *testing.T, constraint string) []string {
 	t.Helper()
 
-	var accepted []string
-	if err := database.WithServiceJob(
-		t.Context(), c.service, seedJob,
-		func(ctx context.Context, tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `
-				SELECT array_agg(literal[1] ORDER BY literal[1])
-				FROM pg_constraint,
-				     LATERAL regexp_matches(pg_get_constraintdef(oid), '''([^'']*)''', 'g') AS literal
-				WHERE conname = $1
-			`, constraint).Scan(&accepted)
-		},
-	); err != nil {
-		t.Fatalf("reading %s: %v", constraint, err)
-	}
+	accepted := slices.Clone(c.acceptedInOrder(t, constraint))
+	slices.Sort(accepted)
 
 	return accepted
 }

@@ -30,9 +30,8 @@ const (
 // It is the KMP enum's declaration order — the same order 000019's CHECK lists — and
 // deliberately not the prototype's drawing order, which groups six front zones then four
 // back ones for its panels. Reading that in here would move the opening suggestion from the
-// left abdomen to the right deltoid. What log-dose/data.ts documents is narrower and still
-// decides it: `suggested: 'l-abdomen'` beside `lastUsed: ['r-abdomen']`, the answer after one
-// injection rather than none.
+// left abdomen to the right deltoid. The prototype's own pair is cited where it is an
+// expectation, in rotation_test.go, and it fixes the answer after one injection.
 func Sites() []Site {
 	return []Site{
 		SiteLeftAbdomen, SiteRightAbdomen,

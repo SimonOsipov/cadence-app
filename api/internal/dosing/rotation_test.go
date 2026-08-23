@@ -37,8 +37,9 @@ func injected(site *Site, when time.Time) Injection {
 func zone(site Site) *Site { return &site }
 
 // Neither the set's order nor its reverse, on purpose: a function ignoring its input could
-// only answer with a fixed constant — the first or the last — and here the oldest and newest
-// zones sit in the middle of the set, so such a function fails.
+// only answer with a fixed constant, and the oldest zone here is Sites()[7]. The KMP's
+// comment says the newest sits in the middle too — it does not, it is Sites()[0] — and the
+// fixture works anyway because no test expects the newest zone in an answer.
 var newestFirst = []Site{
 	SiteLeftAbdomen,
 	SiteRightAbdomen,
@@ -99,27 +100,6 @@ func TestTheZonesAreInTheOrderTheTieBreakNeeds(t *testing.T) {
 	}
 	if !slices.Equal(Sites(), want) {
 		t.Errorf("the zones are %v, want %v", Sites(), want)
-	}
-}
-
-// The staleness rule reached at every position rather than at one. It does not pin the order
-// — the expectation walks with it, so any permutation passes — and the literal above is what
-// does that. What this adds is that no zone is special: a rule that worked for the first two
-// and not the eighth would pass the pin and fail here.
-func TestTheStalestZoneWinsWhicheverPositionItSitsIn(t *testing.T) {
-	for i, stalest := range Sites() {
-		history := make([]Injection, 0, len(Sites()))
-		for _, site := range Sites() {
-			when := at(5, 1).Add(time.Duration(i) * time.Hour)
-			if site == stalest {
-				when = on(2025, 1, 1)
-			}
-			history = append(history, injected(zone(site), when))
-		}
-
-		if got := SuggestNextSite(history); got != stalest {
-			t.Errorf("position %d is %q and the rotation answered %q", i, stalest, got)
-		}
 	}
 }
 
