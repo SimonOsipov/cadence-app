@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 
@@ -55,11 +56,14 @@ type (
 		SuggestNextSite(ctx context.Context, tx pgx.Tx, patient civil.UserID) (string, error)
 	}
 
-	// Cabinet answers what the medicine cabinet knows about one compound: how many doses
-	// the open vial has left, and whether it is time to reorder.
+	// Cabinet answers what the medicine cabinet knows about one prescribed item: how many
+	// doses its open vial has left, and whether it is time to reorder.
+	// The item and not the compound, because the reorder hint is «weeks of supply» and
+	// the weeks come from the item's own rate — passing the two apart is where they
+	// disagree, which is the reason inventory's own function takes the item too.
 	Cabinet interface {
-		DosesLeftOf(
-			ctx context.Context, tx pgx.Tx, patient civil.UserID, compound CompoundID,
+		SupplyFor(
+			ctx context.Context, tx pgx.Tx, patient civil.UserID, item ProtocolItem,
 			today civil.Date,
 		) (*int, *ReorderHint, error)
 	}
@@ -77,10 +81,8 @@ type (
 // Both are inert — no behaviour, no invariant — so the copy costs a field list and not a rule.
 type (
 	ReorderHint struct {
-		DosesLeft  int
-		WeeksLeft  float64
-		ByDate     civil.Date
 		CompoundID CompoundID
+		WeeksLeft  int
 	}
 
 	Macros struct {
@@ -90,3 +92,85 @@ type (
 		Fat     int
 	}
 )
+
+// TodayFor assembles the hero screen from the plan, the day and what the neighbours answer.
+//
+// Every question it asks them is asked once, and the order is the reading order of the
+// screen rather than of the tables: nothing here depends on anything else here, so a reader
+// following the struct's fields finds them in the same sequence.
+func TodayFor(
+	ctx context.Context, tx pgx.Tx, patient civil.UserID,
+	plan Plan, compounds []Compound, running bool, at civil.Date, clock civil.Slot,
+	doses Doses, rotation Rotation, cabinet Cabinet,
+) (Today, error) {
+	today := Today{Date: at, PartOfDay: PartOfDayAt(clock)}
+
+	site, err := rotation.SuggestNextSite(ctx, tx, patient)
+	if err != nil {
+		return Today{}, err
+	}
+	today.SuggestedSite = site
+
+	if !running {
+		// A patient with no course still has a screen: the day, the part of it and the
+		// zone the wizard would open on. Everything else is a fact about a course.
+		return today, nil
+	}
+
+	if week, inCourse := CycleWeek(plan.Protocol, at); inCourse {
+		today.CycleWeek = &week
+	}
+
+	// One day of history, because that is all either reader needs: the strip is the
+	// week's prescription with today's state on it, and the occurrence walk below is
+	// about today. A week of slots would be read and then filtered to the same day.
+	oneDay, ok := civil.NewRange(at, at)
+	if !ok {
+		return Today{}, fmt.Errorf("the day %v: %w", at, ErrNotADay)
+	}
+	logged, err := doses.LoggedSlotsIn(ctx, tx, patient, oneDay)
+	if err != nil {
+		return Today{}, err
+	}
+
+	today.WeekProtocol = WeekProtocolRows(plan, compounds, logged, at)
+
+	for _, occurrence := range OccurrencesFor(plan, logged, at, at) {
+		if occurrence.Status == StatusDone && occurrence.Kind == KindInjection {
+			today.DoseLoggedToday = true
+		}
+		if today.NextDose == nil && occurrence.Status != StatusDone && occurrence.Kind == KindInjection {
+			next := occurrence
+			today.NextDose = &next
+		}
+	}
+
+	if today.NextDose != nil {
+		for _, item := range plan.Items {
+			if item.ID != today.NextDose.ItemID {
+				continue
+			}
+			left, reorder, err := cabinet.SupplyFor(ctx, tx, patient, item, at)
+			if err != nil {
+				return Today{}, err
+			}
+			today.VialDosesLeft, today.Reorder = left, reorder
+			today.NextTitration = TitrationStepAfter(plan, item.ID, at)
+
+			// What the hero card names above the dose. Absent when the item names no
+			// drug, which an injection cannot — but the read is a join and a join can
+			// come back short, and a nil here says so rather than inventing a name.
+			if item.CompoundID != nil {
+				for i := range compounds {
+					if compounds[i].ID == *item.CompoundID {
+						today.NextDoseCompound = &compounds[i]
+
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return today, nil
+}

@@ -157,3 +157,41 @@ func (d protocolDate) ScanDate(v pgtype.Date) error {
 
 	return nil
 }
+
+// CompoundsFor reads the directory rows a plan's items name.
+//
+// The whole plan's at once and not one per row: the strip names every item, so a lookup per
+// row is a query per row on the screen the patient opens most.
+func CompoundsFor(ctx context.Context, tx pgx.Tx, plan Plan) ([]Compound, error) {
+	ids := make([]string, 0, len(plan.Items))
+	for _, item := range plan.Items {
+		if item.CompoundID != nil {
+			ids = append(ids, string(*item.CompoundID))
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT id::text, coalesce(code, ''), name_ru, default_unit, route, icon
+		FROM app.compounds
+		WHERE id = ANY($1::uuid[])
+	`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("reading the directory: %w", err)
+	}
+	defer rows.Close()
+
+	var compounds []Compound
+	for rows.Next() {
+		var compound Compound
+		if err := rows.Scan(&compound.ID, &compound.Code, &compound.NameRU,
+			&compound.DefaultUnit, &compound.Route, &compound.Icon); err != nil {
+			return nil, err
+		}
+		compounds = append(compounds, compound)
+	}
+
+	return compounds, rows.Err()
+}
