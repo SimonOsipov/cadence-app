@@ -57,6 +57,7 @@ var (
 		"parse.go",
 		"shape.go",
 		"schedule.go",
+		"partofday.go",
 	}
 	// Everything that is deliberately not the generator: the write path holds the
 	// check, the transaction and the SQL in one file, which is this project's shape —
@@ -66,6 +67,7 @@ var (
 		"routes.go",
 		"doc.go",
 		"compounds.go",
+		"today.go",
 		"write.go",
 		"read.go",
 	}
