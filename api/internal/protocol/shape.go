@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
@@ -18,14 +19,17 @@ import (
 // two doctors editing one course — and an integration test keeps the pair from drifting by
 // offering each of those refusals to the schema and requiring the named constraint.
 //
-// Five of them the schema does not express at all, and the list is worth naming so the next
+// Six of them the schema does not express at all, and the list is worth naming so the next
 // reader does not expect the reconciliation to cover it: ErrNoItems and ErrNoPhases (a course
 // or an item with nothing in it is a row that simply is not there), ErrInjectionWithoutCompound
-// and ErrCompoundOnAKindWithoutOne (a CHECK across the pair would need the kind and the column
-// together, which it has — but §03 leaves compound_id nullable for the kinds that are not
-// drugs and the schema cannot tell which), and the upper half of ErrPhaseOffCourse: no
-// constraint ties to_week to the course's duration_weeks, because the two live in different
-// tables. Those five are held here alone.
+// and ErrCompoundOnAKindWithoutOne (§03 leaves compound_id nullable for the kinds that are not
+// drugs, and a CHECK cannot tell which), ErrItemNamedTwice (two rows of a request, and the
+// schema sees one row at a time), and the upper half of ErrPhaseOffCourse: no constraint ties
+// to_week to the course's duration_weeks, because the two live in different tables. Those six
+// are held here alone.
+//
+// The list was wrong twice, and both times the same way: a rule was added here and the
+// partition was not revisited, so the record described a pair the test did not implement.
 var (
 	ErrWeeksOffRange            = errors.New("a course runs between one and 104 weeks")
 	ErrNotADay                  = errors.New("the calendar has no such day")
@@ -53,6 +57,16 @@ var (
 	// INSERT with them empty produced a 23514 that classify does not know and answer
 	// turns into a 500 about the doctor's own form.
 	ErrDrugNotDescribed = errors.New("a drug entered by name carries a unit, a route and an icon")
+
+	// Two items naming one row is a prescription line silently dropped: both writes land
+	// on the same row, the second wins, the reply carries the identifier twice and the
+	// doctor is told the course has two items. An editor's «duplicate this row» button
+	// that copies the row object with its id produces exactly this.
+	ErrItemNamedTwice = errors.New("two items name the same row")
+
+	// The directory's own lengths, mirrored because a name past its bound reaches the
+	// INSERT, comes back 23514 and falls through to a 500 about the doctor's own form.
+	ErrDrugNameTooLong = errors.New("a drug's name, route and icon each have a bound")
 )
 
 // shapeRefusals is every rule Check can break, and the transport maps the list rather than a
@@ -64,7 +78,7 @@ func shapeRefusals() []error {
 		ErrUnknownCadence, ErrCadenceAgainstDays, ErrNoSlot, ErrInjectionWithoutCompound,
 		ErrCompoundOnAKindWithoutOne, ErrNoPhases, ErrPhaseRunsBackwards, ErrPhaseOffCourse,
 		ErrDoseOffRange, ErrUnknownDoseUnit, ErrPhasesOverlap, ErrCompoundRefUnclear,
-		ErrDrugNotDescribed,
+		ErrDrugNotDescribed, ErrItemNamedTwice, ErrDrugNameTooLong,
 	}
 }
 
@@ -114,10 +128,18 @@ func (d Draft) Check() error {
 		return fmt.Errorf("the course prescribes nothing: %w", ErrNoItems)
 	}
 
+	named := make(map[ProtocolItemID]int, len(d.Items))
 	for i, item := range d.Items {
 		if err := item.check(d.Weeks); err != nil {
 			return fmt.Errorf("item %d: %w", i+1, err)
 		}
+		if item.ID == nil {
+			continue
+		}
+		if first, twice := named[*item.ID]; twice {
+			return fmt.Errorf("items %d and %d name %s: %w", first, i+1, *item.ID, ErrItemNamedTwice)
+		}
+		named[*item.ID] = i + 1
 	}
 
 	return nil
@@ -157,6 +179,15 @@ func (i DraftItem) check(weeks int) error {
 		if i.Compound.New.Route == "" || i.Compound.New.Icon == "" {
 			return fmt.Errorf("the drug names route %q and icon %q: %w",
 				i.Compound.New.Route, i.Compound.New.Icon, ErrDrugNotDescribed)
+		}
+		// Counted in runes: the names are Russian, PostgreSQL's length() counts
+		// characters and Go's len() counts bytes — «Семаглутид» is ten of one and
+		// twenty of the other, so a byte bound would refuse half the directory.
+		if utf8.RuneCountInString(i.Compound.New.NameRU) > maxDrugName ||
+			utf8.RuneCountInString(i.Compound.New.Route) > maxDrugField ||
+			utf8.RuneCountInString(i.Compound.New.Icon) > maxDrugField {
+			return fmt.Errorf("the drug's name is %d characters: %w",
+				utf8.RuneCountInString(i.Compound.New.NameRU), ErrDrugNameTooLong)
 		}
 	}
 	if len(i.Phases) == 0 {
@@ -207,5 +238,9 @@ func (i DraftItem) checkPhases(weeks int) error {
 	return nil
 }
 
-// The schema's CHECK (duration_weeks BETWEEN 1 AND 104), and the two are reconciled by test.
-const maxCourseWeeks = 104
+// The schema's own bounds, each reconciled against its CHECK by test.
+const (
+	maxCourseWeeks = 104
+	maxDrugName    = 200
+	maxDrugField   = 50
+)

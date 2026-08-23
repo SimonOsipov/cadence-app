@@ -102,7 +102,13 @@ func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft
 	if err := draft.Check(); err != nil {
 		return Written{}, err
 	}
-	for _, identifier := range []string{string(draft.PatientID), string(id)} {
+	identifiers := []string{string(draft.PatientID), string(id)}
+	for _, item := range draft.Items {
+		if item.ID != nil {
+			identifiers = append(identifiers, string(*item.ID))
+		}
+	}
+	for _, identifier := range identifiers {
 		if !database.IsUUIDShaped(identifier) {
 			return Written{}, fmt.Errorf("%q: %w", identifier, ErrMalformedIdentifier)
 		}
@@ -224,12 +230,22 @@ func updateItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item Draf
 
 	// The phases go and come back: they carry no identity of their own, and nothing
 	// references them, so there is no history to keep here.
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM app.protocol_phases WHERE protocol_item_id = $1`, string(*item.ID)); err != nil {
+	//
+	// Joined to the item's course rather than taking the identifier alone. The guard
+	// above would refuse first, so this is the second lock — and the asymmetry is the
+	// reason: with the scope only in Go, a later edit to that guard leaves the UPDATE
+	// safe and unscopes these two silently, and what they would then do is a
+	// cross-tenant write. A phase inserted onto another patient's item is a titration
+	// band they read as their own, and their real bands are gone with no trace.
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM app.protocol_phases p
+		USING app.protocol_items i
+		WHERE p.protocol_item_id = i.id AND i.id = $1 AND i.protocol_id = $2
+	`, string(*item.ID), string(protocolID)); err != nil {
 		return fmt.Errorf("item %d: %w", n+1, err)
 	}
 
-	return writePhases(ctx, tx, *item.ID, item, n)
+	return writePhases(ctx, tx, protocolID, *item.ID, item, n)
 }
 
 func insertItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item DraftItem, n int) (ProtocolItemID, error) {
@@ -250,18 +266,30 @@ func insertItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item Draf
 		return "", fmt.Errorf("item %d: %w", n+1, err)
 	}
 
-	return itemID, writePhases(ctx, tx, itemID, item, n)
+	return itemID, writePhases(ctx, tx, protocolID, itemID, item, n)
 }
 
-func writePhases(ctx context.Context, tx pgx.Tx, itemID ProtocolItemID, item DraftItem, n int) error {
+// writePhases carries the course as well as the item, for the reason updateItem gives: the
+// item identifier can be the caller's, and protocol_items has no patient_id of its own.
+// SELECT rather than VALUES so the scope is in the statement, and RowsAffected because an
+// insert that selected nothing succeeds and writes nothing — data-layer invariant 5.
+func writePhases(
+	ctx context.Context, tx pgx.Tx, protocolID ProtocolID, itemID ProtocolItemID, item DraftItem, n int,
+) error {
 	for p, phase := range item.Phases {
-		if _, err := tx.Exec(ctx, `
+		tag, err := tx.Exec(ctx, `
 			INSERT INTO app.protocol_phases
 			    (protocol_item_id, from_week, to_week, dose_value, dose_unit)
-			VALUES ($1, $2, $3, $4, $5)
-		`, string(itemID), phase.FromWeek, phase.ToWeek,
-			phase.Dose.Value, string(phase.Dose.Unit)); err != nil {
+			SELECT i.id, $3, $4, $5, $6
+			FROM app.protocol_items i
+			WHERE i.id = $1 AND i.protocol_id = $2
+		`, string(itemID), string(protocolID), phase.FromWeek, phase.ToWeek,
+			phase.Dose.Value, string(phase.Dose.Unit))
+		if err != nil {
 			return fmt.Errorf("item %d, phase %d: %w", n+1, p+1, err)
+		}
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("item %d, phase %d names %s: %w", n+1, p+1, itemID, ErrNoSuchItem)
 		}
 	}
 

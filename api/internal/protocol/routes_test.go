@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -160,6 +161,8 @@ func aWireCourse() Course {
 
 // refusalsCheckProduces walks the drafts the unit suite refuses and collects what came back,
 // so the list the transport reads is compared against behaviour rather than against itself.
+var anItem = ProtocolItemID("5d4f3b7c-0000-4000-8000-0000000000e1")
+
 func refusalsCheckProduces(t *testing.T) []error {
 	t.Helper()
 
@@ -181,6 +184,20 @@ func refusalsCheckProduces(t *testing.T) []error {
 		func(d *Draft) { d.Items[0].Phases[0].Dose.Value = 0 },
 		func(d *Draft) { d.Items[0].Phases[0].Dose.Unit = "ме" },
 		func(d *Draft) { d.Items[0].Phases[1].FromWeek = 4 },
+		func(d *Draft) {
+			d.Items[0].Compound = CompoundRef{New: &NewCompound{NameRU: "Ретатрутид"}}
+		},
+		func(d *Draft) {
+			d.Items[0].Compound = CompoundRef{New: &NewCompound{
+				NameRU: strings.Repeat("я", 201), DefaultUnit: MG, Route: "sc", Icon: "syringe",
+			}}
+		},
+		func(d *Draft) {
+			second := d.Items[0]
+			d.Items[0].ID = &anItem
+			second.ID = &anItem
+			d.Items = append(d.Items, second)
+		},
 	} {
 		if err := aPlan(edit).Check(); err != nil {
 			produced = append(produced, err)

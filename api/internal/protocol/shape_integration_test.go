@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,36 +48,49 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 		item       protocol.DraftItem
 		weeks      int
 		status     protocol.ProtocolStatus
+		start      civil.Date
+		drug       *protocol.NewCompound
 		constraint string
+		code       string
 	}{
 		{
 			"a daily item that also names weekdays",
 			itemWith(func(i *protocol.DraftItem) { i.Cadence = protocol.CadenceDaily }),
-			12, "", "protocol_items_cadence_matches_days",
+			12, "",
+			civil.Date{},
+			nil, "protocol_items_cadence_matches_days", "23514",
 		},
 		{
 			"a weekly item that names no weekday",
 			itemWith(func(i *protocol.DraftItem) { i.DaysOfWeek = nil }),
-			12, "", "protocol_items_cadence_matches_days",
+			12, "",
+			civil.Date{},
+			nil, "protocol_items_cadence_matches_days", "23514",
 		},
 		{
 			"an item with no slot",
 			itemWith(func(i *protocol.DraftItem) { i.Times = nil }),
-			12, "", "protocol_items_has_a_slot",
+			12, "",
+			civil.Date{},
+			nil, "protocol_items_has_a_slot", "23514",
 		},
 		{
 			"a phase that runs backwards",
 			itemWith(func(i *protocol.DraftItem) {
 				i.Phases = []protocol.ProtocolPhase{{FromWeek: 4, ToWeek: 1, Dose: aDose}}
 			}),
-			12, "", "protocol_phases_runs_forwards",
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_runs_forwards", "23514",
 		},
 		{
 			"a phase opening before the course",
 			itemWith(func(i *protocol.DraftItem) {
 				i.Phases = []protocol.ProtocolPhase{{FromWeek: 0, ToWeek: 4, Dose: aDose}}
 			}),
-			12, "", "protocol_phases_from_week_check",
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_from_week_check", "23514",
 		},
 		{
 			"a dose of nothing",
@@ -86,7 +100,9 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 					Dose: protocol.Dose{Value: 0, Unit: protocol.MG},
 				}}
 			}),
-			12, "", "protocol_phases_dose_value_check",
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_dose_value_check", "23514",
 		},
 		{
 			"a dose in a unit nobody prescribes",
@@ -96,7 +112,9 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 					Dose: protocol.Dose{Value: 0.25, Unit: "ме"},
 				}}
 			}),
-			12, "", "protocol_phases_dose_unit_check",
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_dose_unit_check", "23514",
 		},
 		{
 			"phases that overlap",
@@ -106,26 +124,64 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 					{FromWeek: 4, ToWeek: 12, Dose: aDose},
 				}
 			}),
-			12, "", "protocol_phases_do_not_overlap",
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_do_not_overlap", "23P01",
 		},
 		{
-			"a course of no weeks", itemWith(nil), 0, "", "protocols_duration_weeks_check",
+			"a course of no weeks", itemWith(nil), 0, "", civil.Date{}, nil, "protocols_duration_weeks_check", "23514",
 		},
 		{
-			"a course in a status nobody set", itemWith(nil), 12, "paused", "protocols_status_check",
+			"a course in a status nobody set", itemWith(nil), 12, "paused", civil.Date{}, nil, "protocols_status_check", "23514",
 		},
 		{
-			"a course longer than two years", itemWith(nil), 105, "", "protocols_duration_weeks_check",
+			"a course longer than two years", itemWith(nil), 105, "", civil.Date{}, nil, "protocols_duration_weeks_check", "23514",
 		},
 		{
 			"an item of an unknown kind",
 			itemWith(func(i *protocol.DraftItem) { i.Kind = "infusion" }),
-			12, "", "protocol_items_kind_check",
+			12, "",
+			civil.Date{},
+			nil, "protocol_items_kind_check", "23514",
 		},
 		{
 			"an item on an unknown cadence",
 			itemWith(func(i *protocol.DraftItem) { i.Cadence = "monthly" }),
-			12, "", "protocol_items_cadence_check",
+			12, "",
+			civil.Date{},
+			nil, "protocol_items_cadence_check", "23514",
+		},
+		{
+			// The date the type admits and the calendar does not. It answers 22008
+			// and names no constraint — the schema refuses it as a value, not by a
+			// rule — which is why the code is asserted separately from the name.
+			"a start date the calendar does not have", itemWith(nil), 12, "",
+			civil.Date{Year: 2026, Month: time.February, Day: 30},
+			nil, "", "22008",
+		},
+		{
+			// The directory's own CHECKs, reached through the same resolver the write
+			// path uses. Round one added this rule to Go and left it out of the pair.
+			"a drug in a unit the directory refuses", itemWith(nil), 12, "",
+			civil.Date{},
+			&protocol.NewCompound{NameRU: "Ретатрутид", DefaultUnit: "ме", Route: "sc", Icon: "syringe"},
+			"compounds_default_unit_check", "23514",
+		},
+		{
+			"a drug whose name is past its bound", itemWith(nil), 12, "",
+			civil.Date{},
+			&protocol.NewCompound{
+				NameRU: strings.Repeat("я", 201), DefaultUnit: protocol.MG, Route: "sc", Icon: "syringe",
+			},
+			"compounds_name_ru_check", "23514",
+		},
+		{
+			"a drug whose route is past its bound", itemWith(nil), 12, "",
+			civil.Date{},
+			&protocol.NewCompound{
+				NameRU: "Ретатрутид", DefaultUnit: protocol.MG, Route: strings.Repeat("s", 51), Icon: "syringe",
+			},
+			"compounds_route_check", "23514",
 		},
 	} {
 		t.Run(refused.name, func(t *testing.T) {
@@ -139,13 +195,22 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 			if draft.Status == "" {
 				draft.Status = protocol.StatusActive
 			}
+			if refused.start != (civil.Date{}) {
+				draft.StartDate = refused.start
+			}
+			if refused.drug != nil {
+				draft.Items[0].Compound = protocol.CompoundRef{New: refused.drug}
+			}
 			if draft.Check() == nil {
 				t.Fatal("Go accepted it, so the schema is not being asked the same question")
 			}
 
 			code, name := offer(t, pool, draft)
-			if code != "23514" && code != "23P01" {
-				t.Errorf("the schema refused with %s/%s", code, name)
+			// 22008 is the date case: the schema refuses «30 February» as a value
+			// rather than by a constraint, so it names none and the code is what
+			// says which refusal it was.
+			if code != refused.code {
+				t.Errorf("the schema refused with %s/%s, want %s", code, name, refused.code)
 			}
 			if name != refused.constraint {
 				t.Errorf("the schema refused by %s, want %s", name, refused.constraint)
@@ -215,6 +280,16 @@ func offer(t *testing.T, pool *pgxpool.Pool, draft protocol.Draft) (string, stri
 			}
 
 			for _, item := range draft.Items {
+				if item.Compound.New != nil {
+					if _, err := tx.Exec(ctx, `
+						INSERT INTO app.compounds (name_ru, default_unit, route, icon)
+						VALUES ($1, $2, $3, $4)
+					`, item.Compound.New.NameRU, string(item.Compound.New.DefaultUnit),
+						item.Compound.New.Route, item.Compound.New.Icon); err != nil {
+						return err
+					}
+				}
+
 				days := make([]int16, len(item.DaysOfWeek))
 				for i, day := range item.DaysOfWeek {
 					days[i] = int16(civil.ISOWeekday(day))

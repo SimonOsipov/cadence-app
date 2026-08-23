@@ -203,6 +203,102 @@ func TestACourseArrivesWholeAndSigned(t *testing.T) {
 	}
 }
 
+// The three kinds §03 gives a course, and the mixed edit rewriteItems exists for: one item
+// named and rewritten, one unnamed and added, one omitted and dropped, in the same call.
+//
+// A one-item fixture collapsed two axes into one — with a single item, «what was kept» and
+// «what was written» are the same set, so a `kept` built from updates alone, or a delete run
+// before the loop, was indistinguishable. It also meant «врач заводит протокол с позициями
+// трёх видов» — an acceptance criterion — never reached the database at all, and the branch
+// that leaves compound_id NULL for a kind that is not a drug ran only in unit tests.
+func TestACourseOfThreeKindsIsWrittenAndThenEditedInPlace(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	draft := aCourse(writePatientA)
+	draft.Items = append(draft.Items,
+		aKind(protocol.KindSupplement, civil.Slot{Hour: 9}),
+		aKind(protocol.KindWeighIn, civil.Slot{Hour: 7}),
+	)
+
+	written, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, draft)
+	if err != nil {
+		t.Fatalf("prescribing three kinds: %v", err)
+	}
+	if len(written.ItemIDs) != 3 {
+		t.Fatalf("wrote %d items, want 3", len(written.ItemIDs))
+	}
+	if kinds := kindsOf(t, pool, string(written.ProtocolID)); kinds != "injection,supplement,weigh_in" {
+		t.Errorf("the course holds %s", kinds)
+	}
+	// The branch that leaves the column NULL: only an injection names a drug.
+	if named := itemsNamingADrug(t, pool, string(written.ProtocolID)); named != 1 {
+		t.Errorf("%d items name a drug, want the injection alone", named)
+	}
+
+	// The mixed edit: keep the supplement and rewrite it, add a second injection, drop
+	// the weigh-in and the first injection.
+	kept := written.ItemIDs[1]
+	edited := aCourse(writePatientA)
+	edited.Items = []protocol.DraftItem{
+		func() protocol.DraftItem {
+			item := aKind(protocol.KindSupplement, civil.Slot{Hour: 21})
+			item.ID = &kept
+
+			return item
+		}(),
+		aCourse(writePatientA).Items[0],
+	}
+
+	after, err := protocol.Replace(as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, edited)
+	if err != nil {
+		t.Fatalf("the mixed edit: %v", err)
+	}
+	if len(after.ItemIDs) != 2 || after.ItemIDs[0] != kept {
+		t.Errorf("the reply carries %v, want the kept item first", after.ItemIDs)
+	}
+	if after.ItemIDs[1] == written.ItemIDs[0] || after.ItemIDs[1] == written.ItemIDs[2] {
+		t.Errorf("the added item reused a dropped identifier: %s", after.ItemIDs[1])
+	}
+	if rows := countRows(t, pool, string(written.ProtocolID)); rows.items != 2 {
+		t.Errorf("the course now holds %d items, want 2", rows.items)
+	}
+	if slot := slotOf(t, pool, string(kept)); slot != "21:00:00" {
+		t.Errorf("the kept item reads %s, want the rewrite to have landed", slot)
+	}
+	for _, dropped := range []protocol.ProtocolItemID{written.ItemIDs[0], written.ItemIDs[2]} {
+		if stillThere(t, pool, string(dropped)) {
+			t.Errorf("item %s outlived an edit that omitted it", dropped)
+		}
+	}
+}
+
+// Two items naming one row: both writes land on it, the second wins, and the reply says the
+// course has two. Refused before a connection is taken.
+func TestAnItemNamedTwiceIsRefused(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	written, err := protocol.Create(as(t, writeDoctorA, "doctor"), pool, aCourse(writePatientA))
+	if err != nil {
+		t.Fatalf("prescribing: %v", err)
+	}
+
+	twice := aCourse(writePatientA)
+	kept := written.ItemIDs[0]
+	twice.Items[0].ID = &kept
+	second := aCourse(writePatientA).Items[0]
+	second.ID = &kept
+	twice.Items = append(twice.Items, second)
+
+	if _, err := protocol.Replace(
+		as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, twice,
+	); !errors.Is(err, protocol.ErrItemNamedTwice) {
+		t.Errorf("naming one item twice gave %v", err)
+	}
+	if rows := countRows(t, pool, string(written.ProtocolID)); rows.items != 1 {
+		t.Errorf("the refused edit left %d items", rows.items)
+	}
+}
+
 // An edit replaces the items rather than patching them — but not the ones a patient has
 // already injected: 000019 holds those in place, and the caller is told why.
 func TestAnEditKeepsWhatThePatientHasAlreadyInjected(t *testing.T) {
@@ -248,12 +344,28 @@ func TestAnEditKeepsWhatThePatientHasAlreadyInjected(t *testing.T) {
 		t.Errorf("the edit's audit row reads %s/%s/%s", actor, action, patient)
 	}
 
+	// The course row itself, read back column by column. «The call did not error» was
+	// the whole assertion here, and it was already green before the fix — reducing the
+	// UPDATE to `SET notes = $5` left the suite green, because nothing read the other
+	// three back and no constraint ties to_week to duration_weeks.
+	if course := courseRow(t, pool, string(written.ProtocolID)); course.weeks != 16 ||
+		course.status != "active" || course.start != "2026-05-04" {
+		t.Errorf("the course reads %+v after the titration", course)
+	}
+
 	// Cancelling it, which is the other statement the unconditional delete foreclosed.
 	draft.Status = protocol.StatusCancelled
+	draft.StartDate = civil.NewDate(2026, time.May, 11)
+	note := "остановлен по просьбе пациента"
+	draft.Notes = &note
 	if _, err := protocol.Replace(
 		as(t, writeDoctorA, "doctor"), pool, written.ProtocolID, draft,
 	); err != nil {
 		t.Fatalf("cancelling a course with a logged dose: %v", err)
+	}
+	if course := courseRow(t, pool, string(written.ProtocolID)); course.status != "cancelled" ||
+		course.start != "2026-05-11" || course.notes != note || course.weeks != 16 {
+		t.Errorf("the cancelled course reads %+v", course)
 	}
 
 	// And the item itself still cannot be dropped: the doses that answered it are the
@@ -287,7 +399,15 @@ func TestAnItemOfAnotherCourseCannotBeNamed(t *testing.T) {
 		t.Fatalf("prescribing for the other patient: %v", err)
 	}
 
+	// The borrowing draft has to differ from the victim's, or the witness cannot fail:
+	// both courses come from aCourse and carry the same slot and the same phases, so
+	// «the row still reads 08:00» was green whether the row was written or not — the
+	// unscoped write would have produced that very value.
 	draft := aCourse(writePatientA)
+	draft.Items[0].Times = []civil.Slot{{Hour: 20}}
+	draft.Items[0].Phases = []protocol.ProtocolPhase{
+		{FromWeek: 1, ToWeek: 12, Dose: protocol.Dose{Value: 1.5, Unit: protocol.MG}},
+	}
 	borrowed := theirs.ItemIDs[0]
 	draft.Items[0].ID = &borrowed
 
@@ -298,6 +418,11 @@ func TestAnItemOfAnotherCourseCannotBeNamed(t *testing.T) {
 	}
 	if slot := slotOf(t, pool, string(borrowed)); slot != "08:00:00" {
 		t.Errorf("the other patient's item now reads %s", slot)
+	}
+	// And their phases, which are the rows the unscoped delete would have taken: two
+	// bands at their own doses, not one at the caller's.
+	if bands := phasesOn(t, pool, string(borrowed)); bands != "0.25,0.5" {
+		t.Errorf("the other patient's bands now read %s", bands)
 	}
 }
 
@@ -455,6 +580,66 @@ func logDose(t *testing.T, pool *pgxpool.Pool, patient, course, item string) {
 	}
 }
 
+func aKind(kind protocol.ItemKind, at civil.Slot) protocol.DraftItem {
+	return protocol.DraftItem{
+		Kind:     kind,
+		Cadence:  protocol.CadenceDaily,
+		Times:    []civil.Slot{at},
+		Loggable: false,
+		Phases:   []protocol.ProtocolPhase{{FromWeek: 1, ToWeek: 12, Dose: protocol.Dose{Value: 1, Unit: protocol.MG}}},
+	}
+}
+
+type course struct {
+	start  string
+	weeks  int
+	status string
+	notes  string
+}
+
+func courseRow(t *testing.T, pool *pgxpool.Pool, id string) course {
+	t.Helper()
+
+	var read course
+	ask(t, pool, `
+		SELECT start_date::text, duration_weeks, status, coalesce(notes, '')
+		FROM app.protocols WHERE id = $1
+	`, []any{id}, &read.start, &read.weeks, &read.status, &read.notes)
+
+	return read
+}
+
+func kindsOf(t *testing.T, pool *pgxpool.Pool, course string) string {
+	t.Helper()
+
+	var kinds string
+	ask(t, pool, `
+		SELECT string_agg(kind, ',' ORDER BY kind) FROM app.protocol_items WHERE protocol_id = $1
+	`, []any{course}, &kinds)
+
+	return kinds
+}
+
+func itemsNamingADrug(t *testing.T, pool *pgxpool.Pool, course string) int {
+	t.Helper()
+
+	var named int
+	ask(t, pool, `
+		SELECT count(*) FROM app.protocol_items WHERE protocol_id = $1 AND compound_id IS NOT NULL
+	`, []any{course}, &named)
+
+	return named
+}
+
+func stillThere(t *testing.T, pool *pgxpool.Pool, item string) bool {
+	t.Helper()
+
+	var there bool
+	ask(t, pool, `SELECT EXISTS (SELECT FROM app.protocol_items WHERE id = $1)`, []any{item}, &there)
+
+	return there
+}
+
 func dosesOn(t *testing.T, pool *pgxpool.Pool, item string) int {
 	t.Helper()
 
@@ -471,6 +656,18 @@ func slotOf(t *testing.T, pool *pgxpool.Pool, item string) string {
 	ask(t, pool, `SELECT times[1]::text FROM app.protocol_items WHERE id = $1`, []any{item}, &slot)
 
 	return slot
+}
+
+func phasesOn(t *testing.T, pool *pgxpool.Pool, item string) string {
+	t.Helper()
+
+	var bands string
+	ask(t, pool, `
+		SELECT coalesce(string_agg(dose_value::text, ',' ORDER BY from_week), '')
+		FROM app.protocol_phases WHERE protocol_item_id = $1
+	`, []any{item}, &bands)
+
+	return bands
 }
 
 func ask(t *testing.T, pool *pgxpool.Pool, query string, args []any, into ...any) {

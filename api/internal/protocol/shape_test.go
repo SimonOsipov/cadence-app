@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,8 +172,15 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 			}
 			// The row, not merely the rule: a message that names the field without
 			// saying which of twelve items carries it costs the doctor the edit.
-			if err != nil && !namesTheRow(err.Error()) {
-				t.Errorf("the refusal does not say where: %q", err)
+			//
+			// «item N» and nothing else. The first version also accepted the word
+			// «course», which five sentinels carry in their own text, so it could
+			// not fail — including against a message naming no row at all. The four
+			// course-level refusals below are the ones with no row to name.
+			aboutTheCourse := errors.Is(err, ErrWeeksOffRange) || errors.Is(err, ErrNotADay) ||
+				errors.Is(err, ErrUnknownStatus) || errors.Is(err, ErrNoItems)
+			if !aboutTheCourse && !strings.Contains(err.Error(), "item 1") {
+				t.Errorf("the refusal does not say which item: %q", err)
 			}
 		})
 	}
@@ -207,22 +215,4 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 			t.Errorf("a %s item was refused: %v", kind, err)
 		}
 	}
-}
-
-func namesTheRow(message string) bool {
-	return len(message) > 0 && (containsAny(message, "item 1") || containsAny(message, "course"))
-}
-
-func containsAny(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
-}
-
-func indexOf(haystack, needle string) int {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return i
-		}
-	}
-
-	return -1
 }
