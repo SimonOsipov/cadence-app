@@ -22,27 +22,40 @@ type stubNeighbours struct {
 
 	askedFor []ProtocolItemID
 	windows  []civil.Range
-	fail     error
+	// Every subject the aggregate passed, so «it asks about the token's patient» is
+	// measurable rather than traced: substituting the plan's own patient id survived the
+	// whole suite while the fixture had data for one patient.
+	subjects []civil.UserID
+
+	rotationFails error
+	dosesFail     error
+	cabinetFails  error
 }
 
-func (s *stubNeighbours) SuggestNextSite(context.Context, pgx.Tx, civil.UserID) (string, error) {
-	return s.site, s.fail
+func (s *stubNeighbours) SuggestNextSite(
+	_ context.Context, _ pgx.Tx, patient civil.UserID,
+) (string, error) {
+	s.subjects = append(s.subjects, patient)
+
+	return s.site, s.rotationFails
 }
 
 func (s *stubNeighbours) LoggedSlotsIn(
-	_ context.Context, _ pgx.Tx, _ civil.UserID, window civil.Range,
+	_ context.Context, _ pgx.Tx, patient civil.UserID, window civil.Range,
 ) ([]LoggedSlot, error) {
+	s.subjects = append(s.subjects, patient)
 	s.windows = append(s.windows, window)
 
-	return s.logged, s.fail
+	return s.logged, s.dosesFail
 }
 
 func (s *stubNeighbours) SupplyFor(
-	_ context.Context, _ pgx.Tx, _ civil.UserID, item ProtocolItem, _ civil.Date,
+	_ context.Context, _ pgx.Tx, patient civil.UserID, item ProtocolItem, _ civil.Date,
 ) (*int, *ReorderHint, error) {
+	s.subjects = append(s.subjects, patient)
 	s.askedFor = append(s.askedFor, item.ID)
 
-	return s.left, s.reorder, s.fail
+	return s.left, s.reorder, s.cabinetFails
 }
 
 var theCompound = Compound{
@@ -193,13 +206,30 @@ func TestTheHistoryIsReadForThatDayAndOnce(t *testing.T) {
 
 // A neighbour that fails fails the whole answer: half a hero card is a screen that says
 // something untrue about a patient's own treatment.
+//
+// One at a time, because the rotation is asked first: a single stub failing everything
+// measured only that call, and dropping either of the other two error checks left it green.
 func TestANeighbourThatFailsFailsTheAnswer(t *testing.T) {
-	n := &stubNeighbours{site: "r-glute", fail: errors.New("the cabinet is shut")}
+	shut := errors.New("the cabinet is shut")
 
-	if _, err := TodayFor(t.Context(), nil, "3c1f3b7c-0000-4000-8000-0000000000a1",
-		aSchedulePlan(), nil, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7},
-		n, n, n); err == nil {
-		t.Error("a failing neighbour was answered around")
+	for _, broken := range []struct {
+		name string
+		set  func(*stubNeighbours)
+	}{
+		{"the rotation", func(n *stubNeighbours) { n.rotationFails = shut }},
+		{"the logged slots", func(n *stubNeighbours) { n.dosesFail = shut }},
+		{"the cabinet", func(n *stubNeighbours) { n.cabinetFails = shut }},
+	} {
+		t.Run(broken.name, func(t *testing.T) {
+			n := &stubNeighbours{site: "r-glute"}
+			broken.set(n)
+
+			if _, err := TodayFor(t.Context(), nil, "3c1f3b7c-0000-4000-8000-0000000000a1",
+				aSchedulePlan(), nil, true, civil.NewDate(2026, time.May, 10),
+				civil.Slot{Hour: 7}, n, n, n); !errors.Is(err, shut) {
+				t.Errorf("got %v, want the neighbour's own error", err)
+			}
+		})
 	}
 }
 
@@ -215,5 +245,32 @@ func TestTheFieldsOfContextsThatDoNotExistAreAbsent(t *testing.T) {
 	}
 	if today.WeightKG != nil || today.TargetWeightKG != nil || today.WeightSeries != nil {
 		t.Errorf("measurements answered %+v", today)
+	}
+}
+
+// Every neighbour is asked about the caller's own patient, and about no other subject. The
+// plan carries a patient id of its own, so «pass the plan's» is a substitution that survived
+// the whole suite while the fixture had data for one patient only.
+func TestTheNeighboursAreAskedAboutTheCaller(t *testing.T) {
+	n := &stubNeighbours{site: "r-glute", left: new(int)}
+	const caller = civil.UserID("3c1f3b7c-0000-4000-8000-00000000beef")
+
+	plan := aSchedulePlan()
+	if plan.Protocol.PatientID == caller {
+		t.Fatal("the fixture's patient is the caller, so a substitution is invisible")
+	}
+
+	if _, err := TodayFor(t.Context(), nil, caller, plan, nil, true,
+		civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n, n, n); err != nil {
+		t.Fatalf("assembling: %v", err)
+	}
+
+	if len(n.subjects) != 3 {
+		t.Fatalf("the neighbours were asked %d times, want three", len(n.subjects))
+	}
+	for i, asked := range n.subjects {
+		if asked != caller {
+			t.Errorf("call %d asked about %s, want %s", i, asked, caller)
+		}
 	}
 }

@@ -104,6 +104,11 @@ type Cabinet struct {
 	vials []Vial
 }
 
+// Vials is what the cabinet holds, after the filter. Exported so that every reader inside
+// this package goes through the same one — the field alone let one of them walk the raw
+// slice, which is the mistake the type exists to make unavailable.
+func (c Cabinet) Vials() []Vial { return c.vials }
+
 func CabinetOf(patient civil.UserID, vials []Vial) Cabinet {
 	var mine []Vial
 	for _, vial := range vials {

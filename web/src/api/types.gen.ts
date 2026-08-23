@@ -174,11 +174,11 @@ export type LogDoseOutputBody = {
     vial_id?: string;
 };
 
-export type Macros = {
-    Carbs: number;
-    Fat: number;
-    Kcal: number;
-    Protein: number;
+export type MacrosBody = {
+    carbs: number;
+    fat: number;
+    kcal: number;
+    protein: number;
 };
 
 export type Me = {
@@ -410,7 +410,7 @@ export type TodayBody = {
     /**
      * Null until the nutrition context is built.
      */
-    meal_macros: Macros;
+    meal_macros: MacrosBody;
     next_dose?: OccurrenceBody;
     next_dose_compound?: CompoundBody;
     next_titration?: StepBody;
@@ -419,7 +419,7 @@ export type TodayBody = {
     /**
      * Computed from what was logged, not frozen.
      */
-    suggested_site: string;
+    suggested_site: 'l-abdomen' | 'r-abdomen' | 'l-delt' | 'r-delt' | 'l-glute' | 'r-glute' | 'l-thigh' | 'r-thigh' | 'l-lback' | 'r-lback';
     /**
      * Null until the measurements context is built.
      */
@@ -427,7 +427,7 @@ export type TodayBody = {
     /**
      * Null until the nutrition context is built.
      */
-    targets: Macros;
+    targets: MacrosBody;
     /**
      * Of the open vial. Absent when the patient holds none of that drug.
      */

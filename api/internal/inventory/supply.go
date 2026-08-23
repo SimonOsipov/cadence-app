@@ -45,10 +45,21 @@ func (s *Supply) SupplyFor(
 	cabinet := CabinetOf(patient, vials)
 
 	var left *int
+	// Through the cabinet, like the hint below it. CabinetOf exists because a caller
+	// reading several patients' vials in one result set — the doctor-side cabinet of M4,
+	// or a service-seam sweep — gets rows the database will not have filtered, and this
+	// loop walking the raw slice would have shown one patient the remaining count of
+	// another's open vial of the same drug, with the guard sitting three lines away.
+	//
 	// The open vial, not the first in the list: with a sealed spare on the shelf, «doses
 	// left» would count the spare's — the prototype's own bug, and the reason the KMP
 	// says «the open vial».
-	for _, vial := range vials {
+	//
+	// The earliest-opened when there are two, which the read's ORDER BY fixes: without it
+	// the answer was whichever row came back first and could differ between two requests
+	// for the same day. The write refuses to guess in this situation and leaves the vial
+	// empty; a read cannot refuse, so it answers the same one every time instead.
+	for _, vial := range cabinet.Vials() {
 		if vial.CompoundID != *item.CompoundID || vial.OpenedAt == nil || vial.DisposedAt != nil {
 			continue
 		}
@@ -72,6 +83,7 @@ func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, erro
 		       opened_at, expires_on, disposed_at
 		FROM app.vials
 		WHERE patient_id = $1
+		ORDER BY opened_at, id
 	`, string(patient))
 	if err != nil {
 		return nil, fmt.Errorf("reading the cabinet of %s: %w", patient, err)

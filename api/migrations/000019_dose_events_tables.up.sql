@@ -70,10 +70,6 @@ CREATE TABLE app.dose_events (
     -- The order of the literals is load-bearing and reconciled against dosing.Sites():
     -- it is the injection rotation's tie-break, so it decides what a patient with no
     -- history is offered. A red test here is not fixed by reordering this list.
-    --
-    -- The order of the literals is load-bearing and reconciled against dosing.Sites():
-    -- it is the injection rotation's tie-break, so it decides what a patient with no
-    -- history is offered. A red test here is not fixed by reordering this list.
     site_code          text CHECK (site_code IN (
         'l-abdomen', 'r-abdomen', 'l-delt', 'r-delt', 'l-glute',
         'r-glute', 'l-thigh', 'r-thigh', 'l-lback', 'r-lback')),

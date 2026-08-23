@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -18,6 +19,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
+	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
 
 // The policy regression suite for the table 000015 adds. Extending it is an
@@ -1030,5 +1032,131 @@ func TestTheCabinetReadIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) 
 				t.Errorf("resolved %v, want %s", got, who.want)
 			}
 		})
+	}
+}
+
+// The supply protocol asks about, exercised on the service seam — where vials_service_read
+// is USING (true) and the Go predicates are the whole boundary. Under WithCaller the
+// patient's own policies answer first, so nothing there can tell a scoped read from an
+// unscoped one.
+//
+// Both patients hold an open vial of the same compound with different totals and different
+// numbers of drawn doses: same totals would make «A's number» and «B's» one value, which is
+// the shape three of this feature's findings had.
+func TestTheSupplyAnsweredIsThePatientsOwn(t *testing.T) {
+	c := newClinic(t)
+
+	for _, holding := range []struct {
+		patient string
+		vial    string
+		total   int
+		drawn   int
+	}{
+		{patientA, c.vialA, 8, 1},
+		{patientB, c.vialB, 4, 3},
+	} {
+		if err := c.as(t, holding.patient, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `
+				UPDATE app.vials SET opened_at = DATE '2026-05-01', total_doses = $2
+				WHERE id = $1
+			`, holding.vial, holding.total)
+
+			return err
+		}); err != nil {
+			t.Fatalf("opening %s: %v", holding.vial, err)
+		}
+		for i := range holding.drawn {
+			drawADose(t, c, holding.patient, holding.vial, i)
+		}
+	}
+
+	// A holds eight and drew one; B holds four and drew three. Seven against one.
+	for _, who := range []struct {
+		name    string
+		patient string
+		want    int
+	}{
+		{"the first patient", patientA, 7},
+		{"the second patient", patientB, 1},
+	} {
+		t.Run(who.name, func(t *testing.T) {
+			var left *int
+			if err := database.WithServiceJob(
+				t.Context(), c.service, seedJob,
+				func(ctx context.Context, tx pgx.Tx) error {
+					var err error
+					left, _, err = inventory.NewSupply().SupplyFor(
+						ctx, tx, civil.UserID(who.patient), anInjectionOf(c.compound),
+						civil.NewDate(2026, time.May, 10))
+
+					return err
+				},
+			); err != nil {
+				t.Fatalf("reading the supply: %v", err)
+			}
+			if left == nil || *left != who.want {
+				t.Errorf("the open vial has %v doses left, want %d", left, who.want)
+			}
+		})
+	}
+}
+
+// drawADose puts one dose against the patient's vial. A course and an item come with it,
+// because a dose event's composite keys refuse a row that answers no prescription — which is
+// the guard step 5 put there, and it applies to fixtures too.
+func drawADose(t *testing.T, c clinic, patient, vial string, n int) {
+	t.Helper()
+
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var course, item string
+			if err := tx.QueryRow(ctx, `
+				SELECT p.id::text, i.id::text
+				FROM app.protocols p JOIN app.protocol_items i ON i.protocol_id = p.id
+				WHERE p.patient_id = $1
+				LIMIT 1
+			`, patient).Scan(&course, &item); err != nil {
+				if err := tx.QueryRow(ctx, `
+					INSERT INTO app.protocols (patient_id, start_date, duration_weeks, status)
+					VALUES ($1, DATE '2026-05-04', 12, 'active') RETURNING id::text
+				`, patient).Scan(&course); err != nil {
+					return err
+				}
+				if err := tx.QueryRow(ctx, `
+					INSERT INTO app.protocol_items
+					    (protocol_id, kind, compound_id, cadence, days_of_week, times, loggable)
+					VALUES ($1, 'injection', $2, 'weekly', ARRAY[7]::smallint[],
+					        ARRAY['08:00']::time[], true)
+					RETURNING id::text
+				`, course, c.compound).Scan(&item); err != nil {
+					return err
+				}
+			}
+
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.dose_events
+				    (patient_id, protocol_id, protocol_item_id, vial_id, scheduled_for_date,
+				     injected_at, dose_value, dose_unit, client_request_id)
+				VALUES ($1, $2, $3, $4, DATE '2026-05-03' + $5::int, TIMESTAMPTZ '2026-05-03 08:00:00+05',
+				        0.25, 'мг', $6)
+			`, patient, course, item, vial, n, fmt.Sprintf("supply-%s-%d", patient[:8], n))
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("drawing a dose for %s: %v", patient, err)
+	}
+}
+
+// anInjectionOf is the prescribed item the supply is asked about: a weekly injection of that
+// compound, which is all ReorderHintFor reads off it.
+func anInjectionOf(compound string) protocol.ProtocolItem {
+	id := protocol.CompoundID(compound)
+
+	return protocol.ProtocolItem{
+		Kind: protocol.KindInjection, CompoundID: &id,
+		Cadence: protocol.CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+		Times: []civil.Slot{{Hour: 8}}, Loggable: true,
 	}
 }

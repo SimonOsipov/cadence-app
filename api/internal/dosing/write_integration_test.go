@@ -749,11 +749,10 @@ func TestTheRotationReadsWhenTheDoseWentInAndNotWhatItAnswered(t *testing.T) {
 		t.Fatalf("reading the history: %v", err)
 	}
 
-	// Two: the clinic's seeded dose and this one. Both are inside the window, and the
-	// pair is what makes the field measurable — the seeded dose answers 31 May and went
-	// in at 08:12 that day, this one answers 10 May and went in at 19:30 on the 9th, so
-	// a read taking the scheduled date orders them the other way round and dates them
-	// differently.
+	// Two: the clinic's seeded dose and this one, both inside the window. The ordering is
+	// not what discriminates here — the seeded dose answers 31 May and went in at 08:12
+	// that day, so it is second whether the read takes the instant or the scheduled date.
+	// The value below is: 19:30 on the 9th against a scheduled 10 May.
 	if len(history) != 2 {
 		t.Fatalf("the history holds %d injections, want two", len(history))
 	}
@@ -763,8 +762,8 @@ func TestTheRotationReadsWhenTheDoseWentInAndNotWhatItAnswered(t *testing.T) {
 	if history[0].Site == nil || *history[0].Site != "r-glute" {
 		t.Errorf("the first injection is at %v", history[0].Site)
 	}
-	// Ordered by the instant, oldest first — and the seeded dose is the newer one here
-	// even though the day it answers is later than this one's scheduled day too.
+	// Ascending, which the pair does pin: DESC puts the seeded dose first and the check
+	// above fails on it.
 	if !history[1].At.After(history[0].At) {
 		t.Errorf("the history is ordered %v then %v", history[0].At, history[1].At)
 	}
@@ -805,5 +804,49 @@ func TestADoseWithNoZoneIsInTheHistoryWithoutOne(t *testing.T) {
 	}
 	if history[1].Site == nil {
 		t.Error("the seeded dose lost its zone, so «no zone» is the read and not the row")
+	}
+}
+
+// The slots protocol reads to close an occurrence, on the service seam — where
+// dose_events_service_read is USING (true) and the Go predicate is the whole boundary. Under
+// WithCaller the patient's own policy answers first, so nothing there tells a scoped read
+// from an unscoped one, and the schedule's own suite seeds no doses at all.
+//
+// The clinic gives both patients a dose on the same day, which is what makes «one slot» and
+// «two» different answers.
+func TestTheSlotsReadAreThePatientsOwn(t *testing.T) {
+	c, _ := logging(t)
+
+	window, ok := civil.NewRange(civil.NewDate(2026, time.May, 31), civil.NewDate(2026, time.May, 31))
+	if !ok {
+		t.Fatal("the window runs backwards")
+	}
+
+	for _, who := range []struct{ name, patient string }{
+		{"the first patient", patientA},
+		{"the second patient", patientB},
+	} {
+		t.Run(who.name, func(t *testing.T) {
+			var slots []protocol.LoggedSlot
+			if err := database.WithServiceJob(
+				t.Context(), c.service, seedJob,
+				func(ctx context.Context, tx pgx.Tx) error {
+					var err error
+					slots, err = dosing.NewHistory(func() time.Time { return theMoment }).
+						LoggedSlotsIn(ctx, tx, civil.UserID(who.patient), window)
+
+					return err
+				},
+			); err != nil {
+				t.Fatalf("reading the slots: %v", err)
+			}
+
+			if len(slots) != 1 {
+				t.Fatalf("%s has %d slots on that day, want their own one", who.patient, len(slots))
+			}
+			if string(slots[0].ItemID) != c.item[who.patient] {
+				t.Errorf("the slot answers item %s, want %s", slots[0].ItemID, c.item[who.patient])
+			}
+		})
 	}
 }

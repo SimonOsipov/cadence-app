@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,7 +31,7 @@ func send(t *testing.T, pool *pgxpool.Pool, caller auth.Principal, method, path,
 			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), caller)))
 		})
 	})
-	protocol.NewService(protocol.Deps{ServicePool: pool}).Register(httpserver.NewAPI(mux))
+	protocol.NewService(time.Now, protocol.Deps{ServicePool: pool}).Register(httpserver.NewAPI(mux))
 
 	req := httptest.NewRequest(method, path, strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")

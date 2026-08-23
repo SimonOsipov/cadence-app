@@ -46,21 +46,24 @@ type Deps struct {
 	Doses       Doses
 	Rotation    Rotation
 	Cabinet     Cabinet
-	Now         func() time.Time
 }
 
-// NewService takes the clock from its caller and does not default it: the guard in this
-// package's own suite refuses any file here that reads the clock, for the reason the
-// generator's `today` parameter exists — a package that reads it cannot be run against a
-// calendar. A nil one is the document generator's assembly, and the handlers refuse.
-func NewService(deps Deps) *Service {
+// NewService takes the clock as an argument and not as a field of Deps, because a field is a
+// thing a caller forgets: this wiring shipped without it for one commit, and all three reads
+// answered 500 in the assembled application while every test in this package passed — each
+// builds its own assembly. A positional parameter is the one form the compiler checks.
+//
+// It is the caller's and not this package's for the reason the generator's `today` parameter
+// exists, and the guard in this package's own suite enforces: a file here that read the clock
+// could not be run against a calendar.
+func NewService(now func() time.Time, deps Deps) *Service {
 	return &Service{
 		service:  deps.ServicePool,
 		requests: deps.RequestPool,
 		doses:    deps.Doses,
 		rotation: deps.Rotation,
 		cabinet:  deps.Cabinet,
-		now:      deps.Now,
+		now:      now,
 	}
 }
 
@@ -465,7 +468,7 @@ type TodayBody struct {
 
 	NextDose         *OccurrenceBody `json:"next_dose,omitempty"`
 	NextDoseCompound *CompoundBody   `json:"next_dose_compound,omitempty"`
-	SuggestedSite    string          `json:"suggested_site" doc:"Computed from what was logged, not frozen."`
+	SuggestedSite    string          `json:"suggested_site" enum:"l-abdomen,r-abdomen,l-delt,r-delt,l-glute,r-glute,l-thigh,r-thigh,l-lback,r-lback" doc:"Computed from what was logged, not frozen."`
 	WeekProtocol     []RowBody       `json:"week_protocol"`
 	DoseLoggedToday  bool            `json:"dose_logged_today"`
 
@@ -473,12 +476,22 @@ type TodayBody struct {
 	Reorder       *ReorderBody `json:"reorder,omitempty"`
 	NextTitration *StepBody    `json:"next_titration,omitempty"`
 
-	MealCount      *int      `json:"meal_count" doc:"Null until the nutrition context is built."`
-	MealMacros     *Macros   `json:"meal_macros" doc:"Null until the nutrition context is built."`
-	Targets        *Macros   `json:"targets" doc:"Null until the nutrition context is built."`
-	WeightKG       *float64  `json:"weight_kg" doc:"Null until the measurements context is built."`
-	WeightSeries   []float64 `json:"weight_series" doc:"Null until the measurements context is built."`
-	TargetWeightKG *float64  `json:"target_weight_kg" doc:"Null until the measurements context is built."`
+	MealCount      *int        `json:"meal_count" doc:"Null until the nutrition context is built."`
+	MealMacros     *MacrosBody `json:"meal_macros" doc:"Null until the nutrition context is built."`
+	Targets        *MacrosBody `json:"targets" doc:"Null until the nutrition context is built."`
+	WeightKG       *float64    `json:"weight_kg" doc:"Null until the measurements context is built."`
+	WeightSeries   []float64   `json:"weight_series" doc:"Null until the measurements context is built."`
+	TargetWeightKG *float64    `json:"target_weight_kg" doc:"Null until the measurements context is built."`
+}
+
+// MacrosBody is the wire's own, tagged: the domain struct has no tags, and using it here put
+// PascalCase keys into an API that is snake_case everywhere else — the generated client got
+// `{ Carbs: number; Fat: number }` alone among its types.
+type MacrosBody struct {
+	Kcal    int `json:"kcal"`
+	Protein int `json:"protein"`
+	Carbs   int `json:"carbs"`
+	Fat     int `json:"fat"`
 }
 
 type OccurrenceBody struct {
@@ -670,6 +683,9 @@ func (s *Service) day(ctx context.Context, in *DayInput) (*DayOutput, error) {
 		}
 
 		out.Body.Date = asked.String()
+		// An empty list and not a null, the way the strip beside it answers: two list
+		// fields of one step disagreeing about emptiness is a client branch per field.
+		out.Body.Occurrences = []OccurrenceBody{}
 		if !running {
 			return nil
 		}

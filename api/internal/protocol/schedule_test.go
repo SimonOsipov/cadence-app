@@ -169,3 +169,32 @@ func TestACancelledCourseDrawsAnEmptyCalendar(t *testing.T) {
 		}
 	}
 }
+
+// A future day of a running course: prescribed, dotted, and neither pending nor done.
+//
+// Pending is today's word. The KMP computes it from PENDING alone, and statusOf gives that to
+// today only — so counting a scheduled occurrence as pending makes every prescribed day
+// between tomorrow and the end of a twelve-week course report it. Nothing measured this until
+// review found it: the suite had today, the past and days outside the course, and the one
+// case where the two implementations disagree was the one missing.
+func TestAFutureDayIsNeitherPendingNorDone(t *testing.T) {
+	future := civil.NewDate(2026, time.May, 17)
+	window, _ := civil.NewRange(future, future)
+
+	cells := ScheduleFor(aSchedulePlan(), nil, window, civil.NewDate(2026, time.May, 10))
+
+	if len(cells) != 1 {
+		t.Fatalf("the window is %d cells", len(cells))
+	}
+	if cells[0].AnyPending {
+		t.Error("a day a week away reports something pending")
+	}
+	if cells[0].AllDone {
+		t.Error("a day a week away reports everything done")
+	}
+	// And it is still a prescribed day: the dot is what the calendar draws, and it does
+	// not come from either flag.
+	if !cells[0].HasInjection {
+		t.Error("the Sunday a week away carries no injection")
+	}
+}

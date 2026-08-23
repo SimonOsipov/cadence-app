@@ -93,6 +93,14 @@ type (
 	}
 )
 
+func earlier(a, b civil.Slot) bool {
+	if a.Hour != b.Hour {
+		return a.Hour < b.Hour
+	}
+
+	return a.Minute < b.Minute
+}
+
 // TodayFor assembles the hero screen from the plan, the day and what the neighbours answer.
 //
 // Every question it asks them is asked once, and the order is the reading order of the
@@ -135,11 +143,20 @@ func TodayFor(
 
 	today.WeekProtocol = WeekProtocolRows(plan, compounds, logged, at)
 
+	// By the clock and not by the order the items came back in. Two injectables on one
+	// day is what this product is for, and items are read ORDER BY id — so «the first
+	// open one» offered whichever uuid sorted first, which could be the evening dose
+	// while the morning one was still open.
 	for _, occurrence := range OccurrencesFor(plan, logged, at, at) {
-		if occurrence.Status == StatusDone && occurrence.Kind == KindInjection {
-			today.DoseLoggedToday = true
+		if occurrence.Kind != KindInjection {
+			continue
 		}
-		if today.NextDose == nil && occurrence.Status != StatusDone && occurrence.Kind == KindInjection {
+		if occurrence.Status == StatusDone {
+			today.DoseLoggedToday = true
+
+			continue
+		}
+		if today.NextDose == nil || earlier(occurrence.Time, today.NextDose.Time) {
 			next := occurrence
 			today.NextDose = &next
 		}

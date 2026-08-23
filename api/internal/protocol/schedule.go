@@ -18,9 +18,13 @@ type ScheduleDay struct {
 	// injections, and a supplement does not earn one.
 	HasInjection bool
 
-	// Anything still to do today, and everything already done. Both, and not one: a day
+	// Anything still to do *today*, and everything already done. Both, and not one: a day
 	// with nothing prescribed is neither pending nor done, and a single flag would have
 	// to lie about one of them.
+	//
+	// Pending is today's word and not the future's — a scheduled occurrence is not
+	// pending, which is what the KMP computes and what the calendar means by the dot it
+	// draws. Every prescribed day of a twelve-week course would otherwise report pending.
 	AnyPending bool
 	AllDone    bool
 }
@@ -47,10 +51,10 @@ func ScheduleFor(plan Plan, logged []LoggedSlot, window civil.Range, today civil
 			}
 			switch occurrence.Status {
 			case StatusDone:
-			case StatusPending, StatusScheduled:
+			case StatusPending:
 				day.AnyPending = true
 				day.AllDone = false
-			case StatusMissed:
+			case StatusMissed, StatusScheduled:
 				day.AllDone = false
 			}
 		}

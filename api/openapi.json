@@ -434,31 +434,31 @@
         ],
         "type": "object"
       },
-      "Macros": {
+      "MacrosBody": {
         "additionalProperties": false,
         "properties": {
-          "Carbs": {
+          "carbs": {
             "format": "int64",
             "type": "integer"
           },
-          "Fat": {
+          "fat": {
             "format": "int64",
             "type": "integer"
           },
-          "Kcal": {
+          "kcal": {
             "format": "int64",
             "type": "integer"
           },
-          "Protein": {
+          "protein": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
-          "Kcal",
-          "Protein",
-          "Carbs",
-          "Fat"
+          "kcal",
+          "protein",
+          "carbs",
+          "fat"
         ],
         "type": "object"
       },
@@ -980,7 +980,7 @@
             ]
           },
           "meal_macros": {
-            "$ref": "#/components/schemas/Macros",
+            "$ref": "#/components/schemas/MacrosBody",
             "description": "Null until the nutrition context is built."
           },
           "next_dose": {
@@ -1006,6 +1006,18 @@
           },
           "suggested_site": {
             "description": "Computed from what was logged, not frozen.",
+            "enum": [
+              "l-abdomen",
+              "r-abdomen",
+              "l-delt",
+              "r-delt",
+              "l-glute",
+              "r-glute",
+              "l-thigh",
+              "r-thigh",
+              "l-lback",
+              "r-lback"
+            ],
             "type": "string"
           },
           "target_weight_kg": {
@@ -1017,7 +1029,7 @@
             ]
           },
           "targets": {
-            "$ref": "#/components/schemas/Macros",
+            "$ref": "#/components/schemas/MacrosBody",
             "description": "Null until the nutrition context is built."
           },
           "vial_doses_left": {

@@ -87,7 +87,7 @@ func contexts(opts Options) []boundedContext {
 		{"messaging", messaging.Register},
 		{"notifications", notifications.Register},
 		{"nutrition", nutrition.Register},
-		{"protocol", protocol.NewService(protocol.Deps{
+		{"protocol", protocol.NewService(time.Now, protocol.Deps{
 			ServicePool: opts.ServicePool,
 			RequestPool: opts.Pool,
 			Doses:       history,
