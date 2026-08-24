@@ -352,9 +352,9 @@ func (d Drug) ref() CompoundRef {
 
 // answer maps a refusal to a status. Every named error of this context appears here, and
 // anything unnamed is a 500 — a default that mapped the unknown onto 422 would tell a doctor
-// their form is wrong about a bug in this process. doing is a parameter because the same
-// mapper serves the writes and the three reads, and an unrecognised failure on
-// GET /v1/me/today reported itself as «writing the course».
+// their form is wrong about a bug in this process. doing is what the caller was attempting,
+// and a parameter because the same mapper serves the writes and the three reads — an
+// unrecognised failure on GET /v1/me/today reported itself as «writing the course».
 func answer(doing string, err error) error {
 	switch {
 	case errors.Is(err, ErrNotAPrescriber), errors.Is(err, ErrNotYourPatient):

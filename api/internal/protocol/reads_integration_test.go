@@ -201,9 +201,9 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 		t.Errorf("three weeks of supply answered %+v, want a hint", reorder)
 	}
 
-	// A second vial opened later, before it is sealed: with two open vials of one drug the
-	// answer is the earliest-opened's, which is what the read's ORDER BY decides. Without
-	// it the row that came back first won, and two requests for the same day could differ.
+	// A second vial opened later: with two open vials of one drug the answer is the
+	// earliest-opened's, which is what the read's ORDER BY decides. Without it the row that
+	// came back first won, and two requests for the same day could differ.
 	openAVialOn(t, service, requests, writePatientA, "Семаглутид", 9,
 		civil.NewDate(2026, time.May, 8))
 
@@ -215,7 +215,7 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 
 	// Thrown away and not sealed: a sealed 9-dose vial stays in the cabinet, and the
 	// arithmetic below would then read 3+9+1 = thirteen weeks of supply and answer no hint
-	// for that reason instead of the rule under test. Disposal leaves the shelf as it was.
+	// for that reason instead of the rule under test. Unlike sealing, disposal adds no spare.
 	disposeAVial(t, requests, writePatientA, 9)
 
 	// One dose in the spare, deliberately: a large spare would silence the hint through
@@ -595,16 +595,19 @@ func TestTheThreeReadsAnswerEachPatientTheirOwn(t *testing.T) {
 	if _, err := protocol.Create(as(t, writeDoctorB, "doctor"), service, anotherCourse(writePatientB)); err != nil {
 		t.Fatalf("prescribing for B: %v", err)
 	}
-	openAVial(t, service, requests, writePatientA, 6)
-	openAVialOf(t, service, requests, writePatientB, "Тирзепатид", 12)
 	// B also holds A's drug, opened earlier than A's own vial: without it the two cabinets
 	// share no compound and the read's compound filter answers correctly before anything
 	// about the patient is consulted. It is a trap and not a measurement — measured, the
 	// leak stays unreachable here because RLS filters vialsOf under the request pool
 	// whether or not its WHERE and CabinetOf's filter are there. Those two are witnessed
 	// on the service seam, in inventory's own suite, where no policy answers.
+	//
+	// Opened first as well as opened-on first, so that a leak surfaces it whether the read
+	// orders by opened_at or falls back to insertion order.
 	openAVialOn(t, service, requests, writePatientB, "Семаглутид", 40,
 		civil.NewDate(2026, time.April, 20))
+	openAVial(t, service, requests, writePatientA, 6)
+	openAVialOf(t, service, requests, writePatientB, "Тирзепатид", 12)
 
 	for _, patient := range []struct {
 		name     string
