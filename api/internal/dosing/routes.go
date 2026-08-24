@@ -27,16 +27,35 @@ type Service struct {
 	// handler reading time.Now directly is a handler the suite cannot run against a
 	// calendar — which is the same argument the generator's `today` parameter makes.
 	now func() time.Time
+
+	photos      Photos
+	photoBucket string
 }
 
-func NewService(requestPool *pgxpool.Pool) *Service {
-	return NewServiceAt(requestPool, time.Now)
+// Deps is what this context needs from outside itself.
+type Deps struct {
+	RequestPool *pgxpool.Pool
+
+	// Photos and PhotoBucket travel together and are useless apart. Nil is what the
+	// document generator passes: the operations are declared either way, because
+	// openapi.json is the shape of the API and not of this deployment.
+	Photos      Photos
+	PhotoBucket string
 }
 
-// NewServiceAt is NewService with the clock named, for the suite that has to run this against
-// a calendar rather than against whatever day it is.
-func NewServiceAt(requestPool *pgxpool.Pool, now func() time.Time) *Service {
-	return &Service{requests: requestPool, now: now}
+// NewService builds this context's service.
+//
+// The clock is positional and Deps is not, for the reason protocol's constructor is
+// the same shape: a clock inside a struct of dependencies is a clock a caller can
+// leave out, and the assembled router did exactly that until a review caught it
+// answering 500 on every read.
+func NewService(now func() time.Time, deps Deps) *Service {
+	return &Service{
+		requests:    deps.RequestPool,
+		now:         now,
+		photos:      deps.Photos,
+		photoBucket: deps.PhotoBucket,
+	}
 }
 
 // Register mounts this context's operations on the API.
@@ -71,6 +90,31 @@ func (s *Service) Register(api huma.API) {
 			http.StatusServiceUnavailable,
 		},
 	}, s.log)
+
+	s.registerPhotos(api)
+}
+
+// photoCaller is the /v1/me refusal, shared by the two photograph operations.
+//
+// A patient-only surface for the same reason logging a dose is one: for an admin
+// every policy on dose_events is USING (true), so the identifier in the path would
+// be the only boundary — and it is a client-supplied one.
+func (s *Service) photoCaller(ctx context.Context) (database.Caller, error) {
+	if s.requests == nil || s.photos == nil || s.photoBucket == "" {
+		return database.Caller{}, huma.Error500InternalServerError(
+			"this API was assembled without somewhere to keep photographs",
+		)
+	}
+
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return database.Caller{}, huma.Error401Unauthorized("no verified principal on the request context")
+	}
+	if principal.Role != "patient" {
+		return database.Caller{}, huma.Error403Forbidden("only a patient reads their own photographs")
+	}
+
+	return database.Caller{Subject: principal.Subject, Role: principal.Role}, nil
 }
 
 // LogDoseInput is the wizard's payload. Everything but the item, the dose and the key is

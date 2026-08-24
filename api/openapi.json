@@ -313,6 +313,23 @@
         ],
         "type": "object"
       },
+      "LabelPhotoOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "LogDoseInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -656,6 +673,64 @@
           "to_week",
           "dose_value",
           "dose_unit"
+        ],
+        "type": "object"
+      },
+      "PhotoOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "PhotoUploadInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "description": "What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else.",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/heic"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_type"
+        ],
+        "type": "object"
+      },
+      "PhotoUploadOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "key": {
+            "description": "What to send as photo_path when recording the dose. The server minted it; a client-chosen key is never accepted.",
+            "type": "string"
+          },
+          "url": {
+            "description": "A signed PUT. It constrains the key and not the bytes: a presigned SigV4 URL covers only the headers it names, and this SDK names host alone.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "key",
+          "expires_at"
         ],
         "type": "object"
       },
@@ -1415,6 +1490,181 @@
         ]
       }
     },
+    "/v1/me/dose-events/photo-uploads": {
+      "post": {
+        "description": "Answers a signed link to write one object to, and the key to send as `photo_path` when the dose is recorded. The key is minted here and never taken from the client: both tables holding one constrain it by a CHECK naming the patient, and a client-chosen key would make that CHECK the only thing between a patient and another patient's prefix. The upload happens before the dose exists, which is why this names no dose.",
+        "operationId": "start-dose-photo-upload",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoUploadInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoUploadOutputBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Ask for somewhere to put a dose photograph",
+        "tags": [
+          "dosing"
+        ]
+      }
+    },
+    "/v1/me/dose-events/{eventId}/photo": {
+      "get": {
+        "description": "Answers a short-lived signed link. The right is decided here, before the link exists: the object store has no row-level security, so the row is read under the caller's own identity and the link is signed only if the policies handed it over. An invisible row, a missing one and one carrying no photograph are one 404 — which of the three it was is a fact about somebody else's treatment.",
+        "operationId": "read-dose-photo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "A link to the photograph of a recorded dose",
+        "tags": [
+          "dosing"
+        ]
+      }
+    },
     "/v1/me/schedule": {
       "get": {
         "description": "One cell per day of the month, every day of it — days prescribing nothing included, because the calendar draws a month and the window's arithmetic is the server's: it came from the patient's own zone. Each cell carries the cycle week, whether an injection falls that day, whether anything is still pending and whether everything is done. A day with nothing prescribed and a day whose occurrences were all missed are both neither pending nor done; the client tells them apart by opening the day.",
@@ -1729,6 +1979,99 @@
         "summary": "The patient's day",
         "tags": [
           "protocol"
+        ]
+      }
+    },
+    "/v1/me/vials/{vialId}/label-photo": {
+      "get": {
+        "description": "Answers a short-lived signed link. The right is decided here, before the link exists: the object store has no row-level security, so the vial is read under the caller's own identity and the link is signed only if the policies handed the row over. An invisible vial, a missing one and one with no label photograph are one 404.",
+        "operationId": "read-vial-label-photo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vialId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelPhotoOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "A link to the photograph of a vial's label",
+        "tags": [
+          "inventory"
         ]
       }
     },

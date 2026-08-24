@@ -1,0 +1,170 @@
+package inventory
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
+)
+
+// LinkLifetime is how long a signed link lasts. The same five minutes dosing
+// gives a dose photograph, and for the same reason: the link is the whole of the
+// authority, because the store has no policies of its own.
+const LinkLifetime = 5 * time.Minute
+
+// Photos signs short-lived links to stored objects. Declared here, by the
+// consumer, and satisfied by platform/storage.
+//
+// Only the read half. A vial's label is attached after the vial exists, and
+// nothing creates or updates a vial over HTTP yet — that arrives with vial CRUD
+// in M4. An upload link whose key no endpoint could store would be a hole with
+// no user.
+type Photos interface {
+	SignedGet(ctx context.Context, bucket, key, contentType string, ttl time.Duration) (storage.Link, error)
+}
+
+// ErrNoPhoto is what the read answers for a vial that is invisible, absent, or
+// carries no label photograph. One error for the three: which of them it was is a
+// fact about somebody else's cabinet.
+var ErrNoPhoto = errors.New("no photograph is readable here")
+
+// Service is this context's operations together with what they need to answer.
+type Service struct {
+	requests *pgxpool.Pool
+	photos   Photos
+	bucket   string
+}
+
+// Deps is what this context needs from outside itself. Nil is what the document
+// generator passes; the operation is declared either way.
+type Deps struct {
+	RequestPool *pgxpool.Pool
+	Photos      Photos
+	Bucket      string
+}
+
+func NewService(deps Deps) *Service {
+	return &Service{requests: deps.RequestPool, photos: deps.Photos, bucket: deps.Bucket}
+}
+
+// LabelPhotoInput names the vial whose label photograph is wanted.
+type LabelPhotoInput struct {
+	VialID string `path:"vialId" format:"uuid"`
+}
+
+// LabelPhotoOutput is a link that reads one object.
+type LabelPhotoOutput struct {
+	Body struct {
+		URL       string `json:"url"`
+		ExpiresAt string `json:"expires_at" format:"date-time"`
+	}
+}
+
+// Register mounts this context's operations on the API.
+func (s *Service) Register(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "read-vial-label-photo",
+		Method:      http.MethodGet,
+		Path:        "/v1/me/vials/{vialId}/label-photo",
+		Summary:     "A link to the photograph of a vial's label",
+		Description: "Answers a short-lived signed link. The right is decided here, before " +
+			"the link exists: the object store has no row-level security, so the vial is " +
+			"read under the caller's own identity and the link is signed only if the " +
+			"policies handed the row over. An invisible vial, a missing one and one with " +
+			"no label photograph are one 404.",
+		Tags: []string{"inventory"},
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable,
+		},
+	}, s.readLabelPhoto)
+}
+
+func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*LabelPhotoOutput, error) {
+	if s.requests == nil || s.photos == nil || s.bucket == "" {
+		return nil, huma.Error500InternalServerError(
+			"this API was assembled without somewhere to keep photographs",
+		)
+	}
+
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("no verified principal on the request context")
+	}
+	// A patient-only surface. A doctor sees their patients' vials through the
+	// policies, and will read this the day the dashboard shows a cabinet — but
+	// admitting them now would publish a surface nothing has asked for, on rows
+	// whose admin policy is USING (true).
+	if principal.Role != "patient" {
+		return nil, huma.Error403Forbidden("only a patient reads their own photographs")
+	}
+
+	caller := database.Caller{Subject: principal.Subject, Role: principal.Role}
+
+	var key string
+	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
+		found, err := labelPhotoKeyOf(ctx, tx, in.VialID)
+		if err != nil {
+			return err
+		}
+		key = found
+
+		return nil
+	}); err != nil {
+		if errors.Is(err, ErrNoPhoto) {
+			return nil, huma.Error404NotFound("no photograph is readable here")
+		}
+		if database.IsUnavailable(err) {
+			return nil, huma.Error503ServiceUnavailable("the database is not answering", err)
+		}
+
+		return nil, huma.Error500InternalServerError("reading the vial's label", err)
+	}
+
+	link, err := s.photos.SignedGet(ctx, s.bucket, key, storage.ContentTypeFor(key), LinkLifetime)
+	if err != nil {
+		return nil, huma.Error503ServiceUnavailable("the object store cannot be reached", err)
+	}
+
+	out := &LabelPhotoOutput{}
+	out.Body.URL = link.URL
+	out.Body.ExpiresAt = link.ExpiresAt.UTC().Format(time.RFC3339)
+
+	return out, nil
+}
+
+// labelPhotoKeyOf reads one vial's key under whatever identity the transaction
+// carries. No patient predicate, and that is the point: the policies decide, and
+// a predicate here would answer the same for the owner while hiding whether they
+// do. The tenant boundary is measured in this context's policy suite.
+func labelPhotoKeyOf(ctx context.Context, tx pgx.Tx, vialID string) (string, error) {
+	var key *string
+	err := tx.QueryRow(ctx, `
+		SELECT label_photo_path
+		FROM app.vials
+		WHERE id = $1
+	`, vialID).Scan(&key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNoPhoto
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading the vial's label photograph: %w", err)
+	}
+	if key == nil || *key == "" {
+		return "", ErrNoPhoto
+	}
+
+	return *key, nil
+}

@@ -122,6 +122,11 @@ export type Item = {
     times: Array<string> | null;
 };
 
+export type LabelPhotoOutputBody = {
+    expires_at: string;
+    url: string;
+};
+
 export type LogDoseInputBody = {
     /**
      * The client's own key. A retry from the offline queue carries the key generated when the patient tapped save, and the repeat answers what the first answered.
@@ -254,6 +259,30 @@ export type Phase = {
     dose_value: number;
     from_week: number;
     to_week: number;
+};
+
+export type PhotoOutputBody = {
+    expires_at: string;
+    url: string;
+};
+
+export type PhotoUploadInputBody = {
+    /**
+     * What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else.
+     */
+    content_type: 'image/jpeg' | 'image/png' | 'image/heic';
+};
+
+export type PhotoUploadOutputBody = {
+    expires_at: string;
+    /**
+     * What to send as photo_path when recording the dose. The server minted it; a client-chosen key is never accepted.
+     */
+    key: string;
+    /**
+     * A signed PUT. It constrains the key and not the bytes: a presigned SigV4 URL covers only the headers it names, and this SDK names host alone.
+     */
+    url: string;
 };
 
 export type Problem = {
@@ -583,6 +612,94 @@ export type LogDoseResponses = {
 
 export type LogDoseResponse = LogDoseResponses[keyof LogDoseResponses];
 
+export type StartDosePhotoUploadData = {
+    body: PhotoUploadInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/dose-events/photo-uploads';
+};
+
+export type StartDosePhotoUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type StartDosePhotoUploadError = StartDosePhotoUploadErrors[keyof StartDosePhotoUploadErrors];
+
+export type StartDosePhotoUploadResponses = {
+    /**
+     * Created
+     */
+    201: PhotoUploadOutputBody;
+};
+
+export type StartDosePhotoUploadResponse = StartDosePhotoUploadResponses[keyof StartDosePhotoUploadResponses];
+
+export type ReadDosePhotoData = {
+    body?: never;
+    path: {
+        eventId: string;
+    };
+    query?: never;
+    url: '/v1/me/dose-events/{eventId}/photo';
+};
+
+export type ReadDosePhotoErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadDosePhotoError = ReadDosePhotoErrors[keyof ReadDosePhotoErrors];
+
+export type ReadDosePhotoResponses = {
+    /**
+     * OK
+     */
+    200: PhotoOutputBody;
+};
+
+export type ReadDosePhotoResponse = ReadDosePhotoResponses[keyof ReadDosePhotoResponses];
+
 export type GetScheduleMonthData = {
     body?: never;
     path?: never;
@@ -756,6 +873,53 @@ export type GetTodayResponses = {
 };
 
 export type GetTodayResponse = GetTodayResponses[keyof GetTodayResponses];
+
+export type ReadVialLabelPhotoData = {
+    body?: never;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}/label-photo';
+};
+
+export type ReadVialLabelPhotoErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadVialLabelPhotoError = ReadVialLabelPhotoErrors[keyof ReadVialLabelPhotoErrors];
+
+export type ReadVialLabelPhotoResponses = {
+    /**
+     * OK
+     */
+    200: LabelPhotoOutputBody;
+};
+
+export type ReadVialLabelPhotoResponse = ReadVialLabelPhotoResponses[keyof ReadVialLabelPhotoResponses];
 
 export type CreatePatientData = {
     body: NewPatientBody;

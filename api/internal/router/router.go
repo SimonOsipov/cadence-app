@@ -73,7 +73,11 @@ func contexts(opts Options) []boundedContext {
 	return []boundedContext{
 		{"audit", audit.Register},
 		{"content", content.Register},
-		{"dosing", dosing.NewService(opts.Pool).Register},
+		{"dosing", dosing.NewService(time.Now, dosing.Deps{
+			RequestPool: opts.Pool,
+			Photos:      opts.Photos,
+			PhotoBucket: opts.InjectionsBucket,
+		}).Register},
 		{"identity", identity.NewService(identity.Deps{
 			Onboarding: onboarding,
 			Sessions:   sessions,
@@ -81,7 +85,11 @@ func contexts(opts Options) []boundedContext {
 			Profiles:   profiles,
 			Directory:  directory,
 		}).Register},
-		{"inventory", inventory.Register},
+		{"inventory", inventory.NewService(inventory.Deps{
+			RequestPool: opts.Pool,
+			Photos:      opts.Photos,
+			Bucket:      opts.VialsBucket,
+		}).Register},
 		{"journal", journal.Register},
 		{"measurements", measurements.Register},
 		{"messaging", messaging.Register},

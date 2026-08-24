@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/dosing"
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth/token"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
@@ -37,6 +38,18 @@ type Options struct {
 
 	// Logger is used by the health endpoint to record a failing probe.
 	Logger *slog.Logger
+
+	// Photos signs short-lived links to the object store. Nil is what the
+	// document generator passes — the operations are declared either way,
+	// because openapi.json is the shape of the API and not of this deployment.
+	Photos dosing.Photos
+
+	// The private buckets, one per kind of picture. Two names rather than one
+	// because server-minted keys start with the patient's id and nothing else,
+	// so a single bucket would let a vial label and an injection photograph
+	// collide on a key.
+	VialsBucket      string
+	InjectionsBucket string
 }
 
 // Mount assembles the whole HTTP surface on mux: the authentication guard, the

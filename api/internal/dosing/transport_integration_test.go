@@ -37,7 +37,7 @@ func sendAs(t *testing.T, c clinic, subject, role, payload string) (int, string)
 			)))
 		})
 	})
-	dosing.NewServiceAt(c.request, func() time.Time { return theMoment }).Register(httpserver.NewAPI(mux))
+	dosing.NewService(func() time.Time { return theMoment }, dosing.Deps{RequestPool: c.request}).Register(httpserver.NewAPI(mux))
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/me/dose-events", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
