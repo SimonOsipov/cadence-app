@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
-	"sort"
+	"errors"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -208,12 +210,18 @@ func assertOccurrences(t *testing.T, what string, got []protocol.Occurrence, wan
 	}
 
 	// Sorted by slot, because the generator's order is its own business and this is
-	// a statement about the day rather than about the list.
-	sort.Slice(got, func(a, b int) bool {
-		if got[a].Time.Hour != got[b].Time.Hour {
-			return got[a].Time.Hour < got[b].Time.Hour
+	// a statement about the day. Kind breaks the tie: two items may share a slot —
+	// §03 allows it — and a comparator that called them equal would make this
+	// intermittently red in a way that reads as a generator bug.
+	slices.SortStableFunc(got, func(a, b protocol.Occurrence) int {
+		if by := a.Time.Hour - b.Time.Hour; by != 0 {
+			return by
 		}
-		return got[a].Time.Minute < got[b].Time.Minute
+		if by := a.Time.Minute - b.Time.Minute; by != 0 {
+			return by
+		}
+
+		return strings.Compare(string(a.Kind), string(b.Kind))
 	})
 
 	for i, occurrence := range got {
@@ -317,10 +325,12 @@ func TestOnlyThePersonaIsPrescribedACourse(t *testing.T) {
 	}
 }
 
-// The drug directory is filled by prescribing rather than by a list of its own, and
-// three drugs prescribed twice are still three rows: «повтор по регистру возвращает
-// существующий compoundId» is an acceptance criterion of this feature, and a second
-// seed run is the cheapest way to ask it.
+// The directory is filled by prescribing rather than by a list of its own, and a
+// second run adds nothing — it returns at holdsACourse before Create is reached.
+//
+// That is all this measures. «Повтор по регистру возвращает существующий
+// compoundId» is asked by TestANameAlreadyInTheDirectoryResolvesToTheRowItAlreadyHas
+// in internal/protocol; no name in this seed is ever spelled in two cases.
 func TestTheDirectoryHoldsEachDrugOnce(t *testing.T) {
 	on, db := seedStand(t)
 	theFirstAdministrator(t, db)
@@ -333,5 +343,48 @@ func TestTheDirectoryHoldsEachDrugOnce(t *testing.T) {
 
 	if got := countOf(t, on.writes, `SELECT count(*) FROM app.compounds`); got != 3 {
 		t.Errorf("the directory holds %d drugs, want three", got)
+	}
+}
+
+// The one thing standing between a re-used address and the persona's course
+// landing on somebody else's record, and until round two nothing measured it.
+//
+// requireCaresFor cannot discriminate here: every seeded patient names the same
+// primary specialist, so a course written for the wrong one of them passes. The
+// address is the seed's key, and on a re-run the identifier behind it comes from
+// the provider — so who that identifier turns out to be is what has to be asked.
+func TestASeedRefusesToPrescribeForSomebodyElse(t *testing.T) {
+	on, db := seedStand(t)
+	theFirstAdministrator(t, db)
+
+	if err := seed(t.Context(), theClinic(), on); err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+
+	persona := thePersona(t, on)
+
+	if err := isWhoWeMeant(t.Context(), on, string(persona), "Марина Волкова"); err != nil {
+		t.Errorf("the persona is refused as herself: %v", err)
+	}
+
+	err := isWhoWeMeant(t.Context(), on, string(persona), "Кто-то Другой")
+	if !errors.Is(err, errNotWhoWeMeant) {
+		t.Errorf("prescribing for the wrong person answered %v, want %v", err, errNotWhoWeMeant)
+	}
+	// The refusal names both, because an operator meeting it has to be able to tell
+	// a re-used address from a patient who renamed themselves.
+	if err != nil && !strings.Contains(err.Error(), "Марина Волкова") {
+		t.Errorf("the refusal does not say who the account is: %v", err)
+	}
+}
+
+// An account nobody holds is a refusal too, not a course written blind.
+func TestASeedRefusesToPrescribeForAnAccountWithNoProfile(t *testing.T) {
+	on, db := seedStand(t)
+	theFirstAdministrator(t, db)
+
+	err := isWhoWeMeant(t.Context(), on, "5d4f3b7c-0000-4000-8000-00000000ffff", "Марина Волкова")
+	if err == nil {
+		t.Error("an account with no profile was accepted")
 	}
 }

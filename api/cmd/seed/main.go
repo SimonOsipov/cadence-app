@@ -354,7 +354,7 @@ func isWhoWeMeant(ctx context.Context, on deps, userID, fullName string) error {
 		return fmt.Errorf("reading back who %s is: %w", fullName, err)
 	}
 	if found != fullName {
-		return fmt.Errorf("%w: %s resolves to %q", errNotWhoWeMeant, fullName, found)
+		return fmt.Errorf("%w: %q resolves to an account belonging to %q", errNotWhoWeMeant, fullName, found)
 	}
 
 	return nil

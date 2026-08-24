@@ -3,6 +3,7 @@
 package protocol_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,9 +12,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
@@ -163,5 +166,95 @@ func TestEachDeclaredStatusIsReachable(t *testing.T) {
 				t.Errorf("answered %d, want %d: %s", status, request.want, body)
 			}
 		})
+	}
+}
+
+// The row the design draws, sent the way a generated client sends it.
+//
+// Both halves of it were refused until step 11, and by two different mechanisms —
+// the validator refused a supplement that named a drug, and the published schema
+// carried minItems on phases, so a client with a required array sent `[]` and got
+// 422. The second is invisible from inside the package: Course.draft never sees
+// the schema, and the drift test pins the document's text rather than what the API
+// takes. This is the one place that asks.
+func TestASupplementWithADrugAndNoPhasesIsPrescribed(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	doctor := auth.Principal{Subject: writeDoctorA, Role: "doctor"}
+	path := "/v1/patients/" + writePatientA + "/protocols"
+
+	payload := `{
+		"start_date": "2026-05-10",
+		"weeks": 12,
+		"status": "active",
+		"items": [{
+			"kind": "supplement",
+			"compound": {
+				"name_ru": "Глицин + магний",
+				"default_unit": "мг",
+				"route": "внутрь",
+				"icon": "moon"
+			},
+			"cadence": "daily",
+			"days_of_week": [],
+			"times": ["21:30"],
+			"loggable": false,
+			"phases": []
+		}]
+	}`
+
+	status, body := send(t, pool, doctor, http.MethodPost, path, payload)
+	if status != http.StatusCreated {
+		t.Fatalf("a phase-less supplement answered %d: %s", status, body)
+	}
+
+	var written struct {
+		ProtocolID string   `json:"protocol_id"`
+		ItemIDs    []string `json:"item_ids"`
+	}
+	if err := json.Unmarshal([]byte(body), &written); err != nil {
+		t.Fatalf("reading the reply: %v", err)
+	}
+	if len(written.ItemIDs) != 1 {
+		t.Fatalf("the course holds %d items", len(written.ItemIDs))
+	}
+
+	// And the drug it named is on the row rather than only in the directory: the
+	// strip draws its glyph and its name from there, and keying the write on
+	// «injection» stored NULL while leaving the drug in the directory.
+	var name, icon *string
+	if err := database.WithServiceJob(t.Context(), pool, "a test",
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				SELECT c.name_ru, c.icon
+				FROM app.protocol_items i
+				LEFT JOIN app.compounds c ON c.id = i.compound_id
+				WHERE i.id = $1
+			`, written.ItemIDs[0]).Scan(&name, &icon)
+		}); err != nil {
+		t.Fatalf("reading the item back: %v", err)
+	}
+	if name == nil || icon == nil {
+		t.Fatal("the supplement's row names no drug")
+	}
+	if *name != "Глицин + магний" || *icon != "moon" {
+		t.Errorf("the supplement's drug is %q under %q", *name, *icon)
+	}
+}
+
+// The other half of the same rule: an injection is a drug going into somebody, and
+// how much is not optional.
+func TestAnInjectionWithNoPhasesIsStillRefused(t *testing.T) {
+	pool, _ := prescribing(t)
+
+	doctor := auth.Principal{Subject: writeDoctorA, Role: "doctor"}
+	path := "/v1/patients/" + writePatientA + "/protocols"
+
+	payload := strings.Replace(aWirePayload,
+		`"phases": [`, `"phases_removed": [`, 1)
+	payload = strings.Replace(payload, `"phases_removed"`, `"phases": [], "phases_removed"`, 1)
+
+	if status, body := send(t, pool, doctor, http.MethodPost, path, payload); status != http.StatusUnprocessableEntity {
+		t.Errorf("an undosed injection answered %d: %s", status, body)
 	}
 }

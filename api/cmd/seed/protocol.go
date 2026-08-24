@@ -41,10 +41,11 @@ func courseStart(today civil.Date) civil.Date {
 // theCourse is the whole protocol as data: twelve weeks of titrated semaglutide,
 // BPC-157 twice a day, an evening supplement and a Sunday weigh-in.
 //
-// The first three are MockSeed's, field for field, because those are what the
-// screens were drawn against. The weigh-in is in no seed of theirs — WEIGH_IN is
-// named by the KMP suite and by no production code — and it is here so that all
-// three kinds of occurrence are on a real stand rather than only injections.
+// The first three are MockSeed's, field for field. The weigh-in is not in MockSeed
+// at all, but it is not this seed's invention either: the frozen prototype's
+// schedule emits a weekly «Взвешивание» at 07:30, not loggable, on the injection's
+// own weekday (mobile/src/features/schedule/data.ts), which is what is prescribed
+// here. Without it a stand shows two of the three kinds.
 func theCourse(patient civil.UserID, today civil.Date) protocol.Draft {
 	return protocol.Draft{
 		PatientID: patient,
