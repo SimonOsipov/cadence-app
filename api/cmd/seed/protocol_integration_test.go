@@ -402,7 +402,13 @@ func TestARenamedPersonaStopsTheNextRunRatherThanBeingPrescribedFor(t *testing.T
 	on, db := seedStand(t)
 	theFirstAdministrator(t, db)
 
-	if err := seed(t.Context(), theClinic(), on); err != nil {
+	// The first run creates her and prescribes nothing, so that the second run's
+	// refusal is measurable as an absence. With a course already on the row, the
+	// count below is one whatever happens — including when the guard runs after the
+	// write it protects, which is the ordering this is here to pin.
+	unprescribed := theClinic()
+	unprescribed.patients[0].prescribed = false
+	if err := seed(t.Context(), unprescribed, on); err != nil {
 		t.Fatalf("the first run: %v", err)
 	}
 
@@ -424,13 +430,14 @@ func TestARenamedPersonaStopsTheNextRunRatherThanBeingPrescribedFor(t *testing.T
 		t.Errorf("the refusal does not say who holds the account: %v", err)
 	}
 
-	// And nothing was prescribed onto them.
+	// Refused before the write and not after it: a course on the stranger's record
+	// plus an error afterwards is the harm, not a lesser version of it.
 	held := countOf(t, on.writes, `
 		SELECT count(*) FROM app.protocols p
 		JOIN app.profiles who ON who.user_id = p.patient_id
 		WHERE who.full_name = 'Кто-то Другой'
 	`)
-	if held != 1 {
-		t.Errorf("the renamed account holds %d courses; the first run's one is expected", held)
+	if held != 0 {
+		t.Errorf("the stranger's record holds %d courses", held)
 	}
 }
