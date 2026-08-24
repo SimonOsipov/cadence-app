@@ -389,16 +389,12 @@ func logOf(
 
 // InjectionsOf is the history the rotation reads: which zone, and when it went in.
 //
-// `injected_at` and never `scheduled_for_date` — the guard step 7 handed here when its own
-// copy of it became structural. A dose from the retry queue answers an occurrence hours or
-// months old, and charging its zone to that occurrence's date would make a back-filled dose
-// look stale and move the suggestion off the zone it should be on. `created_at` would be
-// wrong the same way, one field over.
+// `injected_at` and never `scheduled_for_date`: a dose from the retry queue answers an
+// occurrence months old, and charging its zone to that date would move the suggestion off the
+// zone it should be on. `created_at` is wrong the same way, one field over.
 //
-// A window rather than everything: the rotation is least-recently-used, so a zone whose last
-// use falls outside it reads as never used. Ninety days is long enough that a ten-zone
-// rotation on a weekly injection — seventy days to come round — is inside it, and it is
-// stated rather than assumed because that arithmetic is what makes it safe.
+// A ninety-day window, and the arithmetic is why it is safe: ten zones on a weekly injection
+// come round in seventy days, so a zone inside the rotation never reads as never-used.
 func InjectionsOf(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, since time.Time,
 ) ([]Injection, error) {

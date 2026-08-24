@@ -15,16 +15,10 @@ import (
 
 // ActivePlanFor reads a patient's running course with its items and their phases.
 //
-// It lives here rather than in the contexts that need it because a bounded context calls its
-// neighbours and does not read their tables: dosing decides which occurrence a dose answers,
-// and the schedule aggregates read the same three tables, so the read is the protocol's.
-//
-// Whole or not at all. The generator takes items and phases together, and a plan half-read
-// is a schedule nobody prescribed — an item whose phases failed to load has no dose, which
-// reads as a course that prescribes nothing rather than as an error.
-//
-// The transaction is the caller's, so the seam is too: read under WithCaller and RLS answers,
-// read under the service seam and it does not.
+// Here rather than in the contexts that need it: a bounded context calls its neighbours and
+// does not read their tables. Whole or not at all — an item whose phases failed to load has no
+// dose, which reads as a course prescribing nothing rather than as an error. The transaction is
+// the caller's, so the seam is too.
 func ActivePlanFor(ctx context.Context, tx pgx.Tx, patient civil.UserID) (Plan, bool, error) {
 	var plan Plan
 

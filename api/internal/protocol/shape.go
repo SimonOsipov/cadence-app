@@ -10,22 +10,11 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 )
 
-// Why these rules live here as well as in the schema, when the project's own rule is that a
-// fact written twice is fixed once: the two answers are different. The schema refuses with a
-// constraint name and no row, which reaches a doctor as «23514» over a form of twelve items.
-// This says which item and which field, in time for a 422.
-//
-// The database stays the authority for the ones it carries. It holds the race Go cannot see —
-// two doctors editing one course — and an integration test keeps the pair from drifting by
-// offering each of those refusals to the schema and requiring the named constraint.
-//
-// Five of them the schema does not express at all, plus the upper half of a sixth, and the
-// list is worth naming so the next reader does not expect the reconciliation to cover it:
-// ErrNoItems and ErrNoPhases (a course or an item with nothing in it is a row that simply is
-// not there), ErrInjectionWithoutCompound and ErrCompoundOnAKindWithoutOne (§03 leaves
-// compound_id nullable for the kinds that are not drugs, and a CHECK cannot tell which),
-// ErrItemNamedTwice (two rows of one request, and the schema sees one row at a time), and
-// to_week against duration_weeks, which live in different tables. Those are held here alone.
+// Duplicated from the schema deliberately: a CHECK refuses with a constraint name and no row,
+// which reaches a doctor as «23514» over a form of twelve items, while this says which item
+// and which field in time for a 422. The database stays the authority for what it carries —
+// it holds the race Go cannot see — and shapeRefusals() plus its integration pair keep the two
+// from drifting. Some of these the schema cannot express at all; that test is what says which.
 var (
 	ErrWeeksOffRange            = errors.New("a course runs between one and 104 weeks")
 	ErrNotADay                  = errors.New("the calendar has no such day")
