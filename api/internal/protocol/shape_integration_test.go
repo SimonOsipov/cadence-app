@@ -369,11 +369,10 @@ func seedForShape(t *testing.T, pool *pgxpool.Pool) {
 	}
 }
 
-// The four closed sets are written twice — as a CHECK in 000013 and as constants in Go — and
-// this reads the schema rather than a literal beside it. The first version of this test
-// compared Go with a list written in the same file and called it a reconciliation: a fifth
-// status added by a future migration left the whole gate green while the API silently refused
-// a legitimate prescription.
+// Four of the five closed sets 000013 carries are written twice — as a CHECK there and as
+// constants in Go — and this reads the schema rather than a literal beside it. A status added
+// by a future migration would otherwise leave the gate green while the API silently refused a
+// legitimate prescription. The fifth, compounds_default_unit_check, is read back by nothing.
 func TestTheSetsTheSchemaNamesAreTheOnesGoDeclares(t *testing.T) {
 	pool := resolving(t)
 

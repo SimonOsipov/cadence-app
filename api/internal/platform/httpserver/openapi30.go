@@ -22,8 +22,8 @@ import (
 //
 // chi's last registration for a method and pattern wins, silently, so this
 // replaces huma's handlers rather than colliding with them. That is undocumented
-// behaviour of chi v5.2.1, measured, not read — TestTheThirtyDocumentIsValid is
-// what fails if a future chi keeps the first handler instead.
+// behaviour of chi v5.3.1, the version this module builds against, measured on it
+// — TestTheThirtyDocumentIsValid fails if a future chi keeps the first instead.
 func serveThirty(router *chi.Mux, api huma.API) {
 	var (
 		once     sync.Once

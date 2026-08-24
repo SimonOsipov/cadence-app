@@ -52,7 +52,7 @@ func (s *Supply) SupplyFor(
 	// silently mixing them.
 	//
 	// The open vial, not the first in the list: with a sealed spare on the shelf, «doses
-	// left» would count the spare's — the prototype's own bug, and the reason the KMP
+	// left» would count the spare's — the KMP mock's own hazard, not the prototype's — that one guards on `opened`, and the reason the KMP
 	// says «the open vial».
 	//
 	// The earliest-opened when there are two, which the read's ORDER BY fixes: without it

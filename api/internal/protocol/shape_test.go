@@ -290,8 +290,9 @@ func TestASupplementMayCarryADoseAnyway(t *testing.T) {
 
 // A supplement may name a drug, and the design's own does.
 //
-// «Глицин + магний» is a supplement with a compound in MockSeed, and the prototype
-// draws that row from it: the moon glyph and the name are the compound's fields.
+// «Глицин + магний» is a supplement with a compound in MockSeed, and the moon glyph
+// and the name are that compound's fields — the prototype's own schedule takes the
+// glyph from a category table instead, so this shape is the KMP's, not its.
 // Refusing it — which this package did until step 11 tried to seed the design —
 // made the row the screens draw impossible to prescribe. The schema never said so:
 // protocol_items.compound_id is nullable and carries no CHECK against kind.

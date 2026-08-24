@@ -12,8 +12,8 @@ import (
 
 // The diary is written by the dose path, not the other way round: one patient action
 // writes a dose event and this row, so dosing reads journal. That is why the closed
-// set of tags lives here — in the KMP it is a typealias onto SideEffect in the dosing
-// file, which Kotlin can afford because it has no import direction to protect.
+// set of tags lives here — in the KMP it is a typealias onto SideEffect,
+// declared in Journal.kt, which Kotlin can afford because it has no import direction to protect.
 func TestJournalDoesNotImportItsCallers(t *testing.T) {
 	pkg, err := build.ImportDir(".", 0)
 	if err != nil {

@@ -243,7 +243,7 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 
 	left, reorder = supplyOn(t, service, requests, writePatientA)
 
-	// A sealed spare is not «doses left» — counting it is the prototype's own bug — and it
+	// A sealed spare is not «doses left» — counting it is the KMP mock's hazard, not the prototype's — and it
 	// is what silences the hint: «0 sealed spares & ≤4 weeks supply» is one condition.
 	if left == nil || *left != 3 {
 		t.Errorf("a sealed spare moved the count to %v", shown(left))

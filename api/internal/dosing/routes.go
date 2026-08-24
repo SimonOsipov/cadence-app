@@ -117,7 +117,7 @@ func (s *Service) photoCaller(ctx context.Context) (database.Caller, error) {
 }
 
 // LogDoseInput is the wizard's payload. Everything but the item, the dose and the key is
-// optional: §03's last step is «всё по желанию».
+// optional: the wizard's step 4 is «Короткая сверка — всё по желанию» (LogDoseScreen.tsx).
 type LogDoseInput struct {
 	Body struct {
 		ItemID string `json:"protocol_item_id" format:"uuid" doc:"The prescribed item this dose answers."`

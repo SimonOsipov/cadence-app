@@ -181,7 +181,7 @@ func TestTwoPhasesOpeningOnTheSameWeekKeepTheOrderTheyArrivedIn(t *testing.T) {
 	// their arrival order, because pdqsort has a fast path for equal keys. The stable sort is
 	// chosen for the guarantee, not because a test can tell the two apart.
 	//
-	// Ties are representable at all only until step 2 adds the EXCLUDE, which is the same
+	// Ties are representable here and refused by the schema and by Check, which is the same
 	// window PhaseDose's comment names.
 	duplicate := titrationPlan
 	duplicate.Phases = map[ProtocolItemID][]ProtocolPhase{

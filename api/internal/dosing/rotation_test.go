@@ -11,8 +11,9 @@ import (
 // fails. Here only injectedAt exists at all — the type carries nothing else — which makes the
 // same point structurally: this function cannot read a field it was not given.
 
-// The KMP writes these as named parameters with defaults, where a half-given clock cannot be
-// spelled. Here it can, so it is refused: at(5, 20, 9) reads as nine o'clock and meant seven.
+// The KMP writes these as named parameters with defaults, which is looser rather than tighter:
+// at(month =, day =, hour =) compiles and takes minute = 0 silently. Here a half-given clock is
+// refused instead: at(5, 20, 9) reads as nine o'clock and meant seven.
 func at(month, day int, clock ...int) time.Time {
 	hour, minute := 7, 0
 	switch len(clock) {

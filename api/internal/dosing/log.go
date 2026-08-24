@@ -28,7 +28,7 @@ const (
 )
 
 // Draft is the wizard's payload after the transport has parsed it. Everything but the item,
-// the dose and the client's key is optional — §03's step 4 is «всё по желанию».
+// the dose and the client's key is optional — the wizard's step 4 is «Короткая сверка — всё по желанию» (LogDoseScreen.tsx).
 type Draft struct {
 	ItemID protocol.ProtocolItemID
 	Dose   *protocol.Dose

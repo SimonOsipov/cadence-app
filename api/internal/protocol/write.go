@@ -104,8 +104,8 @@ func Create(ctx context.Context, pool *pgxpool.Pool, draft Draft) (Written, erro
 // argument that an item has no identity a client holds across an edit. It has one — Create
 // answers with the identifiers precisely so a form can hold them — and without it the whole
 // course became uneditable after the first logged dose: not merely the item, but the course's
-// status, so a course could be neither cancelled nor completed, and the `loggable` remedy the
-// refusal names needed the very statement that was refused. Titration during a course is this
+// status, so a course could be neither cancelled nor completed, and the `loggable` remedy —
+// which this doc names and the refusal itself does not — needed the very statement refused. Titration during a course is this
 // product's main clinical loop, and it was impossible.
 func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft) (Written, error) {
 	if err := draft.Check(); err != nil {
