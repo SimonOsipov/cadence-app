@@ -35,8 +35,7 @@ var (
 	// path; this is the same refusal read as a field the caller filled in.
 	ErrNoSuchVial = errors.New("no such vial in this patient's cabinet")
 
-	// The photo key is not under the patient's own prefix. A prefix is where a key
-	// begins, and this constraint is about where it points.
+	// A prefix is where a key begins, and this constraint is about where it points.
 	ErrPhotoNotTheirs = errors.New("the photo key is not under this patient's prefix")
 
 	// A note of nothing. The transport drops one before it gets here, so this answers the

@@ -86,22 +86,14 @@ func (d CheckInDraft) ReadingsAreOnTheScale() bool {
 	return true
 }
 
-// Merge applies a draft to whatever the day already holds. Four rules, and each is a
-// decision rather than an accident:
+// Merge applies a draft to whatever the day already holds. Two of its rules are not
+// obvious from the code: tags accumulate without duplicates, because a side effect
+// reported this morning did not stop being true by evening; and provenance is set
+// once, so «born of a dose» stays true of the day however it is edited afterwards.
 //
-//   - a named reading overrides, an unnamed one keeps what was there;
-//   - a blank note is a skipped note;
-//   - tags accumulate without duplicates — a side effect reported this morning did
-//     not stop being true by evening;
-//   - provenance is set once, so «born of a dose» stays true of the day it was born
-//     on however it is edited afterwards.
-//
-// `patient` is the token subject, never a field of the request: it is what the two
-// refusals below compare against, so a body field passed here would decide ownership
-// from the same place that is trying to cross it.
-//
-// Nothing is written through to `existing`: the caller holds the row it read, and a
-// merge that edited it in place would leave the two disagreeing if the write failed.
+// `patient` is the token subject and never a body field: it is what the two refusals
+// below compare against, so a body field would decide ownership from the same place
+// that is trying to cross it. Nothing is written through to `existing`.
 func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Source) (Entry, error) {
 	merged := Entry{
 		PatientID: patient,

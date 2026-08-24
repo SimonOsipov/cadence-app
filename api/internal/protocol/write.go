@@ -185,7 +185,6 @@ func write(ctx context.Context, tx pgx.Tx, draft Draft) (Written, error) {
 	return written, writeItems(ctx, tx, &written, draft)
 }
 
-// rewriteItems keeps what the request names, adds what it does not, and drops the rest.
 func rewriteItems(ctx context.Context, tx pgx.Tx, written *Written, draft Draft) error {
 	written.ItemIDs = make([]ProtocolItemID, 0, len(draft.Items))
 	kept := make([]string, 0, len(draft.Items))

@@ -54,7 +54,6 @@ func serveThirty(router *chi.Mux, api huma.API) {
 	router.Get(OpenAPIPath+"-3.0.yaml", serve("application/openapi+yaml", func() []byte { return asYAML }))
 }
 
-// thirtyDocuments builds the repaired 3.0 document in both encodings.
 func thirtyDocuments(api huma.API) (asJSON, asYAML []byte, err error) {
 	downgraded, err := api.OpenAPI().Downgrade()
 	if err != nil {
@@ -107,8 +106,6 @@ func spellNullableForThirty(node any) {
 	}
 }
 
-// theNonNullOf answers the member that is not the null one, and whether exactly
-// one member was the null schema.
 func theNonNullOf(members []any) (any, bool) {
 	var kept any
 	nulls := 0
