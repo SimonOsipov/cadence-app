@@ -1,9 +1,11 @@
 ---
 type: spec
 project: cadence
-status: approved
+status: done
 priority: p1
 created: 2026-08-15
+completed: 2026-08-24
+adr: "[[20-Projects/cadence/adr/ADR-013-schedule-on-the-server|adr/ADR-013-schedule-on-the-server]]"
 todoist_parent: "6hH8gf79GmFmvcMq"
 components: [protocol, dosing, inventory, journal, data-layer, api, kmp-app]
 proposal: "[[20-Projects/cadence/architecture/proposals/schedule-on-the-server|architecture/proposals/schedule-on-the-server]]"
