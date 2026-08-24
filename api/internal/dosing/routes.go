@@ -16,16 +16,12 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
 
-// Service is this context's operations together with what they need to answer.
-//
 // One pool, and it is the request one: everything here is the patient acting on their own
 // rows, so it runs under their identity and RLS answers. Nothing reaches the service seam.
 type Service struct {
 	requests *pgxpool.Pool
 
-	// The clock, injected. Every occurrence is generated in the patient's own day, and a
-	// handler reading time.Now directly is a handler the suite cannot run against a
-	// calendar — which is the same argument the generator's `today` parameter makes.
+	// Injected: see NewService.
 	now func() time.Time
 
 	photos      Photos
@@ -42,12 +38,7 @@ type Deps struct {
 	PhotoBucket string
 }
 
-// NewService builds this context's service.
-//
-// The clock is positional and Deps is not, for the reason protocol's constructor is
-// the same shape: a clock inside a struct of dependencies is a clock a caller can
-// leave out, and the assembled router did exactly that until a review caught it
-// answering 500 on every read.
+// NewService takes the clock positionally, for the reason protocol.NewService records.
 func NewService(now func() time.Time, deps Deps) *Service {
 	return &Service{
 		requests:    deps.RequestPool,

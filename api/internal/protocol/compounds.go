@@ -42,27 +42,18 @@ type NewCompound struct {
 // ResolveCompound turns a reference into the identifier a protocol item can carry, entering
 // the drug into the directory if the clinic has not used it before.
 //
-// «Повтор по регистру возвращает существующий compoundId, а не создаёт второй» is an
-// acceptance criterion, and the uniqueness that makes it enforceable is the index on
-// lower(name_ru) — so the case is the database's business. The whitespace is not: lower()
-// leaves «  Семаглутид  » different from «Семаглутид», and the two would become two rows.
+// Case is the database's business — the index is on lower(name_ru) — and whitespace is not:
+// lower() leaves «  Семаглутид  » a second row.
 //
-// INSERT … ON CONFLICT DO NOTHING and then a SELECT, rather than the DO UPDATE … RETURNING
-// idiom that would answer in one statement. Step 2 withheld UPDATE on this table from the
-// service path on purpose — a name collision must not rewrite a reference row that other
-// patients' courses already point at — and DO UPDATE needs it. The extra round trip is the
-// price of that decision, and it is recorded here so the next reader does not «fix» it.
+// DO NOTHING and then a SELECT rather than the one-statement DO UPDATE … RETURNING: the
+// service path holds no UPDATE on this table on purpose, because a name collision must not
+// rewrite a reference row other patients' courses point at. The round trip is that price.
 // EnterNewDrugs inserts every drug a draft names by name, in one pass and in a fixed order.
 //
-// The order is the point, and it is a cross-tenant one. app.compounds is the single table on
-// this path that every patient shares, so two transactions writing courses for two different
-// patients take index locks on it in whatever order the requests listed their items: doctor A
-// prescribing {X, Y} and doctor B prescribing {Y, X} at the same moment deadlock on
-// compounds_one_row_per_name, and one patient's write fails because of another's. Sorted by
-// the normalised name, every transaction takes them the same way round and cannot cycle.
-//
-// It runs before any item is written, so the whole of a course's contention with other
-// tenants is over before the course's own rows are touched.
+// Sorted by normalised name, and that ordering is load-bearing across tenants: app.compounds
+// is the one table every patient shares, so {X, Y} against {Y, X} at the same moment deadlocks
+// on compounds_one_row_per_name and one patient's write fails because of another's. It runs
+// before any item is written, so that contention is over before the course's own rows.
 func EnterNewDrugs(ctx context.Context, tx pgx.Tx, items []DraftItem) error {
 	names := make([]string, 0, len(items))
 	described := make(map[string]NewCompound, len(items))

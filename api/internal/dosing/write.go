@@ -65,9 +65,7 @@ type Logged struct {
 // fact, and a second under a service role would add only the name of a service to it. That is
 // a decision of this feature and it removed a line from the component's contract.
 //
-// `now` is a parameter for the reason the generator's `today` is: the day is the patient's
-// own, computed in their zone, and a package that reads the clock cannot be run against a
-// calendar.
+// `now` is a parameter: the day is the patient's own, computed in their zone.
 func Log(
 	ctx context.Context, pool *pgxpool.Pool, caller database.Caller, now time.Time, draft Draft,
 ) (Logged, error) {

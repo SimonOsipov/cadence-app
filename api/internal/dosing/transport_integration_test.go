@@ -105,11 +105,8 @@ func TestTheAppCanRecordADoseThroughTheTransport(t *testing.T) {
 // minLength, a missing unit fails required, a dose of nothing fails exclusiveMinimum — so
 // over HTTP it is a 422 and never a 200 with that body.
 //
-// It stays in the set for a weaker reason than I first wrote here: Resolve is reached by Log
-// and by this package's own unit tests, and by nothing else — cmd/seed does not import dosing
-// at all and builds a protocol.Draft, which is a different type. So the outcome is published
-// to a client that can never see it for the sake of a branch only log_test.go reaches, and
-// that is the step-12 question the divergence register carries.
+// It stays in the set for a thin reason: Resolve is reached by Log and by this package's unit
+// tests, and by nothing else. The divergence register carries the question.
 func TestEachOutcomeIsReachedThroughTheTransport(t *testing.T) {
 	c := newClinic(t)
 
@@ -340,8 +337,7 @@ func TestOnlyAPatientRecordsTheirOwnDoses(t *testing.T) {
 
 // A vial the request names gets the same predicate the resolution uses, minus «already
 // opened» — naming a sealed one is how a patient starts it. What it does not get is a
-// weaker one: a thrown-away vial, or one of another drug, is a wrong remaining count, and
-// that is the number the patient reorders on.
+// weaker one: a thrown-away vial, or one of another drug.
 func TestAVialTheRequestNamesIsHeldToTheSamePredicate(t *testing.T) {
 	c := newClinic(t)
 	disposed := openVials(t, c, patientB, 1)

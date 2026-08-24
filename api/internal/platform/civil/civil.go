@@ -1,17 +1,9 @@
-// Package civil holds the vocabulary every bounded context carries: a calendar day
-// without a location, a time of day to the minute, a window of days, and the one
-// identifier that appears in all of them.
+// Package civil holds the calendar vocabulary every bounded context carries, so that
+// none of them imports another for a date.
 //
-// It exists because those types were declared in `protocol` first, and inventory and
-// journal came to import that context for nothing but them — a shared kernel by
-// accident rather than by decision. api.md puts the shared wiring under platform,
-// and this is wiring: no context owns a calendar.
-//
-// The name is narrower than the contents, and deliberately so rather than by
-// oversight. Date, Slot and Range are civil time in the ordinary sense — the concept
-// Go's standard library has no type for. UserID is not, and it sits here because a
-// patient id is the one identifier all four clinical contexts hold and identity
-// exports no type for it. If identity ever does, this is the first thing to move.
+// UserID sits here despite the name: a patient id is the one identifier all four
+// clinical contexts hold, and identity exports no type for it. If it ever does, this
+// is the first thing to move.
 package civil
 
 import (

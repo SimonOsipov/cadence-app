@@ -11,14 +11,10 @@ import (
 
 // OpenVialFor is the vial a dose of this compound is drawn from, when there is one to name.
 //
-// Resolved and not chosen, which is the recorded invariant: with two open vials of one
-// compound the answer is nothing at all, because the choice is the patient's and it arrives
-// in the request. The KMP client already asks — DoseSteps draws a picker whenever a compound
-// has more than one open vial — so what is missing is the wiring of those screens to this
-// API, not the picker. Its mock's fallback still takes the fullest and says in its own
-// comment that this is «at most wrong by one vial»; a wrong vial is a wrong remaining count,
-// which is the number the patient reorders on. A dose with no vial named costs one count its
-// dose; a dose charged to the wrong vial costs two counts their accuracy.
+// Resolved and never chosen: with two open vials of one compound the answer is nothing,
+// because the choice is the patient's and arrives in the request. A dose with no vial named
+// costs one count its dose; a dose charged to the wrong vial costs two counts their accuracy,
+// and a remaining count is what the patient reorders on.
 //
 // Open and not disposed: a disposed vial is still on the shelf as history, and drawing from
 // it would put a dose into one the patient threw away. Nothing to draw from is a truth about

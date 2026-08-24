@@ -97,16 +97,10 @@ func Create(ctx context.Context, pool *pgxpool.Pool, draft Draft) (Written, erro
 //
 // An item the request names by its own identifier is rewritten in place; one it does not name
 // is added; one the course has and the request omits is dropped. That last is where 000019's
-// RESTRICT speaks: an item somebody has injected cannot be dropped, and the caller is told to
-// stop it by clearing `loggable` instead.
-//
-// The first version of this deleted every item unconditionally and re-inserted them, on the
-// argument that an item has no identity a client holds across an edit. It has one — Create
-// answers with the identifiers precisely so a form can hold them — and without it the whole
-// course became uneditable after the first logged dose: not merely the item, but the course's
-// status, so a course could be neither cancelled nor completed, and the `loggable` remedy —
-// which this doc names and the refusal itself does not — needed the very statement refused. Titration during a course is this
-// product's main clinical loop, and it was impossible.
+// Items are rewritten by identifier rather than dropped and re-made: Create answers with them
+// precisely so a form can hold them, and RESTRICT means an item somebody has injected cannot be
+// dropped at all. Delete-and-reinsert made a course uneditable — and uncancellable — after its
+// first logged dose, which is titration, this product's main clinical loop.
 func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft) (Written, error) {
 	if err := draft.Check(); err != nil {
 		return Written{}, err

@@ -45,28 +45,14 @@ var ErrPrefixNotAnIdentifier = errors.New("storage: a key's prefix must be one i
 
 // NewKey mints the key one object is stored under, below the given prefix.
 //
-// The server mints it and the client never chooses it: the prefix is the
-// patient's id, and both tables holding a key constrain it by a CHECK naming
-// that id. A client-supplied key would make that CHECK the only thing between a
-// patient and another patient's prefix; minting here means it is never reached.
+// A client-supplied key would leave the tables' patient_id CHECK as the only thing
+// between a patient and another's prefix; minting here means it is never reached.
 //
-// The prefix must be a single identifier, and that is checked here rather than
-// assumed. On the upload path this is the only gate: a signed PUT is handed out
-// without opening a transaction, so the shape check inside database.WithCaller
-// never runs, and a subject carrying a separator — «other-patient/x/..» — would
-// be signed into somebody else's prefix once a client normalised the path.
-// Today no such subject exists, because the identity provider issues a uuid;
-// this makes that a property of ours rather than of a component we do not own.
-//
-// database.IsUUIDShaped and not a parser of this package's own, because that
-// function's own doc says why: two definitions of «UUID-shaped» in one process
-// is one too many, and this is a context writing an identifier into those
-// tables. uuid.Parse is the looser one — it takes urn:uuid:, braces and the
-// undashed form, each of which mints a key no patient's CHECK can match.
-//
-// Lower-cased, because that predicate compares case-insensitively while the
-// CHECK compares the key against patient_id::text, which is canonical. Since the
-// predicate passed, lowering yields exactly that canonical rendering.
+// The prefix check is the named weakness of the upload path: a signed PUT opens no
+// transaction, so database.WithCaller's own shape check never runs, and a subject
+// carrying a separator would be signed into somebody else's prefix once a client
+// normalised it. IsUUIDShaped and not a local parser — see its doc. Lower-cased
+// because it compares case-insensitively and the CHECK compares against canonical.
 func NewKey(prefix, contentType string) (string, error) {
 	if !database.IsUUIDShaped(prefix) {
 		return "", fmt.Errorf("%w: %q", ErrPrefixNotAnIdentifier, prefix)

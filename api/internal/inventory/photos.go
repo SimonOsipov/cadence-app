@@ -32,7 +32,6 @@ type Photos interface {
 // because which of them it was is a fact about somebody else's cabinet.
 var ErrNoPhoto = errors.New("no photograph is readable here")
 
-// Service is this context's operations together with what they need to answer.
 type Service struct {
 	requests *pgxpool.Pool
 	photos   Photos

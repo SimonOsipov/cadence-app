@@ -321,10 +321,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 	}
 
 	// The same shape through ON CONFLICT, and it has to name the id or the DO UPDATE
-	// arm is unreachable: without it the conflict target is a fresh
-	// gen_random_uuid() that collides with nothing, so the statement quietly inserts
-	// a third vial and proves nothing. The first version of this test did exactly
-	// that.
+	// arm is unreachable: an unnamed conflict target is a fresh gen_random_uuid()
+	// that collides with nothing, so the statement quietly inserts a third vial.
 	//
 	// Named, it is refused by the column grant before any policy is consulted —
 	// `id` is not the patient's to write — which is a stronger answer than a
@@ -665,10 +663,8 @@ func (c clinic) serviceString(t *testing.T, sql, arg string) string {
 	return value
 }
 
-// refuse runs one statement on the service path and returns the SQLSTATE and the
-// constraint that refused it. The name and not only the code, for the reason the
-// protocol suite records: two constraints on one column refuse the same row, and a
-// code-only assertion cannot see that one of them is dead behind the other.
+// refuse runs one statement and answers the SQLSTATE and the constraint name — protocol's
+// suite records why the name matters.
 func (c clinic) refuse(t *testing.T, sql string, args ...any) (string, string) {
 	t.Helper()
 

@@ -17,9 +17,7 @@ import (
 // run: dosing imports protocol for the plan and the occurrence, so protocol cannot import
 // dosing back. What crosses the boundary is a zone and a list of slots — never a dose event.
 type History struct {
-	// The clock, injected for the reason it is everywhere in this feature: the rotation
-	// reads a window back from now, and a package that reads the clock cannot be run
-	// against a calendar.
+	// Injected: the rotation reads a window back from now.
 	now func() time.Time
 }
 

@@ -161,7 +161,7 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 		},
 		{
 			// The directory's own CHECKs, reached through the same resolver the write
-			// path uses. Round one added this rule to Go and left it out of the pair.
+			// path uses.
 			"a drug in a unit the directory refuses", itemWith(nil), 12, "",
 			civil.Date{},
 			&protocol.NewCompound{NameRU: "Ретатрутид", DefaultUnit: "ме", Route: "sc", Icon: "syringe"},

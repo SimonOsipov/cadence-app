@@ -380,9 +380,7 @@ func daysOn(t *testing.T, c clinic, patient, day string) int {
 
 // The vial is resolved and not chosen, which is the recorded invariant: exactly one open,
 // undisposed vial of the item's compound is the answer, and with two the server leaves it
-// empty rather than guessing. The KMP's mock takes the fullest of the two and admits in its
-// own comment that this is «at most wrong by one vial» — and a wrong vial is a wrong
-// remaining count, which is the number the patient reorders on.
+// empty rather than guessing — inventory.OpenVialFor's doc says why.
 func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 	for _, cabinet := range []struct {
 		name string
@@ -647,10 +645,8 @@ func TestASlotAnotherDeviceTookIsAlreadyLogged(t *testing.T) {
 		t.Fatalf("the other device: %v", err)
 	}
 
-	// And this one is answered by Resolve, which sees that row: the insert is never
-	// reached, so neither classify's slot arm nor the savepoint is executed here. Saying
-	// otherwise is what the first version of this comment did, four lines under a header
-	// that already said the truth.
+	// Answered by Resolve, which sees that row: the insert is never reached, so neither
+	// classify's slot arm nor the savepoint runs here.
 	logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
 		draftFor(c, patientA, nil))
 	if err != nil {

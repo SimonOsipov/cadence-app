@@ -17,8 +17,6 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
-// Service is this context's operations together with what they need to answer.
-//
 // The service pool alone: prescribing is a cross-actor write, and cadence_doctor holds no
 // INSERT on any of these tables. The request pool would answer nothing here.
 type Service struct {
@@ -32,9 +30,7 @@ type Service struct {
 	rotation Rotation
 	cabinet  Cabinet
 
-	// The clock, injected for the reason every day in this feature is: the summary is
-	// about the patient's own day, and a handler reading time.Now cannot be run against
-	// a calendar.
+	// Injected: see NewService.
 	now func() time.Time
 }
 
@@ -48,14 +44,10 @@ type Deps struct {
 	Cabinet     Cabinet
 }
 
-// NewService takes the clock as an argument and not as a field of Deps, because a field is a
-// thing a caller forgets: this wiring shipped without it for one commit, and all three reads
-// answered 500 in the assembled application while every test in this package passed — each
-// builds its own assembly. A positional parameter is the one form the compiler checks.
-//
-// It is the caller's and not this package's for the reason the generator's `today` parameter
-// exists, and the guard in this package's own suite enforces: a file here that read the clock
-// could not be run against a calendar.
+// NewService takes the clock positionally rather than as a field of Deps, because a field is a
+// thing a caller forgets: this wiring shipped without it for one commit and all three reads
+// answered 500 in the assembled application, while every test here passed — each builds its own
+// assembly. A positional parameter is the one form the compiler checks.
 func NewService(now func() time.Time, deps Deps) *Service {
 	return &Service{
 		service:  deps.ServicePool,

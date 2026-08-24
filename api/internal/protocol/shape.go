@@ -26,11 +26,6 @@ import (
 // compound_id nullable for the kinds that are not drugs, and a CHECK cannot tell which),
 // ErrItemNamedTwice (two rows of one request, and the schema sees one row at a time), and
 // to_week against duration_weeks, which live in different tables. Those are held here alone.
-//
-// The partition was stated wrongly three times running, always the same way — a rule added
-// here, the list not revisited, and once a count taken from the test's rows rather than from
-// the rules. The sets were right every time; the arithmetic was not, and nothing in a gate
-// checks arithmetic written in prose.
 var (
 	ErrWeeksOffRange            = errors.New("a course runs between one and 104 weeks")
 	ErrNotADay                  = errors.New("the calendar has no such day")

@@ -844,11 +844,9 @@ func TestTheReferenceIsReadableByBothRolesAndWritableByNeither(t *testing.T) {
 // bodies mention no subject at all — so what happens in front of a NULL subject is
 // the axis that would notice the day protocol_items stops depending on one.
 //
-// Three cases, and the first version of this test reached only the middle one: it
-// passed an empty and an unparseable subject to the seam, which refuses both
-// before a transaction opens, and then skipped the error. Twelve of eighteen
-// iterations asserted nothing, and the day the third subject stopped being
-// accepted the whole test would have gone green having measured nothing at all.
+// Three cases, and only the third reaches a policy at all: the seam refuses an
+// empty and an unparseable subject before a transaction opens, so passing those
+// and skipping the error is a test that asserts nothing.
 func TestWhatACallerWithoutAnIdentityCanReach(t *testing.T) {
 	c := newClinic(t)
 	tables := []string{"protocols", "protocol_items", "protocol_phases"}

@@ -90,12 +90,10 @@ func StatusOf(vial Vial, drawnFrom []VialID, today civil.Date) VialStatus {
 // Cabinet is one patient's vials, and it exists so that a mixed slice cannot be
 // handed to the arithmetic below.
 //
-// ReorderHintFor sums remaining doses and looks for a sealed spare across
-// everything it is given, and nothing in a vial makes the mixing visible: a
-// doctor-side caller reads several patients' cabinets in one result set under a
-// single policy, and every row in it is one they are entitled to — so the database
-// cannot catch this and the type has to. Patient B's sealed spare would otherwise
-// silence patient A's hint, and B's remaining doses would inflate A's weeks left.
+// ReorderHintFor sums across everything it is given, and a doctor-side read holds
+// several patients' cabinets in one result set, every row of it legitimate — so the
+// database cannot catch the mixing and the type has to: B's sealed spare would
+// otherwise silence A's hint.
 //
 // The field is unexported, so the only way to build a non-empty one is the
 // constructor — a bare Cabinet{} is constructible anywhere and holds nothing, which

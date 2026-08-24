@@ -283,9 +283,8 @@ func (c clinic) changed(t *testing.T, subject, role, sql string, args ...any) in
 	return affected
 }
 
-// refuse runs one statement and returns the SQLSTATE and the constraint that
-// refused it — the name and not only the code, because two constraints on one
-// column refuse the same row and this schema has had one dead behind another.
+// refuse runs one statement and answers the SQLSTATE and the constraint name — protocol's
+// suite records why the name matters.
 func (c clinic) refuse(t *testing.T, subject, role, sql string, args ...any) (string, string) {
 	t.Helper()
 
