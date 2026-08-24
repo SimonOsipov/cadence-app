@@ -126,12 +126,17 @@ func TestAPrefixThatIsNotOneIdentifierIsRefused(t *testing.T) {
 // accepts, and that one compares against patient_id::text — canonical lower case.
 // Without this an upper-case subject uploads, and then cannot record the dose.
 func TestAnUpperCaseIdentifierMintsACanonicalKey(t *testing.T) {
+	allowed := constraintFrom(t, "000019_dose_events_tables.up.sql",
+		"dose_events_photo_key_is_under_its_own_prefix")
+
 	key, err := storage.NewKey(strings.ToUpper(patient), "image/jpeg")
 	if err != nil {
 		t.Fatalf("minting for an upper-case subject: %v", err)
 	}
-	if !strings.HasPrefix(key, patient+"/") {
-		t.Errorf("minted %q, want it under %q", key, patient)
+	// Against the constraint itself and not a prefix of my own: the claim is that
+	// the database would take this key, and the database is what states that.
+	if !allowed.MatchString(key) {
+		t.Errorf("the database would refuse %q, minted for an upper-case subject", key)
 	}
 }
 

@@ -71,7 +71,8 @@ type Logged struct {
 func Log(
 	ctx context.Context, pool *pgxpool.Pool, caller database.Caller, now time.Time, draft Draft,
 ) (Logged, error) {
-	// Lower-cased once, here. IsUUIDShaped accepts a non-canonical spelling deliberately,
+	// Lower-cased on this path; storage.NewKey does the same for the key it mints, and for
+	// the same reason. IsUUIDShaped accepts a non-canonical spelling deliberately,
 	// and the database answers patient_id::text in canonical lowercase — so an uppercase
 	// subject would make journal.Merge's ownership comparison, which is a Go string
 	// equality between the two, refuse the patient's own day.

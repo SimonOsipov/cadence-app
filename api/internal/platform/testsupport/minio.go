@@ -62,11 +62,13 @@ func StartObjectStore(t *testing.T, buckets ...string) *ObjectStore {
 			"mkdir -p "+strings.Join(made, " ")+" && exec minio server /data"),
 		testcontainers.WithCmd(),
 		testcontainers.WithExposedPorts(minioPort),
-		// Readiness and not liveness. /minio/health/live answers 200 as soon as
-		// the process is up; the object layer can still refuse a write with 503
-		// behind it, and it did — a signed upload in the dosing suite answered
-		// 503 whenever several of these ran at once. /minio/health/cluster is the
-		// one that reports write quorum.
+		// Readiness and not liveness, and the measurement behind that: on this
+		// pinned digest /minio/health/live answers 200 up to ~15ms before
+		// /minio/health/cluster does, and a signed PUT in that window is 503.
+		// Under /live the full integration suite failed twice out of two on a
+		// signed upload; under /cluster, three runs and no 503. Two reproductions
+		// against a window that narrow is evidence of the mechanism, not proof
+		// the flake is gone.
 		testcontainers.WithWaitStrategy(
 			wait.ForHTTP("/minio/health/cluster").WithPort(minioPort),
 		),

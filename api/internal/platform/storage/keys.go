@@ -12,9 +12,6 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
-// The image types a photograph may be stored and served as, and the extension
-// each is written under.
-//
 // The types an upload may declare, and the extension each is minted under. Not a
 // closed set on the way out: ContentTypeFor has to answer for keys this map never
 // minted.
