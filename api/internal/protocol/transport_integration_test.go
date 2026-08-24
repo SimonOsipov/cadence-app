@@ -180,12 +180,9 @@ func TestEachDeclaredStatusIsReachable(t *testing.T) {
 
 // The row the design draws, sent the way a generated client sends it.
 //
-// Both halves of it were refused until step 11, and by two different mechanisms —
-// the validator refused a supplement that named a drug, and the published schema
-// carried minItems on phases, so a client with a required array sent `[]` and got
-// 422. The second is invisible from inside the package: Course.draft never sees
-// the schema, and the drift test pins the document's text rather than what the API
-// takes. This is the one place that asks.
+// The published schema carried minItems on phases, so a client with a required array sent
+// `[]` and got 422 — invisible from inside the package, because Course.draft never sees the
+// schema and the drift test pins the document's text rather than what the API takes.
 func TestASupplementWithADrugAndNoPhasesIsPrescribed(t *testing.T) {
 	pool, _ := prescribing(t)
 

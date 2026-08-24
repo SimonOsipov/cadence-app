@@ -40,10 +40,8 @@ func TestProtocolDoesNotImportItsCallers(t *testing.T) {
 // listed — the same reason internal/router reconciles its registry against internal/: a list
 // is a thing new files are absent from, and absence there means exemption.
 //
-// A *denylist* of transport files would be the wrong shape: this project puts one aggregate
-// per file with the check, the transaction and the SQL mixed in — internal/identity has
-// twelve such files and only one is called handler.go — so step 6's protocols.go would fail
-// a check it conforms to, and the fix would be to keep widening the exemption.
+// A denylist of transport files would be the wrong shape: this project puts one aggregate per
+// file with the check, the transaction and the SQL mixed in, so the exemption would only widen.
 var (
 	generator = []string{
 		"types.go",

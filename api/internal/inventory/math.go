@@ -90,14 +90,10 @@ func StatusOf(vial Vial, drawnFrom []VialID, today civil.Date) VialStatus {
 // Cabinet is one patient's vials, and it exists so that a mixed slice cannot be
 // handed to the arithmetic below.
 //
-// ReorderHintFor sums across everything it is given, and a doctor-side read holds
-// several patients' cabinets in one result set, every row of it legitimate — so the
-// database cannot catch the mixing and the type has to: B's sealed spare would
-// otherwise silence A's hint.
-//
-// The field is unexported, so the only way to build a non-empty one is the
-// constructor — a bare Cabinet{} is constructible anywhere and holds nothing, which
-// yields no hint rather than a mixed answer. Naming the wrong patient does the same.
+// ReorderHintFor sums across everything it is given, and a doctor-side read holds several
+// patients' cabinets in one legitimate result set — so the database cannot catch the mixing
+// and the type has to. The field is unexported: a bare Cabinet{} holds nothing, which yields
+// no hint rather than a mixed answer.
 type Cabinet struct {
 	vials []Vial
 }

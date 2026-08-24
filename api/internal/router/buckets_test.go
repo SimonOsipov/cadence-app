@@ -104,10 +104,9 @@ func TestTheContextsAreHandedTheirOwnBuckets(t *testing.T) {
 // does, with the object store replaced and the two buckets given names that
 // cannot be confused for each other.
 //
-// The pool is real but never reached: this one operation opens no transaction,
-// and pgxpool connects lazily, so nothing here needs a database. What it does
-// need is a pool that is not nil, because a nil one is how the document
-// generator is told to declare the operations without wiring them.
+// The pool is real but never reached — this operation opens no transaction and pgxpool
+// connects lazily. It must not be nil: that is how the document generator is told to declare
+// the operations without wiring them.
 func assembledWithPhotos(
 	t *testing.T, photos router.Photos, vials, injections string,
 ) (*chi.Mux, *fixture) {

@@ -31,13 +31,9 @@ type ObjectStore struct {
 // StartObjectStore runs MinIO for one test, creates the named buckets, and
 // reaps the container afterwards.
 //
-// Path-style addressing is what the returned endpoint expects: the buckets live
-// under a host with no wildcard DNS, so {bucket}.{host} resolves to nothing.
-//
-// The buckets are made as directories rather than through the S3 API, because
-// the API would need the SDK here — and TestOnlyThisPackageImportsTheSDK exists
-// to keep it reachable from exactly one package. MinIO's filesystem backend
-// treats each top-level directory under its data root as a bucket.
+// Path-style: the buckets live under a host with no wildcard DNS. They are made as directories
+// rather than through the S3 API, which would need the SDK here — and
+// TestOnlyThisPackageImportsTheSDK keeps it reachable from exactly one package.
 func StartObjectStore(t *testing.T, buckets ...string) *ObjectStore {
 	t.Helper()
 

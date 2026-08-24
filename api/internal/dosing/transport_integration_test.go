@@ -152,15 +152,10 @@ func TestEachOutcomeIsReachedThroughTheTransport(t *testing.T) {
 	}
 }
 
-// The three closed sets the wire carries, refused before they become values — and by the
-// generated schema rather than by the parsers: huma validates `enum` on the body before the
-// handler runs, so none of these reaches parseSite, ParseTag or ParseDoseUnit. That is worth
-// saying rather than claiming the opposite, which the first version of this comment did.
-//
-// The parsers do have callers — (*Service).draft, which only the handler reaches, and this
-// package's own read path (write.go's InjectionsOf and entryOn, turning a stored string back
-// into a member of its set). What none of them is, is a request: by the time draft runs, the
-// schema has already refused every body below. Each parser has a test beside its declaration.
+// The three closed sets the wire carries, refused by the generated schema rather than by the
+// parsers: huma validates `enum` before the handler runs, so none of these reaches parseSite,
+// ParseTag or ParseDoseUnit. Those are reached by (*Service).draft and by this package's read
+// path, and by the time either runs the schema has refused every body below.
 func TestAValueOffAClosedSetIsRefused(t *testing.T) {
 	c := newClinic(t)
 

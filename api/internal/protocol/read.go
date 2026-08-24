@@ -47,12 +47,9 @@ func ActivePlanFor(ctx context.Context, tx pgx.Tx, patient civil.UserID) (Plan, 
 
 // readItems fills the items and their phases.
 //
-// Ordered by id, which is stable and arbitrary — and it is worth saying that it is not the
-// order the course was written in. protocol_items carries no position and no created_at, so
-// the request order the write answers its identifiers in is not recoverable from the row.
-// Nothing needs it today: the generator keys occurrences on the item, and a dose resolves
-// within one item's slots. A surface that lists a course's items has to choose an order of
-// its own, and if the editor ever needs the doctor's, that is a column.
+// Ordered by id: stable, arbitrary, and not the order the course was written in —
+// protocol_items carries no position and no created_at, so the doctor's order is not
+// recoverable from the row. If the editor ever needs it, that is a column.
 func readItems(ctx context.Context, tx pgx.Tx, plan *Plan) error {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, kind, compound_id::text, cadence, days_of_week, times, loggable

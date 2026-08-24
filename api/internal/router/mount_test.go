@@ -213,15 +213,12 @@ func TestHealthzStillReportsAFailingProbe(t *testing.T) {
 	}
 }
 
-// The 3.0 document is served for tools that are not 3.1 compatible, and a tool
-// that is not 3.1 compatible is exactly the one that will choke on a type 3.0
-// does not have. huma's downgrade converts type *arrays* only, so the scalar
-// "type": "null" that is 3.1's only spelling for «this $ref or null» reaches the
-// 3.0.3 document untouched; httpserver replaces the handler to repair it.
+// huma's downgrade converts type *arrays* only, so the scalar "type": "null" — 3.1's only
+// spelling for «this $ref or null» — reaches the 3.0.3 document untouched, and a tool that is
+// not 3.1 compatible is exactly the one that chokes on it.
 //
-// This also pins the mechanism: the replacement works because chi's last
-// registration for a method and pattern wins. If that ever stops being true the
-// first assertion below fails, rather than the document quietly going invalid.
+// It also pins the mechanism: the repair works because chi's last registration wins, and the
+// first assertion below fails if that ever stops being true.
 func TestTheThirtyDocumentIsValid(t *testing.T) {
 	handler, _ := assembled(t, func(context.Context) error { return nil })
 

@@ -47,10 +47,9 @@ type NewCompound struct {
 // here on purpose, so a name collision cannot rewrite a row other courses point at.
 // EnterNewDrugs inserts every drug a draft names by name, in one pass and in a fixed order.
 //
-// Sorted by normalised name, and that ordering is load-bearing across tenants: app.compounds
-// is the one table every patient shares, so {X, Y} against {Y, X} at the same moment deadlocks
-// on compounds_one_row_per_name and one patient's write fails because of another's. It runs
-// before any item is written, so that contention is over before the course's own rows.
+// Sorted by normalised name, and the ordering is load-bearing across tenants: app.compounds is
+// the one table every patient shares, so {X, Y} against {Y, X} deadlocks and one patient's
+// write fails because of another's.
 func EnterNewDrugs(ctx context.Context, tx pgx.Tx, items []DraftItem) error {
 	names := make([]string, 0, len(items))
 	described := make(map[string]NewCompound, len(items))

@@ -91,9 +91,8 @@ func (d CheckInDraft) ReadingsAreOnTheScale() bool {
 // reported this morning did not stop being true by evening; and provenance is set
 // once, so «born of a dose» stays true of the day however it is edited afterwards.
 //
-// `patient` is the token subject and never a body field: it is what the two refusals
-// below compare against, so a body field would decide ownership from the same place
-// that is trying to cross it. Nothing is written through to `existing`.
+// `patient` is the token subject and never a body field, so ownership is not decided from the
+// same place that is trying to cross it. Nothing is written through to `existing`.
 func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Source) (Entry, error) {
 	merged := Entry{
 		PatientID: patient,
