@@ -8,8 +8,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../../api"
 
-echo "==> gofmt"
-unformatted=$(gofmt -l .)
+# gofumpt and not gofmt, because gofumpt is what the conventions require and it
+# is the stricter of the two: it rejects things gofmt accepts, such as a closing
+# paren left hanging after a multi-line argument list. This check said «run
+# gofumpt -w .» while measuring gofmt until 2026-08-24, and nine files in api/
+# were gofmt-clean and gofumpt-dirty for ninety commits behind a green gate.
+#
+# Absent rather than installed is a failure, like golangci-lint below: a
+# formatter that is not there would otherwise report every file as fine.
+echo "==> gofumpt"
+if ! command -v gofumpt >/dev/null 2>&1; then
+    echo "gofumpt is not installed — install it before trusting this gate" >&2
+    exit 1
+fi
+
+# -e so that a file gofumpt cannot parse is an error and not an empty list, and
+# the exit status is read separately from the list: unformatted files and a
+# broken formatter both print, and only the first is about the code.
+if ! unformatted=$(gofumpt -l -e . 2>&1); then
+    echo "gofumpt itself failed:" >&2
+    echo "$unformatted" >&2
+    exit 1
+fi
 if [ -n "$unformatted" ]; then
     echo "these files are not formatted (run 'gofumpt -w .'):"
     echo "$unformatted"

@@ -92,7 +92,13 @@ func NewAPI(router *chi.Mux) huma.API {
 	// which is most of the errors this has to record.
 	config.Transformers = append(config.Transformers, logProblem)
 
-	return humachi.New(router, config)
+	api := humachi.New(router, config)
+
+	// After humachi, deliberately: it replaces the two 3.0 handlers huma has
+	// just registered.
+	serveThirty(router, api)
+
+	return api
 }
 
 var problemErrorsOnce sync.Once

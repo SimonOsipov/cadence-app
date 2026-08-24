@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -209,5 +210,116 @@ func TestHealthzStillReportsAFailingProbe(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Type"); got != httpserver.ProblemContentType {
 		t.Errorf("Content-Type = %q, want %q", got, httpserver.ProblemContentType)
+	}
+}
+
+// huma's downgrade converts type *arrays* only, so the scalar "type": "null" — 3.1's only
+// spelling for «this $ref or null» — reaches the 3.0.3 document untouched, and a tool that is
+// not 3.1 compatible is exactly the one that chokes on it.
+//
+// It also pins the mechanism: the repair works because chi's last registration wins, and the
+// first assertion below fails if that ever stops being true.
+func TestTheThirtyDocumentIsValid(t *testing.T) {
+	handler, _ := assembled(t, func(context.Context) error { return nil })
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi-3.0.json", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var document map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); err != nil {
+		t.Fatalf("the 3.0 document is not JSON: %v", err)
+	}
+
+	if got := document["openapi"]; got != "3.0.3" {
+		t.Errorf("openapi = %v, want 3.0.3", got)
+	}
+
+	// Anywhere, not just on the three properties known today: a fourth nullable
+	// $ref added later is the case this is here to catch.
+	if found := whereNullTypeIs(document, ""); len(found) > 0 {
+		t.Errorf("the 3.0 document carries a type 3.0 has no value for, at:\n  %s",
+			strings.Join(found, "\n  "))
+	}
+
+	schemas, ok := document["components"].(map[string]any)["schemas"].(map[string]any)
+	if !ok {
+		t.Fatal("the 3.0 document has no component schemas")
+	}
+
+	for _, want := range []struct{ schema, property, ref string }{
+		{"TodayBody", "meal_macros", "#/components/schemas/MacrosBody"},
+		{"TodayBody", "targets", "#/components/schemas/MacrosBody"},
+		{"RowBody", "compound", "#/components/schemas/CompoundBody"},
+	} {
+		owner, ok := schemas[want.schema].(map[string]any)
+		if !ok {
+			t.Errorf("%s is missing from the 3.0 document", want.schema)
+			continue
+		}
+		property, ok := owner["properties"].(map[string]any)[want.property].(map[string]any)
+		if !ok {
+			t.Errorf("%s.%s is missing from the 3.0 document", want.schema, want.property)
+			continue
+		}
+
+		// The whole point of the repair: the reference survives, so a generated
+		// client still names the type instead of inlining an anonymous copy.
+		if property["nullable"] != true {
+			t.Errorf("%s.%s is not nullable in 3.0: %v", want.schema, want.property, property)
+		}
+		members, ok := property["allOf"].([]any)
+		if !ok || len(members) != 1 {
+			t.Errorf("%s.%s is not allOf with one member: %v", want.schema, want.property, property)
+			continue
+		}
+		member, _ := members[0].(map[string]any)
+		if got := member["$ref"]; got != want.ref {
+			t.Errorf("%s.%s references %v, want %s", want.schema, want.property, got, want.ref)
+		}
+	}
+}
+
+// whereNullTypeIs answers the JSON paths carrying `"type": "null"`, so a failure
+// names the property rather than only asserting that one exists.
+func whereNullTypeIs(node any, at string) []string {
+	var found []string
+
+	switch value := node.(type) {
+	case map[string]any:
+		if value["type"] == "null" {
+			found = append(found, at)
+		}
+		for key, child := range value {
+			found = append(found, whereNullTypeIs(child, at+"."+key)...)
+		}
+	case []any:
+		for i, item := range value {
+			found = append(found, whereNullTypeIs(item, fmt.Sprintf("%s[%d]", at, i))...)
+		}
+	}
+
+	return found
+}
+
+// The YAML document is the same document, and the repair has to reach it too —
+// huma builds it by converting the JSON, and so does this.
+func TestTheThirtyYAMLDocumentIsRepairedToo(t *testing.T) {
+	handler, _ := assembled(t, func(context.Context) error { return nil })
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi-3.0.yaml", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "type: null") {
+		t.Error("the 3.0 YAML document still carries a null type")
+	}
+	if !strings.Contains(rec.Body.String(), "nullable: true") {
+		t.Error("the 3.0 YAML document carries no nullable property")
 	}
 }

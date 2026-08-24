@@ -32,6 +32,45 @@ func identityTables() []string {
 	}
 }
 
+// The prescription, added by 000013. Kept apart from the identity list rather
+// than folded into it: the two arrive in different migrations, and a reader
+// asking «which tables did the protocol block add» should find the answer as a
+// list rather than as a diff.
+func protocolTables() []string {
+	return []string{
+		"compounds",
+		"protocol_items",
+		"protocol_phases",
+		"protocols",
+	}
+}
+
+// The medicine cabinet, added by 000015. One table, and kept in a list of its own
+// for the reason the protocol list is: a reader asking «what did the inventory
+// block add» should find a list rather than a diff.
+func inventoryTables() []string {
+	return []string{"vials"}
+}
+
+// The wellbeing diary, added by 000017.
+func journalTables() []string {
+	return []string{"journal_entries"}
+}
+
+// The clinical fact stream, added by 000019.
+func dosingTables() []string {
+	return []string{"dose_events"}
+}
+
+// Every table the chain creates, sorted the way the catalogue returns them.
+func appTables() []string {
+	all := append(append(append(append(append([]string{},
+		identityTables()...), protocolTables()...), inventoryTables()...), journalTables()...),
+		dosingTables()...)
+	slices.Sort(all)
+	return all
+}
+
 // The pg_class sweeps have been in the suite since the first migration and have
 // been passing vacuously ever since — there were no tables to walk. This is the
 // step where that stops, and the emptiness is worth asserting against: a sweep
@@ -64,8 +103,8 @@ func TestTheSchemaHoldsExactlyTheTablesDeclared(t *testing.T) {
 		t.Fatalf("iterating: %v", err)
 	}
 
-	if !slices.Equal(found, identityTables()) {
-		t.Errorf("schema %s holds %v, want exactly %v", testsupport.AppSchema, found, identityTables())
+	if !slices.Equal(found, appTables()) {
+		t.Errorf("schema %s holds %v, want exactly %v", testsupport.AppSchema, found, appTables())
 	}
 }
 
@@ -131,7 +170,7 @@ func unforced(t *testing.T, db *testsupport.Database) *pgx.Conn {
 		t.Fatalf("becoming the owner: %v", err)
 	}
 
-	for _, table := range identityTables() {
+	for _, table := range appTables() {
 		if _, err := conn.Exec(
 			t.Context(), `ALTER TABLE app.`+table+` NO FORCE ROW LEVEL SECURITY`,
 		); err != nil {
@@ -649,6 +688,104 @@ func identityColumns() map[string][]string {
 			"invited_at timestamp with time zone NOT NULL DEFAULT now()",
 			"role text NOT NULL",
 		},
+		// The prescription. Every dose is a number and a unit — «0,25 мг» is a
+		// rendering — and nothing derived is stored: there is no status column on
+		// an item, no remaining anywhere, and no materialized schedule.
+		"compounds": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			// Nullable on purpose: a seeded compound carries a code so the seed is
+			// idempotent under a rename; one a doctor types in has none.
+			"code text NULL",
+			"name_ru text NOT NULL",
+			"default_unit text NOT NULL",
+			"route text NOT NULL",
+			"icon text NOT NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		"protocols": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"patient_id uuid NOT NULL",
+			"start_date date NOT NULL",
+			"duration_weeks integer NOT NULL",
+			"status text NOT NULL",
+			"created_by uuid NULL",
+			"notes text NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		"protocol_items": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"protocol_id uuid NOT NULL",
+			"kind text NOT NULL",
+			"compound_id uuid NULL",
+			"cadence text NOT NULL",
+			"days_of_week ARRAY _int2 NOT NULL DEFAULT '{}'::smallint[]",
+			"times ARRAY _time NOT NULL",
+			"loggable boolean NOT NULL DEFAULT true",
+		},
+		"protocol_phases": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"protocol_item_id uuid NOT NULL",
+			"from_week integer NOT NULL",
+			"to_week integer NOT NULL",
+			"dose_value numeric NOT NULL",
+			"dose_unit text NOT NULL",
+		},
+		// The medicine cabinet, and what is not in it is the point: no status, no
+		// remaining. Both are derived on read from total_doses and the dose events
+		// drawn from the vial.
+		"vials": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"patient_id uuid NOT NULL",
+			"compound_id uuid NOT NULL",
+			"concentration_label text NOT NULL",
+			"total_doses integer NOT NULL",
+			// Null until opened; that absence is the whole of «sealed».
+			"opened_at date NULL",
+			"expires_on date NOT NULL",
+			"lot text NULL",
+			"location_ru text NULL",
+			"disposed_at date NULL",
+			"label_photo_path text NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		// One entry per day, and the day is half the primary key. No cycle day: it is
+		// derived from the protocol's start date and a stored copy would go stale on
+		// the first edit.
+		"journal_entries": {
+			"patient_id uuid NOT NULL",
+			"entry_date date NOT NULL",
+			"mood smallint NULL",
+			"energy smallint NULL",
+			"sleep smallint NULL",
+			"tags ARRAY _text NOT NULL DEFAULT '{}'::text[]",
+			"note text NULL",
+			"source text NOT NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		// The one clinical fact everything else is measured against. protocol_id is
+		// half a composite key and not stored derived state: it is what lets the
+		// chain of foreign keys bind a dose to its own patient's course, which no
+		// CHECK can express and no policy can hold on the service path.
+		"dose_events": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"patient_id uuid NOT NULL",
+			"protocol_id uuid NOT NULL",
+			"protocol_item_id uuid NOT NULL",
+			"vial_id uuid NULL",
+			"compound_id uuid NULL",
+			"scheduled_for_date date NOT NULL",
+			"scheduled_for_time time without time zone NULL",
+			"injected_at timestamp with time zone NOT NULL",
+			"dose_value numeric NOT NULL",
+			"dose_unit text NOT NULL",
+			"site_code text NULL",
+			"mood smallint NULL",
+			"side_effects ARRAY _text NOT NULL DEFAULT '{}'::text[]",
+			"note text NULL",
+			"photo_path text NULL",
+			"client_request_id text NOT NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
 		"audit_log": {
 			"id bigint NOT NULL GENERATED ALWAYS AS IDENTITY",
 			"at timestamp with time zone NOT NULL DEFAULT now()",
@@ -668,8 +805,13 @@ func TestTheColumnsAreTheOnesDeclared(t *testing.T) {
 	conn := testsupport.Connect(t, db.SuperuserURL)
 
 	rows, err := conn.Query(t.Context(), `
-		SELECT table_name, column_name, data_type, is_nullable,
-		       coalesce(column_default, ''), is_identity
+		SELECT table_name, column_name,
+		       -- data_type is the literal string ARRAY for every array type, so it
+		       -- pins nothing about the element. udt_name carries it (_int2, _time),
+		       -- and is appended only where it would otherwise be lost — every other
+		       -- line in the registry stays as it was written.
+		       CASE WHEN data_type = 'ARRAY' THEN data_type || ' ' || udt_name ELSE data_type END,
+		       is_nullable, coalesce(column_default, ''), is_identity
 		FROM information_schema.columns
 		WHERE table_schema = $1
 		ORDER BY table_name, ordinal_position

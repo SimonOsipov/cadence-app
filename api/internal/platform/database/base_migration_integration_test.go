@@ -691,6 +691,20 @@ func TestBaseMigrationRollsBackCleanly(t *testing.T) {
 			t.Errorf("role %s survived the rollback", role)
 		}
 	}
+
+	// btree_gist lives outside app, so DROP SCHEMA app CASCADE does not reach it
+	// and every assertion above is blind to it. A chain that leaves an extension
+	// installed is one whose next apply starts from a state nobody described.
+	var extensions int
+	if err := admin.QueryRow(
+		ctx,
+		`SELECT count(*) FROM pg_extension WHERE extname <> 'plpgsql'`,
+	).Scan(&extensions); err != nil {
+		t.Fatalf("counting the extensions: %v", err)
+	}
+	if extensions != 0 {
+		t.Errorf("%d extension(s) survived the rollback", extensions)
+	}
 }
 
 // The Makefile's migrate-down target passes no argument, which resolves to one
@@ -839,6 +853,16 @@ func TestUnwindingTheChainOneStepAtATimeReachesTheBase(t *testing.T) {
 				FROM pg_db_role_setting s
 				JOIN pg_roles r ON r.oid = s.setrole
 				WHERE r.rolname = ANY($2)
+				UNION ALL
+				-- Extensions, and they are not schema-scoped: 000013 installs
+				-- btree_gist outside app, so every line above is blind to it and a
+				-- migration whose whole content is CREATE EXTENSION would pass the
+				-- witness with an empty down file. plpgsql is excluded because the
+				-- cluster arrives with it.
+				SELECT 'e ' || e.extname || ' in ' || n.nspname
+				FROM pg_extension e
+				JOIN pg_namespace n ON n.oid = e.extnamespace
+				WHERE e.extname <> 'plpgsql'
 			) AS objects
 		`, testsupport.AppSchema, testsupport.ChainRoles()).Scan(&description); err != nil {
 			t.Fatalf("describing the schema: %v", err)

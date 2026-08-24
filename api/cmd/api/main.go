@@ -16,6 +16,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/provisioning"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 	"github.com/SimonOsipov/cadence-app/api/internal/router"
 )
 
@@ -102,14 +103,28 @@ func run(logger *slog.Logger) error {
 		AllowedOrigins: cfg.CORS.AllowedOrigins,
 	}, logger)
 
+	photos, err := storage.New(storage.Config{
+		Endpoint:        cfg.Storage.Endpoint,
+		Region:          cfg.Storage.Region,
+		AccessKeyID:     cfg.Storage.AccessKeyID,
+		SecretAccessKey: cfg.Storage.SecretAccessKey,
+		PathStyle:       cfg.Storage.PathStyle,
+	}, time.Now)
+	if err != nil {
+		return fmt.Errorf("building the object store signer: %w", err)
+	}
+
 	// One assembly, shared with the test that walks it: everything mounted is
 	// guarded unless it is on the exemption list, and the list lives with the
 	// transport paths it names.
 	router.Mount(srv.Router, router.Options{
-		Verifier:    verifier,
-		Pool:        pool,
-		ServicePool: servicePool,
-		Provisioner: provisioner,
+		Verifier:         verifier,
+		Pool:             pool,
+		ServicePool:      servicePool,
+		Provisioner:      provisioner,
+		Photos:           photos,
+		VialsBucket:      cfg.Storage.VialsBucket,
+		InjectionsBucket: cfg.Storage.InjectionsBucket,
 		Probe: func(ctx context.Context) error {
 			ctx, cancel := context.WithTimeout(ctx, healthProbeTimeout)
 			defer cancel()

@@ -1,0 +1,460 @@
+package protocol
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+)
+
+var (
+	// The authorization no policy holds. The service path's predicates are USING (true),
+	// so a doctor writing a course for somebody who is not their patient is refused here
+	// or nowhere — this is the one place in this context where the database is not the
+	// last word, and it is written down rather than implied.
+	ErrNotYourPatient = errors.New("the patient is not on this caller's care team")
+
+	// A patient reaching this path at all is a wiring mistake: they have no route to it,
+	// and the check exists so that a future one cannot arrive without a decision.
+	ErrNotAPrescriber = errors.New("only a doctor or an admin prescribes")
+
+	// The partial unique index speaking. Ending a course is a status change, so this is
+	// «finish the one that is running» rather than a retry.
+	ErrAlreadyRunning = errors.New("the patient already has a course running")
+
+	ErrNoSuchProtocol = errors.New("no such course")
+
+	// An item named by an identifier the course does not hold. Scoped to the course as
+	// well as to the row, so this also covers an item of somebody else's course.
+	ErrNoSuchItem = errors.New("no such item in this course")
+
+	// Refused before the seam opens: a cast that fails inside a transaction is a 500
+	// where a refusal belongs. It lives here rather than in Draft.Check because the
+	// generator may not import the database package, and IsUUIDShaped is its.
+	ErrMalformedIdentifier = errors.New("the identifier is not a UUID")
+
+	// A patient whose profile carries no zone. Every occurrence is generated in their own
+	// day, so there is no safe default: the server's would answer about a different day
+	// for half a clinic, and refusing says which patient to fix.
+	ErrNoTimezone = errors.New("the patient's timezone is not recorded")
+)
+
+// Written is what the caller gets back: the identifiers the database chose, in the order the
+// items and phases were sent, so a client can match its own form rows to them.
+type Written struct {
+	ProtocolID ProtocolID
+	ItemIDs    []ProtocolItemID
+}
+
+// Create writes a course, its items and their phases in one transaction, through the service
+// seam, with an audit row.
+//
+// The service seam and not the request one, because this is a cross-actor write: the doctor
+// prescribes for somebody else, and `cadence_doctor` holds no INSERT on any of these tables.
+// What that costs is that RLS answers nothing here, which is why the care-team check above
+// runs first and why it is the subject of its own test.
+func Create(ctx context.Context, pool *pgxpool.Pool, draft Draft) (Written, error) {
+	if err := draft.Check(); err != nil {
+		return Written{}, err
+	}
+	if !database.IsUUIDShaped(string(draft.PatientID)) {
+		return Written{}, fmt.Errorf("%q: %w", draft.PatientID, ErrMalformedIdentifier)
+	}
+
+	var written Written
+	err := database.WithService(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+		if err := requireCaresFor(ctx, tx, draft.PatientID); err != nil {
+			return err
+		}
+
+		var err error
+		if err := EnterNewDrugs(ctx, tx, draft.Items); err != nil {
+			return err
+		}
+
+		written, err = write(ctx, tx, draft)
+		if err != nil {
+			return err
+		}
+
+		return writeAudit(ctx, tx, "protocol.create", string(written.ProtocolID), string(draft.PatientID))
+	})
+	if err != nil {
+		return Written{}, fmt.Errorf("prescribing for %s: %w", draft.PatientID, classify(err))
+	}
+
+	return written, nil
+}
+
+// Replace rewrites a course, keeping the course row and its identifier.
+//
+// An item the request names is rewritten in place, one it does not is added, one it omits is
+// dropped — and 000019's RESTRICT refuses the drop if a dose refers to it. Rewriting rather
+// than delete-and-reinsert is why: the latter made a course uneditable, and uncancellable,
+// after its first logged dose, which is titration.
+func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft) (Written, error) {
+	if err := draft.Check(); err != nil {
+		return Written{}, err
+	}
+	identifiers := []string{string(draft.PatientID), string(id)}
+	for _, item := range draft.Items {
+		if item.ID != nil {
+			identifiers = append(identifiers, string(*item.ID))
+		}
+	}
+	for _, identifier := range identifiers {
+		if !database.IsUUIDShaped(identifier) {
+			return Written{}, fmt.Errorf("%q: %w", identifier, ErrMalformedIdentifier)
+		}
+	}
+
+	var written Written
+	err := database.WithService(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+		// Authorized on the path's patient before a row is read, and the order is the
+		// finding rather than a style: reading the owner first made the reply an
+		// oracle. An unassigned doctor holding a course id got 403 where the course
+		// existed and belonged to the named patient, and 404 otherwise — one bit of
+		// protocols.patient_id per request, to a caller RLS would show nothing.
+		// identity's own write path authorizes before it reads for the same reason.
+		if err := requireCaresFor(ctx, tx, draft.PatientID); err != nil {
+			return err
+		}
+
+		owner, err := ownerOf(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		// The owner is not named in the refusal: it is the one thing this caller must
+		// not learn, and the course id alone identifies the refusal in a log.
+		if owner != draft.PatientID {
+			return fmt.Errorf("course %s: %w", id, ErrNoSuchProtocol)
+		}
+
+		// Scoped by the patient as well, so this file says the same thing everywhere.
+		// Unlike the phase statements this is consistency and not a second lock:
+		// measured, removing it changes no test's behaviour, and it could not — with
+		// the comparison above gone it would update nothing rather than refuse, and a
+		// silent zero is what data-layer invariant 5 warns about. ownerOf is the lock;
+		// the column grant is what makes patient_id unwritable in the first place.
+		if _, err := tx.Exec(ctx, `
+			UPDATE app.protocols
+			SET start_date = $3::date, duration_weeks = $4, status = $5, notes = $6
+			WHERE id = $1 AND patient_id = $2
+		`, string(id), string(draft.PatientID), draft.StartDate.String(), draft.Weeks,
+			string(draft.Status), draft.Notes); err != nil {
+			return err
+		}
+		if err := EnterNewDrugs(ctx, tx, draft.Items); err != nil {
+			return err
+		}
+
+		written.ProtocolID = id
+		if err := rewriteItems(ctx, tx, &written, draft); err != nil {
+			return err
+		}
+
+		return writeAudit(ctx, tx, "protocol.replace", string(id), string(draft.PatientID))
+	})
+	if err != nil {
+		return Written{}, fmt.Errorf("rewriting course %s: %w", id, classify(err))
+	}
+
+	return written, nil
+}
+
+func write(ctx context.Context, tx pgx.Tx, draft Draft) (Written, error) {
+	var written Written
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO app.protocols (patient_id, start_date, duration_weeks, status, created_by, notes)
+		VALUES ($1, $2::date, $3, $4, nullif(current_setting($6, true), '')::uuid, $5)
+		RETURNING id::text
+	`, string(draft.PatientID), draft.StartDate.String(), draft.Weeks, string(draft.Status),
+		draft.Notes, database.ActorIDSetting).Scan(&written.ProtocolID); err != nil {
+		return Written{}, err
+	}
+
+	return written, writeItems(ctx, tx, &written, draft)
+}
+
+func rewriteItems(ctx context.Context, tx pgx.Tx, written *Written, draft Draft) error {
+	written.ItemIDs = make([]ProtocolItemID, 0, len(draft.Items))
+	kept := make([]string, 0, len(draft.Items))
+
+	for n, item := range draft.Items {
+		if item.ID == nil {
+			itemID, err := insertItem(ctx, tx, written.ProtocolID, item, n)
+			if err != nil {
+				return err
+			}
+			written.ItemIDs = append(written.ItemIDs, itemID)
+			kept = append(kept, string(itemID))
+
+			continue
+		}
+
+		if err := updateItem(ctx, tx, written.ProtocolID, item, n); err != nil {
+			return err
+		}
+		written.ItemIDs = append(written.ItemIDs, *item.ID)
+		kept = append(kept, string(*item.ID))
+	}
+
+	// Everything the request did not name. RESTRICT answers here if a dose refers to one.
+	//
+	// Compared as uuid and not as text: `id::text` is canonical lowercase while `kept`
+	// carries the caller's spelling, and both shape checks accept an uppercase one. An item
+	// named «5D4F3B7C-…» was updated by the statement above and deleted by this one.
+	_, err := tx.Exec(ctx,
+		`DELETE FROM app.protocol_items WHERE protocol_id = $1 AND NOT (id = ANY($2::uuid[]))`,
+		string(written.ProtocolID), kept)
+
+	return err
+}
+
+// updateItem is scoped to the course as well as to the row, and the pair is the point: an
+// identifier alone would let a doctor rewrite an item of a course they may not touch, since
+// the service seam carries no row predicate. RowsAffected is what says the pair matched —
+// a filtered UPDATE succeeds and reports nothing, which is data-layer invariant 5.
+func updateItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item DraftItem, n int) error {
+	compound, err := compoundFor(ctx, tx, item, n)
+	if err != nil {
+		return err
+	}
+	days, times := columnsOf(item)
+
+	tag, err := tx.Exec(ctx, `
+		UPDATE app.protocol_items
+		SET kind = $3, compound_id = $4, cadence = $5, days_of_week = $6::smallint[],
+		    times = $7::time[], loggable = $8
+		WHERE id = $1 AND protocol_id = $2
+	`, string(*item.ID), string(protocolID), string(item.Kind), compound, string(item.Cadence),
+		days, times, item.Loggable)
+	if err != nil {
+		return fmt.Errorf("item %d: %w", n+1, err)
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("item %d names %s: %w", n+1, *item.ID, ErrNoSuchItem)
+	}
+
+	// The phases go and come back: they carry no identity of their own, and nothing
+	// references them, so there is no history to keep here.
+	//
+	// Joined to the item's course rather than taking the identifier alone, and it is a
+	// second lock rather than decoration. Measured: with the RowsAffected guard above
+	// removed, this scope still refuses; with both removed, the caller's phases land on
+	// another patient's item and their own bands are gone — the cross-course test reads
+	// 1,5 мг where the other patient was prescribed 0,25 and 0,5. A cross-tenant write,
+	// and one with no trace, since phases carry no history and nothing references them.
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM app.protocol_phases p
+		USING app.protocol_items i
+		WHERE p.protocol_item_id = i.id AND i.id = $1 AND i.protocol_id = $2
+	`, string(*item.ID), string(protocolID)); err != nil {
+		return fmt.Errorf("item %d: %w", n+1, err)
+	}
+
+	return writePhases(ctx, tx, protocolID, *item.ID, item, n)
+}
+
+func insertItem(ctx context.Context, tx pgx.Tx, protocolID ProtocolID, item DraftItem, n int) (ProtocolItemID, error) {
+	compound, err := compoundFor(ctx, tx, item, n)
+	if err != nil {
+		return "", err
+	}
+	days, times := columnsOf(item)
+
+	var itemID ProtocolItemID
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO app.protocol_items
+		    (protocol_id, kind, compound_id, cadence, days_of_week, times, loggable)
+		VALUES ($1, $2, $3, $4, $5::smallint[], $6::time[], $7)
+		RETURNING id::text
+	`, string(protocolID), string(item.Kind), compound, string(item.Cadence),
+		days, times, item.Loggable).Scan(&itemID); err != nil {
+		return "", fmt.Errorf("item %d: %w", n+1, err)
+	}
+
+	return itemID, writePhases(ctx, tx, protocolID, itemID, item, n)
+}
+
+// writePhases carries the course as well as the item, for the reason updateItem gives: the
+// item identifier can be the caller's, and protocol_items has no patient_id of its own.
+// SELECT rather than VALUES so the scope is in the statement, and RowsAffected because an
+// insert that selected nothing succeeds and writes nothing — data-layer invariant 5.
+func writePhases(
+	ctx context.Context, tx pgx.Tx, protocolID ProtocolID, itemID ProtocolItemID, item DraftItem, n int,
+) error {
+	for p, phase := range item.Phases {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO app.protocol_phases
+			    (protocol_item_id, from_week, to_week, dose_value, dose_unit)
+			SELECT i.id, $3, $4, $5, $6
+			FROM app.protocol_items i
+			WHERE i.id = $1 AND i.protocol_id = $2
+		`, string(itemID), string(protocolID), phase.FromWeek, phase.ToWeek,
+			phase.Dose.Value, string(phase.Dose.Unit))
+		if err != nil {
+			return fmt.Errorf("item %d, phase %d: %w", n+1, p+1, err)
+		}
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("item %d, phase %d names %s: %w", n+1, p+1, itemID, ErrNoSuchItem)
+		}
+	}
+
+	return nil
+}
+
+func compoundFor(ctx context.Context, tx pgx.Tx, item DraftItem, n int) (*CompoundID, error) {
+	// On whether a drug was named, not on the kind: Check refuses one on a weigh-in
+	// before this is reached, and keying on «injection» discarded a supplement's.
+	if item.Compound.ID == nil && item.Compound.New == nil {
+		return nil, nil
+	}
+
+	resolved, err := ResolveCompound(ctx, tx, item.Compound)
+	if err != nil {
+		return nil, fmt.Errorf("item %d: %w", n+1, err)
+	}
+
+	return &resolved, nil
+}
+
+func columnsOf(item DraftItem) ([]int16, []string) {
+	days := make([]int16, len(item.DaysOfWeek))
+	for i, day := range item.DaysOfWeek {
+		days[i] = int16(civil.ISOWeekday(day))
+	}
+	times := make([]string, len(item.Times))
+	for i, slot := range item.Times {
+		times[i] = slot.String()
+	}
+
+	return days, times
+}
+
+// writeItems is Create's half: everything is new, and an identifier the request carried would
+// be an identifier for a course that does not exist yet.
+func writeItems(ctx context.Context, tx pgx.Tx, written *Written, draft Draft) error {
+	written.ItemIDs = make([]ProtocolItemID, 0, len(draft.Items))
+
+	for n, item := range draft.Items {
+		itemID, err := insertItem(ctx, tx, written.ProtocolID, item, n)
+		if err != nil {
+			return err
+		}
+		written.ItemIDs = append(written.ItemIDs, itemID)
+	}
+
+	return nil
+}
+
+// requireCaresFor is the whole of this path's authorization, and it reads care_team_assignments
+// directly rather than through a policy: inside the service seam there is no policy to read
+// through. An admin is not on anybody's care team and is allowed regardless — they are not a
+// provider, and no assignment would ever name them.
+func requireCaresFor(ctx context.Context, tx pgx.Tx, patient civil.UserID) error {
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok {
+		return ErrNotAPrescriber
+	}
+
+	switch principal.Role {
+	case "admin":
+		return nil
+	case "doctor":
+	default:
+		return fmt.Errorf("%s: %w", principal.Role, ErrNotAPrescriber)
+	}
+
+	var assigned bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT FROM app.care_team_assignments
+			WHERE patient_id = $1 AND provider_id = $2
+		)
+	`, string(patient), principal.Subject).Scan(&assigned); err != nil {
+		return fmt.Errorf("reading the care team: %w", err)
+	}
+	if !assigned {
+		return fmt.Errorf("%s: %w", patient, ErrNotYourPatient)
+	}
+
+	return nil
+}
+
+func ownerOf(ctx context.Context, tx pgx.Tx, id ProtocolID) (civil.UserID, error) {
+	var owner civil.UserID
+	err := tx.QueryRow(ctx,
+		`SELECT patient_id::text FROM app.protocols WHERE id = $1`, string(id)).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("%s: %w", id, ErrNoSuchProtocol)
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading course %s: %w", id, err)
+	}
+
+	return owner, nil
+}
+
+// classify turns the constraints that answer a legitimate request into named errors. Only
+// those: everything else keeps its own error, because a catch-all here is how a bug becomes a
+// 409 that the doctor retries forever.
+//
+// Draft.Check refuses the shape rules before a connection is taken, so what reaches here is
+// the race it cannot see — two doctors prescribing at once — and the one rule the schema
+// holds alone.
+func classify(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return err
+	}
+
+	switch {
+	case pgErr.Code == uniqueViolation && pgErr.ConstraintName == oneActivePerPatient:
+		return ErrAlreadyRunning
+	case pgErr.Code == foreignKeyViolation && pgErr.ConstraintName == doseEventsHoldTheirItem:
+		return ErrItemHasBeenInjected
+	default:
+		return err
+	}
+}
+
+const (
+	uniqueViolation     = "23505"
+	foreignKeyViolation = "23503"
+
+	// A partial unique index, so its name is what pg reports rather than a constraint's.
+	oneActivePerPatient = "protocols_one_active_per_patient"
+
+	// 000019's RESTRICT: an item somebody has injected is held in place by the doses that
+	// answered it, which is what stops an edit of the course from erasing them.
+	doseEventsHoldTheirItem = "dose_events_answer_an_item_of_that_course"
+)
+
+// ErrItemHasBeenInjected is a refusal with a remedy, not a failure: the course keeps its
+// history, and the item is stopped by clearing `loggable` rather than by removal.
+var ErrItemHasBeenInjected = errors.New("an item the patient has injected cannot be removed")
+
+func writeAudit(ctx context.Context, tx pgx.Tx, action, entityID, patientID string) error {
+	// The setting names travel as bound parameters, which keeps the statement the
+	// constant the authorship gate requires.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO app.audit_log (actor_id, actor_job, action, entity, entity_id, patient_id)
+		VALUES (
+			nullif(current_setting($3, true), '')::uuid,
+			nullif(current_setting($4, true), ''),
+			$2, 'protocols', $1, $5
+		)
+	`, entityID, action, database.ActorIDSetting, database.ActorJobSetting, patientID); err != nil {
+		return fmt.Errorf("writing the audit record: %w", err)
+	}
+
+	return nil
+}

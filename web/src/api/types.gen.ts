@@ -4,6 +4,48 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type CompoundBody = {
+    default_unit: 'мг' | 'мкг';
+    icon: string;
+    id: string;
+    name_ru: string;
+    route: string;
+};
+
+export type Course = {
+    /**
+     * What is prescribed. A course with nothing in it is refused.
+     */
+    items: Array<Item> | null;
+    /**
+     * The prescriber's own note about the course.
+     */
+    notes?: string;
+    /**
+     * The day the course begins, and the day every cycle week is counted from.
+     */
+    start_date: string;
+    /**
+     * A patient has at most one active course at a time.
+     */
+    status: 'active' | 'completed' | 'cancelled';
+    /**
+     * How long the course runs.
+     */
+    weeks: number;
+};
+
+export type CourseOutputBody = {
+    /**
+     * One per item, in the order they were sent.
+     */
+    item_ids: Array<string>;
+    /**
+     * The course.
+     */
+    protocol_id: string;
+};
+
 export type CreatedPatient = {
     /**
      * The patient's id. The same value the invitation link signs the person in as.
@@ -16,6 +58,132 @@ export type CreatedProvider = {
      * The doctor's id. The same value the invitation link signs them in as.
      */
     user_id: string;
+};
+
+export type DayBody = {
+    all_done: boolean;
+    any_pending: boolean;
+    cycle_week?: number;
+    date: string;
+    has_injection: boolean;
+};
+
+export type DayOutputBody = {
+    cycle_week?: number;
+    date: string;
+    occurrences: Array<OccurrenceBody>;
+};
+
+export type DoseBody = {
+    unit: 'мг' | 'мкг';
+    value: number;
+};
+
+export type Drug = {
+    default_unit?: 'мг' | 'мкг';
+    icon?: string;
+    /**
+     * A drug already in the directory.
+     */
+    id?: string;
+    /**
+     * The drug's name, if it is not in the directory yet. A name already there resolves to that row whatever its case.
+     */
+    name_ru?: string;
+    route?: string;
+};
+
+export type Item = {
+    cadence: 'weekly' | 'daily' | 'n_per_week';
+    /**
+     * What is prescribed. Required for an injection, optional for a supplement — the strip draws its glyph and its name from here — and refused for a weigh-in, which is not a prescription of a drug.
+     */
+    compound?: Drug;
+    /**
+     * ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself.
+     */
+    days_of_week: Array<number> | null;
+    /**
+     * The item being kept, from an earlier reply. Absent for an item just added.
+     */
+    id?: string;
+    kind: 'injection' | 'supplement' | 'weigh_in';
+    /**
+     * Whether the patient records taking it. False for a supplement the clinic tracks without asking.
+     */
+    loggable: boolean;
+    /**
+     * The titration bands. Required for an injection; absent for a supplement or a weigh-in, which carry no dose. They may leave gaps — a washout is deliberate — and may not overlap.
+     */
+    phases: Array<Phase> | null;
+    /**
+     * The slots within the day, as HH:MM. Two of them is two occurrences, logged apart.
+     */
+    times: Array<string> | null;
+};
+
+export type LabelPhotoOutputBody = {
+    expires_at: string;
+    url: string;
+};
+
+export type LogDoseInputBody = {
+    /**
+     * The client's own key. A retry from the offline queue carries the key generated when the patient tapped save, and the repeat answers what the first answered.
+     */
+    client_request_id: string;
+    dose_unit: 'мг' | 'мкг';
+    /**
+     * What the patient took, which is what is recorded: the wizard's dose is editable, and a patient who steps down from what the course prescribes has done so. The prescription stays in the course, so the two can be compared.
+     */
+    dose_value: number;
+    mood?: number;
+    note?: string;
+    /**
+     * The stored key of the photo, under the patient's own prefix.
+     */
+    photo_path?: string;
+    /**
+     * The prescribed item this dose answers.
+     */
+    protocol_item_id: string;
+    /**
+     * The seven §03 names. The same set the diary's tags come from, because one action writes both rows.
+     */
+    side_effects?: Array<'nausea' | 'fatigue' | 'headache' | 'bloating' | 'insomnia' | 'site' | 'appetite'> | null;
+    /**
+     * The body zone, one of the ten the map draws.
+     */
+    site_code?: 'l-abdomen' | 'r-abdomen' | 'l-delt' | 'r-delt' | 'l-glute' | 'r-glute' | 'l-thigh' | 'r-thigh' | 'l-lback' | 'r-lback';
+    /**
+     * The vial it was drawn from. Absent when the picker was skipped, which costs that vial's count one dose — a truth about what is known.
+     */
+    vial_id?: string;
+};
+
+export type LogDoseOutputBody = {
+    /**
+     * Present when the outcome is written.
+     */
+    dose_event_id?: string;
+    dose_unit?: string;
+    /**
+     * Read back off the event: what was recorded as taken.
+     */
+    dose_value?: number;
+    /**
+     * The day whose diary entry this dose wrote. The entry has no id of its own — the day is its identity.
+     */
+    journal_date?: string;
+    outcome: 'written' | 'incomplete' | 'not_scheduled_today' | 'already_logged';
+    vial_id?: string;
+};
+
+export type MacrosBody = {
+    carbs: number;
+    fat: number;
+    kcal: number;
+    protein: number;
 };
 
 export type Me = {
@@ -77,6 +245,46 @@ export type NewProviderBody = {
     title_ru?: string;
 };
 
+export type OccurrenceBody = {
+    date: string;
+    dose?: DoseBody;
+    kind: 'injection' | 'supplement' | 'weigh_in';
+    protocol_item_id: string;
+    status: 'done' | 'pending' | 'missed' | 'scheduled';
+    time: string;
+};
+
+export type Phase = {
+    dose_unit: 'мг' | 'мкг';
+    dose_value: number;
+    from_week: number;
+    to_week: number;
+};
+
+export type PhotoOutputBody = {
+    expires_at: string;
+    url: string;
+};
+
+export type PhotoUploadInputBody = {
+    /**
+     * What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else.
+     */
+    content_type: 'image/jpeg' | 'image/png' | 'image/heic';
+};
+
+export type PhotoUploadOutputBody = {
+    expires_at: string;
+    /**
+     * What to send as photo_path when recording the dose. The server minted it; a client-chosen key is never accepted.
+     */
+    key: string;
+    /**
+     * A signed PUT. It constrains the key and not the bytes: neither the content type nor the size is bound by the signature.
+     */
+    url: string;
+};
+
 export type Problem = {
     /**
      * An explanation specific to this occurrence.
@@ -119,6 +327,11 @@ export type ProblemDetail = {
     message: string;
 };
 
+export type ReorderBody = {
+    compound_id: string;
+    weeks_left: number;
+};
+
 export type RosterPage = {
     /**
      * Pass as cursor for the following page. Absent on the last one.
@@ -147,6 +360,24 @@ export type RosterRow = {
      * The patient's id, and the key every later request about them is made on.
      */
     user_id: string;
+};
+
+export type RowBody = {
+    cadence: 'weekly' | 'daily' | 'n_per_week';
+    /**
+     * Null when the item names no drug.
+     */
+    compound: CompoundBody | null;
+    dose?: DoseBody;
+    kind: 'injection' | 'supplement' | 'weigh_in';
+    loggable: boolean;
+    protocol_item_id: string;
+    times: Array<string>;
+    today_status?: 'done' | 'pending' | 'missed' | 'scheduled';
+};
+
+export type ScheduleOutputBody = {
+    days: Array<DayBody>;
 };
 
 export type SessionBody = {
@@ -189,6 +420,60 @@ export type StaffPage = {
      * Everyone who may be put on a care team, ordered by name.
      */
     staff: Array<StaffMember>;
+};
+
+export type StepBody = {
+    from: DoseBody;
+    on: string;
+    to: DoseBody;
+    week: number;
+};
+
+export type TodayBody = {
+    /**
+     * Absent outside the course and for a cancelled one.
+     */
+    cycle_week?: number;
+    date: string;
+    dose_logged_today: boolean;
+    /**
+     * Null until the nutrition context is built.
+     */
+    meal_count: number | null;
+    /**
+     * Null until the nutrition context is built.
+     */
+    meal_macros: MacrosBody | null;
+    next_dose?: OccurrenceBody;
+    next_dose_compound?: CompoundBody;
+    next_titration?: StepBody;
+    part_of_day: 'night' | 'morning' | 'afternoon' | 'evening';
+    reorder?: ReorderBody;
+    /**
+     * Computed from what was logged, not frozen.
+     */
+    suggested_site: 'l-abdomen' | 'r-abdomen' | 'l-delt' | 'r-delt' | 'l-glute' | 'r-glute' | 'l-thigh' | 'r-thigh' | 'l-lback' | 'r-lback';
+    /**
+     * Null until the measurements context is built.
+     */
+    target_weight_kg: number | null;
+    /**
+     * Null until the nutrition context is built.
+     */
+    targets: MacrosBody | null;
+    /**
+     * Of the open vial. Absent when the patient holds none of that drug.
+     */
+    vial_doses_left?: number;
+    week_protocol: Array<RowBody>;
+    /**
+     * Null until the measurements context is built.
+     */
+    weight_kg: number | null;
+    /**
+     * Null until the measurements context is built.
+     */
+    weight_series: Array<number> | null;
 };
 
 export type DashboardOverviewData = {
@@ -278,6 +563,231 @@ export type GetMeResponses = {
 
 export type GetMeResponse = GetMeResponses[keyof GetMeResponses];
 
+export type LogDoseData = {
+    body: LogDoseInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/dose-events';
+};
+
+export type LogDoseErrors = {
+    /**
+     * Bad Request
+     */
+    400: Problem;
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type LogDoseError = LogDoseErrors[keyof LogDoseErrors];
+
+export type LogDoseResponses = {
+    /**
+     * OK
+     */
+    200: LogDoseOutputBody;
+};
+
+export type LogDoseResponse = LogDoseResponses[keyof LogDoseResponses];
+
+export type StartDosePhotoUploadData = {
+    body: PhotoUploadInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/dose-events/photo-uploads';
+};
+
+export type StartDosePhotoUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+};
+
+export type StartDosePhotoUploadError = StartDosePhotoUploadErrors[keyof StartDosePhotoUploadErrors];
+
+export type StartDosePhotoUploadResponses = {
+    /**
+     * Created
+     */
+    201: PhotoUploadOutputBody;
+};
+
+export type StartDosePhotoUploadResponse = StartDosePhotoUploadResponses[keyof StartDosePhotoUploadResponses];
+
+export type ReadDosePhotoData = {
+    body?: never;
+    path: {
+        eventId: string;
+    };
+    query?: never;
+    url: '/v1/me/dose-events/{eventId}/photo';
+};
+
+export type ReadDosePhotoErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadDosePhotoError = ReadDosePhotoErrors[keyof ReadDosePhotoErrors];
+
+export type ReadDosePhotoResponses = {
+    /**
+     * OK
+     */
+    200: PhotoOutputBody;
+};
+
+export type ReadDosePhotoResponse = ReadDosePhotoResponses[keyof ReadDosePhotoResponses];
+
+export type GetScheduleMonthData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The month to draw, as YYYY-MM. Defaults to the one the patient is in.
+         */
+        month?: string;
+    };
+    url: '/v1/me/schedule';
+};
+
+export type GetScheduleMonthErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetScheduleMonthError = GetScheduleMonthErrors[keyof GetScheduleMonthErrors];
+
+export type GetScheduleMonthResponses = {
+    /**
+     * OK
+     */
+    200: ScheduleOutputBody;
+};
+
+export type GetScheduleMonthResponse = GetScheduleMonthResponses[keyof GetScheduleMonthResponses];
+
+export type GetScheduleDayData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The day to open. Defaults to the patient's today.
+         */
+        date?: string;
+    };
+    url: '/v1/me/schedule/day';
+};
+
+export type GetScheduleDayErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetScheduleDayError = GetScheduleDayErrors[keyof GetScheduleDayErrors];
+
+export type GetScheduleDayResponses = {
+    /**
+     * OK
+     */
+    200: DayOutputBody;
+};
+
+export type GetScheduleDayResponse = GetScheduleDayResponses[keyof GetScheduleDayResponses];
+
 export type RecordSessionData = {
     body: SessionBody;
     path?: never;
@@ -323,6 +833,90 @@ export type RecordSessionResponses = {
 
 export type RecordSessionResponse = RecordSessionResponses[keyof RecordSessionResponses];
 
+export type GetTodayData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/me/today';
+};
+
+export type GetTodayErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetTodayError = GetTodayErrors[keyof GetTodayErrors];
+
+export type GetTodayResponses = {
+    /**
+     * OK
+     */
+    200: TodayBody;
+};
+
+export type GetTodayResponse = GetTodayResponses[keyof GetTodayResponses];
+
+export type ReadVialLabelPhotoData = {
+    body?: never;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}/label-photo';
+};
+
+export type ReadVialLabelPhotoErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadVialLabelPhotoError = ReadVialLabelPhotoErrors[keyof ReadVialLabelPhotoErrors];
+
+export type ReadVialLabelPhotoResponses = {
+    /**
+     * OK
+     */
+    200: LabelPhotoOutputBody;
+};
+
+export type ReadVialLabelPhotoResponse = ReadVialLabelPhotoResponses[keyof ReadVialLabelPhotoResponses];
+
 export type CreatePatientData = {
     body: NewPatientBody;
     path?: never;
@@ -347,6 +941,114 @@ export type CreatePatientResponses = {
 };
 
 export type CreatePatientResponse = CreatePatientResponses[keyof CreatePatientResponses];
+
+export type CreateProtocolData = {
+    body: Course;
+    path: {
+        /**
+         * The patient the course is for.
+         */
+        patientId: string;
+    };
+    query?: never;
+    url: '/v1/patients/{patientId}/protocols';
+};
+
+export type CreateProtocolErrors = {
+    /**
+     * Bad Request
+     */
+    400: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type CreateProtocolError = CreateProtocolErrors[keyof CreateProtocolErrors];
+
+export type CreateProtocolResponses = {
+    /**
+     * Created
+     */
+    201: CourseOutputBody;
+};
+
+export type CreateProtocolResponse = CreateProtocolResponses[keyof CreateProtocolResponses];
+
+export type ReplaceProtocolData = {
+    body: Course;
+    path: {
+        /**
+         * The patient the course is for.
+         */
+        patientId: string;
+        /**
+         * The course being rewritten.
+         */
+        protocolId: string;
+    };
+    query?: never;
+    url: '/v1/patients/{patientId}/protocols/{protocolId}';
+};
+
+export type ReplaceProtocolErrors = {
+    /**
+     * Bad Request
+     */
+    400: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReplaceProtocolError = ReplaceProtocolErrors[keyof ReplaceProtocolErrors];
+
+export type ReplaceProtocolResponses = {
+    /**
+     * OK
+     */
+    200: CourseOutputBody;
+};
+
+export type ReplaceProtocolResponse = ReplaceProtocolResponses[keyof ReplaceProtocolResponses];
 
 export type ListProvidersData = {
     body?: never;

@@ -1,6 +1,107 @@
 {
   "components": {
     "schemas": {
+      "CompoundBody": {
+        "additionalProperties": false,
+        "properties": {
+          "default_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name_ru": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name_ru",
+          "default_unit",
+          "route",
+          "icon"
+        ],
+        "type": "object"
+      },
+      "Course": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "What is prescribed. A course with nothing in it is refused.",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "notes": {
+            "description": "The prescriber's own note about the course.",
+            "type": "string"
+          },
+          "start_date": {
+            "description": "The day the course begins, and the day every cycle week is counted from.",
+            "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "description": "A patient has at most one active course at a time.",
+            "enum": [
+              "active",
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "weeks": {
+            "description": "How long the course runs.",
+            "format": "int64",
+            "maximum": 104,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_date",
+          "weeks",
+          "status",
+          "items"
+        ],
+        "type": "object"
+      },
+      "CourseOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "item_ids": {
+            "description": "One per item, in the order they were sent.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "protocol_id": {
+            "description": "The course.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_id",
+          "item_ids"
+        ],
+        "type": "object"
+      },
       "CreatedPatient": {
         "additionalProperties": false,
         "properties": {
@@ -24,6 +125,358 @@
         },
         "required": [
           "user_id"
+        ],
+        "type": "object"
+      },
+      "DayBody": {
+        "additionalProperties": false,
+        "properties": {
+          "all_done": {
+            "type": "boolean"
+          },
+          "any_pending": {
+            "type": "boolean"
+          },
+          "cycle_week": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "has_injection": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "date",
+          "has_injection",
+          "any_pending",
+          "all_done"
+        ],
+        "type": "object"
+      },
+      "DayOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cycle_week": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "occurrences": {
+            "items": {
+              "$ref": "#/components/schemas/OccurrenceBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "occurrences"
+        ],
+        "type": "object"
+      },
+      "DoseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value",
+          "unit"
+        ],
+        "type": "object"
+      },
+      "Drug": {
+        "additionalProperties": false,
+        "properties": {
+          "default_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "description": "A drug already in the directory.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "name_ru": {
+            "description": "The drug's name, if it is not in the directory yet. A name already there resolves to that row whatever its case.",
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Item": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence": {
+            "enum": [
+              "weekly",
+              "daily",
+              "n_per_week"
+            ],
+            "type": "string"
+          },
+          "compound": {
+            "$ref": "#/components/schemas/Drug",
+            "description": "What is prescribed. Required for an injection, optional for a supplement — the strip draws its glyph and its name from here — and refused for a weigh-in, which is not a prescription of a drug."
+          },
+          "days_of_week": {
+            "description": "ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "The item being kept, from an earlier reply. Absent for an item just added.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "injection",
+              "supplement",
+              "weigh_in"
+            ],
+            "type": "string"
+          },
+          "loggable": {
+            "description": "Whether the patient records taking it. False for a supplement the clinic tracks without asking.",
+            "type": "boolean"
+          },
+          "phases": {
+            "description": "The titration bands. Required for an injection; absent for a supplement or a weigh-in, which carry no dose. They may leave gaps — a washout is deliberate — and may not overlap.",
+            "items": {
+              "$ref": "#/components/schemas/Phase"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "times": {
+            "description": "The slots within the day, as HH:MM. Two of them is two occurrences, logged apart.",
+            "items": {
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "cadence",
+          "days_of_week",
+          "times",
+          "loggable",
+          "phases"
+        ],
+        "type": "object"
+      },
+      "LabelPhotoOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "LogDoseInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "client_request_id": {
+            "description": "The client's own key. A retry from the offline queue carries the key generated when the patient tapped save, and the repeat answers what the first answered.",
+            "maxLength": 128,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "dose_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "dose_value": {
+            "description": "What the patient took, which is what is recorded: the wizard's dose is editable, and a patient who steps down from what the course prescribes has done so. The prescription stays in the course, so the two can be compared.",
+            "exclusiveMinimum": 0,
+            "format": "double",
+            "type": "number"
+          },
+          "mood": {
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "photo_path": {
+            "description": "The stored key of the photo, under the patient's own prefix.",
+            "type": "string"
+          },
+          "protocol_item_id": {
+            "description": "The prescribed item this dose answers.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "side_effects": {
+            "description": "The seven §03 names. The same set the diary's tags come from, because one action writes both rows.",
+            "items": {
+              "enum": [
+                "nausea",
+                "fatigue",
+                "headache",
+                "bloating",
+                "insomnia",
+                "site",
+                "appetite"
+              ],
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "site_code": {
+            "description": "The body zone, one of the ten the map draws.",
+            "enum": [
+              "l-abdomen",
+              "r-abdomen",
+              "l-delt",
+              "r-delt",
+              "l-glute",
+              "r-glute",
+              "l-thigh",
+              "r-thigh",
+              "l-lback",
+              "r-lback"
+            ],
+            "type": "string"
+          },
+          "vial_id": {
+            "description": "The vial it was drawn from. Absent when the picker was skipped, which costs that vial's count one dose — a truth about what is known.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_item_id",
+          "dose_value",
+          "dose_unit",
+          "client_request_id"
+        ],
+        "type": "object"
+      },
+      "LogDoseOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "dose_event_id": {
+            "description": "Present when the outcome is written.",
+            "type": "string"
+          },
+          "dose_unit": {
+            "type": "string"
+          },
+          "dose_value": {
+            "description": "Read back off the event: what was recorded as taken.",
+            "format": "double",
+            "type": "number"
+          },
+          "journal_date": {
+            "description": "The day whose diary entry this dose wrote. The entry has no id of its own — the day is its identity.",
+            "format": "date",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "written",
+              "incomplete",
+              "not_scheduled_today",
+              "already_logged"
+            ],
+            "type": "string"
+          },
+          "vial_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "MacrosBody": {
+        "additionalProperties": false,
+        "properties": {
+          "carbs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fat": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kcal": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "protein": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kcal",
+          "protein",
+          "carbs",
+          "fat"
         ],
         "type": "object"
       },
@@ -139,6 +592,141 @@
         ],
         "type": "object"
       },
+      "OccurrenceBody": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "dose": {
+            "$ref": "#/components/schemas/DoseBody"
+          },
+          "kind": {
+            "enum": [
+              "injection",
+              "supplement",
+              "weigh_in"
+            ],
+            "type": "string"
+          },
+          "protocol_item_id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "done",
+              "pending",
+              "missed",
+              "scheduled"
+            ],
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_item_id",
+          "kind",
+          "date",
+          "time",
+          "status"
+        ],
+        "type": "object"
+      },
+      "Phase": {
+        "additionalProperties": false,
+        "properties": {
+          "dose_unit": {
+            "enum": [
+              "мг",
+              "мкг"
+            ],
+            "type": "string"
+          },
+          "dose_value": {
+            "exclusiveMinimum": 0,
+            "format": "double",
+            "type": "number"
+          },
+          "from_week": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "to_week": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_week",
+          "to_week",
+          "dose_value",
+          "dose_unit"
+        ],
+        "type": "object"
+      },
+      "PhotoOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "PhotoUploadInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "description": "What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else.",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/heic"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_type"
+        ],
+        "type": "object"
+      },
+      "PhotoUploadOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "key": {
+            "description": "What to send as photo_path when recording the dose. The server minted it; a client-chosen key is never accepted.",
+            "type": "string"
+          },
+          "url": {
+            "description": "A signed PUT. It constrains the key and not the bytes: neither the content type nor the size is bound by the signature.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "key",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "Problem": {
         "additionalProperties": false,
         "properties": {
@@ -202,6 +790,23 @@
         ],
         "type": "object"
       },
+      "ReorderBody": {
+        "additionalProperties": false,
+        "properties": {
+          "compound_id": {
+            "type": "string"
+          },
+          "weeks_left": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "compound_id",
+          "weeks_left"
+        ],
+        "type": "object"
+      },
       "RosterPage": {
         "additionalProperties": false,
         "properties": {
@@ -257,6 +862,86 @@
           "full_name",
           "age",
           "invite_state"
+        ],
+        "type": "object"
+      },
+      "RowBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence": {
+            "enum": [
+              "weekly",
+              "daily",
+              "n_per_week"
+            ],
+            "type": "string"
+          },
+          "compound": {
+            "description": "Null when the item names no drug.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CompoundBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dose": {
+            "$ref": "#/components/schemas/DoseBody"
+          },
+          "kind": {
+            "enum": [
+              "injection",
+              "supplement",
+              "weigh_in"
+            ],
+            "type": "string"
+          },
+          "loggable": {
+            "type": "boolean"
+          },
+          "protocol_item_id": {
+            "type": "string"
+          },
+          "times": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "today_status": {
+            "enum": [
+              "done",
+              "pending",
+              "missed",
+              "scheduled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_item_id",
+          "kind",
+          "compound",
+          "times",
+          "cadence",
+          "loggable"
+        ],
+        "type": "object"
+      },
+      "ScheduleOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/DayBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "days"
         ],
         "type": "object"
       },
@@ -345,6 +1030,168 @@
         },
         "required": [
           "staff"
+        ],
+        "type": "object"
+      },
+      "StepBody": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/DoseBody"
+          },
+          "on": {
+            "format": "date",
+            "type": "string"
+          },
+          "to": {
+            "$ref": "#/components/schemas/DoseBody"
+          },
+          "week": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "week",
+          "on",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "TodayBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cycle_week": {
+            "description": "Absent outside the course and for a cancelled one.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "dose_logged_today": {
+            "type": "boolean"
+          },
+          "meal_count": {
+            "description": "Null until the nutrition context is built.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "meal_macros": {
+            "description": "Null until the nutrition context is built.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MacrosBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_dose": {
+            "$ref": "#/components/schemas/OccurrenceBody"
+          },
+          "next_dose_compound": {
+            "$ref": "#/components/schemas/CompoundBody"
+          },
+          "next_titration": {
+            "$ref": "#/components/schemas/StepBody"
+          },
+          "part_of_day": {
+            "enum": [
+              "night",
+              "morning",
+              "afternoon",
+              "evening"
+            ],
+            "type": "string"
+          },
+          "reorder": {
+            "$ref": "#/components/schemas/ReorderBody"
+          },
+          "suggested_site": {
+            "description": "Computed from what was logged, not frozen.",
+            "enum": [
+              "l-abdomen",
+              "r-abdomen",
+              "l-delt",
+              "r-delt",
+              "l-glute",
+              "r-glute",
+              "l-thigh",
+              "r-thigh",
+              "l-lback",
+              "r-lback"
+            ],
+            "type": "string"
+          },
+          "target_weight_kg": {
+            "description": "Null until the measurements context is built.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "targets": {
+            "description": "Null until the nutrition context is built.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MacrosBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vial_doses_left": {
+            "description": "Of the open vial. Absent when the patient holds none of that drug.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "week_protocol": {
+            "items": {
+              "$ref": "#/components/schemas/RowBody"
+            },
+            "type": "array"
+          },
+          "weight_kg": {
+            "description": "Null until the measurements context is built.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "weight_series": {
+            "description": "Null until the measurements context is built.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "part_of_day",
+          "suggested_site",
+          "week_protocol",
+          "dose_logged_today",
+          "meal_count",
+          "meal_macros",
+          "targets",
+          "weight_kg",
+          "weight_series",
+          "target_weight_kg"
         ],
         "type": "object"
       }
@@ -525,6 +1372,443 @@
         ]
       }
     },
+    "/v1/me/dose-events": {
+      "post": {
+        "description": "Writes the dose and the day's diary entry in one transaction — one action, two facts — and answers which of four things happened. The four are a 200 with a body and not HTTP errors: the client branches on them, so they are expected results rather than failures. `written` carries the identifiers; `already_logged` means every occurrence of that item today is recorded, so a repeat cannot take another dose out of the vial; `not_scheduled_today` means the item has no occurrence in the patient's own day, which is what an app left open across midnight produces; `incomplete` means the draft cannot make an event. A repeat carrying the same client_request_id answers what the first answered and writes nothing, and one carrying a different draft is a 409 naming the field that differs. The dose recorded is the one the request carries: the wizard's dose is editable, and a patient who stepped down from what the course prescribes has done so — the prescription stays in the course, so the two can be compared.",
+        "operationId": "log-dose",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogDoseInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogDoseOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Record a dose",
+        "tags": [
+          "dosing"
+        ]
+      }
+    },
+    "/v1/me/dose-events/photo-uploads": {
+      "post": {
+        "description": "Answers a signed link to write one object to, and the key to send as `photo_path` when the dose is recorded. The key is minted by the server and never taken from the client, so it is always under the caller's own prefix. The upload happens before the dose exists, which is why this names no dose.",
+        "operationId": "start-dose-photo-upload",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoUploadInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoUploadOutputBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Ask for somewhere to put a dose photograph",
+        "tags": [
+          "dosing"
+        ]
+      }
+    },
+    "/v1/me/dose-events/{eventId}/photo": {
+      "get": {
+        "description": "Answers a short-lived signed link. The right is decided here, before the link exists: the object store has no row-level security, so the row is read under the caller's own identity and the link is signed only if the policies handed it over. An invisible row, a missing one and one carrying no photograph are one 404 — which of the three it was is a fact about somebody else's treatment.",
+        "operationId": "read-dose-photo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "A link to the photograph of a recorded dose",
+        "tags": [
+          "dosing"
+        ]
+      }
+    },
+    "/v1/me/schedule": {
+      "get": {
+        "description": "One cell per day of the month, every day of it — days prescribing nothing included, because the calendar draws a month and the window's arithmetic is the server's: it came from the patient's own zone. Each cell carries the cycle week, whether an injection falls that day, whether anything is still pending and whether everything is done. A day with nothing prescribed and a day whose occurrences were all missed are both neither pending nor done; the client tells them apart by opening the day.",
+        "operationId": "get-schedule-month",
+        "parameters": [
+          {
+            "description": "The month to draw, as YYYY-MM. Defaults to the one the patient is in.",
+            "explode": false,
+            "in": "query",
+            "name": "month",
+            "schema": {
+              "description": "The month to draw, as YYYY-MM. Defaults to the one the patient is in.",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "A month of the calendar",
+        "tags": [
+          "protocol"
+        ]
+      }
+    },
+    "/v1/me/schedule/day": {
+      "get": {
+        "description": "What the sheet that opens on a tap draws: every occurrence of that day with its time, its dose and its state. Generated rather than stored — there is no schedule table, so a course edited yesterday changes what yesterday's day says about tomorrow.",
+        "operationId": "get-schedule-day",
+        "parameters": [
+          {
+            "description": "The day to open. Defaults to the patient's today.",
+            "explode": false,
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "description": "The day to open. Defaults to the patient's today.",
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "The occurrences of one day",
+        "tags": [
+          "protocol"
+        ]
+      }
+    },
     "/v1/me/session": {
       "post": {
         "description": "Records the caller's timezone against their profile. A patient's is stored — the schedule, the reminders and the server-side sweep all read it — and the zone is validated there; a doctor's and an administrator's are not stored, and the call is answered without a write rather than refused, so one client can serve every role. Answers 400 when a patient's zone is not one the server knows, 403 when the account has no role yet, and 503 when the database could not serve the request.",
@@ -610,6 +1894,161 @@
         ]
       }
     },
+    "/v1/me/today": {
+      "get": {
+        "description": "Everything the hero screen draws: the day and the part of it in the patient's own zone, the cycle week, the next injection still open with the drug it names, the week's prescription strip, whether a dose was logged today, the open vial's remaining doses, a reorder hint, the next titration step and the injection zone to suggest. Fields of contexts that are not built — nutrition and measurements — are null rather than zero: an absent value is a dash on the screen, and a zero is a sentence about a prescription that does not exist. A patient with no running course still gets the day, the part of it and the suggested zone.",
+        "operationId": "get-today",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "The patient's day",
+        "tags": [
+          "protocol"
+        ]
+      }
+    },
+    "/v1/me/vials/{vialId}/label-photo": {
+      "get": {
+        "description": "Answers a short-lived signed link. The right is decided here, before the link exists: the object store has no row-level security, so the vial is read under the caller's own identity and the link is signed only if the policies handed the row over. An invisible vial, a missing one and one with no label photograph are one 404.",
+        "operationId": "read-vial-label-photo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vialId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelPhotoOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "A link to the photograph of a vial's label",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/v1/patients": {
       "post": {
         "description": "Creates the patient and sends the invitation as one action: the address is invited at the identity provider, and the profile, the card, the care team, the preferences and the record of the invitation are written against the identifier it assigned. The server sets the role; there is no public registration. Answers 403 when the caller may not create patients or is not on the care team they wrote, 409 when the address already belongs to a patient or to an account this clinic did not invite, 422 when the body says something the schema cannot refuse — two leading specialists, one named twice, somebody who is not a provider — and 503 when the provisioner is unreachable.",
@@ -649,6 +2088,237 @@
         "summary": "Create a patient and invite them",
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/v1/patients/{patientId}/protocols": {
+      "post": {
+        "description": "Writes a course, its items and their titration phases in one transaction, signed with an audit record. Only for a patient on the caller's own care team; an admin prescribes for anyone. A drug is named by its directory identifier or by its name — a name already in the directory resolves to the row it has, whatever its case and spacing, rather than entering a second one. Phases of one item may leave gaps between them and may not overlap. Answers 409 when the patient already has a course running: a course is ended by completing or cancelling it, not by being replaced.",
+        "operationId": "create-protocol",
+        "parameters": [
+          {
+            "description": "The patient the course is for.",
+            "in": "path",
+            "name": "patientId",
+            "required": true,
+            "schema": {
+              "description": "The patient the course is for.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Course"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseOutputBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Prescribe a course",
+        "tags": [
+          "protocol"
+        ]
+      }
+    },
+    "/v1/patients/{patientId}/protocols/{protocolId}": {
+      "put": {
+        "description": "Replaces a course's items and their phases, keeping the course and its identifier. The items are replaced rather than patched — the form sends a list, not a patch — except that an item the patient has already injected cannot be removed: the doses that answered it are the clinic's record, and such an item is stopped by marking it not loggable. Answers 404 for a course that is not this patient's, which is the same answer an identifier nobody holds gets.",
+        "operationId": "replace-protocol",
+        "parameters": [
+          {
+            "description": "The patient the course is for.",
+            "in": "path",
+            "name": "patientId",
+            "required": true,
+            "schema": {
+              "description": "The patient the course is for.",
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The course being rewritten.",
+            "in": "path",
+            "name": "protocolId",
+            "required": true,
+            "schema": {
+              "description": "The course being rewritten.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Course"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Rewrite a course",
+        "tags": [
+          "protocol"
         ]
       }
     },

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -60,6 +61,10 @@ func contexts(opts Options) []boundedContext {
 	// nil check would pass while every call dereferenced nothing.
 	directory := identity.NewDirectory(opts.ServicePool)
 
+	// One value answering two of protocol's interfaces: both are questions about the same
+	// table, and splitting them would be two constructors over one connection.
+	history := dosing.NewHistory(time.Now)
+
 	var profiles identity.ProfileReader
 	if reader := identity.NewProfiles(opts.Pool); reader != nil {
 		profiles = reader
@@ -68,7 +73,11 @@ func contexts(opts Options) []boundedContext {
 	return []boundedContext{
 		{"audit", audit.Register},
 		{"content", content.Register},
-		{"dosing", dosing.Register},
+		{"dosing", dosing.NewService(time.Now, dosing.Deps{
+			RequestPool: opts.Pool,
+			Photos:      opts.Photos,
+			PhotoBucket: opts.InjectionsBucket,
+		}).Register},
 		{"identity", identity.NewService(identity.Deps{
 			Onboarding: onboarding,
 			Sessions:   sessions,
@@ -76,13 +85,23 @@ func contexts(opts Options) []boundedContext {
 			Profiles:   profiles,
 			Directory:  directory,
 		}).Register},
-		{"inventory", inventory.Register},
+		{"inventory", inventory.NewService(inventory.Deps{
+			RequestPool: opts.Pool,
+			Photos:      opts.Photos,
+			Bucket:      opts.VialsBucket,
+		}).Register},
 		{"journal", journal.Register},
 		{"measurements", measurements.Register},
 		{"messaging", messaging.Register},
 		{"notifications", notifications.Register},
 		{"nutrition", nutrition.Register},
-		{"protocol", protocol.Register},
+		{"protocol", protocol.NewService(time.Now, protocol.Deps{
+			ServicePool: opts.ServicePool,
+			RequestPool: opts.Pool,
+			Doses:       history,
+			Rotation:    history,
+			Cabinet:     inventory.NewSupply(),
+		}).Register},
 	}
 }
 

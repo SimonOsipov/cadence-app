@@ -1,0 +1,85 @@
+-- The wellbeing diary: one entry per day, and the day is the identity.
+--
+-- PRIMARY KEY (patient_id, entry_date) rather than a surrogate with a unique index
+-- beside it. §03 says «one entry per day, always», and a key that says so is a key
+-- an upsert can name: the merge of step 8 is `ON CONFLICT (patient_id, entry_date)`,
+-- and with a surrogate id there would be nothing to conflict on.
+--
+-- The cycle day is not here. It is derived from the protocol's start date, and a
+-- stored copy would go stale the first time a course is edited.
+--
+-- One index, and it is the key's. The feed reads a patient's days newest first;
+-- measured on 40k rows, that plans as a backward scan of the primary key, so a
+-- second (patient_id, entry_date DESC) btree would cost every check-in a write for
+-- nothing. 000015 declines a second index too, but on the other mechanism: there
+-- the candidate was a strict prefix of the key, here it is the key read backwards.
+
+SET ROLE cadence_owner;
+
+CREATE TABLE app.journal_entries (
+    patient_id uuid NOT NULL REFERENCES app.profiles (user_id) ON DELETE CASCADE,
+    entry_date date NOT NULL,
+    -- Five-point scales, and nullable: «пропущено» is a real answer and is not the
+    -- same as a one. Off the scale the loss would be silent — the client maps an
+    -- unknown number to «no answer», so a stored 7 reads back as nothing said.
+    mood       smallint CHECK (mood BETWEEN 1 AND 5),
+    energy     smallint CHECK (energy BETWEEN 1 AND 5),
+    sleep      smallint CHECK (sleep BETWEEN 1 AND 5),
+    -- §03's «tags[] (7 fixed)», and the seven are the side effects: the KMP type is a
+    -- typealias onto SideEffect rather than a second enum, because two sets that must
+    -- never differ are one set. The Go side puts the closed set in this context and
+    -- dosing reads it, which is the direction the write already runs in — one patient
+    -- action writes a dose event and this row.
+    tags       text[] NOT NULL DEFAULT '{}',
+    -- Non-blank as well as bounded: without it a note of spaces is «content» to the
+    -- schema and «nothing said» to Go, and on the service path — where the
+    -- constraint is the only guard — a seed would write a day nobody filled. Not
+    -- quite the same rule as CheckInDraft.SaysNothing: measured, this accepts a
+    -- note of NBSP that TrimSpace calls empty, because PostgreSQL's [:space:] does
+    -- not include U+00A0. Harmless on the request path, where Go answers first —
+    -- and on the service path, the one this constraint exists for, the looser rule
+    -- is the only rule.
+    note       text CHECK (
+        note IS NULL
+        OR (pg_catalog.length(note) BETWEEN 1 AND 2000 AND note ~ '[^[:space:]]')
+    ),
+    -- §03's `source manual|dose`. Set once and never rewritten: an entry born of the
+    -- dose wizard says so in the feed, and a later edit by hand does not make that
+    -- untrue. The rule lives in the merge, in Go — the database cannot tell a handler
+    -- that set it from a caller that did, because both arrive as the same role.
+    source     text NOT NULL CHECK (source IN ('manual', 'dose')),
+    created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+    CONSTRAINT journal_entries_one_per_day PRIMARY KEY (patient_id, entry_date),
+    -- cardinality and not array_length: array_length of an empty array is NULL, and a
+    -- CHECK evaluating to NULL passes. This schema has been bitten by that twice.
+    CONSTRAINT journal_entries_tags_are_a_flat_named_list CHECK (
+        CASE WHEN pg_catalog.array_ndims(tags) IS NULL OR pg_catalog.array_ndims(tags) = 1
+             THEN tags <@ ARRAY['nausea', 'fatigue', 'headache', 'bloating',
+                                'insomnia', 'site', 'appetite']::text[]
+             ELSE false
+        END
+    ),
+    -- An entry that says nothing would put a day the patient never filled into the
+    -- feed and into the heatmap. Written as three total tests rather than a chain of
+    -- comparisons, so that no branch of it can evaluate to NULL.
+    --
+    -- The dose path is exempt, and it has to be: an injection is a fact on its own,
+    -- so a patient who logs one and skips the optional check-in produces a day whose
+    -- every field is empty. The KMP writes exactly that row and pins it
+    -- (JournalWriteTest.anInjectionWithNoContextStillWritesItsDay). Step 8 writes the
+    -- event and the day in one transaction, so without the exemption the empty
+    -- check-in would fail with 23514 and roll the dose back with it — and skipping
+    -- the journal write instead would drop the «с дозой» mark the feed shows.
+    -- The guard stays where it is needed: on the hand-written door and on the seed.
+    CONSTRAINT journal_entries_say_something CHECK (
+        source = 'dose'
+        OR pg_catalog.num_nonnulls(mood, energy, sleep) > 0
+        OR pg_catalog.cardinality(tags) > 0
+        OR note IS NOT NULL
+    )
+);
+
+ALTER TABLE app.journal_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.journal_entries FORCE  ROW LEVEL SECURITY;
+
+RESET ROLE;

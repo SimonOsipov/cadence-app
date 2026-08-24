@@ -327,5 +327,33 @@ services:
       timeout: 2s
       retries: 15
 
+  # The object store, locally. Without it the API refuses to start: none of its
+  # seven STORAGE_ variables has a fallback.
+  #
+  # The entrypoint is replaced rather than the command: the image's own
+  # entrypoint prepends `minio`, so a command is read as a minio sub-command.
+  # Buckets are directories under the data root, which is what MinIO's
+  # filesystem backend treats as a bucket.
+  storage:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    entrypoint:
+      - sh
+      - -c
+      - mkdir -p /data/cadence-vials /data/cadence-injections && exec minio server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: cadence
+      MINIO_ROOT_PASSWORD: cadence-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - cadence-objects:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
 volumes:
   cadence-pgdata:
+  cadence-objects:

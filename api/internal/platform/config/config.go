@@ -22,6 +22,7 @@ type Config struct {
 	CORS        CORSConfig
 	Auth        AuthConfig
 	Provisioner ProvisionerConfig
+	Storage     StorageConfig
 }
 
 // ProvisionerConfig is how the API reaches the component that holds the admin
@@ -145,6 +146,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	storage, err := loadStorage()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Server: ServerConfig{
 			Port:         getEnv("SERVER_PORT", "8080"),
@@ -158,6 +164,7 @@ func Load() (*Config, error) {
 		},
 		Auth:        *auth,
 		Provisioner: *provisioner,
+		Storage:     *storage,
 	}, nil
 }
 

@@ -12,13 +12,13 @@ import (
 func clearEnv(t *testing.T) {
 	t.Helper()
 
-	for _, key := range []string{
+	for _, key := range append([]string{
 		"DATABASE_URL", "DATABASE_SERVICE_URL", "DATABASE_MIGRATION_URL", "MIGRATIONS_PATH",
 		"SERVER_PORT", "SERVER_READ_TIMEOUT", "SERVER_WRITE_TIMEOUT", "SERVER_IDLE_TIMEOUT",
 		"CORS_ALLOWED_ORIGINS",
 		"AUTH_JWT_ISSUER", "AUTH_JWT_AUDIENCE", "AUTH_JWT_SESSION_KIDS", "AUTH_JWT_ADMIN_KID",
 		"PROVISIONER_URL", "PROVISIONER_SHARED_SECRET",
-	} {
+	}, storageKeys()...) {
 		t.Setenv(key, "")
 	}
 }
@@ -37,6 +37,7 @@ func setRequired(t *testing.T) {
 	t.Setenv("AUTH_JWT_ADMIN_KID", "admin-kid-1")
 	t.Setenv("PROVISIONER_URL", "http://provisioner.internal:8081")
 	t.Setenv("PROVISIONER_SHARED_SECRET", "a-secret-of-the-deployment")
+	setRequiredStorage(t)
 }
 
 // The API cannot invite anybody without these two, and an invitation is the

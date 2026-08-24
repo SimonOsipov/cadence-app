@@ -146,8 +146,11 @@ while IFS= read -r -d '' component; do
 
     # Severity first: --print-config keeps a rule's options after `off`, so counting them alone reads a
     # disabled rule as fully armed. Measured — `'no-restricted-syntax': 'off'` prints [0, ...8 selectors].
+    #
+    # String() and not the number: console.log of a number colourises under FORCE_COLOR, and the
+    # guard below then reads '\033[33m8\033[39m' as a non-numeric reading and fails the gate.
     selectors=$(npx eslint --print-config "$component" |
-        node -e 'let j="";process.stdin.on("data",d=>j+=d).on("end",()=>{const r=JSON.parse(j).rules?.["no-restricted-syntax"];console.log(Array.isArray(r)&&r[0]===2?r.length-1:0)})')
+        node -e 'let j="";process.stdin.on("data",d=>j+=d).on("end",()=>{const r=JSON.parse(j).rules?.["no-restricted-syntax"];console.log(String(Array.isArray(r)&&r[0]===2?r.length-1:0))})')
 
     case $selectors in '' | *[!0-9]*) echo "reading the config for $component produced '$selectors'" >&2; exit 1;; esac
 
