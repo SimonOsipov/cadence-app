@@ -243,15 +243,10 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 
 // A phase is a dose band, and two of the three kinds have no dose to band.
 //
-// The rule «at least one phase» was this package's own — the schema has no such
-// constraint, protocol_phases is a table an item may have no rows in — and it made
-// two thirds of ItemKind unusable. The supplement the design draws (MockSeed's
-// «Глицин + магний») carries no phases on purpose: that is what makes the strip's
-// dose column meaningfully optional. A weigh-in has no dose at all, and inventing
-// one to satisfy a validator would put a number on a screen that nobody prescribed.
-//
-// An injection keeps the rule: it is a drug going into somebody, and how much is
-// not optional.
+// The rule «at least one phase» was this package's own — protocol_phases is a table an
+// item may have no rows in — and it made two shapes of the design unprescribable. The
+// supplement carries none on purpose, and inventing a dose for a weigh-in would put a
+// number on a screen nobody prescribed. An injection keeps the rule.
 func TestOnlyAnInjectionHasToBeDosed(t *testing.T) {
 	for _, kind := range []ItemKind{KindSupplement, KindWeighIn} {
 		t.Run(string(kind), func(t *testing.T) {
@@ -290,15 +285,9 @@ func TestASupplementMayCarryADoseAnyway(t *testing.T) {
 
 // A supplement may name a drug, and the design's own does.
 //
-// «Глицин + магний» is a supplement with a compound in MockSeed, and the moon glyph
-// and the name are that compound's fields — the prototype's own schedule takes the
-// glyph from a category table instead, so this shape is the KMP's, not its.
-// Refusing it — which this package did until step 11 tried to seed the design —
-// made the row the screens draw impossible to prescribe. The schema never said so:
-// protocol_items.compound_id is nullable and carries no CHECK against kind.
-//
-// A weigh-in still may not. Standing on a scale is not a prescription of anything,
-// and a drug named there is a row two readers would disagree about.
+// «Глицин + магний» is a supplement with a compound in MockSeed, and the glyph and the
+// name are that compound's fields; refusing it made a row the screens draw unprescribable.
+// A weigh-in still may not — a scale prescribes nothing.
 func TestASupplementMayNameADrugAndAWeighInMayNot(t *testing.T) {
 	compound := CompoundID("9b2f3b7c-0000-4000-8000-0000000000d1")
 

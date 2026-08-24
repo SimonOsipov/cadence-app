@@ -95,12 +95,10 @@ func Create(ctx context.Context, pool *pgxpool.Pool, draft Draft) (Written, erro
 
 // Replace rewrites a course, keeping the course row and its identifier.
 //
-// An item the request names by its own identifier is rewritten in place; one it does not name
-// is added; one the course has and the request omits is dropped. That last is where 000019's
-// Items are rewritten by identifier rather than dropped and re-made: Create answers with them
-// precisely so a form can hold them, and RESTRICT means an item somebody has injected cannot be
-// dropped at all. Delete-and-reinsert made a course uneditable — and uncancellable — after its
-// first logged dose, which is titration, this product's main clinical loop.
+// An item the request names is rewritten in place, one it does not is added, one it omits is
+// dropped — and 000019's RESTRICT refuses the drop if a dose refers to it. Rewriting rather
+// than delete-and-reinsert is why: the latter made a course uneditable, and uncancellable,
+// after its first logged dose, which is titration.
 func Replace(ctx context.Context, pool *pgxpool.Pool, id ProtocolID, draft Draft) (Written, error) {
 	if err := draft.Check(); err != nil {
 		return Written{}, err
@@ -210,13 +208,9 @@ func rewriteItems(ctx context.Context, tx pgx.Tx, written *Written, draft Draft)
 
 	// Everything the request did not name. RESTRICT answers here if a dose refers to one.
 	//
-	// Compared as uuid and not as text. `id::text` is always the canonical lowercase
-	// form uuid_out produces, while `kept` carries the caller's own spelling — and both
-	// IsUUIDShaped and huma's format:"uuid" accept an uppercase one. So an item named
-	// «5D4F3B7C-…» was updated in place by the statement above, which compares uuids,
-	// and then deleted by this one, which compared strings: the doctor asked to keep it
-	// and it went, with its phases; if a dose referenced it they got a 409 telling them
-	// to clear `loggable` on an item they never asked to remove.
+	// Compared as uuid and not as text: `id::text` is canonical lowercase while `kept`
+	// carries the caller's spelling, and both shape checks accept an uppercase one. An item
+	// named «5D4F3B7C-…» was updated by the statement above and deleted by this one.
 	_, err := tx.Exec(ctx,
 		`DELETE FROM app.protocol_items WHERE protocol_id = $1 AND NOT (id = ANY($2::uuid[]))`,
 		string(written.ProtocolID), kept)

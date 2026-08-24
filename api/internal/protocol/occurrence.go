@@ -91,12 +91,9 @@ func OccurrencesFor(plan Plan, logged []LoggedSlot, d, today civil.Date) []Occur
 // PhaseDose returns nil for three causes with one answer: cancelled, outside the window, or
 // no phase covering that week.
 //
-// It reads the phases in the order they arrive while DoseBands and TitrationSteps sort them,
-// and the two agree only while phases do not overlap. That is faithful to the Kotlin, which
-// does not sort here either — but it is a property nothing in this package holds. What holds
-// it is the EXCLUDE constraint in 000013 — and Go refuses overlap before the insert, so a
-// doctor is told which two phases rather than handed a 23P01. On overlapping phases the
-// schedule and the dose band under it would name different doses for one day.
+// It reads the phases unsorted while DoseBands and TitrationSteps sort them, so the two agree
+// only while phases do not overlap — faithful to the Kotlin, and held by 000013's EXCLUDE
+// rather than by anything here.
 func PhaseDose(plan Plan, itemID ProtocolItemID, d civil.Date) *Dose {
 	if plan.Protocol.Status == StatusCancelled {
 		return nil

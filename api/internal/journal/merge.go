@@ -118,20 +118,13 @@ func Merge(existing *Entry, patient civil.UserID, draft CheckInDraft, bornAs Sou
 		return merged, nil
 	}
 
-	// The ownership decision is made on `patient` and the content comes from
-	// `existing`, so the two disagreeing is a cross-tenant read laundered into a
-	// cross-tenant write: the row that lands is legitimately the caller's own, the
-	// policies accept it, their doctor reads it as their own symptom report, and
-	// nothing downstream can tell. The service seam reads this table with USING
-	// (true), so a repository that fetched the day by date alone would produce
-	// exactly that `existing`.
+	// Ownership comes from `patient` and content from `existing`, so the two disagreeing
+	// is a cross-tenant read laundered into a write nothing downstream can tell from a
+	// legitimate one — and the service seam reads this table USING (true), so fetching the
+	// day by date alone produces exactly that `existing`.
 	//
-	// Refused rather than documented, and loudly: no caller has a sensible response,
-	// which is what makes it a programmer error rather than a rejection.
-	//
-	// Neither error carries the ids it compared. Both are `errors.Is`-able, which
-	// invites a handler to map them to a 4xx — and there the message reaches the
-	// caller, putting the other patient's identifier in this patient's response.
+	// Neither error carries the ids it compared: both are errors.Is-able, and a handler
+	// mapping them to a 4xx would put the other patient's identifier in this one's reply.
 	if existing.PatientID != patient {
 		return Entry{}, ErrAnotherPatientsDay
 	}

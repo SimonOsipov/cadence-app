@@ -15,13 +15,9 @@ type Injection struct {
 
 // SuggestNextSite is the zone to offer next, least recently used.
 //
-// The prototype does not compute this: INITIAL_LOG_STATE carries `suggested` and `lastUsed`
-// as two frozen constants, so its suggestion never moves. Here it is a function of what was
-// logged — an unused zone wins, and among used ones the zone whose *latest* injection is
-// oldest wins, because the tissue does not care that it was also used in April.
-//
-// Recency is the timestamp and never the position in `recent`: a repository list carries
-// whatever order the query left.
+// The prototype freezes it as a constant; here it is a function of what was logged — an unused
+// zone wins, and among used ones the one whose *latest* injection is oldest. Recency is the
+// timestamp and never the position in `recent`.
 func SuggestNextSite(recent []Injection) Site {
 	lastUsed := make(map[Site]time.Time, len(recent))
 	for _, injection := range recent {

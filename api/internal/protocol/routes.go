@@ -459,14 +459,10 @@ func (s *Service) registerReads(api huma.API) {
 
 // admitNull rewrites a property that is a bare $ref into «this object or null».
 //
-// huma cannot express it: `nullable:"true"` over a $ref panics outright (schema.go:623 —
-// «nullable is not supported for field … which is type '#/components/schemas/…'»), and
-// without the tag the published property is a plain $ref that a generator reads as
-// non-nullable and required. It is required — the field is always present — but its value
-// can be null, and a client generated from the unrewritten document types it MacrosBody and
-// throws on the first patient whose nutrition context does not exist.
-//
-// Scalars need none of this: huma writes them as type: [integer, null] on its own.
+// huma cannot express it: `nullable:"true"` over a $ref panics («nullable is not supported for
+// field … which is type '#/components/schemas/…'»), and without the tag a generator reads the
+// property as non-nullable — so a client types it MacrosBody and throws on the first patient
+// with no nutrition context. Scalars need none of this.
 func admitNull(api huma.API, schema string, properties ...string) {
 	registry := api.OpenAPI().Components.Schemas
 	target := registry.SchemaFromRef("#/components/schemas/" + schema)

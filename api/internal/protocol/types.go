@@ -24,13 +24,10 @@ const (
 
 // Dose is a number and a unit; «0,25 мг» is a rendering, not data.
 //
-// float64 is safe only because doses are never summed. The one place a total looks likely is
-// a vial's remaining amount, and §03's third correction makes that a subtraction of counts
-// rather than of milligrams — see InventoryMath.kt in the KMP tree, which this step does not
-// port. Two doses are compared with == in TitrationSteps, so a value that arrived through
-// arithmetic rather than from the wire makes «0,3 мг → 0,3 мг» a titration step; that is
-// pinned by TestADoseThatArrivedThroughArithmeticReadsAsAChangeOfDose. Adding a total means
-// changing this type.
+// float64 is safe only because doses are never summed — §03's third correction makes a vial's
+// remainder a subtraction of counts, not of milligrams. TitrationSteps compares two with ==,
+// so a value that arrived through arithmetic makes «0,3 мг → 0,3 мг» a step. Adding a total
+// means changing this type.
 type Dose struct {
 	Value float64
 	Unit  DoseUnit

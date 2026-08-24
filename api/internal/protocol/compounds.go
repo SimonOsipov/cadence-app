@@ -42,12 +42,9 @@ type NewCompound struct {
 // ResolveCompound turns a reference into the identifier a protocol item can carry, entering
 // the drug into the directory if the clinic has not used it before.
 //
-// Case is the database's business — the index is on lower(name_ru) — and whitespace is not:
-// lower() leaves «  Семаглутид  » a second row.
-//
-// DO NOTHING and then a SELECT rather than the one-statement DO UPDATE … RETURNING: the
-// service path holds no UPDATE on this table on purpose, because a name collision must not
-// rewrite a reference row other patients' courses point at. The round trip is that price.
+// Case is the database's business — the index is on lower(name_ru) — and whitespace is not.
+// DO NOTHING then SELECT rather than DO UPDATE … RETURNING: the service path holds no UPDATE
+// here on purpose, so a name collision cannot rewrite a row other courses point at.
 // EnterNewDrugs inserts every drug a draft names by name, in one pass and in a fixed order.
 //
 // Sorted by normalised name, and that ordering is load-bearing across tenants: app.compounds

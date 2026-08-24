@@ -66,14 +66,9 @@ func ProtocolMarks(plan Plan, itemID ProtocolItemID, r civil.Range) []ProtocolMa
 		return nil
 	}
 
-	// The start belongs to the first band that survives the course, not to the first phase's
-	// nominal opening. Those differ only for a phase opening before day 0, which DoseBands
-	// clips rather than drops — taking the date from WeekStart would leave a band drawn with
-	// nothing marking where it began, which is the rule this function states above and
-	// TestAnItemDosedFromTheSecondWeekIsMarkedWhereItsFirstBandOpens asserts.
-	//
-	// The window is the course, never r: a mark must not slide onto the left edge of whatever
-	// window was asked for. Clipping to r is the filter below.
+	// The first band that survives the course, not the first phase's nominal opening: they
+	// differ for a phase opening before day 0, which DoseBands clips rather than drops. The
+	// window is the course and never r — a mark must not slide onto the asked-for edge.
 	course := civil.Range{From: plan.Protocol.StartDate, Through: plan.Protocol.LastPrescribedDay()}
 	bands := DoseBands(plan, itemID, course)
 	if len(bands) == 0 {

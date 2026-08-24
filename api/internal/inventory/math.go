@@ -122,13 +122,9 @@ type ReorderHint struct {
 // ReorderHintFor answers only when both of §03's conditions hold — «0 sealed spares
 // & ≤4 weeks supply». Either alone is a hint people learn to ignore.
 //
-// The compound and the weekly rate come off the same item so they cannot disagree:
-// passed separately, BPC's rate against semaglutide's stock reads as «0 weeks left»,
-// silently and plausibly.
-//
-// today is a parameter because expired stock is neither a spare nor supply — an
-// earlier signature dropped it, and an expired sealed vial suppressed the hint for a
-// patient two doses from nothing.
+// The compound and the weekly rate come off the same item so they cannot disagree: passed
+// separately, BPC's rate against semaglutide's stock reads «0 weeks left», plausibly. today is
+// a parameter because expired stock is neither a spare nor supply.
 func ReorderHintFor(
 	item protocol.ProtocolItem,
 	cabinet Cabinet,

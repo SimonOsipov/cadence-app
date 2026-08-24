@@ -12,18 +12,11 @@ import (
 // OpenVialFor is the vial a dose of this compound is drawn from, when there is one to name.
 //
 // Resolved and never chosen: with two open vials of one compound the answer is nothing,
-// because the choice is the patient's and arrives in the request. A dose with no vial named
-// costs one count its dose; a dose charged to the wrong vial costs two counts their accuracy,
-// and a remaining count is what the patient reorders on.
+// because the choice is the patient's and arrives in the request. Nothing to draw from is a
+// truth about the cabinet rather than a failure, so it is a nil and not an error.
 //
-// Open and not disposed: a disposed vial is still on the shelf as history, and drawing from
-// it would put a dose into one the patient threw away. Nothing to draw from is a truth about
-// the cabinet rather than a failure, so it is a nil and not an error.
-//
-// Callable on either seam, and the boundary differs by which. Under WithCaller the patient's
-// own policy answers and the predicate below is the second lock. On the service seam —
-// vials_service_read is USING (true), and 000016 says in its own comment that this read is
-// why — the predicate is the only one there is.
+// On the service seam the predicate below is the only lock there is — vials_service_read is
+// USING (true), and 000016's own comment says this read is why.
 func OpenVialFor(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string,
 ) (*string, error) {
