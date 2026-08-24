@@ -36,7 +36,8 @@ type Service struct {
 type Deps struct {
 	RequestPool *pgxpool.Pool
 
-	// Useless apart, and both may be absent — see router.Options.Photos.
+	// Useless apart, and both absent is how the document generator builds this:
+	// the operations are declared either way.
 	Photos      Photos
 	PhotoBucket string
 }

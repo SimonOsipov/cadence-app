@@ -110,7 +110,16 @@ func (s *Service) startPhotoUpload(ctx context.Context, in *PhotoUploadInput) (*
 
 	key, err := storage.NewKey(principal.Subject, in.Body.ContentType)
 	if err != nil {
-		return nil, huma.Error422UnprocessableEntity("content_type is not an image type this API stores")
+		// Split, because the two are about different parties. A prefix that is
+		// not one identifier is the *subject's* shape — nothing the caller put in
+		// the body — and it is the whole of the tenant gate on this path, so
+		// answering «your content type is wrong» would report the one refusal
+		// that matters as somebody's typo, and drop it from the log besides.
+		if errors.Is(err, storage.ErrPrefixNotAnIdentifier) {
+			return nil, huma.Error500InternalServerError("this caller's subject is not an identifier", err)
+		}
+
+		return nil, huma.Error422UnprocessableEntity("content_type is not an image type this API stores", err)
 	}
 
 	link, err := s.photos.SignedPut(ctx, s.photoBucket, key, LinkLifetime)

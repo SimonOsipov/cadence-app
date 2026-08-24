@@ -108,10 +108,30 @@ func TestAPrefixThatIsNotOneIdentifierIsRefused(t *testing.T) {
 		patient + "/",
 		"/" + patient,
 		patient + "\n" + patient,
+		// The three spellings uuid.Parse takes and the process's own predicate
+		// does not. None carries a separator, so none is an isolation hole —
+		// each mints a key no patient's CHECK can match, which is an orphaned
+		// object and a patient who cannot record a dose.
+		"urn:uuid:" + patient,
+		"{" + patient + "}",
+		strings.ReplaceAll(patient, "-", ""),
 	} {
 		if key, err := storage.NewKey(prefix, "image/jpeg"); err == nil {
 			t.Errorf("NewKey minted %q for the prefix %q", key, prefix)
 		}
+	}
+}
+
+// A subject the seam accepts case-insensitively still has to mint a key the CHECK
+// accepts, and that one compares against patient_id::text — canonical lower case.
+// Without this an upper-case subject uploads, and then cannot record the dose.
+func TestAnUpperCaseIdentifierMintsACanonicalKey(t *testing.T) {
+	key, err := storage.NewKey(strings.ToUpper(patient), "image/jpeg")
+	if err != nil {
+		t.Fatalf("minting for an upper-case subject: %v", err)
+	}
+	if !strings.HasPrefix(key, patient+"/") {
+		t.Errorf("minted %q, want it under %q", key, patient)
 	}
 }
 

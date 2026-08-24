@@ -2,6 +2,7 @@ package dosing
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,23 +28,13 @@ func TestTheAdvertisedTypesAreTheOnesTheStoreCanKeep(t *testing.T) {
 		t.Fatalf("the tag advertises %v, the store keeps %v", advertised, kept)
 	}
 	for _, contentType := range kept {
-		if !contains(advertised, contentType) {
+		if !slices.Contains(advertised, contentType) {
 			t.Errorf("the store keeps %s and the tag does not advertise it", contentType)
 		}
 	}
 	for _, contentType := range advertised {
-		if !contains(kept, contentType) {
+		if !slices.Contains(kept, contentType) {
 			t.Errorf("the tag advertises %s and the store cannot keep it", contentType)
 		}
 	}
-}
-
-func contains(set []string, want string) bool {
-	for _, got := range set {
-		if got == want {
-			return true
-		}
-	}
-
-	return false
 }

@@ -4,17 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 )
 
 // The image types a photograph may be stored and served as, and the extension
 // each is written under.
 //
-// A closed set both ways: the key carries the extension, and the extension is all
-// the read side has to decide what an object is served as.
+// The types an upload may declare, and the extension each is minted under. Not a
+// closed set on the way out: ContentTypeFor has to answer for keys this map never
+// minted.
 var extensions = map[string]string{
 	"image/jpeg": "jpg",
 	"image/png":  "png",
@@ -31,7 +34,7 @@ func ImageTypes() []string {
 	for contentType := range extensions {
 		types = append(types, contentType)
 	}
-	sort.Strings(types)
+	slices.Sort(types)
 
 	return types
 }
@@ -57,8 +60,18 @@ var ErrPrefixNotAnIdentifier = errors.New("storage: a key's prefix must be one i
 // be signed into somebody else's prefix once a client normalised the path.
 // Today no such subject exists, because the identity provider issues a uuid;
 // this makes that a property of ours rather than of a component we do not own.
+//
+// database.IsUUIDShaped and not a parser of this package's own, because that
+// function's own doc says why: two definitions of «UUID-shaped» in one process
+// is one too many, and this is a context writing an identifier into those
+// tables. uuid.Parse is the looser one — it takes urn:uuid:, braces and the
+// undashed form, each of which mints a key no patient's CHECK can match.
+//
+// Lower-cased, because that predicate compares case-insensitively while the
+// CHECK compares the key against patient_id::text, which is canonical. Since the
+// predicate passed, lowering yields exactly that canonical rendering.
 func NewKey(prefix, contentType string) (string, error) {
-	if _, err := uuid.Parse(prefix); err != nil {
+	if !database.IsUUIDShaped(prefix) {
 		return "", fmt.Errorf("%w: %q", ErrPrefixNotAnIdentifier, prefix)
 	}
 
@@ -67,7 +80,7 @@ func NewKey(prefix, contentType string) (string, error) {
 		return "", fmt.Errorf("%w: %s", ErrUnknownContentType, contentType)
 	}
 
-	return prefix + "/" + uuid.NewString() + "." + extension, nil
+	return strings.ToLower(prefix) + "/" + uuid.NewString() + "." + extension, nil
 }
 
 // ContentTypeFor answers what an object stored under this key is served as.

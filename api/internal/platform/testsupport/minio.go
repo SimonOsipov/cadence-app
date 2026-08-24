@@ -62,8 +62,13 @@ func StartObjectStore(t *testing.T, buckets ...string) *ObjectStore {
 			"mkdir -p "+strings.Join(made, " ")+" && exec minio server /data"),
 		testcontainers.WithCmd(),
 		testcontainers.WithExposedPorts(minioPort),
+		// Readiness and not liveness. /minio/health/live answers 200 as soon as
+		// the process is up; the object layer can still refuse a write with 503
+		// behind it, and it did — a signed upload in the dosing suite answered
+		// 503 whenever several of these ran at once. /minio/health/cluster is the
+		// one that reports write quorum.
 		testcontainers.WithWaitStrategy(
-			wait.ForHTTP("/minio/health/live").WithPort(minioPort),
+			wait.ForHTTP("/minio/health/cluster").WithPort(minioPort),
 		),
 	)
 
