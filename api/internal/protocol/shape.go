@@ -42,7 +42,7 @@ var (
 	ErrNoSlot                   = errors.New("an item is taken at a named time")
 	ErrNotASlot                 = errors.New("the clock has no such time")
 	ErrInjectionWithoutCompound = errors.New("an injection names what is injected")
-	ErrNoPhases                 = errors.New("an item is dosed by at least one phase")
+	ErrNoPhases                 = errors.New("an injection is dosed by at least one phase")
 	ErrPhaseRunsBackwards       = errors.New("a phase ends no earlier than it begins")
 	ErrPhaseOffCourse           = errors.New("a phase lies inside the weeks of its course")
 	ErrDoseOffRange             = errors.New("a dose is more than nothing")
@@ -52,7 +52,7 @@ var (
 	// The mirror of the rule above, and it is not pedantry: a weigh-in carrying a drug
 	// is a form the doctor filled in for the wrong row, and accepting it would store a
 	// prescription nobody can see on any screen.
-	ErrCompoundOnAKindWithoutOne = errors.New("only an injection names a drug")
+	ErrCompoundOnAKindWithoutOne = errors.New("a weigh-in names no drug")
 
 	// The three the directory needs and no default can supply — a unit guessed here is a
 	// dose rendered wrong on every screen. Refused with the others, because reaching the
@@ -176,8 +176,14 @@ func (i DraftItem) check(weeks int) error {
 	switch {
 	case i.Kind == KindInjection && named != 1:
 		return fmt.Errorf("%d halves named: %w", named, ErrInjectionWithoutCompound)
-	case i.Kind != KindInjection && named != 0:
+	// A supplement may. The design's own does — «Глицин + магний» is where the
+	// strip's moon glyph and its name come from — and refusing it made the row the
+	// screens draw impossible to prescribe. A weigh-in still may not: standing on
+	// a scale is not a prescription of anything.
+	case i.Kind == KindWeighIn && named != 0:
 		return fmt.Errorf("a %s names a drug: %w", i.Kind, ErrCompoundOnAKindWithoutOne)
+	case i.Kind == KindSupplement && named > 1:
+		return fmt.Errorf("%d halves named: %w", named, ErrCompoundRefUnclear)
 	}
 	if i.Compound.New != nil {
 		if _, ok := ParseDoseUnit(string(i.Compound.New.DefaultUnit)); !ok {
@@ -197,7 +203,12 @@ func (i DraftItem) check(weeks int) error {
 				utf8.RuneCountInString(i.Compound.New.NameRU), ErrDrugNameTooLong)
 		}
 	}
-	if len(i.Phases) == 0 {
+	// An injection only. A phase is a dose band, and the other two kinds have no
+	// dose to band: the supplement the design draws carries no phases on purpose
+	// — that is what makes the strip's dose column meaningfully optional — and a
+	// weigh-in has no dose at all. The schema never held this rule; it was this
+	// package's, and it made two thirds of ItemKind impossible to prescribe.
+	if i.Kind == KindInjection && len(i.Phases) == 0 {
 		return ErrNoPhases
 	}
 

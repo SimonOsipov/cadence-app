@@ -15,12 +15,14 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
@@ -139,8 +141,15 @@ func seedStand(t *testing.T) (deps, *testsupport.Database) {
 		writes:      writes,
 		provisioner: newFakeAccounts(),
 		password:    "a-seeded-password-nobody-uses",
+		// A calendar and not whatever day it is: the course is counted back from
+		// this, and a suite reading the clock asserts a different course each day.
+		today: theSeededDay,
 	}, db
 }
+
+// theSeededDay is a Wednesday, chosen so that the course's Sunday alignment is
+// something the fixture exercises rather than something it happens to satisfy.
+var theSeededDay = civil.NewDate(2026, time.May, 27)
 
 // theFirstAdministrator writes the row bootstrap-admin writes, under the role that command runs as.
 // The two statements are not this command's and are arranged rather than exercised here.

@@ -39,6 +39,11 @@ type seededPatient struct {
 	// which is both what pending means and what most of a roster looks like on
 	// any given day.
 	signsIn bool
+
+	// prescribed: the persona holds the full protocol the mobile screens were drawn
+	// around. The roster does not — the dashboard's fixture states a name and an
+	// age, and a course invented for each of them is treatment nobody prescribed.
+	prescribed bool
 }
 
 type clinic struct {
@@ -65,12 +70,13 @@ var careTeam = []staffMember{
 // height is not: 110 кг at the ИМТ 31,2 her profile screen shows is 188 см, and
 // the ↓2,1 beside it against her 118 кг start agrees.
 var marina = seededPatient{
-	slug:     "marina-volkova",
-	fullName: "Марина Волкова",
-	age:      38,
-	careTeam: []string{"ksenia", "maria", "tatiana"},
-	body:     &body{sex: "female", heightCM: 188, targetWeightKG: 102},
-	signsIn:  true,
+	slug:       "marina-volkova",
+	fullName:   "Марина Волкова",
+	age:        38,
+	careTeam:   []string{"ksenia", "maria", "tatiana"},
+	body:       &body{sex: "female", heightCM: 188, targetWeightKG: 102},
+	signsIn:    true,
+	prescribed: true,
 }
 
 // roster is the dashboard's own fixture, name and age, every one of them the

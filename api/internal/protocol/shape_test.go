@@ -240,3 +240,99 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 		}
 	}
 }
+
+// A phase is a dose band, and two of the three kinds have no dose to band.
+//
+// The rule «at least one phase» was this package's own — the schema has no such
+// constraint, protocol_phases is a table an item may have no rows in — and it made
+// two thirds of ItemKind unusable. The supplement the design draws (MockSeed's
+// «Глицин + магний») carries no phases on purpose: that is what makes the strip's
+// dose column meaningfully optional. A weigh-in has no dose at all, and inventing
+// one to satisfy a validator would put a number on a screen that nobody prescribed.
+//
+// An injection keeps the rule: it is a drug going into somebody, and how much is
+// not optional.
+func TestOnlyAnInjectionHasToBeDosed(t *testing.T) {
+	for _, kind := range []ItemKind{KindSupplement, KindWeighIn} {
+		t.Run(string(kind), func(t *testing.T) {
+			draft := aPlan(func(d *Draft) {
+				d.Items[0].Kind = kind
+				d.Items[0].Compound = CompoundRef{}
+				d.Items[0].Phases = nil
+			})
+
+			if err := draft.Check(); err != nil {
+				t.Errorf("a %s with no dose is refused: %v", kind, err)
+			}
+		})
+	}
+
+	t.Run("an injection still is", func(t *testing.T) {
+		err := aPlan(func(d *Draft) { d.Items[0].Phases = nil }).Check()
+		if !errors.Is(err, ErrNoPhases) {
+			t.Errorf("an undosed injection got %v, want %v", err, ErrNoPhases)
+		}
+	})
+}
+
+// A supplement the clinic does dose is still a supplement: relaxing the rule is
+// «may have none», not «may not have any».
+func TestASupplementMayCarryADoseAnyway(t *testing.T) {
+	draft := aPlan(func(d *Draft) {
+		d.Items[0].Kind = KindSupplement
+		d.Items[0].Compound = CompoundRef{}
+	})
+
+	if err := draft.Check(); err != nil {
+		t.Errorf("a dosed supplement is refused: %v", err)
+	}
+}
+
+// A supplement may name a drug, and the design's own does.
+//
+// «Глицин + магний» is a supplement with a compound in MockSeed, and the prototype
+// draws that row from it: the moon glyph and the name are the compound's fields.
+// Refusing it — which this package did until step 11 tried to seed the design —
+// made the row the screens draw impossible to prescribe. The schema never said so:
+// protocol_items.compound_id is nullable and carries no CHECK against kind.
+//
+// A weigh-in still may not. Standing on a scale is not a prescription of anything,
+// and a drug named there is a row two readers would disagree about.
+func TestASupplementMayNameADrugAndAWeighInMayNot(t *testing.T) {
+	compound := CompoundID("9b2f3b7c-0000-4000-8000-0000000000d1")
+
+	t.Run("a supplement with a drug", func(t *testing.T) {
+		draft := aPlan(func(d *Draft) {
+			d.Items[0].Kind = KindSupplement
+			d.Items[0].Phases = nil
+		})
+
+		if err := draft.Check(); err != nil {
+			t.Errorf("a supplement naming a drug is refused: %v", err)
+		}
+	})
+
+	t.Run("a supplement without one", func(t *testing.T) {
+		draft := aPlan(func(d *Draft) {
+			d.Items[0].Kind = KindSupplement
+			d.Items[0].Compound = CompoundRef{}
+			d.Items[0].Phases = nil
+		})
+
+		if err := draft.Check(); err != nil {
+			t.Errorf("a supplement naming no drug is refused: %v", err)
+		}
+	})
+
+	t.Run("a weigh-in with a drug", func(t *testing.T) {
+		draft := aPlan(func(d *Draft) {
+			d.Items[0].Kind = KindWeighIn
+			d.Items[0].Compound = CompoundRef{ID: &compound}
+			d.Items[0].Phases = nil
+		})
+
+		if err := draft.Check(); !errors.Is(err, ErrCompoundOnAKindWithoutOne) {
+			t.Errorf("a weigh-in naming a drug got %v, want %v", err, ErrCompoundOnAKindWithoutOne)
+		}
+	})
+}

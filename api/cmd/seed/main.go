@@ -24,6 +24,7 @@ import (
 
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/config"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/provisioning"
@@ -95,11 +96,14 @@ func seedTheClinic(ctx context.Context, cfg *config.SeedConfig) error {
 		return fmt.Errorf("reaching the provisioner: %w", err)
 	}
 
+	now := time.Now()
+
 	return seed(ctx, theClinic(), deps{
 		requests:    requests,
 		writes:      writes,
 		provisioner: provisioner,
 		password:    cfg.Password,
+		today:       civil.NewDate(now.Year(), now.Month(), now.Day()),
 	})
 }
 
@@ -116,6 +120,11 @@ type deps struct {
 	writes      *pgxpool.Pool
 	provisioner accounts
 	password    string
+
+	// today is what the seeded course is counted back from. A parameter and not
+	// time.Now inside, so the suite can seed a calendar rather than whatever day
+	// it happens to be.
+	today civil.Date
 }
 
 // seed creates everybody, staff first: a patient names their care team, so the
@@ -143,17 +152,35 @@ func seed(ctx context.Context, of clinic, on deps) error {
 		staff[member.slug] = userID
 	}
 
+	courses := 0
 	for _, person := range of.patients {
 		// As the patient's own primary specialist, which is who creates a patient
 		// in the product: a doctor may put themselves on a care team and nobody else.
 		asDoctor := auth.WithPrincipal(ctx, auth.Principal{Subject: staff[person.careTeam[0]], Role: "doctor"})
 
-		if err := createPatient(asDoctor, onboarding, on, of, staff, person); err != nil {
+		userID, err := createPatient(asDoctor, onboarding, on, of, staff, person)
+		if err != nil {
 			return fmt.Errorf("creating %s: %w", person.fullName, err)
+		}
+
+		if !person.prescribed {
+			continue
+		}
+
+		// Prescribed by the same doctor who created them: Create refuses a course
+		// written for somebody else's patient, and this is the path the product
+		// takes rather than a service-path write around it.
+		written, err := prescribe(asDoctor, on.writes, civil.UserID(userID), on.today)
+		if err != nil {
+			return fmt.Errorf("prescribing for %s: %w", person.fullName, err)
+		}
+		if written {
+			courses++
 		}
 	}
 
-	fmt.Printf("seed: %d members of staff and %d patients\n", len(of.staff), len(of.patients))
+	fmt.Printf("seed: %d members of staff, %d patients, %d courses\n",
+		len(of.staff), len(of.patients), courses)
 
 	return nil
 }
@@ -202,7 +229,7 @@ func createPatient(
 	of clinic,
 	staff map[string]string,
 	person seededPatient,
-) error {
+) (string, error) {
 	address := person.slug + addressDomain
 
 	specialists := make([]identity.Assignment, 0, len(person.careTeam))
@@ -231,21 +258,19 @@ func createPatient(
 
 	userID, err := onboarding.InvitePatient(ctx, address, newPatient)
 	if err != nil {
-		if _, err := alreadyHere(ctx, on, address, err); err != nil {
-			return err
-		}
-
-		return nil
+		// Answered rather than discarded: a re-run has to be able to prescribe for
+		// somebody it did not create this time round.
+		return alreadyHere(ctx, on, address, err)
 	}
 
 	// Only for those meant to have arrived: setting a password confirms the
 	// address — it has to, or the grant refuses it — and a confirmed account is
 	// one the registry draws as accepted. The rest are what pending means.
 	if !person.signsIn {
-		return nil
+		return userID, nil
 	}
 
-	return on.provisioner.SetPassword(ctx, userID, on.password)
+	return userID, on.provisioner.SetPassword(ctx, userID, on.password)
 }
 
 // alreadyHere turns the one refusal a re-run is expected to meet into the
