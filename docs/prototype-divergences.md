@@ -7,6 +7,12 @@ architecture note. Every one of them is written down here, with the reason.
 Step 11 of the port block reviews this document against a side-by-side run of
 the two apps. Entries are added as they are made, not reconstructed at the end.
 
+Since M3 it carries a second axis as well: where the **API** diverges from the
+partner's plan (§03) or from the shapes `kmp/shared` declares for it. Those
+entries are marked «API» in their heading. A client written against a KMP type
+and served by this API is where such a difference is paid, and there is no
+side-by-side run that would surface it — only this list.
+
 ## Body typeface: Golos Text, not DM Sans
 
 **What the prototype does:** `F.body` in `mobile/src/theme/index.ts` is
@@ -513,6 +519,13 @@ wizard asks. Until then, nothing should be read into a mock rotation.
 dropped — `photoPath` is always null, and `Written` still reports success. §03
 routes photos straight to object storage under a path convention, and the
 upload lands with the storage work.
+
+**The server half landed 2026-08-24**, in step 10 of the protocol block:
+`POST /v1/me/dose-events/photo-uploads` mints the key and hands back a signed
+PUT, and `POST /v1/me/dose-events` already takes `photo_path`. So what remains
+owed is the KMP side — a draft that carries a path rather than a boolean, and a
+wizard step that uploads before it saves. Until then this stays a divergence, and
+it is now one of missing wiring rather than of a missing endpoint.
 
 ## The mood scale says nothing until the patient says something
 
@@ -1205,3 +1218,106 @@ size`): на клипованных `boundsInRoot` такая проверка �
 **Что остаётся расхождением:** градиентной заливки под панелью нет — сплошной
 `palette.bg`, как на нижних панелях карточки рецепта и конструктора. Три
 одинаковые роли рисуются одним способом.
+
+## API: nullable там, где KMP-тип не nullable
+
+**Что объявляет KMP:** `TodaySummary` (`shared/repository/TodayRepository.kt:39-47`)
+держит `mealCount: Int`, `mealMacros: Macros`, `targets: Macros`,
+`weightSeries: List<Double>` и `vialDosesLeft: Int` — все пять не-nullable.
+
+**Что делает API:** `GET /v1/me/today` отдаёт по ним `null`. Первые четыре —
+потому что контексты питания и измерений не построены; `vial_doses_left`
+отсутствует, когда у пациента нет открытого флакона этого препарата.
+
+**Почему:** «0 из 4 приёмов» поверх несуществующего контекста — ложь, которую
+клиент не распознает; отсутствующее значение он рисует прочерком. То же с
+остатком: ноль доз и «флакона нет» — разные факты, и второй не должен читаться
+как первый.
+
+**Чем это платится:** сгенерированный из контракта клиент типизирует их
+`Int?`/`Macros?`, а KMP-тип — нет. Адаптирует клиент в фазе 4: либо тип
+становится nullable, либо адаптер подставляет ноль и **тем самым принимает
+решение**, которого сервер не принимал.
+
+**Замерено:** `api/internal/protocol/routes.go:517-526` против
+`TodayRepository.kt:39-47`. Не расхождение: `RowBody.compound` — у нас `null` для
+позиции без препарата, и в KMP это `ProtocolRow.compound: Compound?`. Оба
+nullable; проверял, потому что запись об этом у меня была и оказалась неверной.
+
+## API: `incomplete` опубликован в контракте и недостижим по HTTP
+
+**Что делает API:** `POST /v1/me/dose-events` объявляет исход `incomplete` в
+закрытом множестве ответов.
+
+**Что происходит на самом деле:** ни один запрос его не получает. Каждый черновик,
+который его даёт, отвергает сгенерированная схема раньше: пустой идентификатор
+позиции — `format: uuid`, пустой ключ клиента — `minLength`, отсутствующая
+единица — `required`, нулевая доза — `exclusiveMinimum`.
+
+**Почему он остаётся:** `dosing.Resolve` — функция Go со своими вызывающими помимо
+транспорта; сид шага 11 строит черновики руками и мимо схемы.
+
+**Чем это платится:** ветка клиента, которая никогда не выполнится. Решать в фазе
+4: снять исход из контракта, оставив его внутренним, или оставить и написать в
+описании операции, что по HTTP он недостижим.
+
+## API: календарь завершённого курса пуст
+
+**Что делает генератор:** `OccurrencesFor` гасит только `CANCELLED` — и это
+намеренно: у завершённого курса дни, в которые пациент кололся, остаются
+историей.
+
+**Что делают три чтения:** `ActivePlanFor` выбирает **активный** курс, поэтому на
+тринадцатой неделе `/v1/me/today`, `/v1/me/schedule` и `/v1/me/schedule/day`
+отвечают как для пациента без курса вовсе — месяц и все прошлые дни гаснут,
+включая дни с инъекциями.
+
+**Почему так вышло:** инвариант «у пациента один активный протокол» дал чтениям
+простую выборку, и цена — что «нет активного» и «нет курса» стали одним ответом.
+
+**Чем это платится:** экран истории пустеет ровно в день, когда курс кончился.
+Лечится чтением последнего курса, а не активного, — и это изменение контракта:
+`cycle_week` для завершённого курса надо чем-то отвечать.
+
+## API: флакон разрешается, а не выбирается — и клиент уже умеет выбирать
+
+**Что делает API:** `OpenVialFor` (`internal/inventory/vials.go`) отвечает
+флаконом, только когда открыт **ровно один** флакон этого препарата. При двух
+`vial_id` остаётся пустым.
+
+**Что делает KMP:** пикер есть с 04.08 — `DoseSteps.kt:209` рисует выбор, как
+только у препарата больше одного открытого флакона, и кладёт выбранный **в
+черновик**. Резервный путь мока (`CadenceMocks.kt:511`) берёт самый полный и сам
+говорит, что это «at most wrong by one vial».
+
+**Почему API не угадывает:** неверный флакон — это неверный остаток, а остаток —
+то число, по которому пациент заказывает следующий. Доза без флакона стоит одному
+счётчику одну дозу; доза, записанная не на тот флакон, стоит двум счётчикам их
+точности.
+
+**Чем это платится:** ничем — при условии, что клиент присылает `vial_id`.
+Расхождение остаётся ровно для клиента, который его не пришлёт: KMP-мок в этом
+случае берёт самый полный, API не берёт ничего. Мой комментарий в `vials.go`
+говорил «до появления выбора в M4» — это было неточно, выбор в KMP уже есть;
+недостаёт подключения тех экранов к API, то есть фазы 4.
+
+## API: взвешивание рисует расписание прототипа, а карточка «Сегодня» — нет
+
+**Что делает прототип:** `schedule/data.ts:184-191` выдаёт еженедельное
+«Взвешивание» в 07:30, `loggable: false`, в тот же день недели, что инъекция
+(`INJ_DOW` — воскресенье). А `today/TodayScreen.tsx:100-131` строит `protocolRows`
+ровно из **трёх** элементов — семаглутид, BPC-157, глицин — под заголовком
+«Воскресенье, утро · 4-я неделя», и взвешивания среди них нет.
+
+**Что делает сид:** выписывает четыре позиции, включая взвешивание, — по
+расписанию.
+
+**Почему это расхождение прототипа с самим собой:** карточка «Сегодня» — список
+позиций **курса**, а не вхождений дня (она показывает добавку в 21:30 на утренней
+карточке), так что взвешивание принадлежит ей на тех же правах, что глицин. Два
+экрана одного прототипа не согласны о том, входит ли взвешивание в список
+протокола.
+
+**Что решить в фазе 4:** за каким из двух идёт портированная карточка. Пока сид
+следует расписанию, потому что оно — единственное место, где взвешивание описано
+данными, а не рисунком.
