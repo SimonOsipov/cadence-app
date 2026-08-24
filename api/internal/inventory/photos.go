@@ -16,25 +16,20 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 )
 
-// LinkLifetime is how long a signed link lasts. The same five minutes dosing
-// gives a dose photograph, and for the same reason: the link is the whole of the
-// authority, because the store has no policies of its own.
+// LinkLifetime is how long a signed link lasts; the same dosing gives a dose.
 const LinkLifetime = 5 * time.Minute
 
-// Photos signs short-lived links to stored objects. Declared here, by the
-// consumer, and satisfied by platform/storage.
+// Photos signs short-lived links to stored objects.
 //
-// Only the read half. A vial's label is attached after the vial exists, and
-// nothing creates or updates a vial over HTTP yet — that arrives with vial CRUD
-// in M4. An upload link whose key no endpoint could store would be a hole with
-// no user.
+// The read half only: a label is attached after the vial exists, nothing creates
+// or updates a vial over HTTP until M4, and an upload link whose key no endpoint
+// could store would be a hole with no user.
 type Photos interface {
 	SignedGet(ctx context.Context, bucket, key, contentType string, ttl time.Duration) (storage.Link, error)
 }
 
-// ErrNoPhoto is what the read answers for a vial that is invisible, absent, or
-// carries no label photograph. One error for the three: which of them it was is a
-// fact about somebody else's cabinet.
+// ErrNoPhoto is one error for three cases — invisible, absent, no photograph —
+// because which of them it was is a fact about somebody else's cabinet.
 var ErrNoPhoto = errors.New("no photograph is readable here")
 
 // Service is this context's operations together with what they need to answer.
@@ -44,8 +39,7 @@ type Service struct {
 	bucket   string
 }
 
-// Deps is what this context needs from outside itself. Nil is what the document
-// generator passes; the operation is declared either way.
+// Deps is what this context needs from outside itself.
 type Deps struct {
 	RequestPool *pgxpool.Pool
 	Photos      Photos
@@ -135,7 +129,9 @@ func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*Lab
 
 	link, err := s.photos.SignedGet(ctx, s.bucket, key, storage.ContentTypeFor(key), LinkLifetime)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("the object store cannot be reached", err)
+		// A 500 and not a 503: signing reaches nothing, so a failure here is a
+		// signer built wrong, and a 503 would have the client retry for ever.
+		return nil, huma.Error500InternalServerError("the photograph's link cannot be signed", err)
 	}
 
 	out := &LabelPhotoOutput{}
@@ -146,9 +142,7 @@ func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*Lab
 }
 
 // labelPhotoKeyOf reads one vial's key under whatever identity the transaction
-// carries. No patient predicate, and that is the point: the policies decide, and
-// a predicate here would answer the same for the owner while hiding whether they
-// do. The tenant boundary is measured in this context's policy suite.
+// carries; see dosing.photoKeyOf on why there is no patient predicate.
 func labelPhotoKeyOf(ctx context.Context, tx pgx.Tx, vialID string) (string, error) {
 	var key *string
 	err := tx.QueryRow(ctx, `

@@ -14,26 +14,18 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 )
 
-// LinkLifetime is how long a signed link lasts.
-//
-// Short because the link is the whole of the authority: the store has no policies,
-// so anyone holding one reads the object until it expires. Long enough for a phone
-// on a slow connection to start the transfer — a link that dies before the picture
-// arrives is a screen that never loads.
+// LinkLifetime is how long a signed link lasts: short because whoever holds one
+// reads the object, long enough for a phone on a slow connection to start.
 const LinkLifetime = 5 * time.Minute
 
 // Photos signs short-lived links to stored objects.
-//
-// Declared here, by the consumer, and satisfied by platform/storage: this context
-// decides who may see a photograph, and the signer must not be able to.
 type Photos interface {
 	SignedGet(ctx context.Context, bucket, key, contentType string, ttl time.Duration) (storage.Link, error)
 	SignedPut(ctx context.Context, bucket, key string, ttl time.Duration) (storage.Link, error)
 }
 
-// ErrNoPhoto is what the reads answer for a row that is invisible, absent, or
-// carries no photograph. One error for the three deliberately: which of them it
-// was is a fact about somebody else's treatment.
+// ErrNoPhoto is one error for three cases — invisible, absent, no photograph —
+// because which of them it was is a fact about somebody else's treatment.
 var ErrNoPhoto = errors.New("no photograph is readable here")
 
 // PhotoUploadInput asks for somewhere to put one photograph.
@@ -46,7 +38,7 @@ type PhotoUploadInput struct {
 // PhotoUploadOutput is the link to write to and the key to send back afterwards.
 type PhotoUploadOutput struct {
 	Body struct {
-		URL string `json:"url" doc:"A signed PUT. It constrains the key and not the bytes: a presigned SigV4 URL covers only the headers it names, and this SDK names host alone."`
+		URL string `json:"url" doc:"A signed PUT. It constrains the key and not the bytes: neither the content type nor the size is bound by the signature."`
 		Key string `json:"key" doc:"What to send as photo_path when recording the dose. The server minted it; a client-chosen key is never accepted."`
 
 		ExpiresAt string `json:"expires_at" format:"date-time"`
@@ -74,17 +66,17 @@ func (s *Service) registerPhotos(api huma.API) {
 		DefaultStatus: http.StatusCreated,
 		Summary:       "Ask for somewhere to put a dose photograph",
 		Description: "Answers a signed link to write one object to, and the key to send as " +
-			"`photo_path` when the dose is recorded. The key is minted here and never " +
-			"taken from the client: both tables holding one constrain it by a CHECK naming " +
-			"the patient, and a client-chosen key would make that CHECK the only thing " +
-			"between a patient and another patient's prefix. The upload happens before the " +
-			"dose exists, which is why this names no dose.",
+			"`photo_path` when the dose is recorded. The key is minted by the server and " +
+			"never taken from the client, so it is always under the caller's own prefix. " +
+			"The upload happens before the dose exists, which is why this names no dose.",
 		Tags: []string{"dosing"},
+		// No 503: this operation opens no transaction and signing reaches
+		// nothing, so there is no dependency for it to be unavailable. A status
+		// published and unreachable is a branch a client writes and never runs.
 		Errors: []int{
 			http.StatusUnauthorized,
 			http.StatusForbidden,
 			http.StatusUnprocessableEntity,
-			http.StatusServiceUnavailable,
 		},
 	}, s.startPhotoUpload)
 
@@ -123,7 +115,11 @@ func (s *Service) startPhotoUpload(ctx context.Context, in *PhotoUploadInput) (*
 
 	link, err := s.photos.SignedPut(ctx, s.photoBucket, key, LinkLifetime)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("the object store cannot be reached", err)
+		// A 500 and not a 503, although the object store is what the link is for:
+		// signing is arithmetic and reaches nothing, so a failure here means the
+		// signer was built wrong. A 503 tells the offline queue to retry, and it
+		// would retry for ever something that will never start working.
+		return nil, huma.Error500InternalServerError("the photograph's link cannot be signed", err)
 	}
 
 	out := &PhotoUploadOutput{}
@@ -153,13 +149,20 @@ func (s *Service) readPhoto(ctx context.Context, in *PhotoInput) (*PhotoOutput, 
 		if errors.Is(err, ErrNoPhoto) {
 			return nil, huma.Error404NotFound("no photograph is readable here")
 		}
+		if database.IsUnavailable(err) {
+			return nil, huma.Error503ServiceUnavailable("the database is not answering", err)
+		}
 
-		return nil, answer(err)
+		// Its own mapping rather than answer(): that one is the dose write's, and
+		// its default says «recording the dose» — which logProblem writes to the
+		// log before the body is cleaned, so a failed read would be recorded under
+		// the name of an operation that did not run.
+		return nil, huma.Error500InternalServerError("reading the dose's photograph", err)
 	}
 
 	link, err := s.photos.SignedGet(ctx, s.photoBucket, key, storage.ContentTypeFor(key), LinkLifetime)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("the object store cannot be reached", err)
+		return nil, huma.Error500InternalServerError("the photograph's link cannot be signed", err)
 	}
 
 	out := &PhotoOutput{}
@@ -170,10 +173,8 @@ func (s *Service) readPhoto(ctx context.Context, in *PhotoInput) (*PhotoOutput, 
 }
 
 // photoKeyOf reads one row's key under whatever identity the transaction carries.
-//
-// No patient predicate, and that is the point: the policies are what decide, and a
-// predicate here would answer the same for the owner while hiding whether they do.
-// The tenant boundary is measured in this context's policy suite.
+// No patient predicate on purpose: a predicate here would answer the same for the
+// owner while hiding whether the policies do.
 func photoKeyOf(ctx context.Context, tx pgx.Tx, eventID string) (string, error) {
 	var key *string
 	err := tx.QueryRow(ctx, `

@@ -94,9 +94,24 @@ func TestATypeOutsideTheSetIsRefused(t *testing.T) {
 	}
 }
 
-func TestAKeyWithoutAPrefixIsRefused(t *testing.T) {
-	if _, err := storage.NewKey("", "image/jpeg"); err == nil {
-		t.Error("NewKey minted a key with no prefix, which addresses the bucket's root")
+// The upload path signs a PUT without opening a transaction, so this refusal is
+// the only place the subject's shape is examined at all — database.WithCaller's
+// own check never runs there. A prefix carrying a separator is the case that
+// matters: normalised by any client, it addresses another patient's prefix.
+func TestAPrefixThatIsNotOneIdentifierIsRefused(t *testing.T) {
+	for _, prefix := range []string{
+		"",
+		"not-a-uuid",
+		patient + "/x/..",
+		"../" + patient,
+		patient + "/nested",
+		patient + "/",
+		"/" + patient,
+		patient + "\n" + patient,
+	} {
+		if key, err := storage.NewKey(prefix, "image/jpeg"); err == nil {
+			t.Errorf("NewKey minted %q for the prefix %q", key, prefix)
+		}
 	}
 }
 

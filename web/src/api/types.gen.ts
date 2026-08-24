@@ -280,7 +280,7 @@ export type PhotoUploadOutputBody = {
      */
     key: string;
     /**
-     * A signed PUT. It constrains the key and not the bytes: a presigned SigV4 URL covers only the headers it names, and this SDK names host alone.
+     * A signed PUT. It constrains the key and not the bytes: neither the content type nor the size is bound by the signature.
      */
     url: string;
 };
@@ -636,10 +636,6 @@ export type StartDosePhotoUploadErrors = {
      * Internal Server Error
      */
     500: Problem;
-    /**
-     * Service Unavailable
-     */
-    503: Problem;
 };
 
 export type StartDosePhotoUploadError = StartDosePhotoUploadErrors[keyof StartDosePhotoUploadErrors];

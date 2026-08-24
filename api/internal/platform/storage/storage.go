@@ -59,14 +59,10 @@ func New(cfg Config, now func() time.Time) (*Signer, error) {
 	return &Signer{presign: s3.NewPresignClient(client), now: now}, nil
 }
 
-// SignedGet answers a link that reads one object and expires after ttl.
+// SignedGet answers a link that reads one object as contentType and nothing else.
 //
-// The response's content type and its disposition are part of the signature —
-// they travel as query parameters, which SigV4 covers — so the store serves the
-// object as the caller says regardless of what was stored under the key. That is
-// where the type is pinned, and it has to be: what a client declared on the way
-// in is not signed (see SignedPut), so an object holding text/html would
-// otherwise be handed back as text/html from a host the API vouches for.
+// The type and the disposition are in the signed query, which is where the type
+// gets pinned because SignedPut cannot pin it on the way in.
 func (s *Signer) SignedGet(
 	ctx context.Context, bucket, key, contentType string, ttl time.Duration,
 ) (Link, error) {
@@ -96,10 +92,16 @@ func (s *Signer) SignedGet(
 //
 // It does not bind what is written. A presigned SigV4 URL covers only the
 // headers named in X-Amz-SignedHeaders, and this SDK names one: measured on
-// v1.107.3, PresignPutObject with ContentType set produces
-// X-Amz-SignedHeaders=host, and MinIO accepts the same link with text/html. The
-// key is the whole of what this constrains — which is enough, because the caller
-// chooses it and the read side pins the type it is served as.
+// service/s3 v1.107.3, PresignPutObject with ContentType set produces
+// X-Amz-SignedHeaders=host, and MinIO accepts the same link with text/html.
+//
+// So the key is the whole of what this constrains. For the type that is covered
+// elsewhere — the read side pins what an object is served as. For the *size* it
+// is not covered at all, and that is a named weakness rather than an oversight:
+// Content-Length is outside the signature too, so a patient holding a link can
+// put an object of any size into a private bucket for as long as it lasts, and
+// nothing here would notice. Binding it needs a POST policy with
+// content-length-range, which is a different shape of upload.
 func (s *Signer) SignedPut(ctx context.Context, bucket, key string, ttl time.Duration) (Link, error) {
 	if err := s.usable(bucket, key, ttl); err != nil {
 		return Link{}, err

@@ -26,13 +26,9 @@ import (
 
 const labelBucket = "cadence-vials"
 
-// theSigningMoment is the clock the signer is built with, so a link's stated
-// expiry can be compared with the moment it was signed.
 var theSigningMoment = time.Date(2026, time.May, 10, 9, 0, 0, 0, time.UTC)
 
-// withLabelPhotos assembles this context against a real object store: the
-// signature is the whole of the authority, so a stubbed signer would leave the
-// one thing that matters unmeasured.
+// withLabelPhotos assembles this context against a real object store.
 func withLabelPhotos(t *testing.T, c clinic) (*chi.Mux, *storage.Signer, func(subject, role string)) {
 	t.Helper()
 
@@ -71,8 +67,7 @@ func withLabelPhotos(t *testing.T, c clinic) (*chi.Mux, *storage.Signer, func(su
 }
 
 // attachLabel puts a picture in the store and points the vial's row at it, under
-// the patient's own identity — which is the path the product uses, and the reason
-// the column was left in the patient's grant.
+// the patient's own identity — the path the product uses.
 func attachLabel(t *testing.T, c clinic, signer *storage.Signer, patient, vial string, picture []byte) string {
 	t.Helper()
 
@@ -150,9 +145,6 @@ func TestAPatientReadsTheLabelOfTheirOwnVial(t *testing.T) {
 // «Право проверяется по RLS строки прежде, чем ссылка выдаётся» — the acceptance
 // criterion, answered here for the cabinet: B asks for A's label by A's own vial
 // id and is told there is nothing to read.
-//
-// Two patients rather than one: with a single patient the policy is a
-// pass-through and this would be green with no boundary at all.
 func TestAnotherPatientGetsNoLinkToThisOnesLabel(t *testing.T) {
 	c := newClinic(t)
 	mux, signer, as := withLabelPhotos(t, c)
@@ -165,13 +157,8 @@ func TestAnotherPatientGetsNoLinkToThisOnesLabel(t *testing.T) {
 		t.Fatalf("B was answered %d for A's label: %s", status, refusedToB)
 	}
 
-	// And the refusal has to be the same one A gets for a vial that simply has no
-	// photograph — byte for byte, on the same path. «Invisible» and «no
-	// photograph» told apart is an oracle: B could walk vial ids and learn which
-	// ones exist in somebody else's cabinet.
-	//
-	// Compared rather than searched for A's identifier, because a search only
-	// refuses the leak it was told to look for: this refuses every difference.
+	// And the same one A gets for a vial with no photograph, byte for byte on the
+	// same path: the two told apart is an oracle for which vials exist.
 	detachLabel(t, c, patientA, c.vialA)
 
 	as(patientA, "patient")
@@ -187,7 +174,6 @@ func TestAnotherPatientGetsNoLinkToThisOnesLabel(t *testing.T) {
 	}
 }
 
-// detachLabel takes the photograph off a vial under the patient's own identity.
 func detachLabel(t *testing.T, c clinic, patient, vial string) {
 	t.Helper()
 

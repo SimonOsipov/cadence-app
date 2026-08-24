@@ -1499,7 +1499,8 @@ todoist: "6hH8gjwXjFXRJGcH"
 > **Тип закрепляется на чтении, потому что на записи закрепить нечем — замерено.**
 > Я написал комментарий, утверждавший, что `PresignPutObject` с `ContentType` связывает
 > тип, и интеграционный тест его опроверг: `X-Amz-SignedHeaders = host`
-> (aws-sdk-go-v2 v1.107.3), и MinIO принимает ту же ссылку с `text/html`. Поэтому
+> (`service/s3` v1.107.3 — версия именно этого модуля, не `aws-sdk-go-v2`, у которого
+> в `go.mod` v1.43.7), и MinIO принимает ту же ссылку с `text/html`. Поэтому
 > `SignedGet` подписывает `response-content-type` и `response-content-disposition:
 > attachment` — они едут в строке запроса, которую SigV4 покрывает. Объект, положенный
 > как `text/html`, отдаётся как `image/jpeg` вложением, а ссылка без этого параметра

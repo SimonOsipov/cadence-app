@@ -723,7 +723,7 @@
             "type": "string"
           },
           "url": {
-            "description": "A signed PUT. It constrains the key and not the bytes: a presigned SigV4 URL covers only the headers it names, and this SDK names host alone.",
+            "description": "A signed PUT. It constrains the key and not the bytes: neither the content type nor the size is bound by the signature.",
             "type": "string"
           }
         },
@@ -1492,7 +1492,7 @@
     },
     "/v1/me/dose-events/photo-uploads": {
       "post": {
-        "description": "Answers a signed link to write one object to, and the key to send as `photo_path` when the dose is recorded. The key is minted here and never taken from the client: both tables holding one constrain it by a CHECK naming the patient, and a client-chosen key would make that CHECK the only thing between a patient and another patient's prefix. The upload happens before the dose exists, which is why this names no dose.",
+        "description": "Answers a signed link to write one object to, and the key to send as `photo_path` when the dose is recorded. The key is minted by the server and never taken from the client, so it is always under the caller's own prefix. The upload happens before the dose exists, which is why this names no dose.",
         "operationId": "start-dose-photo-upload",
         "requestBody": {
           "content": {
@@ -1554,16 +1554,6 @@
               }
             },
             "description": "Internal Server Error"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Ask for somewhere to put a dose photograph",

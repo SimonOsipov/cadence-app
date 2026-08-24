@@ -327,16 +327,13 @@ services:
       timeout: 2s
       retries: 15
 
-  # The object store, locally. Photographs of vial labels and of injections live
-  # in private buckets and are reached only through short-lived signed links, so
-  # without this the API refuses to start: none of its seven STORAGE_ variables
-  # has a fallback, deliberately.
+  # The object store, locally. Without it the API refuses to start: none of its
+  # seven STORAGE_ variables has a fallback.
   #
-  # The two buckets are made as directories under the data root, which is what
-  # MinIO's filesystem backend treats as a bucket — no second tool, and no
-  # start-up script that has to be kept in step with the names below. The
-  # entrypoint is replaced rather than the command: the image's own entrypoint
-  # prepends `minio`, so a command is read as a minio sub-command.
+  # The entrypoint is replaced rather than the command: the image's own
+  # entrypoint prepends `minio`, so a command is read as a minio sub-command.
+  # Buckets are directories under the data root, which is what MinIO's
+  # filesystem backend treats as a bucket.
   storage:
     image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     entrypoint:

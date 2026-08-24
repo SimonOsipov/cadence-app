@@ -3,15 +3,23 @@ package router
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/dosing"
 	"github.com/SimonOsipov/cadence-app/api/internal/identity"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth/token"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 )
+
+// Photos is the object store as this package needs it: wide enough to satisfy
+// every context's own narrower interface.
+type Photos interface {
+	SignedGet(ctx context.Context, bucket, key, contentType string, ttl time.Duration) (storage.Link, error)
+	SignedPut(ctx context.Context, bucket, key string, ttl time.Duration) (storage.Link, error)
+}
 
 // Options is what the composition root supplies to build the HTTP surface.
 type Options struct {
@@ -39,15 +47,13 @@ type Options struct {
 	// Logger is used by the health endpoint to record a failing probe.
 	Logger *slog.Logger
 
-	// Photos signs short-lived links to the object store. Nil is what the
-	// document generator passes — the operations are declared either way,
-	// because openapi.json is the shape of the API and not of this deployment.
-	Photos dosing.Photos
+	// Photos signs short-lived links to the object store. Its own interface and
+	// not a context's, so that satisfying one context does not make this package
+	// depend on another's.
+	Photos Photos
 
-	// The private buckets, one per kind of picture. Two names rather than one
-	// because server-minted keys start with the patient's id and nothing else,
-	// so a single bucket would let a vial label and an injection photograph
-	// collide on a key.
+	// One private bucket per kind of picture: minted keys carry the patient's id
+	// and nothing else, so one bucket would let two kinds collide.
 	VialsBucket      string
 	InjectionsBucket string
 }

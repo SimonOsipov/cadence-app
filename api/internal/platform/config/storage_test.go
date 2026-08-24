@@ -19,10 +19,7 @@ func setRequiredStorage(t *testing.T) {
 	t.Setenv("STORAGE_BUCKET_INJECTIONS", "cadence-injections")
 }
 
-// Every one of these is required, and none has a fallback. A missing endpoint
-// or a missing bucket that resolved to a default would sign links against
-// somebody else's namespace — and the failure would arrive as a patient's photo
-// that will not open, long after the deploy that caused it.
+// Every one of these is required, and none has a fallback.
 func TestLoadRequiresTheObjectStore(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -49,9 +46,6 @@ func TestLoadRequiresTheObjectStore(t *testing.T) {
 			wantErr: "STORAGE_BUCKET_INJECTIONS is required",
 		},
 		{
-			// Addressing style is required rather than guessed: path-style and
-			// virtual-host style produce different URLs, and the wrong guess is
-			// green against a local MinIO and a 404 in the deployment.
 			name: "no addressing style", unset: "STORAGE_PATH_STYLE",
 			wantErr: "STORAGE_PATH_STYLE is required",
 		},
@@ -68,8 +62,6 @@ func TestLoadRequiresTheObjectStore(t *testing.T) {
 			wantErr: "must be an absolute http(s) address",
 		},
 		{
-			// Two names for one bucket is a deploy in which a vial label and an
-			// injection photo share a namespace, so one can overwrite the other.
 			name: "one bucket under two names",
 			set: map[string]string{
 				"STORAGE_BUCKET_VIALS":      "cadence-photos",

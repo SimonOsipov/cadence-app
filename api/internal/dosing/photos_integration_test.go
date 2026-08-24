@@ -24,9 +24,8 @@ import (
 
 const photoBucket = "cadence-injections"
 
-// withPhotos assembles this context the way the router does, against a real
-// object store — the signature is the whole of the authority, so a stubbed
-// signer would leave the one thing that matters unmeasured.
+// withPhotos assembles this context against a real object store: a stubbed signer
+// would leave the one thing that decides access unmeasured.
 func withPhotos(t *testing.T, c clinic) (*chi.Mux, func(subject, role string)) {
 	t.Helper()
 
@@ -165,8 +164,8 @@ func TestAPatientPutsAPhotographWithADoseAndReadsItBack(t *testing.T) {
 // criterion of this feature, and this is the test that answers it: B asks for A's
 // photograph by A's own event id and is told there is nothing to read.
 //
-// Two patients rather than one: with a single patient the policy is a pass-through
-// and this would be green with no boundary at all.
+// Two patients rather than one: with a single patient the policy is a
+// pass-through and this would be green with no boundary at all.
 func TestAnotherPatientGetsNoLinkToThisOnesPhotograph(t *testing.T) {
 	c := newClinic(t)
 	mux, as := withPhotos(t, c)
@@ -187,9 +186,8 @@ func TestAnotherPatientGetsNoLinkToThisOnesPhotograph(t *testing.T) {
 	// «not yours» distinguished from «no picture» lets B walk event ids and learn
 	// which doses somebody else has recorded.
 	//
-	// The documents are compared apart from `instance`, which carries the path and
-	// so differs by construction. Compared rather than searched for A's identifier,
-	// because a search only refuses the leak it was told to look for.
+	// Compared apart from `instance`, which carries the path and so differs by
+	// construction.
 	status, body := send(t, c, patientB, aPayload(c, patientB, func(payload map[string]any) {
 		payload["client_request_id"] = "a-dose-with-no-picture"
 	}))

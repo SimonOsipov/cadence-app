@@ -18,8 +18,8 @@ import (
 
 // Service is this context's operations together with what they need to answer.
 //
-// The request pool alone: a dose is the patient writing about themselves, so the write runs
-// under their own identity and RLS answers. Nothing here reaches the service seam.
+// One pool, and it is the request one: everything here is the patient acting on their own
+// rows, so it runs under their identity and RLS answers. Nothing reaches the service seam.
 type Service struct {
 	requests *pgxpool.Pool
 
@@ -36,9 +36,7 @@ type Service struct {
 type Deps struct {
 	RequestPool *pgxpool.Pool
 
-	// Photos and PhotoBucket travel together and are useless apart. Nil is what the
-	// document generator passes: the operations are declared either way, because
-	// openapi.json is the shape of the API and not of this deployment.
+	// Useless apart, and both may be absent — see router.Options.Photos.
 	Photos      Photos
 	PhotoBucket string
 }
