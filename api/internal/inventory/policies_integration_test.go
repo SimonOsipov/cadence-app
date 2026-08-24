@@ -230,7 +230,8 @@ func TestEachSideSeesItsOwnVialAndNobodyElses(t *testing.T) {
 		if caller.vial == c.vialB {
 			other = c.vialA
 		}
-		if got := c.visible(t, caller.subject, caller.role,
+		if got := c.visible(
+			t, caller.subject, caller.role,
 			fmt.Sprintf(`SELECT id::text FROM app.vials WHERE id = '%s'`, other),
 		); len(got) != 0 {
 			t.Errorf("%s fetched another patient's vial by id: %v", caller.name, got)
@@ -1021,7 +1022,8 @@ func TestTheCabinetReadIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) 
 				func(ctx context.Context, tx pgx.Tx) error {
 					var err error
 					got, err = inventory.OpenVialFor(
-						ctx, tx, civil.UserID(who.patient), c.compound)
+						ctx, tx, civil.UserID(who.patient), c.compound,
+					)
 
 					return err
 				},
@@ -1087,7 +1089,8 @@ func TestTheSupplyAnsweredIsThePatientsOwn(t *testing.T) {
 					var err error
 					left, _, err = inventory.NewSupply().SupplyFor(
 						ctx, tx, civil.UserID(who.patient), anInjectionOf(c.compound),
-						civil.NewDate(2026, time.May, 10))
+						civil.NewDate(2026, time.May, 10),
+					)
 
 					return err
 				},

@@ -33,7 +33,8 @@ func sendAs(t *testing.T, c clinic, subject, role, payload string) (int, string)
 	mux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(
-				r.Context(), auth.Principal{Subject: subject, Role: role})))
+				r.Context(), auth.Principal{Subject: subject, Role: role},
+			)))
 		})
 	})
 	dosing.NewServiceAt(c.request, func() time.Time { return theMoment }).Register(httpserver.NewAPI(mux))

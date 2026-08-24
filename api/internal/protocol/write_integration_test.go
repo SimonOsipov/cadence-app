@@ -241,7 +241,8 @@ func TestACourseOfThreeKindsIsWrittenAndThenEditedInPlace(t *testing.T) {
 	pool, _ := prescribing(t)
 
 	draft := aCourse(writePatientA)
-	draft.Items = append(draft.Items,
+	draft.Items = append(
+		draft.Items,
 		aKind(protocol.KindSupplement, civil.Slot{Hour: 9}),
 		aKind(protocol.KindWeighIn, civil.Slot{Hour: 7}),
 	)

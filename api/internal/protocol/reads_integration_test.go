@@ -38,7 +38,8 @@ func get(t *testing.T, service, requests *pgxpool.Pool, subject, role, path stri
 	mux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(
-				r.Context(), auth.Principal{Subject: subject, Role: role})))
+				r.Context(), auth.Principal{Subject: subject, Role: role},
+			)))
 		})
 	})
 	history := dosing.NewHistory(func() time.Time { return theHour })

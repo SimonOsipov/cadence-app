@@ -741,7 +741,8 @@ func TestTheRotationReadsWhenTheDoseWentInAndNotWhatItAnswered(t *testing.T) {
 		func(ctx context.Context, tx pgx.Tx) error {
 			var err error
 			history, err = dosing.InjectionsOf(
-				ctx, tx, civil.UserID(patientA), theMoment.Add(-dosing.RotationWindow))
+				ctx, tx, civil.UserID(patientA), theMoment.Add(-dosing.RotationWindow),
+			)
 
 			return err
 		},
@@ -785,7 +786,8 @@ func TestADoseWithNoZoneIsInTheHistoryWithoutOne(t *testing.T) {
 		func(ctx context.Context, tx pgx.Tx) error {
 			var err error
 			history, err = dosing.InjectionsOf(
-				ctx, tx, civil.UserID(patientA), theMoment.Add(-dosing.RotationWindow))
+				ctx, tx, civil.UserID(patientA), theMoment.Add(-dosing.RotationWindow),
+			)
 
 			return err
 		},

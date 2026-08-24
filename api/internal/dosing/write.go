@@ -373,7 +373,8 @@ func logOf(
 		WHERE patient_id = $1 AND client_request_id = $2
 	`, string(patient), key).Scan(
 		&first.EventID, &day, &first.Dose.Value, &first.Dose.Unit, &first.VialID,
-		&first.itemID, &first.site, &first.mood, &first.sides, &first.note, &first.photo)
+		&first.itemID, &first.site, &first.mood, &first.sides, &first.note, &first.photo,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return theFirstTime{}, false, nil
 	}
@@ -498,7 +499,8 @@ func entryOn(
 		FOR UPDATE
 	`, string(patient), day.String()).Scan(
 		&entry.PatientID, &on, &entry.Mood, &entry.Energy, &entry.Sleep,
-		&tags, &entry.Note, &source)
+		&tags, &entry.Note, &source,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

@@ -1142,7 +1142,8 @@ func TestAPatientMayNotReachAnotherPatientsDose(t *testing.T) {
 		t.Errorf("the upsert was refused with %q, want the policy to be what refused", upsert.Message)
 	}
 
-	if seen := c.visible(t, patientB, "patient",
+	if seen := c.visible(
+		t, patientB, "patient",
 		`SELECT id::text FROM app.dose_events WHERE client_request_id = 'onto-another-1'`,
 	); len(seen) != 0 {
 		t.Errorf("the other patient's stream gained %v", seen)

@@ -407,7 +407,8 @@ func TestAPatientMayNotWriteADayOntoAnotherPatient(t *testing.T) {
 		want int64
 	}{
 		{"naming the row", fmt.Sprintf(
-			`UPDATE app.journal_entries SET mood = 1 WHERE patient_id = '%s'`, patientB), 0},
+			`UPDATE app.journal_entries SET mood = 1 WHERE patient_id = '%s'`, patientB,
+		), 0},
 		{"sweeping the table", `UPDATE app.journal_entries SET mood = 1`, 1},
 		{
 			"with a predicate that reads nothing",

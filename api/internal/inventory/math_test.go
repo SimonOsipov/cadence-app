@@ -298,7 +298,8 @@ func TestAnotherPatientsVialsChangeNothing(t *testing.T) {
 
 	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, today)
 	mixed := ReorderHintFor(
-		weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, theirs}), nil, today)
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, theirs}), nil, today,
+	)
 
 	if alone == nil || mixed == nil || *alone != *mixed {
 		t.Fatalf("another patient's vials changed the answer: %v vs %v", alone, mixed)
