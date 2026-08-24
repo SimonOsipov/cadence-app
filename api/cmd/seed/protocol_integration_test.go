@@ -210,9 +210,9 @@ func assertOccurrences(t *testing.T, what string, got []protocol.Occurrence, wan
 	}
 
 	// Sorted by slot, because the generator's order is its own business and this is
-	// a statement about the day. Kind breaks the tie: two items may share a slot —
-	// §03 allows it — and a comparator that called them equal would make this
-	// intermittently red in a way that reads as a generator bug.
+	// a statement about the day. Kind breaks the tie so that two items sharing a
+	// slot — §03 allows it — are ordered by what they are rather than by the order
+	// the generator happened to emit them in.
 	slices.SortStableFunc(got, func(a, b protocol.Occurrence) int {
 		if by := a.Time.Hour - b.Time.Hour; by != 0 {
 			return by
@@ -378,13 +378,59 @@ func TestASeedRefusesToPrescribeForSomebodyElse(t *testing.T) {
 	}
 }
 
-// An account nobody holds is a refusal too, not a course written blind.
+// An account nobody holds is a refusal too, not a course written blind. The error
+// is named rather than merely required: any broken query answers non-nil.
 func TestASeedRefusesToPrescribeForAnAccountWithNoProfile(t *testing.T) {
 	on, db := seedStand(t)
 	theFirstAdministrator(t, db)
 
 	err := isWhoWeMeant(t.Context(), on, "5d4f3b7c-0000-4000-8000-00000000ffff", "Марина Волкова")
-	if err == nil {
-		t.Error("an account with no profile was accepted")
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("an account with no profile answered %v, want no rows", err)
+	}
+}
+
+// And the guard measured where it is called rather than as a function, because a
+// call site is what an extracted one leaves untested — the same survivor this step
+// already met once over the seeded day's timezone.
+//
+// The scenario is the recorded limitation as well: full_name is patient-writable,
+// so a patient who renames themselves stops the next run. It stops with a refusal
+// naming both, which is the point — the alternative was writing the persona's
+// twelve-week course onto whoever now holds that address.
+func TestARenamedPersonaStopsTheNextRunRatherThanBeingPrescribedFor(t *testing.T) {
+	on, db := seedStand(t)
+	theFirstAdministrator(t, db)
+
+	if err := seed(t.Context(), theClinic(), on); err != nil {
+		t.Fatalf("the first run: %v", err)
+	}
+
+	if err := database.WithServiceJob(t.Context(), on.writes, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			_, err := tx.Exec(ctx,
+				`UPDATE app.profiles SET full_name = $1 WHERE full_name = $2`,
+				"Кто-то Другой", "Марина Волкова")
+			return err
+		}); err != nil {
+		t.Fatalf("renaming the persona: %v", err)
+	}
+
+	err := seed(t.Context(), theClinic(), on)
+	if !errors.Is(err, errNotWhoWeMeant) {
+		t.Fatalf("the second run answered %v, want %v", err, errNotWhoWeMeant)
+	}
+	if !strings.Contains(err.Error(), "Кто-то Другой") {
+		t.Errorf("the refusal does not say who holds the account: %v", err)
+	}
+
+	// And nothing was prescribed onto them.
+	held := countOf(t, on.writes, `
+		SELECT count(*) FROM app.protocols p
+		JOIN app.profiles who ON who.user_id = p.patient_id
+		WHERE who.full_name = 'Кто-то Другой'
+	`)
+	if held != 1 {
+		t.Errorf("the renamed account holds %d courses; the first run's one is expected", held)
 	}
 }

@@ -244,17 +244,38 @@ func TestASupplementWithADrugAndNoPhasesIsPrescribed(t *testing.T) {
 
 // The other half of the same rule: an injection is a drug going into somebody, and
 // how much is not optional.
+//
+// Written out rather than edited out of aWirePayload. Doing it by substitution left
+// a stray property behind, and Item is generated with additionalProperties: false —
+// so the request was refused for carrying an unknown field and the rule was never
+// reached. The message is asserted for that reason: a 422 alone is what the broken
+// version also answered.
 func TestAnInjectionWithNoPhasesIsStillRefused(t *testing.T) {
 	pool, _ := prescribing(t)
 
 	doctor := auth.Principal{Subject: writeDoctorA, Role: "doctor"}
 	path := "/v1/patients/" + writePatientA + "/protocols"
 
-	payload := strings.Replace(aWirePayload,
-		`"phases": [`, `"phases_removed": [`, 1)
-	payload = strings.Replace(payload, `"phases_removed"`, `"phases": [], "phases_removed"`, 1)
+	payload := `{
+		"start_date": "2026-05-04",
+		"weeks": 12,
+		"status": "active",
+		"items": [{
+			"kind": "injection",
+			"compound": {"name_ru": "Семаглутид", "default_unit": "мг", "route": "sc", "icon": "syringe"},
+			"cadence": "weekly",
+			"days_of_week": [7],
+			"times": ["08:00"],
+			"loggable": true,
+			"phases": []
+		}]
+	}`
 
-	if status, body := send(t, pool, doctor, http.MethodPost, path, payload); status != http.StatusUnprocessableEntity {
-		t.Errorf("an undosed injection answered %d: %s", status, body)
+	status, body := send(t, pool, doctor, http.MethodPost, path, payload)
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("an undosed injection answered %d: %s", status, body)
+	}
+	if !strings.Contains(body, "dosed by at least one phase") {
+		t.Errorf("the refusal is not about the dose: %s", body)
 	}
 }
