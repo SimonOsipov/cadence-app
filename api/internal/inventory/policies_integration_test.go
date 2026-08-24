@@ -382,11 +382,9 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 	// And the columns a patient does own are writable, so the refusals above are
 	// the predicate and not a lost grant.
 	//
-	// Asserted on rows affected and on the value read back, because err == nil is
-	// not a witness for a write: an UPDATE a policy filters away returns success and
-	// touches nothing. data-layer invariant 5 names that hole and requires both
-	// halves of the answer, and this is the first request-path write with a row
-	// predicate since the identity block — the first place it is live again.
+	// Asserted on rows affected and on the value read back, because err == nil is not a
+	// witness for a write: an UPDATE a policy filters away returns success and touches
+	// nothing. data-layer invariant 5 names that hole and requires both halves.
 	if affected := c.changed(t, patientA, "patient", `
 		UPDATE app.vials SET opened_at = DATE '2026-05-01', location_ru = 'холодильник'
 		WHERE id = $1

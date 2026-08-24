@@ -232,11 +232,9 @@ func TestACourseArrivesWholeAndSigned(t *testing.T) {
 // The three kinds §03 gives a course, and the mixed edit rewriteItems exists for: one item
 // named and rewritten, one unnamed and added, one omitted and dropped, in the same call.
 //
-// A one-item fixture collapsed two axes into one — with a single item, «what was kept» and
-// «what was written» are the same set, so a `kept` built from updates alone, or a delete run
-// before the loop, was indistinguishable. It also meant «врач заводит протокол с позициями
-// трёх видов» — an acceptance criterion — never reached the database at all, and the branch
-// that leaves compound_id NULL for a kind that is not a drug ran only in unit tests.
+// A one-item fixture collapsed two axes into one: «what was kept» and «what was written» are
+// then the same set, so a `kept` built from updates alone was indistinguishable — and «врач
+// заводит протокол с позициями трёх видов» never reached the database at all.
 func TestACourseOfThreeKindsIsWrittenAndThenEditedInPlace(t *testing.T) {
 	pool, _ := prescribing(t)
 

@@ -101,14 +101,10 @@ func grantRegistry() map[string][]string {
 		"protocol_phases/cadence_admin":   crud,
 		"protocol_phases/cadence_service": {"DELETE", "INSERT", "SELECT"},
 		"protocol_phases/cadence_owner":   everything,
-		// A vial is the patient's own record about themselves, so it travels the
-		// request seam rather than the service one. The shape is the identity
-		// block's ownRowWrite — the subject in USING and in WITH CHECK — and what is
-		// new is that this is cadence_patient's first INSERT, and the first
-		// patient-written table whose owner is a column rather than the primary key.
-		//
-		// No DELETE for anybody but the admin: a vial is disposed of by setting
-		// disposed_at, and the dose events drawn from it keep pointing at it.
+		// A vial is the patient's own record, so it travels the request seam. New here:
+		// cadence_patient's first INSERT, and the first patient-written table whose owner
+		// is a column rather than the primary key. No DELETE but the admin's — a vial is
+		// disposed of by setting disposed_at, and its dose events keep pointing at it.
 		"vials/cadence_patient": {"SELECT"},
 		"vials/cadence_doctor":  {"SELECT"},
 		"vials/cadence_admin":   crud,

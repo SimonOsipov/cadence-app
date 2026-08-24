@@ -11,12 +11,9 @@ import (
 
 // OpenVialFor is the vial a dose of this compound is drawn from, when there is one to name.
 //
-// Resolved and never chosen: with two open vials of one compound the answer is nothing,
-// because the choice is the patient's and arrives in the request. Nothing to draw from is a
-// truth about the cabinet rather than a failure, so it is a nil and not an error.
-//
-// On the service seam the predicate below is the only lock there is — vials_service_read is
-// USING (true), and 000016's own comment says this read is why.
+// Resolved and never chosen: with two open vials the answer is nothing, because the choice is
+// the patient's and arrives in the request. Nothing to draw from is a nil, not an error. On the
+// service seam the predicate below is the only lock — vials_service_read is USING (true).
 func OpenVialFor(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string,
 ) (*string, error) {
@@ -56,11 +53,9 @@ func OpenVialFor(
 // IsDrawableFor reports whether a vial the request named may have a dose charged to it: the
 // patient's own, of that compound, and not disposed of.
 //
-// The composite key already refuses another patient's; this is the rest of the same question.
-//
 // «Not yet opened» is deliberately not a refusal, and that is the difference from OpenVialFor:
-// resolution picks among vials already in use, but a patient naming a sealed one is starting
-// it — requiring an opened vial here would make the first dose from every new one impossible.
+// a patient naming a sealed vial is starting it, and requiring an opened one here would make
+// the first dose from every new vial impossible.
 func IsDrawableFor(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound, vial string,
 ) (bool, error) {

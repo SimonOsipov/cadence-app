@@ -59,10 +59,9 @@ type Logged struct {
 
 // Log records a dose and the day's diary entry in one transaction.
 //
-// The request seam and not the service one: a dose is the patient writing about themselves,
-// so RLS answers and no audit row is written — the patient's own row is the record of the
-// fact, and a second under a service role would add only the name of a service to it. That is
-// a decision of this feature and it removed a line from the component's contract.
+// The request seam and not the service one: a dose is the patient writing about themselves, so
+// RLS answers and no audit row is written — their own row is the record, and a second under a
+// service role would add only the name of a service to it.
 //
 // `now` is a parameter: the day is the patient's own, computed in their zone.
 func Log(
