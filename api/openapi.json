@@ -249,7 +249,7 @@
           },
           "compound": {
             "$ref": "#/components/schemas/Drug",
-            "description": "What is injected. Required for an injection and refused for anything else — a weigh-in is not a prescription of a drug."
+            "description": "What is prescribed. Required for an injection, optional for a supplement — the strip draws its glyph and its name from here — and refused for a weigh-in, which is not a prescription of a drug."
           },
           "days_of_week": {
             "description": "ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself.",
@@ -280,11 +280,10 @@
             "type": "boolean"
           },
           "phases": {
-            "description": "The titration bands. They may leave gaps — a washout is deliberate — and may not overlap.",
+            "description": "The titration bands. Required for an injection; absent for a supplement or a weigh-in, which carry no dose. They may leave gaps — a washout is deliberate — and may not overlap.",
             "items": {
               "$ref": "#/components/schemas/Phase"
             },
-            "minItems": 1,
             "type": [
               "array",
               "null"

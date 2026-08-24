@@ -176,10 +176,8 @@ func (i DraftItem) check(weeks int) error {
 	switch {
 	case i.Kind == KindInjection && named != 1:
 		return fmt.Errorf("%d halves named: %w", named, ErrInjectionWithoutCompound)
-	// A supplement may. The design's own does — «Глицин + магний» is where the
-	// strip's moon glyph and its name come from — and refusing it made the row the
-	// screens draw impossible to prescribe. A weigh-in still may not: standing on
-	// a scale is not a prescription of anything.
+	// A supplement may: «Глицин + магний» is where the strip's moon glyph and its
+	// name come from. A weigh-in may not — a scale prescribes nothing.
 	case i.Kind == KindWeighIn && named != 0:
 		return fmt.Errorf("a %s names a drug: %w", i.Kind, ErrCompoundOnAKindWithoutOne)
 	case i.Kind == KindSupplement && named > 1:
@@ -203,11 +201,8 @@ func (i DraftItem) check(weeks int) error {
 				utf8.RuneCountInString(i.Compound.New.NameRU), ErrDrugNameTooLong)
 		}
 	}
-	// An injection only. A phase is a dose band, and the other two kinds have no
-	// dose to band: the supplement the design draws carries no phases on purpose
-	// — that is what makes the strip's dose column meaningfully optional — and a
-	// weigh-in has no dose at all. The schema never held this rule; it was this
-	// package's, and it made two thirds of ItemKind impossible to prescribe.
+	// A phase is a dose band, and the other two kinds have none to band. The schema
+	// never held this rule — protocol_phases is a table an item may have no rows in.
 	if i.Kind == KindInjection && len(i.Phases) == 0 {
 		return ErrNoPhases
 	}

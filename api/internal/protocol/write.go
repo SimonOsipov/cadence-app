@@ -325,7 +325,13 @@ func writePhases(
 }
 
 func compoundFor(ctx context.Context, tx pgx.Tx, item DraftItem, n int) (*CompoundID, error) {
-	if item.Kind != KindInjection {
+	// On whether a drug was named, not on the kind. Keying this on «injection»
+	// discarded the supplement's drug silently: Check admits one — the design's
+	// «Глицин + магний» is where the strip's moon glyph and its name come from —
+	// and this stored NULL anyway, leaving an orphan row in the directory as the
+	// only trace and an em-dash under a beaker on the row. A weigh-in still
+	// stores NULL, because Check refuses a drug there before this is reached.
+	if item.Compound.ID == nil && item.Compound.New == nil {
 		return nil, nil
 	}
 

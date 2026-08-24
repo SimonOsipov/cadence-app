@@ -41,6 +41,11 @@ var errNotInProduction = errors.New("this command does not run against productio
 // here would be that command's two statements written a second time.
 var errNoAdministrator = errors.New("the clinic has no administrator to create staff as")
 
+// errNotWhoWeMeant: an address the provider already holds resolved to a profile
+// that is not the person this seed is about, so prescribing would write a course
+// onto somebody else's record.
+var errNotWhoWeMeant = errors.New("the address is held by somebody else")
+
 // seedJob is who this read is on behalf of: a command has no human to attribute
 // it to, and attributing it to the administrator it is about to act as would put
 // a person's name on a row nobody asked for.
@@ -50,6 +55,35 @@ const seedJob = "seed"
 // development stand no invitation is delivered anywhere, and the seeded people
 // sign in with the password this sets rather than with the link.
 const addressDomain = "@clinic.example"
+
+// seededZone is where every seeded person lives, and therefore the zone the
+// course is counted in. The host's own day is the wrong one: the reads resolve a
+// patient's day in their profile's zone, so a seed run at 23:30 UTC on a Saturday
+// would count back from that Saturday while Moscow is already Sunday — and the
+// stand would open on week five at 0,5 мг instead of week four at 0,25.
+const seededZone = "Europe/Moscow"
+
+// seededToday answers the day the course is counted back from: the seeded
+// people's own, not the host's.
+//
+// A function rather than the expression at the call site so that the zone it
+// names is something a test can reach — the argument at a call site is the seam
+// an extracted function leaves untested.
+func seededToday(at time.Time) civil.Date {
+	return todayIn(seededZone, at)
+}
+
+// todayIn answers the civil day at that instant in the named zone. A zone the
+// host cannot load falls back to the instant's own day rather than refusing: the
+// seed is a development command, and a stand that will not start over a missing
+// tzdata is worse than one whose course is a day out.
+func todayIn(zone string, at time.Time) civil.Date {
+	if loaded, err := time.LoadLocation(zone); err == nil {
+		at = at.In(loaded)
+	}
+
+	return civil.NewDate(at.Year(), at.Month(), at.Day())
+}
 
 // seeder is the seam the environment refusal is tested through: everything below
 // it needs a database and a provisioner.
@@ -96,14 +130,12 @@ func seedTheClinic(ctx context.Context, cfg *config.SeedConfig) error {
 		return fmt.Errorf("reaching the provisioner: %w", err)
 	}
 
-	now := time.Now()
-
 	return seed(ctx, theClinic(), deps{
 		requests:    requests,
 		writes:      writes,
 		provisioner: provisioner,
 		password:    cfg.Password,
-		today:       civil.NewDate(now.Year(), now.Month(), now.Day()),
+		today:       seededToday(time.Now()),
 	})
 }
 
@@ -167,9 +199,16 @@ func seed(ctx context.Context, of clinic, on deps) error {
 			continue
 		}
 
-		// Prescribed by the same doctor who created them: Create refuses a course
-		// written for somebody else's patient, and this is the path the product
-		// takes rather than a service-path write around it.
+		// Who the provider handed back is checked against who this is meant to be.
+		// On a re-run the identifier comes from the provider by email address, and
+		// requireCaresFor cannot discriminate here: every seeded patient names the
+		// same primary specialist, so a re-used address would put the persona's
+		// twelve-week course onto somebody else's record and pass.
+		if err := isWhoWeMeant(ctx, on, userID, person.fullName); err != nil {
+			return err
+		}
+
+		// By the creating doctor, because Create refuses somebody else's patient.
 		written, err := prescribe(asDoctor, on.writes, civil.UserID(userID), on.today)
 		if err != nil {
 			return fmt.Errorf("prescribing for %s: %w", person.fullName, err)
@@ -245,7 +284,7 @@ func createPatient(
 
 	newPatient := identity.NewPatient{
 		FullName:    person.fullName,
-		Timezone:    "Europe/Moscow",
+		Timezone:    seededZone,
 		Locale:      "ru",
 		DateOfBirth: &dob,
 		Specialists: specialists,
@@ -300,4 +339,23 @@ func careRoleOf(of clinic, slug string) string {
 	}
 
 	return ""
+}
+
+// isWhoWeMeant refuses to prescribe for an account whose profile is not the person
+// the seed is holding.
+func isWhoWeMeant(ctx context.Context, on deps, userID, fullName string) error {
+	var found string
+
+	err := database.WithServiceJob(ctx, on.writes, seedJob, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT full_name FROM app.profiles WHERE user_id = $1`, userID).Scan(&found)
+	})
+	if err != nil {
+		return fmt.Errorf("reading back who %s is: %w", fullName, err)
+	}
+	if found != fullName {
+		return fmt.Errorf("%w: %s resolves to %q", errNotWhoWeMeant, fullName, found)
+	}
+
+	return nil
 }

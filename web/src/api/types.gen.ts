@@ -96,7 +96,7 @@ export type Drug = {
 export type Item = {
     cadence: 'weekly' | 'daily' | 'n_per_week';
     /**
-     * What is injected. Required for an injection and refused for anything else — a weigh-in is not a prescription of a drug.
+     * What is prescribed. Required for an injection, optional for a supplement — the strip draws its glyph and its name from here — and refused for a weigh-in, which is not a prescription of a drug.
      */
     compound?: Drug;
     /**
@@ -113,7 +113,7 @@ export type Item = {
      */
     loggable: boolean;
     /**
-     * The titration bands. They may leave gaps — a washout is deliberate — and may not overlap.
+     * The titration bands. Required for an injection; absent for a supplement or a weigh-in, which carry no dose. They may leave gaps — a washout is deliberate — and may not overlap.
      */
     phases: Array<Phase> | null;
     /**

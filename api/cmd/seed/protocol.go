@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -43,9 +42,9 @@ func courseStart(today civil.Date) civil.Date {
 // BPC-157 twice a day, an evening supplement and a Sunday weigh-in.
 //
 // The first three are MockSeed's, field for field, because those are what the
-// screens were drawn against. The weigh-in is not in MockSeed at all — WEIGH_IN
-// is declared in the KMP enum and used nowhere — and it is here so that all three
-// kinds of occurrence are on a real stand rather than only injections.
+// screens were drawn against. The weigh-in is in no seed of theirs — WEIGH_IN is
+// named by the KMP suite and by no production code — and it is here so that all
+// three kinds of occurrence are on a real stand rather than only injections.
 func theCourse(patient civil.UserID, today civil.Date) protocol.Draft {
 	return protocol.Draft{
 		PatientID: patient,
@@ -73,8 +72,6 @@ func theCourse(patient civil.UserID, today civil.Date) protocol.Draft {
 				},
 			},
 			{
-				// Two slots on one item, which is what makes an occurrence keyed by
-				// (item, date, time) rather than by (item, date).
 				Kind: protocol.KindInjection,
 				Compound: protocol.CompoundRef{New: &protocol.NewCompound{
 					NameRU:      "BPC-157",
@@ -90,9 +87,6 @@ func theCourse(patient civil.UserID, today civil.Date) protocol.Draft {
 				},
 			},
 			{
-				// No phases, so no dose on the row — which is what makes the strip's
-				// dose column meaningfully optional rather than always filled. And
-				// not loggable: the clinic tracks it without asking.
 				Kind: protocol.KindSupplement,
 				Compound: protocol.CompoundRef{New: &protocol.NewCompound{
 					NameRU:      "Глицин + магний",
@@ -152,7 +146,7 @@ func holdsACourse(ctx context.Context, writes *pgxpool.Pool, patient civil.UserI
 			)
 		`, string(patient)).Scan(&held)
 	})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil {
 		return false, fmt.Errorf("looking for a course already prescribed: %w", err)
 	}
 

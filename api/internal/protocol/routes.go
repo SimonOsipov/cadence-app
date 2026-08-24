@@ -151,7 +151,7 @@ type Item struct {
 	ID *string `json:"id,omitempty" format:"uuid" doc:"The item being kept, from an earlier reply. Absent for an item just added."`
 
 	Kind       string `json:"kind" enum:"injection,supplement,weigh_in"`
-	Compound   *Drug  `json:"compound,omitempty" doc:"What is injected. Required for an injection and refused for anything else — a weigh-in is not a prescription of a drug."`
+	Compound   *Drug  `json:"compound,omitempty" doc:"What is prescribed. Required for an injection, optional for a supplement — the strip draws its glyph and its name from here — and refused for a weigh-in, which is not a prescription of a drug."`
 	Cadence    string `json:"cadence" enum:"weekly,daily,n_per_week"`
 	DaysOfWeek []int  `json:"days_of_week" doc:"ISO weekdays, 1 for Monday. Empty for a daily item and at least one for any other, because the two are read together and a mismatch makes the schedule disagree with itself."`
 	// A pattern and not format:"time", which huma reads as RFC 3339 full-time. Measured
@@ -161,7 +161,11 @@ type Item struct {
 	// KMP's LocalTime and in the prototype, so the pattern is the contract.
 	Times    []string `json:"times" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$" minItems:"1" doc:"The slots within the day, as HH:MM. Two of them is two occurrences, logged apart."`
 	Loggable bool     `json:"loggable" doc:"Whether the patient records taking it. False for a supplement the clinic tracks without asking."`
-	Phases   []Phase  `json:"phases" minItems:"1" doc:"The titration bands. They may leave gaps — a washout is deliberate — and may not overlap."`
+	// No minItems, deliberately: a phase is a dose band, and two of the three kinds
+	// have none to band. With it the design's phase-less supplement was expressible
+	// only by spelling the field null — a generated client sends [] for a required
+	// array and was refused 422 — which is the shape the validator behind it admits.
+	Phases []Phase `json:"phases" doc:"The titration bands. Required for an injection; absent for a supplement or a weigh-in, which carry no dose. They may leave gaps — a washout is deliberate — and may not overlap."`
 }
 
 // Drug names what is injected: an identifier from the directory, or a new entry.

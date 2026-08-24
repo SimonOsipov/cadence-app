@@ -141,9 +141,7 @@ func seedStand(t *testing.T) (deps, *testsupport.Database) {
 		writes:      writes,
 		provisioner: newFakeAccounts(),
 		password:    "a-seeded-password-nobody-uses",
-		// A calendar and not whatever day it is: the course is counted back from
-		// this, and a suite reading the clock asserts a different course each day.
-		today: theSeededDay,
+		today:       theSeededDay,
 	}, db
 }
 

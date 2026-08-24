@@ -40,9 +40,8 @@ type seededPatient struct {
 	// any given day.
 	signsIn bool
 
-	// prescribed: the persona holds the full protocol the mobile screens were drawn
-	// around. The roster does not — the dashboard's fixture states a name and an
-	// age, and a course invented for each of them is treatment nobody prescribed.
+	// prescribed: the roster is a fixture of names and ages, and a course invented
+	// for each of them is treatment nobody prescribed.
 	prescribed bool
 }
 
