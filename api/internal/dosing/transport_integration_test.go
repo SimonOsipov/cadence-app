@@ -105,11 +105,11 @@ func TestTheAppCanRecordADoseThroughTheTransport(t *testing.T) {
 // minLength, a missing unit fails required, a dose of nothing fails exclusiveMinimum — so
 // over HTTP it is a 422 and never a 200 with that body.
 //
-// It stays in the set because Resolve is a Go function with its own callers: the seed of step
-// 11 builds drafts by hand and passes through no schema. What is wrong is publishing it to a
-// client that can never see it, and that is a step-12 question for the divergence register
-// rather than something to paper over here — a client branch never taken is exactly the
-// shape this feature's record keeps warning about.
+// It stays in the set for a weaker reason than I first wrote here: Resolve is reached by Log
+// and by this package's own unit tests, and by nothing else — cmd/seed does not import dosing
+// at all and builds a protocol.Draft, which is a different type. So the outcome is published
+// to a client that can never see it for the sake of a branch only log_test.go reaches, and
+// that is the step-12 question the divergence register carries.
 func TestEachOutcomeIsReachedThroughTheTransport(t *testing.T) {
 	c := newClinic(t)
 
@@ -160,9 +160,9 @@ func TestEachOutcomeIsReachedThroughTheTransport(t *testing.T) {
 // handler runs, so none of these reaches parseSite, ParseTag or ParseDoseUnit. That is worth
 // saying rather than claiming the opposite, which the first version of this comment did.
 //
-// The parsers do have callers — draftFrom, which only the handler reaches, and this package's
-// own read path (write.go's InjectionsOf and entryOn, turning a stored string back into a
-// member of its set). What none of them is, is a request: by the time draftFrom runs, the
+// The parsers do have callers — (*Service).draft, which only the handler reaches, and this
+// package's own read path (write.go's InjectionsOf and entryOn, turning a stored string back
+// into a member of its set). What none of them is, is a request: by the time draft runs, the
 // schema has already refused every body below. Each parser has a test beside its declaration.
 func TestAValueOffAClosedSetIsRefused(t *testing.T) {
 	c := newClinic(t)

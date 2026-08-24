@@ -81,8 +81,8 @@ func Log(
 	// Before a connection is taken, and before the repeat lookup: differsFrom compares a
 	// draft field by field, and a draft with no dose has nothing to compare — an
 	// in-process caller reusing a key with a half-built draft would have panicked there.
-	// Resolve keeps its own copy of this check, because it is a pure function with its
-	// own callers.
+	// Resolve keeps its own copy because it is pure and cannot take this path: the guard
+	// belongs at the write's entry, before a connection is spent.
 	if draft.incomplete() {
 		return Logged{Outcome: Incomplete}, nil
 	}

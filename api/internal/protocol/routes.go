@@ -190,7 +190,7 @@ type Phase struct {
 type CourseOutput struct {
 	Body struct {
 		ProtocolID string   `json:"protocol_id" doc:"The course."`
-		ItemIDs    []string `json:"item_ids" doc:"One per item, in the order they were sent."`
+		ItemIDs    []string `json:"item_ids" nullable:"false" doc:"One per item, in the order they were sent."`
 	}
 }
 
@@ -511,11 +511,8 @@ type TodayBody struct {
 	NextDose         *OccurrenceBody `json:"next_dose,omitempty"`
 	NextDoseCompound *CompoundBody   `json:"next_dose_compound,omitempty"`
 	SuggestedSite    string          `json:"suggested_site" enum:"l-abdomen,r-abdomen,l-delt,r-delt,l-glute,r-glute,l-thigh,r-thigh,l-lback,r-lback" doc:"Computed from what was logged, not frozen."`
-	// nullable:"false" on every list this side answers with. huma types a Go slice
-	// as ["array","null"] by default, and a client generated from that branches on a
-	// null the server never sends — every one of these is built with make before it is
-	// filled. weight_series below is the exception and keeps the default, because it
-	// genuinely is null until the measurements context exists.
+	// nullable:"false" on every list this side answers with: huma's default is
+	// ["array","null"], and weight_series below is the one that genuinely is null.
 	WeekProtocol    []RowBody `json:"week_protocol" nullable:"false"`
 	DoseLoggedToday bool      `json:"dose_logged_today"`
 

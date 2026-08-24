@@ -74,6 +74,15 @@ func TestTheDashboardCanPrescribeThroughTheTransport(t *testing.T) {
 	if !strings.Contains(body, `"protocol_id"`) || !strings.Contains(body, `"item_ids"`) {
 		t.Errorf("the reply carries neither identifier: %s", body)
 	}
+	// And item_ids is a list, not a null: the contract declares it nullable:"false",
+	// and the dashboard matches its rows against it by position.
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		t.Fatalf("reading the raw reply: %v", err)
+	}
+	if ids, ok := raw["item_ids"].([]any); !ok || ids == nil {
+		t.Errorf("item_ids answered %v, and the contract says it is never null", raw["item_ids"])
+	}
 }
 
 // Rewriting through the transport: the PUT was declared and never driven, so its 404 — the

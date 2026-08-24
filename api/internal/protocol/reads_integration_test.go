@@ -163,6 +163,22 @@ func TestThePatientsDayIsAnsweredThroughTheTransport(t *testing.T) {
 			t.Errorf("%s answered %v, want null", absent, value)
 		}
 	}
+
+	// And the mirror, which is what makes nullable:"false" on those fields a promise
+	// rather than a hope. Nothing measured it: setting renderToday's makes to nil left
+	// the suite green while the contract went on saying the list is never null.
+	if list, ok := raw["week_protocol"].([]any); !ok || list == nil {
+		t.Errorf("week_protocol answered %v, and the contract says it is never null", raw["week_protocol"])
+	}
+	// And the list inside the row, which needs a course to be reachable at all.
+	rows, _ := raw["week_protocol"].([]any)
+	if len(rows) == 0 {
+		t.Fatal("the strip holds no rows, so its own list is unmeasured here")
+	}
+	first, _ := rows[0].(map[string]any)
+	if times, ok := first["times"].([]any); !ok || times == nil {
+		t.Errorf("the row's times answered %v, and the contract says it is never null", first["times"])
+	}
 }
 
 // The cabinet's half of the answer, which nothing read: replacing SupplyFor's whole body with
@@ -709,6 +725,51 @@ func TestTheThreeReadsAnswerEachPatientTheirOwn(t *testing.T) {
 			}
 			if len(day.Occurrences) != 1 || day.Occurrences[0].Time != patient.slot {
 				t.Errorf("the sheet reads %+v", day.Occurrences)
+			}
+		})
+	}
+}
+
+// Every list these three reads answer with is declared nullable:"false", and this is
+// what holds each of them to it.
+//
+// The tag is a promise about the code, and nothing measured it: setting the
+// constructors to nil left the whole package green while the bodies serialised
+// `null` — a contract lying in the direction the tag was added to stop.
+//
+// A patient with no course at all, because that is the shape where a constructor
+// is most easily skipped: nothing to fill the list with looks like nothing to
+// build.
+//
+// `days` is the one this cannot kill, and it is worth saying why rather than
+// implying three kills: the month loop appends one entry per day of the window,
+// which is 28..31, so the field is non-nil whether or not it is made first. The
+// make is there so the tag rests on the construction rather than on that fact.
+func TestNoListTheReadsAnswerWithIsEverNull(t *testing.T) {
+	service, requests := prescribingWithRequests(t)
+
+	for _, read := range []struct {
+		name, path string
+		lists      []string
+	}{
+		{"the day", "/v1/me/today", []string{"week_protocol"}},
+		{"the month", "/v1/me/schedule?month=2026-05", []string{"days"}},
+		{"one day", "/v1/me/schedule/day?date=2026-05-10", []string{"occurrences"}},
+	} {
+		t.Run(read.name, func(t *testing.T) {
+			status, body := get(t, service, requests, writePatientA, "patient", read.path)
+			if status != http.StatusOK {
+				t.Fatalf("answered %d: %s", status, body)
+			}
+
+			var raw map[string]any
+			if err := json.Unmarshal([]byte(body), &raw); err != nil {
+				t.Fatalf("reading the raw reply: %v", err)
+			}
+			for _, list := range read.lists {
+				if got, ok := raw[list].([]any); !ok || got == nil {
+					t.Errorf("%s answered %v, and the contract says it is never null", list, raw[list])
+				}
 			}
 		})
 	}

@@ -39,7 +39,7 @@ export type CourseOutputBody = {
     /**
      * One per item, in the order they were sent.
      */
-    item_ids: Array<string> | null;
+    item_ids: Array<string>;
     /**
      * The course.
      */
