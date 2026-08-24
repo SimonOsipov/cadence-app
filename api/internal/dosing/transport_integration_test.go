@@ -160,8 +160,9 @@ func TestEachOutcomeIsReachedThroughTheTransport(t *testing.T) {
 // handler runs, so none of these reaches parseSite, ParseTag or ParseDoseUnit. That is worth
 // saying rather than claiming the opposite, which the first version of this comment did.
 //
-// The parsers are what an in-process caller meets — the seed of step 11 builds drafts by hand
-// — and each has a unit test of its own beside its declaration.
+// The parsers are what an in-process caller meets, and today that is this package's own unit
+// tests: nothing outside it builds a dosing.Draft. Each parser has a test of its own beside
+// its declaration.
 func TestAValueOffAClosedSetIsRefused(t *testing.T) {
 	c := newClinic(t)
 

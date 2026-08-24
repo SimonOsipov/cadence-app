@@ -192,7 +192,8 @@ func record(
 
 	// The vial the patient named, or the one the cabinet resolves to. «Resolved, not
 	// chosen» is the recorded invariant: with two open vials of one compound the server
-	// leaves it empty rather than guessing, and the picker arrives in M4.
+	// leaves it empty rather than guessing, because the choice is the patient's and it
+	// arrives in the request — the KMP client has drawn that picker since 2026-08-04.
 	vial := draft.VialID
 	switch {
 	case vial != nil && compound != nil:
