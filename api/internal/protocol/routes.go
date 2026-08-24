@@ -511,8 +511,13 @@ type TodayBody struct {
 	NextDose         *OccurrenceBody `json:"next_dose,omitempty"`
 	NextDoseCompound *CompoundBody   `json:"next_dose_compound,omitempty"`
 	SuggestedSite    string          `json:"suggested_site" enum:"l-abdomen,r-abdomen,l-delt,r-delt,l-glute,r-glute,l-thigh,r-thigh,l-lback,r-lback" doc:"Computed from what was logged, not frozen."`
-	WeekProtocol     []RowBody       `json:"week_protocol"`
-	DoseLoggedToday  bool            `json:"dose_logged_today"`
+	// nullable:"false" on every list this side answers with. huma types a Go slice
+	// as ["array","null"] by default, and a client generated from that branches on a
+	// null the server never sends — every one of these is built with make before it is
+	// filled. weight_series below is the exception and keeps the default, because it
+	// genuinely is null until the measurements context exists.
+	WeekProtocol    []RowBody `json:"week_protocol" nullable:"false"`
+	DoseLoggedToday bool      `json:"dose_logged_today"`
 
 	VialDosesLeft *int         `json:"vial_doses_left,omitempty" doc:"Of the open vial. Absent when the patient holds none of that drug."`
 	Reorder       *ReorderBody `json:"reorder,omitempty"`
@@ -572,7 +577,7 @@ type RowBody struct {
 	Kind        string        `json:"kind" enum:"injection,supplement,weigh_in"`
 	Compound    *CompoundBody `json:"compound" doc:"Null when the item names no drug."`
 	Dose        *DoseBody     `json:"dose,omitempty"`
-	Times       []string      `json:"times"`
+	Times       []string      `json:"times" nullable:"false"`
 	Cadence     string        `json:"cadence" enum:"weekly,daily,n_per_week"`
 	TodayStatus *string       `json:"today_status,omitempty" enum:"done,pending,missed,scheduled"`
 	Loggable    bool          `json:"loggable"`
@@ -599,7 +604,7 @@ type ScheduleInput struct {
 
 type ScheduleOutput struct {
 	Body struct {
-		Days []DayBody `json:"days"`
+		Days []DayBody `json:"days" nullable:"false"`
 	}
 }
 
@@ -619,7 +624,7 @@ type DayOutput struct {
 	Body struct {
 		Date        string           `json:"date" format:"date"`
 		CycleWeek   *int             `json:"cycle_week,omitempty"`
-		Occurrences []OccurrenceBody `json:"occurrences"`
+		Occurrences []OccurrenceBody `json:"occurrences" nullable:"false"`
 	}
 }
 
@@ -689,6 +694,10 @@ func (s *Service) month(ctx context.Context, in *ScheduleInput) (*ScheduleOutput
 				return err
 			}
 		}
+
+		// Built rather than appended into a nil, so nullable:"false" on the field is a
+		// promise the code keeps by construction and not by the month always having days.
+		out.Body.Days = make([]DayBody, 0, window.Days())
 
 		for _, day := range ScheduleFor(plan, logged, window, at) {
 			out.Body.Days = append(out.Body.Days, DayBody{

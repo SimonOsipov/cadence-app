@@ -71,7 +71,7 @@ export type DayBody = {
 export type DayOutputBody = {
     cycle_week?: number;
     date: string;
-    occurrences: Array<OccurrenceBody> | null;
+    occurrences: Array<OccurrenceBody>;
 };
 
 export type DoseBody = {
@@ -372,12 +372,12 @@ export type RowBody = {
     kind: 'injection' | 'supplement' | 'weigh_in';
     loggable: boolean;
     protocol_item_id: string;
-    times: Array<string> | null;
+    times: Array<string>;
     today_status?: 'done' | 'pending' | 'missed' | 'scheduled';
 };
 
 export type ScheduleOutputBody = {
-    days: Array<DayBody> | null;
+    days: Array<DayBody>;
 };
 
 export type SessionBody = {
@@ -465,7 +465,7 @@ export type TodayBody = {
      * Of the open vial. Absent when the patient holds none of that drug.
      */
     vial_doses_left?: number;
-    week_protocol: Array<RowBody> | null;
+    week_protocol: Array<RowBody>;
     /**
      * Null until the measurements context is built.
      */

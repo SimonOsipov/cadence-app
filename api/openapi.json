@@ -175,10 +175,7 @@
             "items": {
               "$ref": "#/components/schemas/OccurrenceBody"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           }
         },
         "required": [
@@ -914,10 +911,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           },
           "today_status": {
             "enum": [
@@ -946,10 +940,7 @@
             "items": {
               "$ref": "#/components/schemas/DayBody"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           }
         },
         "required": [
@@ -1170,10 +1161,7 @@
             "items": {
               "$ref": "#/components/schemas/RowBody"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           },
           "weight_kg": {
             "description": "Null until the measurements context is built.",

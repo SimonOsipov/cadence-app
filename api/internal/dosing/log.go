@@ -46,8 +46,8 @@ type Draft struct {
 }
 
 // incomplete is «this draft cannot make a dose event», and it is asked twice on purpose: by
-// Resolve, which is pure and has its own callers, and by the write before it takes a
-// connection — where a draft with no dose would otherwise reach a comparison that reads one.
+// Resolve, which is pure, and by the write before it takes a connection — where a draft with
+// no dose would otherwise reach a comparison that reads one.
 func (d Draft) incomplete() bool {
 	return d.ItemID == "" || d.ClientRequestID == "" ||
 		d.Dose == nil || d.Dose.Value <= 0 || d.Dose.Unit == ""
