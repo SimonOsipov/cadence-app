@@ -20,9 +20,9 @@ ALTER TABLE IF EXISTS app.vials ADD COLUMN IF NOT EXISTS total_doses integer;
 -- filtered to zero rows and report success. Same shape as 000021's backfill, same guard:
 -- row_security = off turns a table left off the list into a failure rather than silence.
 SET row_security = off;
-ALTER TABLE app.vials       NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE app.compounds   NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE app.dose_events NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS app.vials       NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS app.compounds   NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS app.dose_events NO FORCE ROW LEVEL SECURITY;
 
 UPDATE app.vials v
 SET total_doses = GREATEST(1, pg_catalog.round(v.total_amount / COALESCE(
@@ -35,9 +35,9 @@ SET total_doses = GREATEST(1, pg_catalog.round(v.total_amount / COALESCE(
 FROM app.compounds c
 WHERE c.id = v.compound_id AND v.total_doses IS NULL;
 
-ALTER TABLE app.dose_events FORCE ROW LEVEL SECURITY;
-ALTER TABLE app.compounds   FORCE ROW LEVEL SECURITY;
-ALTER TABLE app.vials       FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS app.dose_events FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS app.compounds   FORCE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS app.vials       FORCE ROW LEVEL SECURITY;
 RESET row_security;
 
 DO $$

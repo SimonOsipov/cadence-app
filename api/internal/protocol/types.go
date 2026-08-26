@@ -24,10 +24,12 @@ const (
 
 // Dose is a number and a unit; «0,25 мг» is a rendering, not data.
 //
-// float64 is safe only because doses are never summed — §03's third correction makes a vial's
-// remainder a subtraction of counts, not of milligrams. TitrationSteps compares two with ==,
-// so a value that arrived through arithmetic makes «0,3 мг → 0,3 мг» a step. Adding a total
-// means changing this type.
+// float64 is safe only because doses are never summed here. TitrationSteps compares two with
+// ==, so a value that arrived through arithmetic makes «0,3 мг → 0,3 мг» a step.
+//
+// A vial's remainder is a subtraction of milligrams since the amount model, and that sum
+// lives in inventory.Amount — whole micrograms, integer — rather than in this type. The rule
+// is unchanged: a total appearing *here* still means changing this type.
 type Dose struct {
 	Value float64
 	Unit  DoseUnit

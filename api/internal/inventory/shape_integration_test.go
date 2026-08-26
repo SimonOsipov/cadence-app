@@ -354,3 +354,108 @@ func seedDose(
 		t.Fatalf("seeding a dose at %s: %v", at, err)
 	}
 }
+
+// 000022's rollback, over rows.
+//
+// The reconstruction is not the inverse of the drop — the number a clinic wrote on a box
+// is gone — so it re-derives the count from the first dose drawn in the compound's own
+// unit and falls back to one. Both branches run here; without rows the UPDATE touches
+// nothing and reports success, which is how the whole statement stayed unmeasured.
+func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	conn := testsupport.Connect(t, db.SuperuserURL)
+	migrator := testsupport.Connect(t, db.MigrationURL)
+	ctx := t.Context()
+
+	patient := seedPatient(t, conn, "Europe/Moscow")
+	semaglutide := seedCompound(t, conn, "Семаглутид", "мг")
+	course, item := seedCourse(t, conn, patient)
+
+	bpc := seedCompound(t, conn, "BPC-157", "мкг")
+
+	drawn := seedVialOfAmount(t, conn, patient, semaglutide, "2.0")
+	untouched := seedVialOfAmount(t, conn, patient, semaglutide, "1.5")
+	mismatched := seedVialOfAmount(t, conn, patient, bpc, "1.5")
+	seedDose(t, conn, patient, course, item, drawn, "2026-06-02 08:00:00+03", "0.25", "мг")
+	// A µg compound drawn in мг: the divisor exists but is in the wrong unit, and taking
+	// it would reconstruct six doses out of a vial that holds one and a half micrograms.
+	seedDose(t, conn, patient, course, item, mismatched, "2026-06-03 08:00:00+03", "0.25", "мг")
+
+	applyMigration(t, migrator, "000022_the_vial_stops_counting_doses.down.sql")
+
+	for _, want := range []struct {
+		name  string
+		vial  string
+		doses int
+	}{
+		// 2 мг drawn at 0,25 is eight injections — the count the clinic would have
+		// written, recovered from the one dose that names the size.
+		{"a vial something was drawn from", drawn, 8},
+		// Nothing to divide by, so the fallback: one injection, not zero and not the
+		// milligrams read as a count.
+		{"a vial nothing was drawn from", untouched, 1},
+		// The filter is what makes this one fall back rather than divide by a
+		// milligram figure: 1.5 / 0.25 would be six.
+		{"a vial whose draws are in another unit", mismatched, 1},
+	} {
+		t.Run(want.name, func(t *testing.T) {
+			var doses int
+			if err := conn.QueryRow(ctx,
+				`SELECT total_doses FROM app.vials WHERE id = $1`, want.vial).Scan(&doses); err != nil {
+				t.Fatalf("reading the count back: %v", err)
+			}
+			if doses != want.doses {
+				t.Errorf("the rollback reconstructed %d doses, want %d", doses, want.doses)
+			}
+		})
+	}
+}
+
+// The tightening is allowed to fail, and that is the design rather than an accident.
+//
+// 000021 leaves total_amount empty on a vial it could not convert. 000022 then refuses to
+// move, which is the signal a human should read — the alternative was inventing a
+// multiplier nothing downstream could detect. Without this, the next person to meet the
+// red migration «fixes» it with a COALESCE and no test objects.
+func TestTheTighteningRefusesAVialItCouldNotConvert(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	conn := testsupport.Connect(t, db.SuperuserURL)
+	migrator := testsupport.Connect(t, db.MigrationURL)
+
+	applyMigration(t, migrator, "000022_the_vial_stops_counting_doses.down.sql")
+	applyMigration(t, migrator, "000021_vial_holds_an_amount.down.sql")
+
+	patient := seedPatient(t, conn, "Europe/Moscow")
+	bpc := seedCompound(t, conn, "BPC-157", "мкг")
+	// A µg compound with no dose ever drawn in µg: 000021 has no multiplier for it and
+	// deliberately leaves the amount empty.
+	seedVial(t, conn, patient, bpc, 10)
+
+	applyMigration(t, migrator, "000021_vial_holds_an_amount.up.sql")
+
+	statements, err := os.ReadFile(filepath.Join(
+		testsupport.MigrationsPath(t), "000022_the_vial_stops_counting_doses.up.sql",
+	))
+	if err != nil {
+		t.Fatalf("reading the migration: %v", err)
+	}
+	if _, err := migrator.Exec(t.Context(), string(statements)); err == nil {
+		t.Error("the chain moved on over a vial whose amount nobody could work out")
+	}
+}
+
+func seedVialOfAmount(t *testing.T, conn *pgx.Conn, patient, compound, amount string) string {
+	t.Helper()
+
+	var id string
+	if err := conn.QueryRow(t.Context(), `
+		INSERT INTO app.vials (patient_id, compound_id, concentration_label,
+		                       total_amount, amount_unit, opened_at, expires_on)
+		VALUES ($1, $2, '1 мг/мл', $3::numeric, 'мг', DATE '2026-06-01', DATE '2026-12-01')
+		RETURNING id::text
+	`, patient, compound, amount).Scan(&id); err != nil {
+		t.Fatalf("seeding a vial of %s мг: %v", amount, err)
+	}
+
+	return id
+}

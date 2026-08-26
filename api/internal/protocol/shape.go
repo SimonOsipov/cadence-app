@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"time"
 	"unicode/utf8"
@@ -207,7 +208,7 @@ func (i DraftItem) checkPhases(weeks int) error {
 			return fmt.Errorf("phase %d covers weeks %d..%d of a %d-week course: %w",
 				n+1, phase.FromWeek, phase.ToWeek, weeks, ErrPhaseOffCourse)
 		}
-		if phase.Dose.Value <= 0 {
+		if phase.Dose.Value <= 0 || finerThanItsAtom(phase.Dose) {
 			return fmt.Errorf("phase %d doses %v: %w", n+1, phase.Dose.Value, ErrDoseOffRange)
 		}
 		if _, ok := ParseDoseUnit(string(phase.Dose.Unit)); !ok {
@@ -241,3 +242,18 @@ const (
 	maxDrugName    = 200
 	maxDrugField   = 50
 )
+
+// finerThanItsAtom is a dose the cabinet cannot divide by.
+//
+// Remaining substance is counted in whole micrograms, so a milligram value past three
+// decimals and a microgram value with any decimals at all lose their tail on the way in.
+// Measured on the unbounded column: 0,0001 мг converts to nothing, and the day card
+// stops answering how many injections are left rather than answering wrongly.
+func finerThanItsAtom(dose Dose) bool {
+	scaled := dose.Value * 1000
+	if dose.Unit == MCG {
+		scaled = dose.Value
+	}
+
+	return scaled != math.Trunc(scaled)
+}

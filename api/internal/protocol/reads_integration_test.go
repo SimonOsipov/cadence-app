@@ -5,6 +5,7 @@ package protocol_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -522,10 +523,17 @@ func sealASpare(t *testing.T, requests *pgxpool.Pool, patient string, total int)
 	if err := database.WithCaller(
 		t.Context(), requests, database.Caller{Subject: patient, Role: "patient"},
 		func(ctx context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(ctx,
+			// The size is the key, as the dose count used to be — and it is only a key
+			// while every caller fills at the same dose. Checked rather than trusted:
+			// a caller filling at another one would otherwise match nothing and the
+			// fixture would quietly not happen.
+			tag, err := tx.Exec(ctx,
 				`UPDATE app.vials SET opened_at = NULL
 				  WHERE patient_id = $1 AND total_amount = $2::numeric * $3::numeric`,
 				patient, total, semaglutideDose)
+			if err == nil && tag.RowsAffected() != 1 {
+				return fmt.Errorf("sealing matched %d vials, want 1", tag.RowsAffected())
+			}
 
 			return err
 		},
@@ -540,10 +548,13 @@ func disposeAVial(t *testing.T, requests *pgxpool.Pool, patient string, total in
 	if err := database.WithCaller(
 		t.Context(), requests, database.Caller{Subject: patient, Role: "patient"},
 		func(ctx context.Context, tx pgx.Tx) error {
-			_, err := tx.Exec(ctx,
+			tag, err := tx.Exec(ctx,
 				`UPDATE app.vials SET disposed_at = DATE '2026-05-09'
 				  WHERE patient_id = $1 AND total_amount = $2::numeric * $3::numeric`,
 				patient, total, semaglutideDose)
+			if err == nil && tag.RowsAffected() != 1 {
+				return fmt.Errorf("disposing matched %d vials, want 1", tag.RowsAffected())
+			}
 
 			return err
 		},

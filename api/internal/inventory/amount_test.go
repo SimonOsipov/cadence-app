@@ -41,6 +41,23 @@ func TestAQuantityConvertsToWholeMicrograms(t *testing.T) {
 	}
 }
 
+// A dose finer than the atom converts to nothing, and nothing is not a divisor.
+//
+// The schema refuses such a phase since 000023, and the writer refuses it before that —
+// but the arithmetic is the last place it would surface, and there it must answer «no
+// count» rather than divide by zero. Measured: without the guard this panics.
+func TestADoseThatConvertsToNothingIsNotADivisor(t *testing.T) {
+	v := inventory.Vial{ID: "v", TotalAmount: 2_000, AmountUnit: protocol.MG}
+
+	tooFine := protocol.Dose{Value: 0.0001, Unit: protocol.MG}
+	if got, err := inventory.AmountOf(tooFine.Value, tooFine.Unit); err != nil || got != 0 {
+		t.Fatalf("0,0001 мг is %d мкг (err %v); the case this pins needs it to be zero", got, err)
+	}
+	if got := inventory.RemainingDoses(v, nil, &tooFine); got != nil {
+		t.Errorf("a dose of nothing bought %d injections", *got)
+	}
+}
+
 // The sum is why this type exists: protocol.Dose says a float64 is safe only while
 // doses are never added, and a vial's remainder now adds them.
 func TestTwelveTitrationStepsAreExactlyThreeMilligrams(t *testing.T) {
@@ -62,14 +79,29 @@ func TestTwelveTitrationStepsAreExactlyThreeMilligrams(t *testing.T) {
 		t.Errorf("twelve steps are %d мкг, three milligrams are %d", summed, whole)
 	}
 
-	// The same sum in the type the doses are stored in, so the test says what it is
-	// avoiding rather than asserting a bare number.
+	// And the same sum in the type doses are stored in, so the test names the hazard
+	// rather than asserting a bare number. Not 0,25 — it is a binary fraction and twelve
+	// of them come to exactly 3,0, which is why the first version of this block skipped
+	// on every platform. Measured: twelve of 0,07 do not come to 0,84.
 	var drifted float64
 	for range 12 {
-		drifted += 0.25
+		drifted += 0.07
 	}
-	if drifted == 3.0 {
-		t.Skip("float64 summed twelve quarters exactly; the hazard this pins is gone")
+	if drifted == 0.84 {
+		t.Fatal("twelve sevenths of a milligram summed exactly in float64 — " +
+			"the hazard inventory.Amount exists for is gone, or this fixture drifted")
+	}
+
+	steps, err := inventory.AmountOf(0.07, protocol.MG)
+	if err != nil {
+		t.Fatalf("converting: %v", err)
+	}
+	var exact inventory.Amount
+	for range 12 {
+		exact += steps
+	}
+	if want, _ := inventory.AmountOf(0.84, protocol.MG); exact != want {
+		t.Errorf("twelve of 0,07 мг are %d мкг, want %d", exact, want)
 	}
 }
 

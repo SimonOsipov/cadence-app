@@ -421,3 +421,42 @@ func dosesLeftAt(t *testing.T, v Vial, draws []Draw, dose protocol.Dose) int {
 
 	return *left
 }
+
+// Weeks are not doses, and in every other fixture here they are the same number: the
+// cadence is one injection a week, so eight doses read as eight weeks whichever the
+// arithmetic returns. Twice a week is where they part.
+func TestTheHintCountsWeeksAndNotDoses(t *testing.T) {
+	v := vial(8, day(2026, time.May, 1), farOff)
+	cabinet := CabinetOf(patient, []Vial{v})
+	dose := protocol.Dose{Value: 0.25, Unit: protocol.MG}
+
+	got := ReorderHintFor(weeklyItem(sema, 2), cabinet, nil, &dose, today)
+	if got == nil {
+		t.Fatal("eight doses at two a week is four weeks, which is inside the threshold")
+	}
+	if got.WeeksLeft != 4 {
+		t.Errorf("the hint says %d, want 4 — eight doses, two a week", got.WeeksLeft)
+	}
+}
+
+// The quarter is a quarter, not «some fraction». Every other case here divides evenly
+// into thousands of micrograms, so the threshold's magnitude is free to drift.
+func TestTheLowThresholdIsAQuarterAndNotSomeOtherFraction(t *testing.T) {
+	v := Vial{
+		ID: "odd", PatientID: patient, CompoundID: sema,
+		TotalAmount: 1_000, AmountUnit: protocol.MG,
+		OpenedAt: day(2026, time.May, 1), ExpiresOn: farOff,
+	}
+
+	// 220 of 1000 is below a quarter; 260 is above. A threshold of a fifth would call
+	// the first one active, and one of a third would call the second one low.
+	for _, c := range []struct {
+		drawn Amount
+		want  VialStatus
+	}{{780, StatusLow}, {740, StatusActive}} {
+		draws := []Draw{{VialID: v.ID, Amount: c.drawn}}
+		if got := StatusOf(v, draws, today); got != c.want {
+			t.Errorf("%d мкг drawn of 1000 reads %v, want %v", c.drawn, got, c.want)
+		}
+	}
+}

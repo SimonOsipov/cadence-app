@@ -183,6 +183,13 @@ func TestTheCabinetIsAskedAboutTheDoseBeingOffered(t *testing.T) {
 	if len(n.askedFor) != 1 || n.askedFor[0] != "item-injection" {
 		t.Errorf("the cabinet was asked about %v", n.askedFor)
 	}
+	// The dose the cabinet divides by is this day's phase, not the plan's first or the
+	// item's default. Written down rather than compared to the fixture's own variable:
+	// an expectation read out of the thing under test moves with it.
+	if len(n.askedAt) != 1 || n.askedAt[0] == nil ||
+		n.askedAt[0].Value != 0.25 || n.askedAt[0].Unit != MG {
+		t.Errorf("the cabinet was told to divide by %+v, want 0,25 мг", n.askedAt)
+	}
 	if today.VialDosesLeft == nil || *today.VialDosesLeft != 3 {
 		t.Errorf("the vial has %v doses left", today.VialDosesLeft)
 	}
@@ -382,5 +389,32 @@ func TestTheCardMovesToTheEveningOnceTheMorningIsLogged(t *testing.T) {
 	}
 	if !today.DoseLoggedToday {
 		t.Error("the day is not marked as carrying a dose")
+	}
+}
+
+// A day inside the course that no phase covers.
+//
+// Gaps between phases are legal and deliberately so, and on such a day nothing is
+// prescribed — so the cabinet is asked with no dose, and the card answers substance and
+// status without a count of injections. The interface says this in its own comment and
+// nothing measured it.
+func TestOnADayNoPhaseCoversTheCabinetIsAskedWithNoDose(t *testing.T) {
+	plan := aSchedulePlan()
+	// Prescribed in weeks 1-2 and again from week 6. The course starts on 4 May and the
+	// injection falls on Sundays, so 24 May is week three's — inside the course, inside
+	// the gap, and an occurrence is still generated for it with no dose on it.
+	plan.Phases["item-injection"] = []ProtocolPhase{
+		{FromWeek: 1, ToWeek: 2, Dose: Dose{Value: 0.25, Unit: MG}},
+		{FromWeek: 6, ToWeek: 12, Dose: Dose{Value: 1, Unit: MG}},
+	}
+
+	n := &stubNeighbours{}
+	today := todayFor(t, plan, true, civil.NewDate(2026, time.May, 24), civil.Slot{Hour: 7}, n)
+
+	if len(n.askedAt) != 1 || n.askedAt[0] != nil {
+		t.Errorf("the cabinet was told to divide by %+v, want nothing", n.askedAt)
+	}
+	if today.VialDosesLeft != nil {
+		t.Errorf("the card counts %v injections on a day nothing is prescribed", *today.VialDosesLeft)
 	}
 }

@@ -748,11 +748,6 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			"pg_catalog.repeat('x', 51), 1.0, 'мг', DATE '2026-12-31'", "vials_concentration_label_check",
 		},
 		{
-			"a vial holding no substance at all",
-			"concentration_label, expires_on, total_amount, amount_unit",
-			"'1 мг/мл', DATE '2026-12-31', 0, 'мг'", "vials_total_amount_check",
-		},
-		{
 			// The bound is per unit because the atom is: a vial amount below one
 			// microgram rounds to nothing at all.
 			"a milligram amount finer than a microgram",
