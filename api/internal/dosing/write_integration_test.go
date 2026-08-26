@@ -494,9 +494,10 @@ func openVials(t *testing.T, c clinic, patient string, count int) string {
 
 			return tx.QueryRow(ctx, `
 				INSERT INTO app.vials
-				    (patient_id, compound_id, concentration_label, total_doses,
+				    (patient_id, compound_id, concentration_label, total_amount, amount_unit,
 				     opened_at, expires_on)
-				VALUES ($1, $2, '2,4 мг/0,75 мл', 4, DATE '2026-05-02', DATE '2026-12-31')
+				VALUES ($1, $2, '2,4 мг/0,75 мл', 1.0, 'мг', DATE '2026-05-02',
+				        DATE '2026-12-31')
 				RETURNING id::text
 			`, patient, compoundID).Scan(&last)
 		},

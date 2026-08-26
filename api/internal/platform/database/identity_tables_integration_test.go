@@ -731,14 +731,13 @@ func identityColumns() map[string][]string {
 			"dose_unit text NOT NULL",
 		},
 		// The medicine cabinet, and what is not in it is the point: no status, no
-		// remaining. Both are derived on read from total_doses and the dose events
-		// drawn from the vial.
+		// remaining. Both are derived on read from the amount the vial holds and the
+		// doses drawn out of it.
 		"vials": {
 			"id uuid NOT NULL DEFAULT gen_random_uuid()",
 			"patient_id uuid NOT NULL",
 			"compound_id uuid NOT NULL",
 			"concentration_label text NOT NULL",
-			"total_doses integer NOT NULL",
 			// Null until opened; that absence is the whole of «sealed».
 			"opened_at date NULL",
 			"expires_on date NOT NULL",
@@ -749,8 +748,10 @@ func identityColumns() map[string][]string {
 			"created_at timestamp with time zone NOT NULL DEFAULT now()",
 			// Appended by 000021, and appended is where they read: the registry is
 			// ordered by ordinal_position, and ADD COLUMN puts a column last.
-			"total_amount numeric NULL",
-			"amount_unit text NULL",
+			// held_back_at stays nullable for good — it is the date a vial was set
+			// aside, and a vial in use has none.
+			"total_amount numeric NOT NULL",
+			"amount_unit text NOT NULL",
 			"held_back_at date NULL",
 		},
 		// One entry per day, and the day is half the primary key. No cycle day: it is

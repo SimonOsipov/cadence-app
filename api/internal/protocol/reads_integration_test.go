@@ -183,9 +183,9 @@ func TestThePatientsDayIsAnsweredThroughTheTransport(t *testing.T) {
 
 // The cabinet's half of the answer, which nothing read: replacing SupplyFor's whole body with
 // three nils kept the gate green, because the fixture seeded no vial and the reply's two
-// numbers were never asserted. «Остаток флакона нигде не хранится: он считается как
-// total_doses минус число событий» is an acceptance criterion of this feature, and this is
-// the path it is answered on.
+// numbers were never asserted. «Остаток флакона нигде не хранится» is an
+// acceptance criterion of this feature, and this is the path it is answered on. What is
+// subtracted is substance now, not a count of events — see 000021.
 func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 	service, requests := prescribingWithRequests(t)
 
@@ -221,7 +221,7 @@ func TestTheOpenVialsRemainingDosesAreOnTheDay(t *testing.T) {
 	// A second vial opened later: with two open vials of one drug the answer is the
 	// earliest-opened's, which is what the read's ORDER BY decides. Without it the row that
 	// came back first won, and two requests for the same day could differ.
-	openAVialOn(t, service, requests, writePatientA, "Семаглутид", 9,
+	openAVialOn(t, service, requests, writePatientA, "Семаглутид", 9, semaglutideDose,
 		civil.NewDate(2026, time.May, 8))
 
 	left, _ = supplyOn(t, service, requests, writePatientA)
@@ -454,25 +454,36 @@ func TestAMalformedWindowIsRefusedRatherThanCrashing(t *testing.T) {
 	}
 }
 
+// The doses the two seeded courses prescribe. A vial is filled by multiplying a count of
+// injections by one of these: the cabinet holds substance, so a fixture that says «twelve
+// doses» has to say twelve doses of what, and tirzepatide's are twenty times semaglutide's.
+const (
+	semaglutideDose = 0.25
+	tirzepatideDose = 5.0
+)
+
 // openAVial gives the patient an opened vial of the seeded compound. As the patient, because
 // the service path holds no UPDATE on vials — opening one is their own act.
 func openAVial(t *testing.T, service, requests *pgxpool.Pool, patient string, total int) {
 	t.Helper()
 
-	openAVialOn(t, service, requests, patient, "Семаглутид", total, civil.NewDate(2026, time.May, 1))
+	openAVialOn(t, service, requests, patient, "Семаглутид", total, semaglutideDose,
+		civil.NewDate(2026, time.May, 1))
 }
 
 func openAVialOf(
 	t *testing.T, service, requests *pgxpool.Pool, patient, drug string, total int,
+	perDose float64,
 ) {
 	t.Helper()
 
-	openAVialOn(t, service, requests, patient, drug, total, civil.NewDate(2026, time.May, 1))
+	openAVialOn(t, service, requests, patient, drug, total, perDose,
+		civil.NewDate(2026, time.May, 1))
 }
 
 func openAVialOn(
 	t *testing.T, service, requests *pgxpool.Pool, patient, drug string, total int,
-	opened civil.Date,
+	perDose float64, opened civil.Date,
 ) {
 	t.Helper()
 
@@ -492,10 +503,11 @@ func openAVialOn(
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
 				INSERT INTO app.vials
-				    (patient_id, compound_id, concentration_label, total_doses,
+				    (patient_id, compound_id, concentration_label, total_amount, amount_unit,
 				     opened_at, expires_on)
-				VALUES ($1, $2, '2,4 мг/0,75 мл', $3, $4::date, DATE '2026-12-31')
-			`, patient, compound, total, opened.String())
+				VALUES ($1, $2, '2,4 мг/0,75 мл', $3::numeric * $5::numeric, 'мг', $4::date,
+				        DATE '2026-12-31')
+			`, patient, compound, total, opened.String(), perDose)
 
 			return err
 		},
@@ -511,8 +523,9 @@ func sealASpare(t *testing.T, requests *pgxpool.Pool, patient string, total int)
 		t.Context(), requests, database.Caller{Subject: patient, Role: "patient"},
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx,
-				`UPDATE app.vials SET opened_at = NULL WHERE patient_id = $1 AND total_doses = $2`,
-				patient, total)
+				`UPDATE app.vials SET opened_at = NULL
+				  WHERE patient_id = $1 AND total_amount = $2::numeric * $3::numeric`,
+				patient, total, semaglutideDose)
 
 			return err
 		},
@@ -529,8 +542,8 @@ func disposeAVial(t *testing.T, requests *pgxpool.Pool, patient string, total in
 		func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx,
 				`UPDATE app.vials SET disposed_at = DATE '2026-05-09'
-				  WHERE patient_id = $1 AND total_doses = $2`,
-				patient, total)
+				  WHERE patient_id = $1 AND total_amount = $2::numeric * $3::numeric`,
+				patient, total, semaglutideDose)
 
 			return err
 		},
@@ -621,10 +634,10 @@ func TestTheThreeReadsAnswerEachPatientTheirOwn(t *testing.T) {
 	//
 	// Opened first as well as opened-on first, so that a leak surfaces it whether the read
 	// orders by opened_at or falls back to insertion order.
-	openAVialOn(t, service, requests, writePatientB, "Семаглутид", 40,
+	openAVialOn(t, service, requests, writePatientB, "Семаглутид", 40, semaglutideDose,
 		civil.NewDate(2026, time.April, 20))
 	openAVial(t, service, requests, writePatientA, 6)
-	openAVialOf(t, service, requests, writePatientB, "Тирзепатид", 12)
+	openAVialOf(t, service, requests, writePatientB, "Тирзепатид", 12, tirzepatideDose)
 
 	for _, patient := range []struct {
 		name     string

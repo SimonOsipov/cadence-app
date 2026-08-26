@@ -59,7 +59,15 @@ func TestTheAmountUnitsTheSchemaAcceptsAreTheOnesGoDeclares(t *testing.T) {
 func TestTheDownMigrationRemovesTheColumnsAndSparesTheRows(t *testing.T) {
 	db := cluster.NewDatabase(t)
 	conn := testsupport.Connect(t, db.SuperuserURL)
+	// Applied through the migration role, like the backfill witness beside it: the two
+	// tests in this file should not disagree about who runs a migration, and the first
+	// statement over data in either file would be filtered silently if they did.
+	migrator := testsupport.Connect(t, db.MigrationURL)
 	ctx := t.Context()
+
+	// 000022 sits on top and took total_doses away; the fixture below is the shape the
+	// chain had when 000021 was the last migration.
+	applyMigration(t, migrator, "000022_the_vial_stops_counting_doses.down.sql")
 
 	patient := seedPatient(t, conn, "Europe/Moscow")
 	compound := seedCompound(t, conn, "Семаглутид", "мг")
@@ -78,7 +86,7 @@ func TestTheDownMigrationRemovesTheColumnsAndSparesTheRows(t *testing.T) {
 		t.Fatalf("seeding the vial: %v", err)
 	}
 
-	applyMigration(t, conn, "000021_vial_holds_an_amount.down.sql")
+	applyMigration(t, migrator, "000021_vial_holds_an_amount.down.sql")
 
 	for _, column := range []string{"total_amount", "amount_unit", "held_back_at"} {
 		var present int
@@ -140,6 +148,9 @@ func TestTheBackfillsFillWhatTheyClaimAndInventNothing(t *testing.T) {
 	migrator := testsupport.Connect(t, db.MigrationURL)
 	ctx := t.Context()
 
+	// Down through both: 000022 dropped total_doses, and the fixtures below are the
+	// rows the chain held before 000021 converted them.
+	applyMigration(t, migrator, "000022_the_vial_stops_counting_doses.down.sql")
 	applyMigration(t, migrator, "000021_vial_holds_an_amount.down.sql")
 
 	// Moscow, because the day of the first draw is the patient's and an injection at

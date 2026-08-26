@@ -50,7 +50,7 @@ func TestInventoryReadsTheProtocolAndNotItsCallers(t *testing.T) {
 // directory below, for the reason protocol's guard records: a list is a thing new
 // files are absent from, and absence there means exemption.
 var (
-	math = []string{"math.go"}
+	math = []string{"math.go", "amount.go"}
 	// Everything deliberately not the pure half. vials.go reads the cabinet for the
 	// context that draws a dose from it, and this project puts the check, the transaction
 	// and the SQL in one file rather than behind a repository.

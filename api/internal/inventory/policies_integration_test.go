@@ -159,8 +159,8 @@ func (c *clinic) seed(ctx context.Context, tx pgx.Tx) error {
 	}{{patientA, &c.vialA}, {patientB, &c.vialB}} {
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO app.vials
-			    (patient_id, compound_id, concentration_label, total_doses, expires_on)
-			VALUES ($1, $2, '1 мг/мл', 4, DATE '2026-12-31')
+			    (patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
+			VALUES ($1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31')
 			RETURNING id::text
 		`, seeded.patient, c.compound).Scan(seeded.into); err != nil {
 			return fmt.Errorf("vial for %s: %w", seeded.patient, err)
@@ -252,8 +252,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 	}{
 		{
 			"creating one for another patient",
-			`INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_doses, expires_on)
-			 VALUES ($1, $2, '1 мг/мл', 4, DATE '2026-12-31')`,
+			`INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
+			 VALUES ($1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31')`,
 			[]any{patientB, c.compound},
 		},
 		{
@@ -329,8 +329,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 	// filtered update and the one worth pinning.
 	err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
-			INSERT INTO app.vials (id, patient_id, compound_id, concentration_label, total_doses, expires_on)
-			VALUES ($1, $2, $3, '1 мг/мл', 4, DATE '2026-12-31')
+			INSERT INTO app.vials (id, patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
+			VALUES ($1, $2, $3, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31')
 			ON CONFLICT (id) DO UPDATE SET patient_id = $2
 		`, c.vialB, patientA, c.compound)
 
@@ -353,8 +353,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 	var mine string
 	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_doses, expires_on)
-			VALUES ($1, $2, '2,4 мг/мл', 6, DATE '2027-01-31')
+			INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
+			VALUES ($1, $2, '2,4 мг/мл', 1.5, 'мг', DATE '2027-01-31')
 			RETURNING id::text
 		`, patientA, c.compound).Scan(&mine)
 	}); err != nil {
@@ -411,8 +411,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 		},
 		{
 			"choosing a key at creation",
-			`INSERT INTO app.vials (id, patient_id, compound_id, concentration_label, total_doses, expires_on)
-			 VALUES (pg_catalog.gen_random_uuid(), $1, $2, '1 мг/мл', 4, DATE '2026-12-31')`,
+			`INSERT INTO app.vials (id, patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
+			 VALUES (pg_catalog.gen_random_uuid(), $1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31')`,
 			[]any{patientA, c.compound},
 		},
 		{
@@ -422,8 +422,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 		},
 		{
 			"backdating a row at creation",
-			`INSERT INTO app.vials (created_at, patient_id, compound_id, concentration_label, total_doses, expires_on)
-			 VALUES (pg_catalog.now(), $1, $2, '1 мг/мл', 4, DATE '2026-12-31')`,
+			`INSERT INTO app.vials (created_at, patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
+			 VALUES (pg_catalog.now(), $1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31')`,
 			[]any{patientA, c.compound},
 		},
 	} {
@@ -508,8 +508,8 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 		{
 			"a key under another patient's prefix, at creation",
 			`INSERT INTO app.vials
-			   (patient_id, compound_id, concentration_label, total_doses, expires_on, label_photo_path)
-			 VALUES ($1, $2, '1 мг/мл', 4, DATE '2026-12-31', $3)`,
+			   (patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on, label_photo_path)
+			 VALUES ($1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31', $3)`,
 			[]any{patientA, c.compound, patientB + "/vials/label.jpg"},
 			false,
 		},
@@ -550,7 +550,7 @@ func TestAPatientMayNotWriteAVialOntoAnotherPatient(t *testing.T) {
 	// And a doctor reads their patient's cabinet without writing it: reordering is
 	// the patient's own act.
 	err = c.as(t, doctorA, "doctor", func(ctx context.Context, tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `UPDATE app.vials SET total_doses = 99 WHERE id = $1`, c.vialA)
+		_, err := tx.Exec(ctx, `UPDATE app.vials SET total_amount = 99 WHERE id = $1`, c.vialA)
 
 		return err
 	})
@@ -703,89 +703,88 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 		constraint string
 	}{
 		{
-			"a vial of no doses at all",
-			"concentration_label, total_doses, expires_on",
-			"'1 мг/мл', 0, DATE '2026-12-31'", "vials_total_doses_check",
+			"a vial holding nothing at all",
+			"concentration_label, total_amount, amount_unit, expires_on",
+			"'1 мг/мл', 0, 'мг', DATE '2026-12-31'", "vials_total_amount_check",
 		},
 		{
-			"a vial of a negative number of doses",
-			"concentration_label, total_doses, expires_on",
-			"'1 мг/мл', -1, DATE '2026-12-31'", "vials_total_doses_check",
+			"a vial holding less than nothing",
+			"concentration_label, total_amount, amount_unit, expires_on",
+			"'1 мг/мл', -1, 'мг', DATE '2026-12-31'", "vials_total_amount_check",
 		},
 		{
 			"a concentration with no label on it",
-			"concentration_label, total_doses, expires_on",
-			"'', 4, DATE '2026-12-31'", "vials_concentration_label_check",
+			"concentration_label, total_amount, amount_unit, expires_on",
+			"'', 1.0, 'мг', DATE '2026-12-31'", "vials_concentration_label_check",
 		},
 		{
 			"an empty lot number",
-			"concentration_label, total_doses, expires_on, lot",
-			"'1 мг/мл', 4, DATE '2026-12-31', ''", "vials_lot_check",
+			"concentration_label, total_amount, amount_unit, expires_on, lot",
+			"'1 мг/мл', 1.0, 'мг', DATE '2026-12-31', ''", "vials_lot_check",
 		},
 		{
 			"an empty storage location",
-			"concentration_label, total_doses, expires_on, location_ru",
-			"'1 мг/мл', 4, DATE '2026-12-31', ''", "vials_location_ru_check",
+			"concentration_label, total_amount, amount_unit, expires_on, location_ru",
+			"'1 мг/мл', 1.0, 'мг', DATE '2026-12-31', ''", "vials_location_ru_check",
 		},
 		{
 			"a photo key of nothing",
-			"concentration_label, total_doses, expires_on, label_photo_path",
-			"'1 мг/мл', 4, DATE '2026-12-31', ''", "vials_photo_key_is_under_its_own_prefix",
+			"concentration_label, total_amount, amount_unit, expires_on, label_photo_path",
+			"'1 мг/мл', 1.0, 'мг', DATE '2026-12-31', ''", "vials_photo_key_is_under_its_own_prefix",
 		},
 		{
 			"a lot number past its bound",
-			"concentration_label, total_doses, expires_on, lot",
-			"'1 мг/мл', 4, DATE '2026-12-31', pg_catalog.repeat('x', 51)", "vials_lot_check",
+			"concentration_label, total_amount, amount_unit, expires_on, lot",
+			"'1 мг/мл', 1.0, 'мг', DATE '2026-12-31', pg_catalog.repeat('x', 51)", "vials_lot_check",
 		},
 		{
 			"a storage location past its bound",
-			"concentration_label, total_doses, expires_on, location_ru",
-			"'1 мг/мл', 4, DATE '2026-12-31', pg_catalog.repeat('x', 101)", "vials_location_ru_check",
+			"concentration_label, total_amount, amount_unit, expires_on, location_ru",
+			"'1 мг/мл', 1.0, 'мг', DATE '2026-12-31', pg_catalog.repeat('x', 101)", "vials_location_ru_check",
 		},
 		{
 			"a concentration label past its bound",
-			"concentration_label, total_doses, expires_on",
-			"pg_catalog.repeat('x', 51), 4, DATE '2026-12-31'", "vials_concentration_label_check",
+			"concentration_label, total_amount, amount_unit, expires_on",
+			"pg_catalog.repeat('x', 51), 1.0, 'мг', DATE '2026-12-31'", "vials_concentration_label_check",
 		},
 		{
 			"a vial holding no substance at all",
-			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
-			"'1 мг/мл', 4, DATE '2026-12-31', 0, 'мг'", "vials_total_amount_check",
+			"concentration_label, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', DATE '2026-12-31', 0, 'мг'", "vials_total_amount_check",
 		},
 		{
 			// The bound is per unit because the atom is: a vial amount below one
 			// microgram rounds to nothing at all.
 			"a milligram amount finer than a microgram",
-			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
-			"'1 мг/мл', 4, DATE '2026-12-31', 0.0001, 'мг'", "vials_total_amount_scale_check",
+			"concentration_label, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', DATE '2026-12-31', 0.0001, 'мг'", "vials_total_amount_scale_check",
 		},
 		{
 			"a microgram amount with anything after the point",
-			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
-			"'1 мг/мл', 4, DATE '2026-12-31', 250.5, 'мкг'", "vials_total_amount_scale_check",
+			"concentration_label, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', DATE '2026-12-31', 250.5, 'мкг'", "vials_total_amount_scale_check",
 		},
-		{
-			// The scale bound is a disjunction, not a CASE on the unit: a CASE with no
-			// arm for a missing unit yields NULL, and a CHECK over NULL passes.
-			"an amount with no unit named",
-			"concentration_label, total_doses, expires_on, total_amount",
-			"'1 мг/мл', 4, DATE '2026-12-31', 0.0001", "vials_total_amount_scale_check",
-		},
+		// «An amount with no unit named» stood here while 000021 left both columns
+		// nullable: a CASE with no arm for a missing unit yields NULL and a CHECK over
+		// NULL passes, so 0,0001 walked through the scale bound. 000022 makes both
+		// columns NOT NULL, so the row cannot be built any more and the column witness
+		// in platform/database is what holds it shut. The constraint keeps its
+		// disjunction form regardless — it is correct without depending on that.
 		{
 			"an amount in a unit nobody prescribes",
-			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
-			"'1 мг/мл', 4, DATE '2026-12-31', 2, 'ед'", "vials_amount_unit_check",
+			"concentration_label, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', DATE '2026-12-31', 2, 'ед'", "vials_amount_unit_check",
 		},
 		{
 			"a vial held back and thrown away at once",
-			"concentration_label, total_doses, expires_on, opened_at, held_back_at, disposed_at",
-			"'1 мг/мл', 4, DATE '2026-12-31', DATE '2026-06-01', DATE '2026-06-02', " +
+			"concentration_label, total_amount, amount_unit, expires_on, opened_at, held_back_at, disposed_at",
+			"'1 мг/мл', 1.0, 'мг', DATE '2026-12-31', DATE '2026-06-01', DATE '2026-06-02', " +
 				"DATE '2026-06-03'", "vials_not_held_back_while_disposed",
 		},
 		{
 			"thrown away before it was opened",
-			"concentration_label, total_doses, expires_on, opened_at, disposed_at",
-			"'1 мг/мл', 4, DATE '2026-12-31', DATE '2026-05-20', DATE '2026-05-01'",
+			"concentration_label, total_amount, amount_unit, expires_on, opened_at, disposed_at",
+			"'1 мг/мл', 1.0, 'мг', DATE '2026-12-31', DATE '2026-05-20', DATE '2026-05-01'",
 			"vials_disposed_after_opening",
 		},
 	} {
@@ -804,8 +803,8 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			t.Context(), c.service, seedJob,
 			func(ctx context.Context, tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, c.insertVial(
-					"concentration_label, total_doses, expires_on, lot, location_ru",
-					"pg_catalog.repeat('x', 50), 4, DATE '2026-12-31', "+
+					"concentration_label, total_amount, amount_unit, expires_on, lot, location_ru",
+					"pg_catalog.repeat('x', 50), 1.0, 'мг', DATE '2026-12-31', "+
 						"pg_catalog.repeat('y', 50), pg_catalog.repeat('z', 100)",
 				), patientA, c.compound)
 
@@ -832,8 +831,8 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 					t.Context(), c.service, seedJob,
 					func(ctx context.Context, tx pgx.Tx) error {
 						_, err := tx.Exec(ctx, c.insertVial(
-							"concentration_label, total_doses, expires_on, total_amount, amount_unit",
-							"'1 мг/мл', 4, DATE '2026-12-31', "+legal.values,
+							"concentration_label, expires_on, total_amount, amount_unit",
+							"'1 мг/мл', DATE '2026-12-31', "+legal.values,
 						), patientA, c.compound)
 
 						return err
@@ -853,8 +852,8 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			t.Context(), c.service, seedJob,
 			func(ctx context.Context, tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, c.insertVial(
-					"concentration_label, total_doses, expires_on, disposed_at, lot, location_ru, label_photo_path",
-					fmt.Sprintf("'2,4 мг/мл', 1, DATE '2026-06-01', DATE '2026-05-20', 'L-77', 'холодильник', '%s/b.jpg'", patientA),
+					"concentration_label, total_amount, amount_unit, expires_on, disposed_at, lot, location_ru, label_photo_path",
+					fmt.Sprintf("'2,4 мг/мл', 0.25, 'мг', DATE '2026-06-01', DATE '2026-05-20', 'L-77', 'холодильник', '%s/b.jpg'", patientA),
 				), patientA, c.compound)
 
 				return err
@@ -918,8 +917,8 @@ func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
 		// the admin is not assigned to is the half only WITH CHECK decides.
 		if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
-				INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_doses, expires_on)
-				VALUES ($1, $2, '5 мг/мл', 2, DATE '2027-03-01')
+				INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
+				VALUES ($1, $2, '5 мг/мл', 0.5, 'мг', DATE '2027-03-01')
 			`, patientB, c.compound)
 
 			return err
@@ -1025,7 +1024,7 @@ func TestTheReachOfEachRoleOverTheCabinet(t *testing.T) {
 		err := database.WithServiceJob(
 			t.Context(), c.service, seedJob,
 			func(ctx context.Context, tx pgx.Tx) error {
-				_, err := tx.Exec(ctx, `UPDATE app.vials SET total_doses = 99 WHERE id = $1`, c.vialA)
+				_, err := tx.Exec(ctx, `UPDATE app.vials SET total_amount = 99 WHERE id = $1`, c.vialA)
 
 				return err
 			},
@@ -1117,7 +1116,7 @@ func TestTheSupplyAnsweredIsThePatientsOwn(t *testing.T) {
 	} {
 		if err := c.as(t, holding.patient, "patient", func(ctx context.Context, tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `
-				UPDATE app.vials SET opened_at = DATE '2026-05-01', total_doses = $2
+				UPDATE app.vials SET opened_at = DATE '2026-05-01', total_amount = $2::numeric * 0.25
 				WHERE id = $1
 			`, holding.vial, holding.total)
 
@@ -1145,9 +1144,10 @@ func TestTheSupplyAnsweredIsThePatientsOwn(t *testing.T) {
 				t.Context(), c.service, seedJob,
 				func(ctx context.Context, tx pgx.Tx) error {
 					var err error
+					dose := protocol.Dose{Value: 0.25, Unit: protocol.MG}
 					left, _, err = inventory.NewSupply().SupplyFor(
 						ctx, tx, civil.UserID(who.patient), anInjectionOf(c.compound),
-						civil.NewDate(2026, time.May, 10),
+						&dose, civil.NewDate(2026, time.May, 10),
 					)
 
 					return err

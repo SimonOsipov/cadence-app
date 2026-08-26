@@ -208,8 +208,9 @@ func (c clinic) seed(ctx context.Context, tx pgx.Tx) error {
 
 		var vialID string
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO app.vials (patient_id, compound_id, concentration_label, total_doses, expires_on)
-			VALUES ($1, $2, '2,4 мг/0,75 мл', 4, DATE '2026-12-31')
+			INSERT INTO app.vials (patient_id, compound_id, concentration_label,
+			                       total_amount, amount_unit, expires_on)
+			VALUES ($1, $2, '2,4 мг/0,75 мл', 1.0, 'мг', DATE '2026-12-31')
 			RETURNING id::text
 		`, patient, compoundID).Scan(&vialID); err != nil {
 			return fmt.Errorf("vial %s: %w", patient, err)

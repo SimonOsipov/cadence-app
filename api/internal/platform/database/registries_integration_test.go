@@ -209,7 +209,6 @@ func columnGrantRegistry() map[string][]string {
 		"INSERT/vials/cadence_patient": {
 			"amount_unit", "compound_id", "concentration_label", "disposed_at", "expires_on",
 			"label_photo_path", "location_ru", "lot", "opened_at", "patient_id", "total_amount",
-			"total_doses",
 		},
 		// entry_date is writable: moving a day is an edit of which day the entry is
 		// about. patient_id is not — half the primary key, and moving a row between
@@ -231,7 +230,7 @@ func columnGrantRegistry() map[string][]string {
 		"UPDATE/vials/cadence_patient": {
 			"amount_unit", "compound_id", "concentration_label", "disposed_at", "expires_on",
 			"held_back_at", "label_photo_path", "location_ru", "lot", "opened_at", "patient_id",
-			"total_amount", "total_doses",
+			"total_amount",
 		},
 	}
 }

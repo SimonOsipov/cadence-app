@@ -21,7 +21,9 @@ type stubNeighbours struct {
 	reorder *ReorderHint
 
 	askedFor []ProtocolItemID
-	windows  []civil.Range
+	// What dose the cabinet was told to divide by — nil where no phase covers the day.
+	askedAt []*Dose
+	windows []civil.Range
 	// Every subject the aggregate passed, so «it asks about the token's patient» is
 	// measurable rather than traced: substituting the plan's own patient id survived the
 	// whole suite while the fixture had data for one patient.
@@ -50,10 +52,12 @@ func (s *stubNeighbours) LoggedSlotsIn(
 }
 
 func (s *stubNeighbours) SupplyFor(
-	_ context.Context, _ pgx.Tx, patient civil.UserID, item ProtocolItem, _ civil.Date,
+	_ context.Context, _ pgx.Tx, patient civil.UserID, item ProtocolItem, dose *Dose,
+	_ civil.Date,
 ) (*int, *ReorderHint, error) {
 	s.subjects = append(s.subjects, patient)
 	s.askedFor = append(s.askedFor, item.ID)
+	s.askedAt = append(s.askedAt, dose)
 
 	return s.left, s.reorder, s.cabinetFails
 }
