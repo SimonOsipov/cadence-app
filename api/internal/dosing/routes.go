@@ -233,7 +233,7 @@ func answer(err error) error {
 		// divergence means it saved the wrong thing, and the message names the field.
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, ErrNoSuchVial), errors.Is(err, ErrPhotoNotTheirs),
-		errors.Is(err, ErrNoteSaysNothing):
+		errors.Is(err, ErrNoteSaysNothing), errors.Is(err, ErrDoseTooFine):
 		// The schema refuses both on every path; this is that refusal read back as the
 		// field the caller filled in rather than as a constraint they cannot see.
 		return huma.Error422UnprocessableEntity(err.Error())

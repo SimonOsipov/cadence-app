@@ -330,6 +330,26 @@ func TestOnlyAPatientRecordsTheirOwnDoses(t *testing.T) {
 	}
 }
 
+// A dose finer than the unit's atom is refused, not a 500.
+//
+// 000021 bounds dose_value's scale for the microgram arithmetic the cabinet is moving to.
+// The transport admits any float above zero, so the constraint is reachable from the
+// wizard — and an unnamed check violation would leave through the default branch as a
+// server error the client retries forever.
+func TestADoseFinerThanTheUnitsAtomIsRefused(t *testing.T) {
+	c := newClinic(t)
+
+	status, body := send(t, c, patientA, aPayload(c, patientA, func(b map[string]any) {
+		b["dose_value"] = 0.12345
+	}))
+	if status != http.StatusUnprocessableEntity {
+		t.Errorf("answered %d, want 422: %s", status, body)
+	}
+	if doses := dosesOn(t, c, patientA, "2026-05-10"); doses != 0 {
+		t.Errorf("the refused request left %d doses", doses)
+	}
+}
+
 // A vial the request names gets the same predicate the resolution uses, minus «already
 // opened» — naming a sealed one is how a patient starts it. What it does not get is a
 // weaker one: a thrown-away vial, or one of another drug.

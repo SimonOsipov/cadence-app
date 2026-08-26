@@ -646,6 +646,16 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 			"a client key carrying a path", "dose_value, dose_unit, client_request_id",
 			"0.25, 'мг', '../secrets'", "dose_events_client_request_id_check", "23514",
 		},
+		{
+			// Both branches of the scale bound, because the atom differs by unit and a
+			// rule written for one of them would pass the other's case untouched.
+			"a milligram dose finer than a microgram", "dose_value, dose_unit, client_request_id",
+			"0.0001, 'мг', 'scale-mg-1'", "dose_events_dose_value_scale_check", "23514",
+		},
+		{
+			"a fraction of a microgram", "dose_value, dose_unit, client_request_id",
+			"0.5, 'мкг', 'scale-mcg-1'", "dose_events_dose_value_scale_check", "23514",
+		},
 	} {
 		t.Run(rule.name, func(t *testing.T) {
 			// client_request_id is NOT NULL with no default, so every case that does
@@ -679,11 +689,13 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 		note  int
 		key   string
 		photo string
+		dose  string
+		unit  string
 	}{
 		// The key exercises all four tail characters: the refusal direction is pinned
 		// and the accept direction was not, so narrowing the class to drop `.`, `_`
 		// or `:` passed everything — and a refused key is a dose that never lands.
-		{"the low end of everything", "2026-06-29", 1, 1, "a.b_c:d-0001", "/a.jpg"},
+		{"the low end of everything", "2026-06-29", 1, 1, "a.b_c:d-0001", "/a.jpg", "0.25", "мг"},
 		{
 			// 128 exactly, and the segment 101 characters: a bound is only pinned by
 			// the value that sits on it. This key was 127 and the refusal was 3, so
@@ -691,7 +703,15 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 			"the high end of everything", "2026-06-30", 5, 2000,
 			"0123456789012345678901234567890123456789012345678901234567890123" +
 				"4567890123456789012345678901234567890123456789012345678901234567",
-			"/a/b/c/" + strings.Repeat("d", 101),
+			"/a/b/c/" + strings.Repeat("d", 101), "0.125", "мг",
+		},
+		{
+			// The microgram branch of the scale bound, from the accept side. Without
+			// it a rule refusing every µg dose passes the whole suite — and BPC-157
+			// and tirzepatide are both prescribed in micrograms, so that rule would
+			// mean their patients cannot log an injection at all, on a green tree.
+			"a whole number of micrograms", "2026-07-01", 3, 10, "mcg-accept-0001",
+			"/b.jpg", "250", "мкг",
 		},
 	} {
 		t.Run(day.name, func(t *testing.T) {
@@ -701,10 +721,11 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 				     injected_at, dose_value, dose_unit, site_code, mood, side_effects,
 				     note, photo_path, client_request_id)
 				VALUES ($1::uuid, $2, $3, $4::date, TIMESTAMPTZ '2026-06-29 08:00:00+05',
-				        0.25, 'мг', 'r-lback', $5, ARRAY['nausea','site']::text[],
+				        $9::numeric, $10, 'r-lback', $5, ARRAY['nausea','site']::text[],
 				        pg_catalog.repeat('x', $6), $7, $8)
 			`, patientA, c.protocol[patientA], c.item[patientA], day.date,
-				day.mood, day.note, patientA+day.photo, day.key); affected != 1 {
+				day.mood, day.note, patientA+day.photo, day.key,
+				day.dose, day.unit); affected != 1 {
 				t.Errorf("a dose at the bounds was refused")
 			}
 		})

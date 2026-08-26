@@ -23,6 +23,10 @@ func TestEachConstraintThatAnswersARequestIsNamed(t *testing.T) {
 			"a photo key outside their prefix", "23514",
 			"dose_events_photo_key_is_under_its_own_prefix", ErrPhotoNotTheirs,
 		},
+		{
+			"a dose finer than the unit's atom", "23514",
+			"dose_events_dose_value_scale_check", ErrDoseTooFine,
+		},
 	} {
 		t.Run(refusal.name, func(t *testing.T) {
 			got := classify(&pgconn.PgError{Code: refusal.code, ConstraintName: refusal.constraint})

@@ -748,6 +748,41 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			"pg_catalog.repeat('x', 51), 4, DATE '2026-12-31'", "vials_concentration_label_check",
 		},
 		{
+			"a vial holding no substance at all",
+			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', 4, DATE '2026-12-31', 0, 'мг'", "vials_total_amount_check",
+		},
+		{
+			// The bound is per unit because the atom is: a vial amount below one
+			// microgram rounds to nothing at all.
+			"a milligram amount finer than a microgram",
+			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', 4, DATE '2026-12-31', 0.0001, 'мг'", "vials_total_amount_scale_check",
+		},
+		{
+			"a microgram amount with anything after the point",
+			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', 4, DATE '2026-12-31', 250.5, 'мкг'", "vials_total_amount_scale_check",
+		},
+		{
+			// The scale bound is a disjunction, not a CASE on the unit: a CASE with no
+			// arm for a missing unit yields NULL, and a CHECK over NULL passes.
+			"an amount with no unit named",
+			"concentration_label, total_doses, expires_on, total_amount",
+			"'1 мг/мл', 4, DATE '2026-12-31', 0.0001", "vials_total_amount_scale_check",
+		},
+		{
+			"an amount in a unit nobody prescribes",
+			"concentration_label, total_doses, expires_on, total_amount, amount_unit",
+			"'1 мг/мл', 4, DATE '2026-12-31', 2, 'ед'", "vials_amount_unit_check",
+		},
+		{
+			"a vial held back and thrown away at once",
+			"concentration_label, total_doses, expires_on, opened_at, held_back_at, disposed_at",
+			"'1 мг/мл', 4, DATE '2026-12-31', DATE '2026-06-01', DATE '2026-06-02', " +
+				"DATE '2026-06-03'", "vials_not_held_back_while_disposed",
+		},
+		{
 			"thrown away before it was opened",
 			"concentration_label, total_doses, expires_on, opened_at, disposed_at",
 			"'1 мг/мл', 4, DATE '2026-12-31', DATE '2026-05-20', DATE '2026-05-01'",
@@ -778,6 +813,35 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			},
 		); err != nil {
 			t.Fatalf("a value exactly at its bound was refused: %v", err)
+		}
+	})
+
+	// The accept side of the amount bounds. Without it `<= 3` narrowing to `<= 2`, or a
+	// rule refusing every microgram amount, survives every refusal above: 0,125 мг is a
+	// real titration step and 250 мкг is how BPC-157 comes.
+	t.Run("each amount bound accepts its own atom", func(t *testing.T) {
+		for _, legal := range []struct {
+			name   string
+			values string
+		}{
+			{"a milligram amount at three decimals", "0.125, 'мг'"},
+			{"a whole number of micrograms", "250, 'мкг'"},
+		} {
+			t.Run(legal.name, func(t *testing.T) {
+				if err := database.WithServiceJob(
+					t.Context(), c.service, seedJob,
+					func(ctx context.Context, tx pgx.Tx) error {
+						_, err := tx.Exec(ctx, c.insertVial(
+							"concentration_label, total_doses, expires_on, total_amount, amount_unit",
+							"'1 мг/мл', 4, DATE '2026-12-31', "+legal.values,
+						), patientA, c.compound)
+
+						return err
+					},
+				); err != nil {
+					t.Fatalf("a legal amount was refused: %v", err)
+				}
+			})
 		}
 	})
 

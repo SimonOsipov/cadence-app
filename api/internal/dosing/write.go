@@ -42,6 +42,11 @@ var (
 	// in-process callers — and it is named rather than left as a 500 because the offline
 	// queue would re-send a request that always fails.
 	ErrNoteSaysNothing = errors.New("a note is either absent or says something")
+
+	// A dose finer than the unit's atom: 000021 bounds the scale because the vial
+	// arithmetic is integer micrograms, and a value that rounds to zero there is a
+	// vial that never empties. Named so the wizard sees a refusal rather than a 500.
+	ErrDoseTooFine = errors.New("a dose is measured to the microgram, not finer")
 )
 
 // Logged is what the write answers. The identifiers are absent for every outcome but Written,
@@ -574,6 +579,8 @@ func classify(err error) error {
 		return ErrPhotoNotTheirs
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == noteSaysSomething:
 		return ErrNoteSaysNothing
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == doseIsNotFinerThanTheAtom:
+		return ErrDoseTooFine
 	default:
 		return err
 	}
@@ -584,10 +591,11 @@ const (
 	foreignKeyViolation = "23503"
 	checkViolation      = "23514"
 
-	oneDosePerSlot          = "dose_events_one_per_slot"
-	vialIsTheirOwn          = "dose_events_drawn_from_their_own_vial"
-	photoIsUnderTheirPrefix = "dose_events_photo_key_is_under_its_own_prefix"
-	noteSaysSomething       = "dose_events_note_check"
+	doseIsNotFinerThanTheAtom = "dose_events_dose_value_scale_check"
+	oneDosePerSlot            = "dose_events_one_per_slot"
+	vialIsTheirOwn            = "dose_events_drawn_from_their_own_vial"
+	photoIsUnderTheirPrefix   = "dose_events_photo_key_is_under_its_own_prefix"
+	noteSaysSomething         = "dose_events_note_check"
 )
 
 // errLostTheSlot never leaves this package: it is the race becoming the outcome that names

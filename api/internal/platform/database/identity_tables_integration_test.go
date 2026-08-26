@@ -747,6 +747,11 @@ func identityColumns() map[string][]string {
 			"disposed_at date NULL",
 			"label_photo_path text NULL",
 			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+			// Appended by 000021, and appended is where they read: the registry is
+			// ordered by ordinal_position, and ADD COLUMN puts a column last.
+			"total_amount numeric NULL",
+			"amount_unit text NULL",
+			"held_back_at date NULL",
 		},
 		// One entry per day, and the day is half the primary key. No cycle day: it is
 		// derived from the protocol's start date and a stored copy would go stale on
