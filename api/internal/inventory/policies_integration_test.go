@@ -1112,6 +1112,92 @@ func TestTheCabinetReadIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) 
 	}
 }
 
+// Two requests reaching the last sealed vial at once open it once, and the loser draws from
+// nothing rather than opening it again on a different day.
+//
+// The guard is `opened_at IS NULL` in the UPDATE, and nothing else measured it: the mutation
+// that removes it survives every other test in the tree, because no other test has two
+// transactions in flight. Postgres blocks the second UPDATE on the row lock and re-evaluates
+// its predicate against the committed version — so the guard is what turns «open it again»
+// into «no rows», and the second caller answers nothing.
+func TestTwoRequestsOpeningTheLastVialOpenItOnce(t *testing.T) {
+	c := newClinic(t)
+
+	first := civil.NewDate(2026, time.May, 10)
+	second := civil.NewDate(2026, time.May, 11)
+	held := make(chan *string, 1)
+	release := make(chan struct{})
+	loser := make(chan *string, 1)
+
+	go func() {
+		_ = c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			opened, err := inventory.OpenVialFor(ctx, tx, civil.UserID(patientA), c.compound, first)
+			if err != nil {
+				held <- nil
+
+				return err
+			}
+			held <- opened
+			// The transaction stays open, holding the row lock, until the second
+			// request is known to be waiting on it.
+			<-release
+
+			return nil
+		})
+	}()
+
+	var winner *string
+	select {
+	case winner = <-held:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first request never reached the vial")
+	}
+	if winner == nil {
+		close(release)
+		t.Fatal("the first request opened nothing")
+	}
+
+	go func() {
+		var opened *string
+		_ = c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			opened, err = inventory.OpenVialFor(ctx, tx, civil.UserID(patientA), c.compound, second)
+
+			return err
+		})
+		loser <- opened
+	}()
+
+	// Long enough for the second statement to reach the lock and block on it. If it has
+	// not, the case degenerates into two sequential requests, where the guard is not
+	// what answers — and the assertions below would still pass.
+	time.Sleep(500 * time.Millisecond)
+	close(release)
+
+	var second_ *string
+	select {
+	case second_ = <-loser:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the second request never came back")
+	}
+
+	if second_ != nil {
+		t.Errorf("the second request opened %s as well", *second_)
+	}
+
+	var opened string
+	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT coalesce(to_char(opened_at, 'YYYY-MM-DD'), '') FROM app.vials WHERE id = $1`,
+			c.vialA).Scan(&opened)
+	}); err != nil {
+		t.Fatalf("reading the vial back: %v", err)
+	}
+	if opened != first.String() {
+		t.Errorf("the vial reads opened on %q, want the first request's day %q", opened, first)
+	}
+}
+
 // Opening a vial is the patient's own act, and the service seam cannot perform it.
 //
 // The second layer writes, and the write is the one grant the service role was never given:
