@@ -186,7 +186,6 @@ type shelf struct {
 	cabinet Cabinet
 	draws   []Draw
 	plan    protocol.Plan
-	running bool
 	today   civil.Date
 }
 
@@ -203,15 +202,14 @@ func (s *Service) shelfOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) 
 	if err != nil {
 		return shelf{}, err
 	}
-	plan, running, err := protocol.ActivePlanFor(ctx, tx, patient)
+	// The bool is dropped on purpose: it says a course was found, and the zero Plan it
+	// comes with answers every question here the way «no course» should.
+	plan, _, err := protocol.ActivePlanFor(ctx, tx, patient)
 	if err != nil {
 		return shelf{}, err
 	}
 
-	return shelf{
-		cabinet: CabinetOf(patient, vials), draws: draws,
-		plan: plan, running: running, today: today,
-	}, nil
+	return shelf{cabinet: CabinetOf(patient, vials), draws: draws, plan: plan, today: today}, nil
 }
 
 func (s shelf) render(vial Vial) VialBody {
@@ -239,13 +237,11 @@ func (s shelf) render(vial Vial) VialBody {
 	return body
 }
 
-// doseOf is nothing without a running course: a cancelled or finished one prescribes no dose
-// today, and a count divided by a dose nobody is taking is a number about last month.
+// doseOf is nothing without a running course, and needs no guard saying so: ActivePlanFor
+// selects on status = 'active', so a patient with none holds the zero Plan, which names no
+// item — and a compound no item names has no dose in force. Measured: a guard here dies to no
+// test, because there is no state in which it answers differently.
 func (s shelf) doseOf(compound protocol.CompoundID) *protocol.Dose {
-	if !s.running {
-		return nil
-	}
-
 	return protocol.CurrentDoseFor(s.plan, compound, s.today)
 }
 
@@ -253,10 +249,6 @@ func (s shelf) doseOf(compound protocol.CompoundID) *protocol.Dose {
 // asked per item, and two items of one drug would otherwise answer twice about one shelf.
 func (s shelf) hints() []VialReorderBody {
 	out := []VialReorderBody{}
-	if !s.running {
-		return out
-	}
-
 	seen := map[protocol.CompoundID]bool{}
 	for _, item := range s.plan.Items {
 		if item.CompoundID == nil || seen[*item.CompoundID] {

@@ -194,7 +194,10 @@ func TestWithoutARunningCourseTheSubstanceAnswersAndTheCountDoesNot(t *testing.T
 func TestTheCabinetIsAnsweredInThePatientsOwnDay(t *testing.T) {
 	c := newClinic(t)
 	openTheVial(t, c, patientA, c.vialA)
-	expireOn(t, c, patientA, c.vialA, "2026-05-09")
+	// Fourteen days from the patient's day and fifteen from the server's, which is the
+	// only place the two answer differently: «expiring» covers a vial already past its
+	// date as well, so an expiry in the past cannot tell the days apart at all.
+	expireOn(t, c, patientA, c.vialA, "2026-05-24")
 
 	mux, calling := aCabinet(t, c)
 	calling(patientA, "patient")
@@ -204,10 +207,10 @@ func TestTheCabinetIsAnsweredInThePatientsOwnDay(t *testing.T) {
 	if len(shelf.Vials) != 1 {
 		t.Fatalf("the cabinet holds %d vials", len(shelf.Vials))
 	}
-	// Expired on the 9th, and in Yekaterinburg it is already the 10th. A server reading
-	// its own clock is still on the 9th and calls this one expiring rather than expired.
+	// On the patient's day the vial is inside the fortnight and reads expiring; a server
+	// answering in its own day is a day short of it and reads the vial as plainly active.
 	if shelf.Vials[0].Status != "expiring" {
-		t.Errorf("a vial that ran out yesterday reads %q", shelf.Vials[0].Status)
+		t.Errorf("a vial fourteen days from its date reads %q", shelf.Vials[0].Status)
 	}
 }
 
