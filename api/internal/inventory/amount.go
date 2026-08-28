@@ -31,9 +31,10 @@ const microgramsPerMilligram = 1000
 // read. Most three-decimal values multiply exactly, 0,29 among them, so the case has to
 // be chosen rather than assumed.
 //
-// Magnitude is not bounded here because 000024 bounds it in every column this reads, at a
-// gram per unit: without that, a value out of range saturates on arm64 and wraps on amd64,
-// and one row answers differently by machine.
+// Magnitude is not bounded here because 000024 bounds every column this reads — a gram per
+// unit on the two dose columns, a hundred times that on a vial's amount, which is a
+// container rather than an injection. Without it a value out of range saturates on arm64
+// and wraps on amd64, and one row answers differently by machine.
 func AmountOf(value float64, unit protocol.DoseUnit) (Amount, error) {
 	switch unit {
 	case protocol.MG:

@@ -721,7 +721,7 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			"'1 мг/мл', 100001, 'мг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
 		},
 		{
-			"a vial holding a hundred grams counted in micrograms",
+			"a vial holding more than a hundred grams counted in micrograms",
 			"concentration_label, total_amount, amount_unit, expires_on",
 			"'1 мг/мл', 100000001, 'мкг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
 		},
@@ -834,9 +834,9 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			{"a milligram amount at three decimals", "0.125, 'мг'"},
 			{"a whole number of micrograms", "250, 'мкг'"},
 			{"a milligram amount at the ceiling", "100000, 'мг'"},
-			// The мкг arm of the ceiling, eight orders above every other microgram
-			// fixture here: written a thousand times lower by mistake it would refuse
-			// this and nothing else in the suite would move.
+			// The мкг arm of the ceiling, and the only microgram fixture in this suite
+			// above 250: written a thousand times lower by mistake it would refuse this
+			// and nothing else here would move.
 			{"a microgram amount at the ceiling", "100000000, 'мкг'"},
 			// The vial a dose ceiling would have refused, named as a case rather than
 			// left to the boundary: 10 мл of testosterone at 250 мг/мл.

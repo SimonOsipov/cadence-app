@@ -163,6 +163,21 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 			nil, "protocol_phases_dose_value_magnitude_check", "23514",
 		},
 		{
+			// The мкг arm of the ceiling on this table, which the мг cases leave
+			// unmeasured: written a thousand times higher it would take a dose Go
+			// refuses, and the pair this file exists for would not notice.
+			"a microgram dose one microgram past a gram",
+			itemWith(func(i *protocol.DraftItem) {
+				i.Phases = []protocol.ProtocolPhase{{
+					FromWeek: 1, ToWeek: 4,
+					Dose: protocol.Dose{Value: 1_000_001, Unit: protocol.MCG},
+				}}
+			}),
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_dose_value_magnitude_check", "23514",
+		},
+		{
 			"a dose in a unit nobody prescribes",
 			itemWith(func(i *protocol.DraftItem) {
 				i.Phases = []protocol.ProtocolPhase{{

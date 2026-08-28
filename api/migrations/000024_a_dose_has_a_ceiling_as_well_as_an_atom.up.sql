@@ -7,11 +7,12 @@
 -- the arithmetic reads it as no dose and the count disappears instead. One value, two
 -- answers, chosen by the machine that ran the read.
 --
--- A gram is the ceiling because nothing the clinic injects comes near it — semaglutide
+-- A gram is the ceiling for the two dose columns because nothing the clinic injects comes
+-- near it — semaglutide
 -- tops out at 2,4 мг, tirzepatide at 15 мг, BPC-157 at 250 мкг — and a gram is 10⁶ мкг
 -- against a MaxInt64 of 9,2 × 10¹⁸, thirteen orders of margin. All three operands here
 -- rather than the divisor alone: bounding two of the three and leaving the third is what
--- 000023 was written to repair.
+-- 000023 was written to repair. The vial carries a ceiling of its own, below.
 
 SET ROLE cadence_owner;
 
