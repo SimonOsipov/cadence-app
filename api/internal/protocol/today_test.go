@@ -429,6 +429,49 @@ func TestOnADayNoPhaseCoversTheCabinetIsAskedWithNoDose(t *testing.T) {
 	// dose of nothing buys no count is inventory's, at math_test.go's nil-dose case.
 }
 
+// The drug the cabinet is asked about is the one the hero card offers, not whichever the course
+// happens to list first.
+//
+// Resolving the divisor from the drug rather than from the position made «which drug» a
+// question worth asking, and no fixture asked it: the two positions here carry different drugs
+// and different doses, and the one that is next is listed second, so an implementation reading
+// the plan's first position answers a milligram where the card offers a quarter of one.
+func TestTheCabinetIsAskedWithTheDoseOfTheDrugBeingOffered(t *testing.T) {
+	compound, other := CompoundID(theCompound.ID), CompoundID("other-compound")
+	plan := Plan{
+		Protocol: Protocol{
+			PatientID: "3c1f3b7c-0000-4000-8000-0000000000a1",
+			StartDate: civil.NewDate(2026, time.May, 4), Weeks: 12, Status: StatusActive,
+		},
+		Items: []ProtocolItem{
+			{
+				ID: "item-evening", Kind: KindInjection, CompoundID: &other,
+				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+				Times: []civil.Slot{{Hour: 20}}, Loggable: true,
+			},
+			{
+				ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
+				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+				Times: []civil.Slot{{Hour: 8}}, Loggable: true,
+			},
+		},
+		Phases: map[ProtocolItemID][]ProtocolPhase{
+			"item-evening": {{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 1, Unit: MG}}},
+			"item-morning": {{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 0.25, Unit: MG}}},
+		},
+	}
+
+	n := &stubNeighbours{site: "r-glute"}
+	todayFor(t, plan, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n)
+
+	if len(n.askedFor) != 1 || n.askedFor[0] != "item-morning" {
+		t.Fatalf("the cabinet was asked about %v, want the morning position", n.askedFor)
+	}
+	if len(n.askedAt) != 1 || n.askedAt[0] == nil || n.askedAt[0].Value != 0.25 {
+		t.Errorf("the cabinet was told to divide by %+v, want the morning drug's 0,25 мг", n.askedAt)
+	}
+}
+
 // Two course positions of one drug, and the day card goes quiet about it — the same answer the
 // cabinet gives, and for the same reason: the rate is a position's while the vials are the
 // drug's, so a count divided by one of the two doses contradicts the other half of the
