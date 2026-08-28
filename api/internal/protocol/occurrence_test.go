@@ -560,13 +560,13 @@ func TestTheCurrentDoseOfACompoundIsTheDoseOfTheItemPrescribingIt(t *testing.T) 
 // The crossing itself: from a drug to the position prescribing it, and to *that* position's
 // phases.
 //
-// Every other fixture in this file gives an item the same string for its own id and for its
-// compound, and puts the matching item first — so «take Items[0]» and «index the phase map by
-// the compound id» are both wrong implementations that answer correctly, and the suite could
-// not tell them from this one. Here the two ids differ textually, the answer is the second
-// item, and the first carries a dose of its own to be answered by mistake.
+// No fixture these tests query distinguishes the crossing: the plan they all start from names
+// its one item and its one compound with the same string, so «take Items[0]» and «index the
+// phase map by the compound id» are both wrong implementations that answer correctly —
+// measured, both survive without this case. Here the two ids differ textually, the answer is
+// the second item, and the first carries a dose of its own to be answered by mistake.
 func TestTheDoseIsTheOneBelongingToTheItemThatNamesTheDrug(t *testing.T) {
-	bpc, sema := ProtocolItemID("bpc-daily"), ProtocolItemID("sema-weekly")
+	bpcItem, semaItem := ProtocolItemID("bpc-daily"), ProtocolItemID("sema-weekly")
 	perDay := Dose{Value: 250, Unit: MCG}
 	plan := Plan{
 		Protocol: Protocol{
@@ -575,20 +575,20 @@ func TestTheDoseIsTheOneBelongingToTheItemThatNamesTheDrug(t *testing.T) {
 		},
 		Items: []ProtocolItem{
 			{
-				ID: bpc, ProtocolID: ProtocolID("pr"), Kind: KindInjection,
+				ID: bpcItem, ProtocolID: ProtocolID("pr"), Kind: KindInjection,
 				CompoundID: compoundPtr("cmp-bpc"), Cadence: CadenceDaily,
 				Times: []civil.Slot{{Hour: 8}}, Loggable: true,
 			},
 			{
-				ID: sema, ProtocolID: ProtocolID("pr"), Kind: KindInjection,
+				ID: semaItem, ProtocolID: ProtocolID("pr"), Kind: KindInjection,
 				CompoundID: compoundPtr("cmp-sema"), Cadence: CadenceWeekly,
 				DaysOfWeek: []time.Weekday{time.Sunday},
 				Times:      []civil.Slot{{Hour: 7}}, Loggable: true,
 			},
 		},
 		Phases: map[ProtocolItemID][]ProtocolPhase{
-			bpc:  {{FromWeek: 1, ToWeek: 12, Dose: perDay}},
-			sema: {{FromWeek: 1, ToWeek: 12, Dose: quarter}},
+			bpcItem:  {{FromWeek: 1, ToWeek: 12, Dose: perDay}},
+			semaItem: {{FromWeek: 1, ToWeek: 12, Dose: quarter}},
 		},
 	}
 
@@ -654,7 +654,10 @@ func TestTheCurrentDoseIsNothingRatherThanAGuess(t *testing.T) {
 			bandsPlan(StatusCancelled, shuffledPhases), CompoundID("sema"), bandsStart,
 		},
 		{"a day before the course opens", defaultBandsPlan(), CompoundID("sema"), bandsStart.AddDays(-1)},
-		{"an item that names the drug and is dosed by no phase", unphased(), CompoundID("glycine"), bandsStart},
+		{
+			"an item that names the drug and is dosed by no phase",
+			unphased(t), CompoundID("cmp-glycine"), bandsStart,
+		},
 	} {
 		t.Run(quiet.name, func(t *testing.T) {
 			if got := CurrentDoseFor(quiet.plan, quiet.compound, quiet.day); got != nil {
@@ -666,13 +669,33 @@ func TestTheCurrentDoseIsNothingRatherThanAGuess(t *testing.T) {
 
 // unphased is a course carrying a supplement that names a drug and prescribes no band for it,
 // which Draft.Check permits: only an injection is required to be dosed.
-func unphased() Plan {
+//
+// The premise is asserted rather than left to the literal: without it, renaming the compound
+// makes the case a second copy of «a compound the course does not prescribe» and it goes on
+// passing while measuring nothing.
+func unphased(t *testing.T) Plan {
+	t.Helper()
+
+	supplement := ProtocolItemID("glycine-nightly")
 	plan := defaultBandsPlan()
 	plan.Items = append(plan.Items, ProtocolItem{
-		ID: ProtocolItemID("glycine"), ProtocolID: ProtocolID("pr"), Kind: KindSupplement,
-		CompoundID: compoundPtr("glycine"), Cadence: CadenceDaily,
+		ID: supplement, ProtocolID: ProtocolID("pr"), Kind: KindSupplement,
+		CompoundID: compoundPtr("cmp-glycine"), Cadence: CadenceDaily,
 		Times: []civil.Slot{{Hour: 22}}, Loggable: true,
 	})
+
+	naming := 0
+	for _, item := range plan.Items {
+		if item.CompoundID != nil && *item.CompoundID == CompoundID("cmp-glycine") {
+			naming++
+		}
+	}
+	if naming != 1 {
+		t.Fatalf("%d items name the supplement, want 1", naming)
+	}
+	if bands, ok := plan.Phases[supplement]; ok {
+		t.Fatalf("the supplement carries %d phases; the case is that it carries none", len(bands))
+	}
 
 	return plan
 }

@@ -117,8 +117,9 @@ func PhaseDose(plan Plan, itemID ProtocolItemID, d civil.Date) *Dose {
 // Nothing where two items name one compound, by the precedent OpenVialFor sets: 000013 has no
 // unique index on the pair, so a course can carry an injection and a supplement of one drug,
 // and answering either dose would put a number on a screen that half the prescription
-// contradicts. It is also nothing where the item naming the compound carries no phase at all,
-// which Draft.Check permits of anything but an injection.
+// contradicts. An item that names the compound and carries no phase falls through to
+// PhaseDose's own nil — Draft.Check requires phases of injections only, so a supplement
+// naming a drug is a legal course.
 func CurrentDoseFor(plan Plan, compound CompoundID, d civil.Date) *Dose {
 	var prescribing []ProtocolItemID
 	for _, item := range plan.Items {
