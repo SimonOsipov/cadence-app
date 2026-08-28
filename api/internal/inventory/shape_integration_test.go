@@ -422,7 +422,6 @@ func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
 	for _, restored := range []struct {
 		what     string
 		question string
-		want     bool
 	}{
 		{
 			"total_doses comes back as a required integer",
@@ -430,20 +429,17 @@ func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
 			  WHERE table_schema = 'app' AND table_name = 'vials'
 			    AND column_name = 'total_doses' AND data_type = 'integer'
 			    AND is_nullable = 'NO'`,
-			true,
 		},
 		{
 			"its CHECK comes back with it",
 			`SELECT count(*) = 1 FROM pg_constraint
 			  WHERE conname = 'vials_total_doses_check' AND conrelid = 'app.vials'::regclass`,
-			true,
 		},
 		{
 			"the amount stops being required",
 			`SELECT bool_and(is_nullable = 'YES') FROM information_schema.columns
 			  WHERE table_schema = 'app' AND table_name = 'vials'
 			    AND column_name IN ('total_amount', 'amount_unit')`,
-			true,
 		},
 		{
 			"the patient may write the count again",
@@ -451,7 +447,6 @@ func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
 			  WHERE table_schema = 'app' AND table_name = 'vials'
 			    AND column_name = 'total_doses' AND grantee = 'cadence_patient'
 			    AND privilege_type IN ('INSERT', 'UPDATE')`,
-			true,
 		},
 	} {
 		t.Run(restored.what, func(t *testing.T) {
@@ -459,7 +454,7 @@ func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
 			if err := conn.QueryRow(ctx, restored.question).Scan(&holds); err != nil {
 				t.Fatalf("asking the schema: %v", err)
 			}
-			if holds != restored.want {
+			if !holds {
 				t.Errorf("the rollback left the schema without it")
 			}
 		})

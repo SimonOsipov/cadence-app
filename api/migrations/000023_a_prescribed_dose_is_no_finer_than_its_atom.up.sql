@@ -11,9 +11,10 @@
 
 SET ROLE cadence_owner;
 
--- A disjunction and not a CASE on the unit, for the reason 000021 records over the
--- same bound on vials: a CASE with no arm for a unit yields NULL, and a CHECK over
--- NULL passes, so a unit nobody prescribes would carry any scale at all through.
+-- The form 000021 uses for the same bound on vials, so the two read alike. Its reason
+-- there is that amount_unit is nullable and a CASE with no arm yields NULL, which a
+-- CHECK passes; here dose_unit is NOT NULL and held to the two by 000013, so the shape
+-- is the cheaper of two safe ones rather than a fix.
 ALTER TABLE app.protocol_phases
     ADD CONSTRAINT protocol_phases_dose_value_scale_check CHECK (
         (dose_unit = 'мг'  AND pg_catalog.scale(dose_value) <= 3)

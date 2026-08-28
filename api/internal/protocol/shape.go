@@ -264,8 +264,9 @@ const (
 //
 // Read off the decimal the value prints as, and deliberately not off value × 1000:
 // measured, 2,01 × 1000 is 2009,9999999999997726, so a bound decided on that product
-// refuses two decimals as three — 71 such values below 50 мг, while the schema's
-// pg_catalog.scale takes every one of them. This must accept whatever 000023 accepts.
+// reads a short decimal as a longer one and refuses it — 731 values below 50 мг, 4 of
+// them written to one place and 67 to two, while the schema's pg_catalog.scale takes
+// every one. This must accept whatever 000023 accepts.
 func finerThanItsAtom(dose Dose) bool {
 	atom := milligramDecimals
 	if dose.Unit == MCG {

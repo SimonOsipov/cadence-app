@@ -255,8 +255,9 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 }
 
 // The accept side of the scale bound, which the refusals above cannot supply: a rule that
-// refused every dose would pass both of them. The values are the ones a bound read off
-// value × 1000 refuses and the schema takes — finerThanItsAtom carries the measurement.
+// refused every dose would pass both of them. The first three are the drift cases a bound
+// read off value × 1000 refuses and the schema takes; the last two are the rule's own
+// edges — three decimals of a milligram, and a whole microgram.
 func TestEveryDoseTheSchemasScaleAdmitsIsAccepted(t *testing.T) {
 	for _, dose := range []Dose{
 		{Value: 2.01, Unit: MG},
