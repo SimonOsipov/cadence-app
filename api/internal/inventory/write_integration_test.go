@@ -7,10 +7,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 )
 
 // post sends a body to one of the write endpoints and answers what came back.
@@ -60,13 +66,15 @@ func TestAVialTheFormFillsInIsAccepted(t *testing.T) {
 	}
 
 	var created struct {
-		ID          string  `json:"id"`
-		CompoundID  string  `json:"compound_id"`
-		Status      string  `json:"status"`
-		OpenedAt    *string `json:"opened_at"`
-		ExpiresOn   string  `json:"expires_on"`
-		Lot         *string `json:"lot"`
-		TotalAmount struct {
+		ID                 string  `json:"id"`
+		CompoundID         string  `json:"compound_id"`
+		Status             string  `json:"status"`
+		OpenedAt           *string `json:"opened_at"`
+		ExpiresOn          string  `json:"expires_on"`
+		Lot                *string `json:"lot"`
+		LocationRU         *string `json:"location_ru"`
+		ConcentrationLabel string  `json:"concentration_label"`
+		TotalAmount        struct {
 			Value float64 `json:"value"`
 			Unit  string  `json:"unit"`
 		} `json:"total_amount"`
@@ -95,6 +103,18 @@ func TestAVialTheFormFillsInIsAccepted(t *testing.T) {
 	if created.Lot == nil || *created.Lot != "LOT-7781" || created.CompoundID != c.compound {
 		t.Errorf("the card reads %+v", created)
 	}
+	// Every field the form carried, read back: expires_on decides «expiring» and feeds the
+	// reorder hint, and the two strings sit next to each other in the insert as nullable
+	// text — transposing them compiles and prints the shelf where the card says the batch.
+	if created.ExpiresOn != "2026-12-31" {
+		t.Errorf("the expiry reads %q", created.ExpiresOn)
+	}
+	if created.ConcentrationLabel != "2,4 мг/0,75 мл" {
+		t.Errorf("the concentration reads %q", created.ConcentrationLabel)
+	}
+	if created.LocationRU == nil || *created.LocationRU != "дверца холодильника" {
+		t.Errorf("the location reads %v", created.LocationRU)
+	}
 	if created.HasLabelPhoto {
 		t.Error("a vial added without a photograph says it has one")
 	}
@@ -112,6 +132,48 @@ func TestAVialTheFormFillsInIsAccepted(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("the vial just created is not on the shelf: %+v", shelf.Vials)
+	}
+}
+
+// A drug written in micrograms goes in in micrograms.
+//
+// Every other body in this suite is milligrams, so the unit travels untested: a literal «мг»
+// in the insert passes the schema for a value like 250 and the card answers «мг» too, and a
+// patient adding a 250 мкг vial of BPC-157 would hold one of 250 мг — a thousandfold error in
+// the remaining count and in every injection it buys.
+func TestAVialWrittenInMicrogramsStaysInMicrograms(t *testing.T) {
+	c := newClinic(t)
+	mux, calling := aCabinet(t, c)
+	calling(patientA, "patient")
+
+	status, body := post(t, mux, "/v1/me/vials", aVial(c, func(v map[string]any) {
+		v["concentration_label"] = "250 мкг/мл"
+		v["total_amount"] = map[string]any{"value": 250, "unit": "мкг"}
+	}))
+	if status != http.StatusCreated {
+		t.Fatalf("adding a microgram vial answered %d: %s", status, body)
+	}
+
+	var created struct {
+		TotalAmount struct {
+			Value float64 `json:"value"`
+			Unit  string  `json:"unit"`
+		} `json:"total_amount"`
+		RemainingAmount struct {
+			Value float64 `json:"value"`
+			Unit  string  `json:"unit"`
+		} `json:"remaining_amount"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("reading the answer: %v", err)
+	}
+
+	if created.TotalAmount.Value != 250 || created.TotalAmount.Unit != "мкг" {
+		t.Errorf("the box reads %v %s, want 250 мкг", created.TotalAmount.Value, created.TotalAmount.Unit)
+	}
+	if created.RemainingAmount.Value != 250 || created.RemainingAmount.Unit != "мкг" {
+		t.Errorf("what is left reads %v %s, want 250 мкг",
+			created.RemainingAmount.Value, created.RemainingAmount.Unit)
 	}
 }
 
@@ -181,7 +243,7 @@ func TestTheLabelKeyIsMintedForTheCallerAndAccepted(t *testing.T) {
 
 	status, body := post(t, mux, "/v1/me/vials/label-photo-uploads",
 		map[string]any{"content_type": "image/jpeg"})
-	if status != http.StatusOK {
+	if status != http.StatusCreated {
 		t.Fatalf("asking for a link answered %d: %s", status, body)
 	}
 	var minted struct {
@@ -199,8 +261,17 @@ func TestTheLabelKeyIsMintedForTheCallerAndAccepted(t *testing.T) {
 	if !strings.HasSuffix(minted.Key, ".jpg") {
 		t.Errorf("the key %q does not say what was stored", minted.Key)
 	}
-	if minted.URL == "" || minted.ExpiresAt == "" {
-		t.Errorf("the answer carries %+v", minted)
+	// The lifetime the read side signs by, to the second: a link answered with somebody
+	// else's TTL is a link the client trusts for the wrong window.
+	if want := theSigningMoment.Add(inventory.LinkLifetime).UTC().Format(time.RFC3339); minted.ExpiresAt != want {
+		t.Errorf("the link expires at %q, want %q", minted.ExpiresAt, want)
+	}
+	// And it writes: a URL that is merely non-empty is what a signature under the wrong
+	// bucket or the wrong clock also answers, and the object under that key would then
+	// never exist while the vial's row points at it.
+	picture := []byte("a photograph of a label")
+	if code := putObject(t, minted.URL, picture); code != http.StatusOK {
+		t.Fatalf("the signed upload answered %d", code)
 	}
 
 	// The whole point of minting it: the vial that quotes it back is accepted, which the
@@ -222,6 +293,55 @@ func TestTheLabelKeyIsMintedForTheCallerAndAccepted(t *testing.T) {
 	}
 	if strings.Contains(string(answer), minted.Key) {
 		t.Errorf("the key travelled back in the card: %s", answer)
+	}
+
+	// The whole circle: what the upload link wrote is what the read link serves, so the
+	// key minted here, stored on the vial and signed there names one object throughout.
+	var stored struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(answer, &stored); err != nil {
+		t.Fatalf("reading the vial back: %v", err)
+	}
+	link, served := callLabel(t, mux, stored.ID)
+	if link != http.StatusOK {
+		t.Fatalf("the label link answered %d: %s", link, served)
+	}
+	var reading struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(served), &reading); err != nil {
+		t.Fatalf("reading the link: %v", err)
+	}
+	if code, object := getObject(t, reading.URL); code != http.StatusOK || !bytes.Equal(object, picture) {
+		t.Errorf("the object read back answered %d with %q", code, object)
+	}
+}
+
+// The enum huma validates against and the set the store can mint a key for are one set written
+// twice, so this reconciles them — the reason storage.ImageTypes is exported.
+//
+// Apart they fail in two silent ways: a type the store keeps and the tag omits is refused at
+// the door although the API can hold it, and one the tag advertises and the store cannot mint
+// reaches a handler that answers 422 from a branch nothing else reaches. The second is what
+// this endpoint shipped with — image/webp, advertised in the contract and refused by every
+// request that used it.
+func TestTheAdvertisedLabelTypesAreTheOnesTheStoreCanKeep(t *testing.T) {
+	field, ok := reflect.TypeOf(inventory.LabelUploadInput{}.Body).FieldByName("ContentType")
+	if !ok {
+		t.Fatal("LabelUploadInput has no ContentType field for the enum to sit on")
+	}
+
+	advertised := strings.Split(field.Tag.Get("enum"), ",")
+	kept := storage.ImageTypes()
+
+	if len(advertised) != len(kept) {
+		t.Fatalf("the tag advertises %v, the store keeps %v", advertised, kept)
+	}
+	for _, contentType := range kept {
+		if !slices.Contains(advertised, contentType) {
+			t.Errorf("the store keeps %s and the tag does not advertise it", contentType)
+		}
 	}
 }
 

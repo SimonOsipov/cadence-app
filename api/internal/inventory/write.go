@@ -20,7 +20,9 @@ import (
 // about a form they filled in.
 //
 // Named rather than re-checked in Go: this write is one row, and every bound it can break maps
-// to one field, so the schema stays the only place the bounds are written. Draft.Check
+// to one field, so the amount's bounds stay where the schema keeps them. The string lengths are
+// a different case and are duplicated in the tags above — huma refuses those at the door with
+// the field named, which a CHECK cannot do. Draft.Check
 // duplicates them on the course path for the opposite reason — a course is twelve items, and a
 // constraint naming no row cannot say which one. Measured here: with a Go copy in place,
 // deleting it changed no answer this suite could see.
@@ -49,14 +51,13 @@ type NewVialBody struct {
 }
 
 type NewVialOutput struct {
-	Status int
-	Body   VialBody
+	Body VialBody
 }
 
 // LabelUploadInput asks for somewhere to put a photograph of a label.
 type LabelUploadInput struct {
 	Body struct {
-		ContentType string `json:"content_type" enum:"image/jpeg,image/png,image/heic,image/webp"`
+		ContentType string `json:"content_type" enum:"image/jpeg,image/png,image/heic" doc:"What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else."`
 	}
 }
 
@@ -93,20 +94,23 @@ func (s *Service) registerWrites(api huma.API) {
 	}, s.addVial)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "start-label-photo-upload",
-		Method:      http.MethodPost,
-		Path:        "/v1/me/vials/label-photo-uploads",
-		Summary:     "A link to upload a photograph of a vial's label",
+		OperationID:   "start-label-photo-upload",
+		Method:        http.MethodPost,
+		Path:          "/v1/me/vials/label-photo-uploads",
+		DefaultStatus: http.StatusCreated,
+		Summary:       "A link to upload a photograph of a vial's label",
 		Description: "Answers a short-lived link that writes exactly one object, and the " +
 			"key to send back with the vial. The key is minted here and prefixed with " +
 			"the caller's own identifier: a client choosing its own could write under " +
 			"somebody else's prefix, and the store has no row-level security to stop it.",
 		Tags: []string{"inventory"},
+		// No 503, for the reason dosing's own upload records: this operation opens no
+		// transaction and signing reaches nothing, so a status published here is a
+		// branch a client writes and never runs.
 		Errors: []int{
 			http.StatusUnauthorized,
 			http.StatusForbidden,
 			http.StatusUnprocessableEntity,
-			http.StatusServiceUnavailable,
 		},
 	}, s.startLabelUpload)
 }
@@ -116,7 +120,7 @@ func (s *Service) addVial(ctx context.Context, in *NewVialInput) (*NewVialOutput
 	if err != nil {
 		return nil, err
 	}
-	out := &NewVialOutput{Status: http.StatusCreated}
+	out := &NewVialOutput{}
 	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
 		id, err := insertVial(ctx, tx, caller.Subject, in.Body)
 		if err != nil {

@@ -350,11 +350,11 @@
         "additionalProperties": false,
         "properties": {
           "content_type": {
+            "description": "What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else.",
             "enum": [
               "image/jpeg",
               "image/png",
-              "image/heic",
-              "image/webp"
+              "image/heic"
             ],
             "type": "string"
           }
@@ -2359,7 +2359,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2367,7 +2367,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Created"
           },
           "401": {
             "content": {
@@ -2408,16 +2408,6 @@
               }
             },
             "description": "Internal Server Error"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "A link to upload a photograph of a vial's label",

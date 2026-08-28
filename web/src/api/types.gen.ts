@@ -136,7 +136,10 @@ export type LabelPhotoOutputBody = {
 };
 
 export type LabelUploadInputBody = {
-    content_type: 'image/jpeg' | 'image/png' | 'image/heic' | 'image/webp';
+    /**
+     * What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else.
+     */
+    content_type: 'image/jpeg' | 'image/png' | 'image/heic';
 };
 
 export type LabelUploadOutputBody = {
@@ -1057,19 +1060,15 @@ export type StartLabelPhotoUploadErrors = {
      * Internal Server Error
      */
     500: Problem;
-    /**
-     * Service Unavailable
-     */
-    503: Problem;
 };
 
 export type StartLabelPhotoUploadError = StartLabelPhotoUploadErrors[keyof StartLabelPhotoUploadErrors];
 
 export type StartLabelPhotoUploadResponses = {
     /**
-     * OK
+     * Created
      */
-    200: LabelUploadOutputBody;
+    201: LabelUploadOutputBody;
 };
 
 export type StartLabelPhotoUploadResponse = StartLabelPhotoUploadResponses[keyof StartLabelPhotoUploadResponses];
