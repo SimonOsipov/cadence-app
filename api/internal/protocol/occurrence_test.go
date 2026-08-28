@@ -560,11 +560,11 @@ func TestTheCurrentDoseOfACompoundIsTheDoseOfTheItemPrescribingIt(t *testing.T) 
 // The crossing itself: from a drug to the position prescribing it, and to *that* position's
 // phases.
 //
-// No fixture these tests query distinguishes the crossing: the plan they all start from names
-// its one item and its one compound with the same string, so «take Items[0]» and «index the
-// phase map by the compound id» are both wrong implementations that answer correctly —
-// measured, both survive without this case. Here the two ids differ textually, the answer is
-// the second item, and the first carries a dose of its own to be answered by mistake.
+// The plan these tests start from names its one item and its one compound with the same
+// string, so «index the phase map by the compound id» answers correctly there and is held by
+// nothing but this case; «take Items[0]» is held here and by the no-phase row below. Measured
+// both ways. Here the two ids differ textually, the answer is the second item, and the first
+// carries a dose of its own to be answered by mistake.
 func TestTheDoseIsTheOneBelongingToTheItemThatNamesTheDrug(t *testing.T) {
 	bpcItem, semaItem := ProtocolItemID("bpc-daily"), ProtocolItemID("sema-weekly")
 	perDay := Dose{Value: 250, Unit: MCG}
@@ -638,6 +638,8 @@ func TestTheCurrentDoseIsNothingRatherThanAGuess(t *testing.T) {
 		t.Errorf("two items name sema and the answer was %v, want nothing", *got)
 	}
 
+	unphasedPlan, glycine := unphased(t)
+
 	for _, quiet := range []struct {
 		name     string
 		plan     Plan
@@ -654,10 +656,7 @@ func TestTheCurrentDoseIsNothingRatherThanAGuess(t *testing.T) {
 			bandsPlan(StatusCancelled, shuffledPhases), CompoundID("sema"), bandsStart,
 		},
 		{"a day before the course opens", defaultBandsPlan(), CompoundID("sema"), bandsStart.AddDays(-1)},
-		{
-			"an item that names the drug and is dosed by no phase",
-			unphased(t), CompoundID("cmp-glycine"), bandsStart,
-		},
+		{"an item that names the drug and is dosed by no phase", unphasedPlan, glycine, bandsStart},
 	} {
 		t.Run(quiet.name, func(t *testing.T) {
 			if got := CurrentDoseFor(quiet.plan, quiet.compound, quiet.day); got != nil {
@@ -668,36 +667,34 @@ func TestTheCurrentDoseIsNothingRatherThanAGuess(t *testing.T) {
 }
 
 // unphased is a course carrying a supplement that names a drug and prescribes no band for it,
-// which Draft.Check permits: only an injection is required to be dosed.
-//
-// The premise is asserted rather than left to the literal: without it, renaming the compound
-// makes the case a second copy of «a compound the course does not prescribe» and it goes on
-// passing while measuring nothing.
-func unphased(t *testing.T) Plan {
+// which Draft.Check permits: only an injection is required to be dosed. It answers the
+// compound too, so the item, the guard below and the case asking cannot name three things.
+func unphased(t *testing.T) (Plan, CompoundID) {
 	t.Helper()
 
-	supplement := ProtocolItemID("glycine-nightly")
+	supplement, compound := ProtocolItemID("glycine-nightly"), CompoundID("cmp-glycine")
 	plan := defaultBandsPlan()
 	plan.Items = append(plan.Items, ProtocolItem{
 		ID: supplement, ProtocolID: ProtocolID("pr"), Kind: KindSupplement,
-		CompoundID: compoundPtr("cmp-glycine"), Cadence: CadenceDaily,
+		CompoundID: &compound, Cadence: CadenceDaily,
 		Times: []civil.Slot{{Hour: 22}}, Loggable: true,
 	})
 
+	// Guarded, or the case degenerates into a second «a compound nobody prescribes».
 	naming := 0
 	for _, item := range plan.Items {
-		if item.CompoundID != nil && *item.CompoundID == CompoundID("cmp-glycine") {
+		if item.CompoundID != nil && *item.CompoundID == compound {
 			naming++
 		}
 	}
 	if naming != 1 {
 		t.Fatalf("%d items name the supplement, want 1", naming)
 	}
-	if bands, ok := plan.Phases[supplement]; ok {
+	if bands := plan.Phases[supplement]; len(bands) != 0 {
 		t.Fatalf("the supplement carries %d phases; the case is that it carries none", len(bands))
 	}
 
-	return plan
+	return plan, compound
 }
 
 // An item that names no drug is not an item naming this one: a weigh-in carries a nil
