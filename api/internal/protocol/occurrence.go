@@ -111,6 +111,28 @@ func PhaseDose(plan Plan, itemID ProtocolItemID, d civil.Date) *Dose {
 	return nil
 }
 
+// CurrentDoseFor is the dose the course prescribes of a compound on a day, for callers that
+// hold a drug rather than an item — the cabinet, whose vials name compounds.
+//
+// Nothing where two items name one compound, by the precedent OpenVialFor sets: 000013 has no
+// unique index on the pair, so a course can carry an injection and a supplement of one drug,
+// and answering either dose would put a number on a screen that half the prescription
+// contradicts. Every other silence is PhaseDose's own — a cancelled course, a day outside the
+// weeks, a wash-out between phases.
+func CurrentDoseFor(plan Plan, compound CompoundID, d civil.Date) *Dose {
+	var prescribing []ProtocolItemID
+	for _, item := range plan.Items {
+		if item.CompoundID != nil && *item.CompoundID == compound {
+			prescribing = append(prescribing, item.ID)
+		}
+	}
+	if len(prescribing) != 1 {
+		return nil
+	}
+
+	return PhaseDose(plan, prescribing[0], d)
+}
+
 // DosesPerWeek is derived, not seeded: a stored copy goes stale the first time a protocol is
 // edited.
 func DosesPerWeek(item ProtocolItem) float64 {
