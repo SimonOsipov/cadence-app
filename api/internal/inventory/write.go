@@ -14,23 +14,21 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
-	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
 
 // The refusals this side answers by name, so a CHECK does not reach the patient as a 23514
 // about a form they filled in.
+//
+// Named rather than re-checked in Go: this write is one row, and every bound it can break maps
+// to one field, so the schema stays the only place the bounds are written. Draft.Check
+// duplicates them on the course path for the opposite reason — a course is twelve items, and a
+// constraint naming no row cannot say which one. Measured here: with a Go copy in place,
+// deleting it changed no answer this suite could see.
 var (
 	ErrNoSuchCompound = errors.New("no such drug in the directory")
 	ErrAmountTooFine  = errors.New("an amount is measured to the microgram, not finer")
 	ErrAmountOffRange = errors.New("an amount lies between nothing and a hundred grams")
 	ErrKeyNotTheirs   = errors.New("the label photo key is not one this API minted for you")
-)
-
-// The vial's own ceiling from 000024, in each unit. A container is not an injection: a 10 мл
-// vial of testosterone at 250 мг/мл is 2500 мг, which a dose ceiling would refuse.
-const (
-	maxVialMilligrams = 100_000
-	maxVialMicrograms = 100_000_000
 )
 
 type NewVialInput struct {
@@ -118,10 +116,6 @@ func (s *Service) addVial(ctx context.Context, in *NewVialInput) (*NewVialOutput
 	if err != nil {
 		return nil, err
 	}
-	if err := in.Body.check(); err != nil {
-		return nil, huma.Error422UnprocessableEntity(err.Error())
-	}
-
 	out := &NewVialOutput{Status: http.StatusCreated}
 	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
 		id, err := insertVial(ctx, tx, caller.Subject, in.Body)
@@ -149,30 +143,6 @@ func (s *Service) addVial(ctx context.Context, in *NewVialInput) (*NewVialOutput
 	}
 
 	return out, nil
-}
-
-// check refuses what the schema would refuse, so the patient is told which field rather than
-// which constraint. The bounds are the schema's own: 000021 for the scale, 000024 for the
-// ceiling, and both are asked here in the unit the box carries.
-func (b NewVialBody) check() error {
-	if _, ok := protocol.ParseDoseUnit(b.TotalAmount.Unit); !ok {
-		return fmt.Errorf("total_amount is in %q: %w", b.TotalAmount.Unit, protocol.ErrUnknownDoseUnit)
-	}
-	unit := protocol.DoseUnit(b.TotalAmount.Unit)
-	if protocol.FinerThanItsAtom(b.TotalAmount.Value, unit) {
-		return fmt.Errorf("total_amount is %v %s: %w", b.TotalAmount.Value, unit, ErrAmountTooFine)
-	}
-	ceiling := float64(maxVialMilligrams)
-	if unit == protocol.MCG {
-		ceiling = maxVialMicrograms
-	}
-	// Negated so a NaN, which loses every comparison, is refused here rather than reaching
-	// a column where Postgres orders it above every number.
-	if !(b.TotalAmount.Value > 0 && b.TotalAmount.Value <= ceiling) {
-		return fmt.Errorf("total_amount is %v %s: %w", b.TotalAmount.Value, unit, ErrAmountOffRange)
-	}
-
-	return nil
 }
 
 func insertVial(ctx context.Context, tx pgx.Tx, patient string, body NewVialBody) (string, error) {

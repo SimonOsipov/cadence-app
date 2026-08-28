@@ -219,7 +219,7 @@ func (i DraftItem) checkPhases(weeks int) error {
 		if _, ok := ParseDoseUnit(string(phase.Dose.Unit)); !ok {
 			return fmt.Errorf("phase %d in %q: %w", n+1, phase.Dose.Unit, ErrUnknownDoseUnit)
 		}
-		if FinerThanItsAtom(phase.Dose.Value, phase.Dose.Unit) {
+		if finerThanItsAtom(phase.Dose.Value, phase.Dose.Unit) {
 			return fmt.Errorf("phase %d doses %v %s: %w",
 				n+1, phase.Dose.Value, phase.Dose.Unit, ErrDoseTooFine)
 		}
@@ -262,23 +262,19 @@ const (
 	maxDoseMicrograms = 1_000_000
 )
 
-// FinerThanItsAtom is a quantity in this unit that whole micrograms cannot carry.
+// finerThanItsAtom is a dose the cabinet cannot divide by.
 //
 // Remaining substance is counted in whole micrograms, so a milligram value past three
 // decimals and a microgram value with any decimals at all lose their tail on the way in.
 // Measured on the unbounded column: 0,0001 мг converts to nothing, and the day card
 // stops answering how many injections are left rather than answering wrongly.
 //
-// Exported because the bound is the unit's and not the dose's: a vial's amount is written in
-// the same two units, converted by the same arithmetic, and a second copy of this rule is a
-// second place for it to drift.
-//
 // Read off the decimal the value prints as, and deliberately not off value × 1000:
 // measured, 2,01 × 1000 is 2009,9999999999997726, so a bound decided on that product
 // reads a short decimal as a longer one and refuses it — 731 values below 50 мг, 4 of
 // them written to one place and 67 to two, while the schema's pg_catalog.scale takes
 // every one. This must accept whatever 000023 accepts.
-func FinerThanItsAtom(value float64, unit DoseUnit) bool {
+func finerThanItsAtom(value float64, unit DoseUnit) bool {
 	atom := milligramDecimals
 	if unit == MCG {
 		atom = 0
