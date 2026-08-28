@@ -504,8 +504,8 @@ type TodayBody struct {
 	WeekProtocol    []RowBody `json:"week_protocol" nullable:"false"`
 	DoseLoggedToday bool      `json:"dose_logged_today"`
 
-	VialDosesLeft *int         `json:"vial_doses_left,omitempty" doc:"Of the vial being drawn from. Absent when the patient holds no open, undisposed, not-held-back vial of that drug, when no phase covers the day, and when two course positions name the drug — the dose to divide by is ambiguous then, and the cabinet answers substance and status instead."`
-	Reorder       *ReorderBody `json:"reorder,omitempty" doc:"Absent for the same three reasons as vial_doses_left, and when the supply is above the threshold or a sealed spare is standing by. The weekly rate is one course position's, which is why two positions naming one drug answer nothing rather than half a rate."`
+	VialDosesLeft *int         `json:"vial_doses_left,omitempty" doc:"Of the vial being drawn from, and only while a dose is still due today: absent once the day's injection is logged, on a day prescribing none, and outside a running course. Absent too when the patient holds no open, undisposed, not-held-back vial of that drug, when no phase covers the day, and when two course positions name the drug — the dose to divide by is ambiguous then, and the cabinet answers substance and status instead."`
+	Reorder       *ReorderBody `json:"reorder,omitempty" doc:"Absent everywhere vial_doses_left is, and additionally when the supply is above the threshold or a sealed spare is standing by. The weekly rate is one course position's, which is why two positions naming one drug answer nothing rather than half a rate."`
 	NextTitration *StepBody    `json:"next_titration,omitempty"`
 
 	MealCount      *int        `json:"meal_count" doc:"Null until the nutrition context is built."`

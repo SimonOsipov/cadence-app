@@ -63,9 +63,8 @@ type (
 	// up: the cabinet would have to import this package to find it, and the caller is
 	// already holding the plan it comes from — and the caller resolves it from the drug,
 	// so it is nil where no phase covers the day and nil where two positions name the
-	// drug, whose rate would otherwise be half the prescription's while the shelf it
-	// divides is the whole drug's. On a nil dose the cabinet answers substance and
-	// status, and neither a count of injections nor a hint.
+	// drug, which leaves no single dose to divide by. On a nil dose the cabinet answers
+	// substance and status, and neither a count of injections nor a hint.
 	Cabinet interface {
 		SupplyFor(
 			ctx context.Context, tx pgx.Tx, patient civil.UserID, item ProtocolItem,

@@ -6,7 +6,7 @@ export type ClientOptions = {
 
 export type CabinetBody = {
     /**
-     * One per prescribed drug, and none at all for a drug two course positions name: the weekly rate is a position's while the supply is the whole shelf's, so a hint folded from two of them would divide the cabinet by half the prescription.
+     * At most one per prescribed drug, and only where the supply has fallen to the reorder threshold. Absent while it is above it or a sealed spare is standing by, absent without a running course, and absent for a drug two course positions name — the weekly rate is a position's while the supply is the whole shelf's, so a hint folded from two of them would divide the cabinet by half the prescription.
      */
     reorder: Array<VialReorderBody>;
     vials: Array<VialBody>;
@@ -457,7 +457,7 @@ export type TodayBody = {
     next_titration?: StepBody;
     part_of_day: 'night' | 'morning' | 'afternoon' | 'evening';
     /**
-     * Absent for the same three reasons as vial_doses_left, and when the supply is above the threshold or a sealed spare is standing by. The weekly rate is one course position's, which is why two positions naming one drug answer nothing rather than half a rate.
+     * Absent everywhere vial_doses_left is, and additionally when the supply is above the threshold or a sealed spare is standing by. The weekly rate is one course position's, which is why two positions naming one drug answer nothing rather than half a rate.
      */
     reorder?: ReorderBody;
     /**
@@ -473,7 +473,7 @@ export type TodayBody = {
      */
     targets: MacrosBody | null;
     /**
-     * Of the vial being drawn from. Absent when the patient holds no open, undisposed, not-held-back vial of that drug, when no phase covers the day, and when two course positions name the drug — the dose to divide by is ambiguous then, and the cabinet answers substance and status instead.
+     * Of the vial being drawn from, and only while a dose is still due today: absent once the day's injection is logged, on a day prescribing none, and outside a running course. Absent too when the patient holds no open, undisposed, not-held-back vial of that drug, when no phase covers the day, and when two course positions name the drug — the dose to divide by is ambiguous then, and the cabinet answers substance and status instead.
      */
     vial_doses_left?: number;
     week_protocol: Array<RowBody>;

@@ -191,7 +191,7 @@ func TestTheCabinetIsAskedAboutTheDoseBeingOffered(t *testing.T) {
 	// one has a single band, so every candidate is the same number.
 	if len(n.askedAt) != 1 || n.askedAt[0] == nil ||
 		n.askedAt[0].Value != 0.25 || n.askedAt[0].Unit != MG {
-		t.Errorf("the cabinet was told to divide by %+v, want 0,25 мг", n.askedAt)
+		t.Errorf("the cabinet was told to divide by %v, want 0,25 мг", dosesOf(n.askedAt))
 	}
 	if today.VialDosesLeft == nil || *today.VialDosesLeft != 3 {
 		t.Errorf("the vial has %v doses left", today.VialDosesLeft)
@@ -299,8 +299,8 @@ func TestTheNextDoseIsTheEarliestOpenOneByTheClock(t *testing.T) {
 	// Two drugs on the morning-and-evening pair, and not one twice: two positions naming
 	// one compound is the shape the cabinet refuses to count, and a fixture built that
 	// way would run those subcases inside the silent branch. The half-past copy below
-	// keeps the morning drug on purpose — it is about which occurrence is next, and the
-	// cabinet is not asked twice in one answer.
+	// keeps the morning drug and so runs inside that branch on purpose: nothing it
+	// asserts — which occurrence is next, and which item was asked about — reads a count.
 	other := CompoundID("other-compound")
 	morning := ProtocolItem{
 		ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
@@ -425,7 +425,7 @@ func TestOnADayNoPhaseCoversTheCabinetIsAskedWithNoDose(t *testing.T) {
 	todayFor(t, plan, true, civil.NewDate(2026, time.May, 24), civil.Slot{Hour: 7}, n)
 
 	if len(n.askedAt) != 1 || n.askedAt[0] != nil {
-		t.Errorf("the cabinet was told to divide by %+v, want nothing", n.askedAt)
+		t.Errorf("the cabinet was told to divide by %v, want nothing", dosesOf(n.askedAt))
 	}
 	// And no assertion on the card's own count here: the aggregate hands through
 	// whatever the cabinet answers, so with a stub it would measure the stub. That a
@@ -495,7 +495,7 @@ func TestTwoPositionsOfOneDrugLeaveTheDayCardWithNoDivisor(t *testing.T) {
 	today := todayFor(t, plan, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n)
 
 	if len(n.askedAt) != 1 || n.askedAt[0] != nil {
-		t.Errorf("the cabinet was told to divide by %+v, want nothing", n.askedAt)
+		t.Errorf("the cabinet was told to divide by %v, want nothing", dosesOf(n.askedAt))
 	}
 	// And the premise: each position on its own does prescribe today, so the silence is
 	// the ambiguity rule rather than a day nothing covers.
@@ -529,15 +529,15 @@ func TestTheCabinetDividesByTheDoseOfTheDaysOwnPhase(t *testing.T) {
 			todayFor(t, plan, true, day.at, civil.Slot{Hour: 7}, n)
 
 			if len(n.askedAt) != 1 || n.askedAt[0] == nil || *n.askedAt[0] != day.want {
-				t.Errorf("the cabinet was told to divide by %+v, want %v %s",
-					n.askedAt, day.want.Value, day.want.Unit)
+				t.Errorf("the cabinet was told to divide by %v, want %v %s",
+					dosesOf(n.askedAt), day.want.Value, day.want.Unit)
 			}
 		})
 	}
 }
 
-// dosesOf renders what the stub was asked to divide by. A []*Dose printed with %+v is a list
-// of addresses, which is what the first version of the failure above said.
+// A []*Dose printed with %+v is a list of addresses, which is what these failures said until
+// somebody read one.
 func dosesOf(asked []*Dose) []string {
 	out := make([]string, 0, len(asked))
 	for _, dose := range asked {

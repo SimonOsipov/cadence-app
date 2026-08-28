@@ -34,7 +34,7 @@ type CabinetBody struct {
 	// Held back and expired stay on the shelf: the patient owns them and the screen groups
 	// by the status they carry.
 	Vials   []VialBody        `json:"vials" nullable:"false"`
-	Reorder []VialReorderBody `json:"reorder" nullable:"false" doc:"One per prescribed drug, and none at all for a drug two course positions name: the weekly rate is a position's while the supply is the whole shelf's, so a hint folded from two of them would divide the cabinet by half the prescription."`
+	Reorder []VialReorderBody `json:"reorder" nullable:"false" doc:"At most one per prescribed drug, and only where the supply has fallen to the reorder threshold. Absent while it is above it or a sealed spare is standing by, absent without a running course, and absent for a drug two course positions name — the weekly rate is a position's while the supply is the whole shelf's, so a hint folded from two of them would divide the cabinet by half the prescription."`
 }
 
 type VialInput struct {
