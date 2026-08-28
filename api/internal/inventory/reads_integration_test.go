@@ -73,7 +73,10 @@ type cabinetBody struct {
 		Status        string  `json:"status"`
 		OpenedAt      *string `json:"opened_at"`
 		ExpiresOn     string  `json:"expires_on"`
+		HeldBackAt    *string `json:"held_back_at"`
 		DisposedAt    *string `json:"disposed_at"`
+		Lot           *string `json:"lot"`
+		LocationRU    *string `json:"location_ru"`
 		HasLabelPhoto bool    `json:"has_label_photo"`
 	} `json:"vials"`
 	Reorder []struct {
@@ -157,11 +160,14 @@ func TestTheCabinetAnswersWhatIsLeftAndWhatItBuys(t *testing.T) {
 	}
 }
 
-// One hint per drug, not one per course position. Two items of one compound is a course the
-// schema permits — 000013 has no unique index on the pair — and the hint is asked per item,
-// because the weekly rate is an item's. Without the fold the patient is told twice to buy more
-// of the one substance, off the one shelf.
-func TestTwoCoursePositionsOfOneDrugAnswerOneHint(t *testing.T) {
+// Two course positions of one drug answer no hint, for the reason the card answers no dose.
+//
+// The rate is a position's and the supply is the cabinet's: folding two positions into one
+// hint divides the whole shelf by half the prescription's rate, so a patient injecting twice a
+// week is told four doses are four weeks. Measured on this fixture — it answered exactly that
+// — and the same arithmetic goes silent where the truth is three weeks, which is the shape of
+// the bug this feature exists to fix. Silence is what CurrentDoseFor already answers here.
+func TestTwoCoursePositionsOfOneDrugAnswerNoHint(t *testing.T) {
 	c := newClinic(t)
 	prescribe(t, c, patientA)
 	alsoPrescribe(t, c, patientA)
@@ -172,16 +178,23 @@ func TestTwoCoursePositionsOfOneDrugAnswerOneHint(t *testing.T) {
 
 	shelf := cabinetOf(t, mux)
 
-	if len(shelf.Reorder) != 1 {
-		t.Fatalf("two positions of one drug answered %d hints: %+v", len(shelf.Reorder), shelf.Reorder)
+	// The premise first: one position and this vial do produce a hint, so the silence
+	// below is the ambiguity rule rather than a shelf nothing could be said about.
+	single := newClinic(t)
+	prescribe(t, single, patientA)
+	openTheVial(t, single, patientA, single.vialA)
+	alone, callingAlone := aCabinet(t, single)
+	callingAlone(patientA, "patient")
+	if hints := cabinetOf(t, alone).Reorder; len(hints) != 1 || hints[0].WeeksLeft != 4 {
+		t.Fatalf("one position of the same drug and vial answers %+v, want four weeks", hints)
 	}
-	if shelf.Reorder[0].CompoundID != c.compound {
-		t.Errorf("the hint is about %s, want the one compound %s", shelf.Reorder[0].CompoundID, c.compound)
+
+	if len(shelf.Reorder) != 0 {
+		t.Errorf("two positions of one drug answered %+v", shelf.Reorder)
 	}
-	// And the premise: the second position really is there and really carries a band, so
-	// the single hint is the fold rather than a course with one item after all.
-	if len(shelf.Vials) != 1 || shelf.Vials[0].CurrentDose != nil {
-		t.Errorf("two positions name one drug, so no dose is in force: %+v", shelf.Vials)
+	// And the card agrees with the shelf about the same drug: no dose in force, no count.
+	if len(shelf.Vials) != 1 || shelf.Vials[0].CurrentDose != nil || shelf.Vials[0].DosesLeft != nil {
+		t.Errorf("two positions name one drug, so nothing is in force: %+v", shelf.Vials)
 	}
 }
 
@@ -214,6 +227,53 @@ func TestWithoutARunningCourseTheSubstanceAnswersAndTheCountDoesNot(t *testing.T
 	}
 	if len(shelf.Reorder) != 0 {
 		t.Errorf("a hint was given with no course: %+v", shelf.Reorder)
+	}
+}
+
+// The columns the clinic wrote come back as themselves. Lot and location are adjacent
+// nullable strings in one scan list, so transposing them compiles, passes everything else and
+// prints the shelf a vial sits on where the card says which batch it came from.
+func TestWhatTheClinicWroteOnTheVialComesBackAsItself(t *testing.T) {
+	c := newClinic(t)
+	describeTheVial(t, c, patientA, c.vialA)
+
+	mux, calling := aCabinet(t, c)
+	calling(patientA, "patient")
+
+	shelf := cabinetOf(t, mux)
+	if len(shelf.Vials) != 1 {
+		t.Fatalf("the cabinet holds %d vials", len(shelf.Vials))
+	}
+	vial := shelf.Vials[0]
+
+	if vial.ConcentrationLabel != "1 мг/мл" {
+		t.Errorf("the concentration reads %q", vial.ConcentrationLabel)
+	}
+	if vial.Lot == nil || *vial.Lot != "LOT-7781" {
+		t.Errorf("the lot reads %v", vial.Lot)
+	}
+	if vial.LocationRU == nil || *vial.LocationRU != "дверца холодильника" {
+		t.Errorf("the location reads %v", vial.LocationRU)
+	}
+	if vial.HeldBackAt == nil || *vial.HeldBackAt != "2026-05-03" {
+		t.Errorf("the day it was set aside reads %v", vial.HeldBackAt)
+	}
+	if vial.ExpiresOn != "2026-12-31" {
+		t.Errorf("the expiry reads %q", vial.ExpiresOn)
+	}
+}
+
+// One identifier, one answer. id::text is lower-case in Postgres and the sibling endpoint
+// hands the parameter to a uuid column, which parses either case — so a walk comparing raw
+// strings 404s a vial the caller owns and the label-photo link finds.
+func TestAnIdentifierInCapitalsNamesTheSameVial(t *testing.T) {
+	c := newClinic(t)
+	mux, calling := aCabinet(t, c)
+	calling(patientA, "patient")
+
+	status, body := askCabinet(t, mux, "/v1/me/vials/"+strings.ToUpper(c.vialA))
+	if status != http.StatusOK {
+		t.Fatalf("the card answered %d for the caller's own vial: %s", status, body)
 	}
 }
 
@@ -269,14 +329,22 @@ func TestAVialOfAnotherPatientAndOneThatIsNotThereAreOneAnswer(t *testing.T) {
 // patient reads what was drawn from it.
 func TestTheCardAnswersADisposedVialWhichTheShelfOmits(t *testing.T) {
 	c := newClinic(t)
+	prescribe(t, c, patientA)
 	openTheVial(t, c, patientA, c.vialA)
 	disposeOfTheVial(t, c, patientA, c.vialA)
 
 	mux, calling := aCabinet(t, c)
 	calling(patientA, "patient")
 
-	if shelf := cabinetOf(t, mux); len(shelf.Vials) != 0 {
-		t.Errorf("the shelf holds %d thrown-away vials", len(shelf.Vials))
+	// Read off the bytes and not off the decoded slice: JSON null decodes to a slice of
+	// length zero as well, and nullable:"false" on both lists is what the generated
+	// dashboard client is typed against.
+	status, shelf := askCabinet(t, mux, "/v1/me/vials")
+	if status != http.StatusOK {
+		t.Fatalf("the cabinet answered %d: %s", status, shelf)
+	}
+	if !strings.Contains(string(shelf), `"vials":[]`) {
+		t.Errorf("an empty shelf is not an empty list: %s", shelf)
 	}
 
 	status, body := askCabinet(t, mux, "/v1/me/vials/"+c.vialA)
@@ -284,15 +352,23 @@ func TestTheCardAnswersADisposedVialWhichTheShelfOmits(t *testing.T) {
 		t.Fatalf("the card answered %d: %s", status, body)
 	}
 	var card struct {
-		ID         string  `json:"id"`
-		Status     string  `json:"status"`
-		DisposedAt *string `json:"disposed_at"`
+		ID          string  `json:"id"`
+		Status      string  `json:"status"`
+		DisposedAt  *string `json:"disposed_at"`
+		DosesLeft   *int    `json:"doses_left"`
+		CurrentDose *struct {
+			Value float64 `json:"value"`
+		} `json:"current_dose"`
 	}
 	if err := json.Unmarshal(body, &card); err != nil {
 		t.Fatalf("reading the card: %v", err)
 	}
 	if card.ID != c.vialA || card.Status != "disposed" || card.DisposedAt == nil {
 		t.Errorf("the card reads %+v", card)
+	}
+	// History and not a forecast: a vial in the bin buys nothing, whatever is prescribed.
+	if card.DosesLeft != nil || card.CurrentDose != nil {
+		t.Errorf("a thrown-away vial offers %v injections at %v", card.DosesLeft, card.CurrentDose)
 	}
 }
 
@@ -418,6 +494,18 @@ func alsoPrescribe(t *testing.T, c clinic, patient string) {
 	); err != nil {
 		t.Fatalf("prescribing a second position for %s: %v", patient, err)
 	}
+}
+
+// describeTheVial fills the columns a patient types in, as the patient: held_back_at is
+// UPDATE-only for them, which is why it is set here rather than seeded.
+func describeTheVial(t *testing.T, c clinic, patient, vial string) {
+	t.Helper()
+
+	changeVial(t, c, patient, vial, `
+		UPDATE app.vials
+		SET lot = 'LOT-7781', location_ru = 'дверца холодильника', held_back_at = DATE '2026-05-03'
+		WHERE id = $1
+	`)
 }
 
 func openTheVial(t *testing.T, c clinic, patient, vial string) {

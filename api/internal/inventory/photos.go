@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 )
@@ -100,19 +99,10 @@ func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*Lab
 		)
 	}
 
-	principal, ok := auth.PrincipalFrom(ctx)
-	if !ok {
-		return nil, huma.Error401Unauthorized("no verified principal on the request context")
+	caller, err := s.patientCalling(ctx)
+	if err != nil {
+		return nil, err
 	}
-	// A patient-only surface. A doctor sees their patients' vials through the
-	// policies, and will read this the day the dashboard shows a cabinet — but
-	// admitting them now would publish a surface nothing has asked for, on rows
-	// whose admin policy is USING (true).
-	if principal.Role != "patient" {
-		return nil, huma.Error403Forbidden("only a patient reads their own photographs")
-	}
-
-	caller := database.Caller{Subject: principal.Subject, Role: principal.Role}
 
 	var key string
 	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {

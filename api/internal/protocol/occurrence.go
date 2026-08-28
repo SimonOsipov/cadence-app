@@ -121,17 +121,32 @@ func PhaseDose(plan Plan, itemID ProtocolItemID, d civil.Date) *Dose {
 // PhaseDose's own nil — Draft.Check requires phases of injections only, so a supplement
 // naming a drug is a legal course.
 func CurrentDoseFor(plan Plan, compound CompoundID, d civil.Date) *Dose {
-	var prescribing []ProtocolItemID
-	for _, item := range plan.Items {
-		if item.CompoundID != nil && *item.CompoundID == compound {
-			prescribing = append(prescribing, item.ID)
-		}
-	}
-	if len(prescribing) != 1 {
+	item := SoleItemFor(plan, compound)
+	if item == nil {
 		return nil
 	}
 
-	return PhaseDose(plan, prescribing[0], d)
+	return PhaseDose(plan, item.ID, d)
+}
+
+// SoleItemFor is the one course position prescribing a compound, and nothing where two do.
+//
+// The ambiguity rule itself, so the readings that need the position rather than the dose —
+// the cabinet's reorder hint divides by an item's own weekly rate — refuse on the same terms
+// instead of carrying a second copy of it.
+func SoleItemFor(plan Plan, compound CompoundID) *ProtocolItem {
+	var sole *ProtocolItem
+	for i, item := range plan.Items {
+		if item.CompoundID == nil || *item.CompoundID != compound {
+			continue
+		}
+		if sole != nil {
+			return nil
+		}
+		sole = &plan.Items[i]
+	}
+
+	return sole
 }
 
 // DosesPerWeek is derived, not seeded: a stored copy goes stale the first time a protocol is

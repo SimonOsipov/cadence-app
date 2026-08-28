@@ -2,6 +2,7 @@ package inventory_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
@@ -117,5 +118,45 @@ func TestAUnitWithNoAtomIsRefused(t *testing.T) {
 		if _, err := inventory.AmountOf(1, unit); err != nil {
 			t.Errorf("%s is a prescribed unit and the cabinet refused it: %v", unit, err)
 		}
+	}
+}
+
+// The conversion back into the unit the clinic wrote, which is what the wire carries.
+//
+// Both arms, because only the milligram one is reached by any fixture in this package: BPC-157
+// comes in micrograms, and swapping the arms renders its 250 мкг vial as 0,25 мкг on the
+// patient's own cabinet — a thousandfold error on the one number that screen is for.
+//
+// The claim is the round trip and not the quotient: 290 мкг is 0,28999999999999998 in binary64
+// and 1 мкг is 0,001, neither exact, both correctly rounded and both recovered by AmountOf.
+func TestAQuantityComesBackInTheUnitItWasWrittenIn(t *testing.T) {
+	for _, carried := range []struct {
+		amount inventory.Amount
+		unit   protocol.DoseUnit
+		want   float64
+	}{
+		{2_000, protocol.MG, 2},
+		{250, protocol.MG, 0.25},
+		{1, protocol.MG, 0.001},
+		{290, protocol.MG, 0.29},
+		{250, protocol.MCG, 250},
+		{1, protocol.MCG, 1},
+		// The ceilings 000024 holds, in both units.
+		{100_000_000, protocol.MG, 100_000},
+		{100_000_000, protocol.MCG, 100_000_000},
+	} {
+		t.Run(fmt.Sprintf("%d мкг as %s", carried.amount, carried.unit), func(t *testing.T) {
+			got := inventory.AmountIn(carried.amount, carried.unit)
+			if got != carried.want {
+				t.Errorf("%d мкг reads %v %s, want %v", carried.amount, got, carried.unit, carried.want)
+			}
+			// And back, which is the property the wire depends on: the number the
+			// patient sees converts to the micrograms the cabinet subtracts.
+			back, err := inventory.AmountOf(got, carried.unit)
+			if err != nil || back != carried.amount {
+				t.Errorf("%v %s converts back to %d мкг (err %v), want %d",
+					got, carried.unit, back, err, carried.amount)
+			}
+		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
@@ -29,7 +30,9 @@ type CabinetOutput struct {
 // the vials in the same answer, and a client assembling it from two calls would show a
 // «buy more» card over a cabinet that has already been refilled.
 type CabinetBody struct {
-	// Live vials only — one thrown away is history, and it is still readable one by one.
+	// Everything but the thrown away — that one is history, and still readable one by one.
+	// Held back and expired stay on the shelf: the patient owns them and the screen groups
+	// by the status they carry.
 	Vials []VialBody `json:"vials" nullable:"false"`
 	// One per prescribed compound, not one per course item: two items of a drug produce one
 	// hint about one cabinet.
@@ -98,8 +101,12 @@ func (s *Service) registerReads(api huma.API) {
 			"how many injections that buys at today's dose, and the status the screen " +
 			"groups by. None of those three is stored. The reorder hints travel with the " +
 			"shelf they are about.",
-		Tags:   []string{"inventory"},
-		Errors: readErrors,
+		Tags: []string{"inventory"},
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusServiceUnavailable,
+		},
 	}, s.readCabinet)
 
 	huma.Register(api, huma.Operation{
@@ -110,17 +117,18 @@ func (s *Service) registerReads(api huma.API) {
 		Description: "The same computed fields the cabinet answers, for a single vial — a " +
 			"disposed one included, because its card is the history of what was drawn " +
 			"from it. A vial that is not here and one that is not the caller's are one 404.",
-		Tags:   []string{"inventory"},
-		Errors: readErrors,
+		Tags: []string{"inventory"},
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			// A 422 for an identifier that is not a uuid, and a 404 for one that is
+			// and names nothing readable. The cabinet takes no input and can answer
+			// neither.
+			http.StatusNotFound,
+			http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable,
+		},
 	}, s.readVial)
-}
-
-var readErrors = []int{
-	http.StatusUnauthorized,
-	http.StatusForbidden,
-	http.StatusNotFound,
-	http.StatusUnprocessableEntity,
-	http.StatusServiceUnavailable,
 }
 
 func (s *Service) readCabinet(ctx context.Context, _ *CabinetInput) (*CabinetOutput, error) {
@@ -164,8 +172,13 @@ func (s *Service) readVial(ctx context.Context, in *VialInput) (*VialOutput, err
 		if err != nil {
 			return err
 		}
+		asked := strings.ToLower(in.VialID)
 		for _, vial := range shelf.cabinet.vials {
-			if string(vial.ID) == in.VialID {
+			// Lower-cased because id::text is: the sibling endpoint hands the raw
+			// parameter to a uuid column, which parses either case, and two endpoints
+			// answering differently about one identifier is a 404 on a vial the caller
+			// owns.
+			if string(vial.ID) == asked {
 				out.Body = shelf.render(vial)
 
 				return nil
@@ -182,6 +195,17 @@ func (s *Service) readVial(ctx context.Context, in *VialInput) (*VialOutput, err
 
 // shelf is one read of everything both answers are computed from, so a cabinet and a card of
 // the same vial cannot disagree about how much is left in it.
+//
+// Its scope is the caller's own subject and nothing from the request, and the two predicates
+// carrying that — vialsOf's WHERE and CabinetOf's filter — are each witnessed where no policy
+// answers first: SupplyFor's service-seam test for the query, math_test's two-patient slice
+// for the type. On this seam RLS refuses first, so a witness taken here would measure the
+// policy; the day a doctor is admitted, whose own policy legitimately answers several
+// patients' rows, that stops being true and this composition needs one of its own.
+//
+// draws carries no tenant type beside the Cabinet that does, and needs none: RemainingAmount
+// matches a draw by vial, and a foreign draw can only name a vial CabinetOf has removed —
+// which the composite foreign key in 000019 makes structural rather than a convention.
 type shelf struct {
 	cabinet Cabinet
 	draws   []Draw
@@ -229,7 +253,10 @@ func (s shelf) render(vial Vial) VialBody {
 		HasLabelPhoto:      vial.LabelPhotoPath != nil && *vial.LabelPhotoPath != "",
 	}
 
-	if dose := s.doseOf(vial.CompoundID); dose != nil {
+	// A thrown-away vial answers what it holds and never what it buys: its card is the
+	// history of what came out of it, and «three injections left» about a vial in the bin
+	// is a number the patient cannot act on.
+	if dose := s.doseOf(vial.CompoundID); dose != nil && vial.DisposedAt == nil {
 		body.CurrentDose = &VialDoseBody{Value: dose.Value, Unit: string(dose.Unit)}
 		body.DosesLeft = RemainingDoses(vial, s.draws, dose)
 	}
@@ -245,8 +272,13 @@ func (s shelf) doseOf(compound protocol.CompoundID) *protocol.Dose {
 	return protocol.CurrentDoseFor(s.plan, compound, s.today)
 }
 
-// hints is one per compound and not one per item: DosesPerWeek is an item's, so the hint is
-// asked per item, and two items of one drug would otherwise answer twice about one shelf.
+// hints is one per compound, and silent where two course positions name one drug.
+//
+// The rate is an item's and the supply is the cabinet's, so a hint folded from two positions
+// would divide the whole shelf by half the prescription's rate — a patient taking two
+// injections a week told they have four weeks of the four doses they hold. Silence is the
+// rule CurrentDoseFor already answers by on the same course, and the card of such a vial
+// carries no dose either: the two halves of one screen agree.
 func (s shelf) hints() []VialReorderBody {
 	out := []VialReorderBody{}
 	seen := map[protocol.CompoundID]bool{}
@@ -254,11 +286,15 @@ func (s shelf) hints() []VialReorderBody {
 		if item.CompoundID == nil || seen[*item.CompoundID] {
 			continue
 		}
-		hint := ReorderHintFor(item, s.cabinet, s.draws, protocol.PhaseDose(s.plan, item.ID, s.today), s.today)
+		seen[*item.CompoundID] = true
+		sole := protocol.SoleItemFor(s.plan, *item.CompoundID)
+		if sole == nil {
+			continue
+		}
+		hint := ReorderHintFor(*sole, s.cabinet, s.draws, protocol.PhaseDose(s.plan, sole.ID, s.today), s.today)
 		if hint == nil {
 			continue
 		}
-		seen[*item.CompoundID] = true
 		out = append(out, VialReorderBody{
 			CompoundID: string(hint.CompoundID), WeeksLeft: hint.WeeksLeft,
 		})
@@ -298,7 +334,13 @@ func (s *Service) patientCalling(ctx context.Context) (database.Caller, error) {
 		return database.Caller{}, huma.Error403Forbidden("only a patient reads their own cabinet")
 	}
 
-	return database.Caller{Subject: principal.Subject, Role: principal.Role}, nil
+	// Lower-cased for the reason protocol and dosing lower-case theirs: RLS compares uuids
+	// and does not care, but CabinetOf compares Go strings against patient_id::text, which
+	// Postgres renders lower-case — so an upper-case subject empties the cabinet and
+	// answers 404 on the caller's own vials.
+	return database.Caller{
+		Subject: strings.ToLower(principal.Subject), Role: principal.Role,
+	}, nil
 }
 
 func answerRead(err error) error {

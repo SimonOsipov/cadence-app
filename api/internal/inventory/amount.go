@@ -48,9 +48,10 @@ func AmountOf(value float64, unit protocol.DoseUnit) (Amount, error) {
 
 // AmountIn carries a quantity back into a unit, for the wire and for nothing else.
 //
-// The inverse of AmountOf and lossless in that direction: every Amount is whole micrograms,
-// and a milligram is a thousand of them, so the division is exact for every value the schema
-// admits. The arithmetic above never uses this — a float is how the number leaves.
+// The inverse of AmountOf, and lossless as a round trip rather than as a division: 290 мкг is
+// 0,28999999999999998 in binary64, printed 0,29 and converted back to 290 — measured, and the
+// claim to hold is AmountOf(AmountIn(n, u), u) == n, not that the quotient is exact. The
+// arithmetic above never uses this: a float is how the number leaves.
 func AmountIn(amount Amount, unit protocol.DoseUnit) float64 {
 	if unit == protocol.MG {
 		return float64(amount) / microgramsPerMilligram

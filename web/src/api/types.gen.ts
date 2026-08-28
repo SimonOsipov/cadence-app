@@ -940,14 +940,6 @@ export type ReadCabinetErrors = {
      */
     403: Problem;
     /**
-     * Not Found
-     */
-    404: Problem;
-    /**
-     * Unprocessable Entity
-     */
-    422: Problem;
-    /**
      * Internal Server Error
      */
     500: Problem;
