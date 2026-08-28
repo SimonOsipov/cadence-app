@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -175,6 +176,28 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 			ErrDoseTooFine,
 		},
 		{
+			// The other end of the range: 1e19 мг prints with no decimal point at all,
+			// so the scale bound takes it, and the microgram count then saturates or
+			// wraps depending on the machine that reads the row.
+			"a dose past a gram",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 1e19, Unit: MG} },
+			ErrDoseOffRange,
+		},
+		{
+			"a microgram dose past a gram",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 1_000_001, Unit: MCG} },
+			ErrDoseOffRange,
+		},
+		{
+			// Unreachable over HTTP, where the decoder has no literal for it, and
+			// guarded for the reason the clock's hours are: cmd/seed builds drafts by
+			// hand, and a NaN loses every comparison — the column would then hold a
+			// value Postgres orders above every number.
+			"a dose that is not a number",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: math.NaN(), Unit: MG} },
+			ErrDoseOffRange,
+		},
+		{
 			"a dose in a unit nobody prescribes",
 			func(d *Draft) { d.Items[0].Phases[0].Dose.Unit = "ме" }, ErrUnknownDoseUnit,
 		},
@@ -254,17 +277,19 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 	}
 }
 
-// The accept side of the scale bound, which the refusals above cannot supply: a rule that
-// refused every dose would pass both of them. The first three are the drift cases a bound
-// read off value × 1000 refuses and the schema takes; the last two are the rule's own
-// edges — three decimals of a milligram, and a whole microgram.
-func TestEveryDoseTheSchemasScaleAdmitsIsAccepted(t *testing.T) {
+// The accept side of the two bounds, which the refusals above cannot supply: a rule that
+// refused every dose would pass all of them. The first three are the drift cases a bound
+// read off value × 1000 refuses and the schema takes; then the atom's own edges — three
+// decimals of a milligram, a whole microgram — and the ceiling's, a gram in either unit.
+func TestEveryDoseTheSchemaAdmitsIsAccepted(t *testing.T) {
 	for _, dose := range []Dose{
 		{Value: 2.01, Unit: MG},
 		{Value: 1.005, Unit: MG},
 		{Value: 16.1, Unit: MG},
 		{Value: 0.001, Unit: MG},
 		{Value: 250, Unit: MCG},
+		{Value: 1000, Unit: MG},
+		{Value: 1_000_000, Unit: MCG},
 	} {
 		t.Run(fmt.Sprintf("%v %s", dose.Value, dose.Unit), func(t *testing.T) {
 			accepted := aPlan(func(d *Draft) { d.Items[0].Phases[0].Dose = dose })

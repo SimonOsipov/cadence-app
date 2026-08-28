@@ -135,6 +135,20 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 			nil, "protocol_phases_dose_value_scale_check", "23514",
 		},
 		{
+			// The ceiling, whose absence made one row answer differently by machine:
+			// int64 micrograms saturate on arm64 and wrap on amd64.
+			"a dose past a gram",
+			itemWith(func(i *protocol.DraftItem) {
+				i.Phases = []protocol.ProtocolPhase{{
+					FromWeek: 1, ToWeek: 4,
+					Dose: protocol.Dose{Value: 1e19, Unit: protocol.MG},
+				}}
+			}),
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_dose_value_magnitude_check", "23514",
+		},
+		{
 			"a dose in a unit nobody prescribes",
 			itemWith(func(i *protocol.DraftItem) {
 				i.Phases = []protocol.ProtocolPhase{{
@@ -279,6 +293,7 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 		{Value: 2.01, Unit: protocol.MG},
 		{Value: 1.005, Unit: protocol.MG},
 		{Value: 250, Unit: protocol.MCG},
+		{Value: 1000, Unit: protocol.MG},
 	} {
 		t.Run(fmt.Sprintf("a phase of %v %s", taken.Value, taken.Unit), func(t *testing.T) {
 			dosed := protocol.Draft{
@@ -501,6 +516,37 @@ func TestRollingBackTheScaleBoundLeavesTheTableWithoutIt(t *testing.T) {
 	}
 }
 
+// 000024's rollback, over all three tables it touched.
+//
+// One migration, three constraints, and the chain-level tests unwind to zero where every
+// one of those tables is dropped — so a down file that dropped two of the three, or none,
+// would pass them. Counted by name rather than by number: the count is what stayed the
+// same when a constraint was added under a different name once already.
+func TestRollingBackTheCeilingLeavesNoneOfItsThreeBounds(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	conn := testsupport.Connect(t, db.SuperuserURL)
+	migrator := testsupport.Connect(t, db.MigrationURL)
+
+	ceilings := map[string]string{
+		"protocol_phases_dose_value_magnitude_check": "app.protocol_phases",
+		"dose_events_dose_value_magnitude_check":     "app.dose_events",
+		"vials_total_amount_magnitude_check":         "app.vials",
+	}
+	for name, table := range ceilings {
+		if held := constraints(t, conn, name, table); held != 1 {
+			t.Fatalf("the chain starts with %d of %s, want 1", held, name)
+		}
+	}
+
+	applyMigration(t, migrator, "000024_a_dose_has_a_ceiling_as_well_as_an_atom.down.sql")
+
+	for name, table := range ceilings {
+		if held := constraints(t, conn, name, table); held != 0 {
+			t.Errorf("%s survived the rollback", name)
+		}
+	}
+}
+
 func scaleBounds(t *testing.T, conn *pgx.Conn) int {
 	t.Helper()
 
@@ -511,6 +557,20 @@ func scaleBounds(t *testing.T, conn *pgx.Conn) int {
 		  AND conrelid = 'app.protocol_phases'::regclass
 	`).Scan(&held); err != nil {
 		t.Fatalf("reading the constraint: %v", err)
+	}
+
+	return held
+}
+
+func constraints(t *testing.T, conn *pgx.Conn, name, table string) int {
+	t.Helper()
+
+	var held int
+	if err := conn.QueryRow(t.Context(), `
+		SELECT count(*) FROM pg_constraint
+		WHERE conname = $1 AND conrelid = $2::regclass
+	`, name, table).Scan(&held); err != nil {
+		t.Fatalf("reading %s: %v", name, err)
 	}
 
 	return held

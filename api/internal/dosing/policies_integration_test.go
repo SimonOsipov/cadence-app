@@ -657,6 +657,15 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 			"a fraction of a microgram", "dose_value, dose_unit, client_request_id",
 			"0.5, 'мкг', 'scale-mcg-1'", "dose_events_dose_value_scale_check", "23514",
 		},
+		{
+			// And both branches of the ceiling, for the same reason.
+			"a dose of more than a gram", "dose_value, dose_unit, client_request_id",
+			"1001, 'мг', 'ceiling-mg-1'", "dose_events_dose_value_magnitude_check", "23514",
+		},
+		{
+			"a gram counted in micrograms", "dose_value, dose_unit, client_request_id",
+			"1000001, 'мкг', 'ceiling-mcg-1'", "dose_events_dose_value_magnitude_check", "23514",
+		},
 	} {
 		t.Run(rule.name, func(t *testing.T) {
 			// client_request_id is NOT NULL with no default, so every case that does

@@ -47,6 +47,11 @@ var (
 	// arithmetic is integer micrograms, and a value that rounds to zero there is a
 	// vial that never empties. Named so the wizard sees a refusal rather than a 500.
 	ErrDoseTooFine = errors.New("a dose is measured to the microgram, not finer")
+
+	// The other end of the same bound, 000024. Named for the same reason: the count of
+	// micrograms is int64, and a value past it saturates on one architecture and wraps
+	// on the other, so the refusal has to happen before the row exists.
+	ErrDoseTooLarge = errors.New("a dose is measured in milligrams, not grams")
 )
 
 // Logged is what the write answers. The identifiers are absent for every outcome but Written,
@@ -581,6 +586,8 @@ func classify(err error) error {
 		return ErrNoteSaysNothing
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == doseIsNotFinerThanTheAtom:
 		return ErrDoseTooFine
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == doseIsUnderItsCeiling:
+		return ErrDoseTooLarge
 	default:
 		return err
 	}
@@ -592,6 +599,7 @@ const (
 	checkViolation      = "23514"
 
 	doseIsNotFinerThanTheAtom = "dose_events_dose_value_scale_check"
+	doseIsUnderItsCeiling     = "dose_events_dose_value_magnitude_check"
 	oneDosePerSlot            = "dose_events_one_per_slot"
 	vialIsTheirOwn            = "dose_events_drawn_from_their_own_vial"
 	photoIsUnderTheirPrefix   = "dose_events_photo_key_is_under_its_own_prefix"

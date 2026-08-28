@@ -713,6 +713,18 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			"'1 мг/мл', -1, 'мг', DATE '2026-12-31'", "vials_total_amount_check",
 		},
 		{
+			// The ceiling, per unit like the scale bound beside it: a gram of peptide in
+			// one vial is absurd, and int64 micrograms are what would carry it.
+			"a vial holding more than a gram",
+			"concentration_label, total_amount, amount_unit, expires_on",
+			"'1 мг/мл', 1001, 'мг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
+		},
+		{
+			"a vial holding a gram counted in micrograms",
+			"concentration_label, total_amount, amount_unit, expires_on",
+			"'1 мг/мл', 1000001, 'мкг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
+		},
+		{
 			"a concentration with no label on it",
 			"concentration_label, total_amount, amount_unit, expires_on",
 			"'', 1.0, 'мг', DATE '2026-12-31'", "vials_concentration_label_check",

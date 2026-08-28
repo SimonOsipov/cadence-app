@@ -31,7 +31,7 @@ var (
 	ErrNoPhases                 = errors.New("an injection is dosed by at least one phase")
 	ErrPhaseRunsBackwards       = errors.New("a phase ends no earlier than it begins")
 	ErrPhaseOffCourse           = errors.New("a phase lies inside the weeks of its course")
-	ErrDoseOffRange             = errors.New("a dose is more than nothing")
+	ErrDoseOffRange             = errors.New("a dose lies between nothing and a gram")
 	ErrDoseTooFine              = errors.New("a dose is measured to the microgram, not finer")
 	ErrUnknownDoseUnit          = errors.New("the unit is not one of мг, мкг")
 	ErrPhasesOverlap            = errors.New("two phases of one item cover the same week")
@@ -223,6 +223,10 @@ func (i DraftItem) checkPhases(weeks int) error {
 			return fmt.Errorf("phase %d doses %v %s: %w",
 				n+1, phase.Dose.Value, phase.Dose.Unit, ErrDoseTooFine)
 		}
+		if beyondItsCeiling(phase.Dose) {
+			return fmt.Errorf("phase %d doses %v %s: %w",
+				n+1, phase.Dose.Value, phase.Dose.Unit, ErrDoseOffRange)
+		}
 	}
 
 	// Sorted by opening week and compared with the neighbour, rather than every pair
@@ -253,6 +257,9 @@ const (
 	// pg_catalog.scale(dose_value) <= 3 on protocol_phases: the microgram, written
 	// as a milligram.
 	milligramDecimals = 3
+	// 000024's ceiling, one gram written in each unit.
+	maxDoseMilligrams = 1000
+	maxDoseMicrograms = 1_000_000
 )
 
 // finerThanItsAtom is a dose the cabinet cannot divide by.
@@ -277,4 +284,20 @@ func finerThanItsAtom(dose Dose) bool {
 	point := strings.IndexByte(printed, '.')
 
 	return point >= 0 && len(printed)-point-1 > atom
+}
+
+// beyondItsCeiling is a dose too large for the count of micrograms to carry.
+//
+// Measured: 1e19 мг passes the scale bound — its printed form has no decimal point at
+// all — and AmountOf then saturates to MaxInt64 on arm64 and wraps to MinInt64 on amd64,
+// so one row answers «no injections left» on one machine and answers nothing on the
+// other. Written as a negated «within» so a NaN, which loses every comparison, is refused
+// here rather than reaching a column where Postgres reads it as larger than everything.
+func beyondItsCeiling(dose Dose) bool {
+	ceiling := float64(maxDoseMilligrams)
+	if dose.Unit == MCG {
+		ceiling = maxDoseMicrograms
+	}
+
+	return !(dose.Value <= ceiling)
 }

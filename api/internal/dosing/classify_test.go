@@ -27,6 +27,10 @@ func TestEachConstraintThatAnswersARequestIsNamed(t *testing.T) {
 			"a dose finer than the unit's atom", "23514",
 			"dose_events_dose_value_scale_check", ErrDoseTooFine,
 		},
+		{
+			"a dose past the ceiling of its unit", "23514",
+			"dose_events_dose_value_magnitude_check", ErrDoseTooLarge,
+		},
 	} {
 		t.Run(refusal.name, func(t *testing.T) {
 			got := classify(&pgconn.PgError{Code: refusal.code, ConstraintName: refusal.constraint})
