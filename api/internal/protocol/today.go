@@ -105,6 +105,16 @@ func earlier(a, b civil.Slot) bool {
 	return a.Minute < b.Minute
 }
 
+// doseOfTheDrug is what the course prescribes of this item's drug today, and nothing where the
+// item names none — which is what SupplyFor answers about anyway.
+func doseOfTheDrug(plan Plan, item ProtocolItem, at civil.Date) *Dose {
+	if item.CompoundID == nil {
+		return nil
+	}
+
+	return CurrentDoseFor(plan, *item.CompoundID, at)
+}
+
 // TodayFor assembles the hero screen from the plan, the day and what the neighbours answer.
 //
 // Every question it asks them is asked once, and the order is the reading order of the
@@ -171,7 +181,12 @@ func TodayFor(
 			if item.ID != today.NextDose.ItemID {
 				continue
 			}
-			left, reorder, err := cabinet.SupplyFor(ctx, tx, patient, item, PhaseDose(plan, item.ID, at), at)
+			// The dose the cabinet divides by is resolved from the drug and not from
+			// this position: with two positions of one compound the shelf answers
+			// nothing about it, and a day card dividing by one of the two doses would
+			// contradict the cabinet screen about the same vial. Identical wherever the
+			// drug has one position, which is every course but the ambiguous one.
+			left, reorder, err := cabinet.SupplyFor(ctx, tx, patient, item, doseOfTheDrug(plan, item, at), at)
 			if err != nil {
 				return Today{}, err
 			}

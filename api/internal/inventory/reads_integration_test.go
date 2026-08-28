@@ -359,8 +359,13 @@ func TestTheCardAnswersADisposedVialWhichTheShelfOmits(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("the cabinet answered %d: %s", status, shelf)
 	}
-	if !strings.Contains(string(shelf), `"vials":[]`) {
-		t.Errorf("an empty shelf is not an empty list: %s", shelf)
+	// Both lists: nullable:"false" is on both, the generated client is typed against both,
+	// and each is initialised in a different place — the handler for one, hints() for the
+	// other.
+	for _, empty := range []string{`"vials":[]`, `"reorder":[]`} {
+		if !strings.Contains(string(shelf), empty) {
+			t.Errorf("an empty shelf is missing %s: %s", empty, shelf)
+		}
 	}
 
 	status, body := askCabinet(t, mux, "/v1/me/vials/"+c.vialA)
@@ -480,8 +485,10 @@ func prescribe(t *testing.T, c clinic, patient string) {
 	}
 }
 
-// alsoPrescribe adds a second injection of the same compound to the running course: an evening
-// one, which §03 gives BPC-157 and nothing forbids of this drug.
+// alsoPrescribe adds a second course position naming the compound the first one names — not
+// the ordinary «twice a day», which §03 gives BPC-157 as two times on one position. This is
+// the anomaly the schema permits and nothing refuses: 000013 holds no uniqueness on the pair,
+// and Draft.Check refuses two items naming one row rather than one drug.
 func alsoPrescribe(t *testing.T, c clinic, patient string) {
 	t.Helper()
 

@@ -493,12 +493,12 @@ export type VialBody = {
      */
     concentration_label: string;
     /**
-     * The dose in force for this drug today. Absent for the same reasons as doses_left, and absent where two course items name the drug.
+     * The dose in force for this drug today. Absent for the same three reasons as doses_left.
      */
     current_dose?: VialDoseBody;
     disposed_at?: string;
     /**
-     * Absent where no running course prescribes this drug: a count needs a dose to divide by, and inventing one would put a number on the screen nobody prescribed.
+     * Absent where no running course prescribes this drug, where two course positions name it, and on a vial that was thrown away: a count needs a dose to divide by, and a vial in the bin buys nothing.
      */
     doses_left?: number;
     expires_on: string;

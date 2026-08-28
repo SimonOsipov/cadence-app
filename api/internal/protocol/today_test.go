@@ -421,6 +421,35 @@ func TestOnADayNoPhaseCoversTheCabinetIsAskedWithNoDose(t *testing.T) {
 	// dose of nothing buys no count is inventory's, at math_test.go's nil-dose case.
 }
 
+// Two course positions of one drug, and the day card goes quiet about it — the same answer the
+// cabinet gives, and for the same reason: the rate is a position's while the vials are the
+// drug's, so a count divided by one of the two doses contradicts the other half of the
+// prescription. Measured through the stub, which records what it was asked to divide by.
+func TestTwoPositionsOfOneDrugLeaveTheDayCardWithNoDivisor(t *testing.T) {
+	plan := aSchedulePlan()
+	evening := ProtocolItemID("item-injection-evening")
+	compound := CompoundID(theCompound.ID)
+	plan.Items = append(plan.Items, ProtocolItem{
+		ID: evening, Kind: KindInjection, CompoundID: &compound,
+		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+		Times: []civil.Slot{{Hour: 19}}, Loggable: true,
+	})
+	plan.Phases[evening] = []ProtocolPhase{{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 0.5, Unit: MG}}}
+
+	left := 3
+	n := &stubNeighbours{site: "r-glute", left: &left}
+	today := todayFor(t, plan, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n)
+
+	if len(n.askedAt) != 1 || n.askedAt[0] != nil {
+		t.Errorf("the cabinet was told to divide by %+v, want nothing", n.askedAt)
+	}
+	// And the premise: each position on its own does prescribe today, so the silence is
+	// the ambiguity rule rather than a day nothing covers.
+	if one, other := PhaseDose(plan, "item-injection", today.Date), PhaseDose(plan, evening, today.Date); one == nil || other == nil {
+		t.Fatalf("the fixture prescribes %v and %v; both positions must carry a dose", one, other)
+	}
+}
+
 // The divisor is the band covering this day, and the fixture has to titrate before that
 // is measurable: with one band the day's phase, the plan's first and the item's only are
 // the same number, and all three survive.

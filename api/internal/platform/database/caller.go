@@ -120,19 +120,31 @@ func enterSeam(ctx context.Context, entering seam) (context.Context, error) {
 // malformed one before the database is touched, against the same definition the
 // seam uses. Two definitions of "UUID-shaped" in one process is one too many.
 func IsUUIDShaped(subject string) bool {
+	text, ok := CanonicalUUID(subject)
+
+	return ok && strings.EqualFold(text, subject)
+}
+
+// CanonicalUUID is an identifier as Postgres writes it, and whether it is one at all.
+//
+// The same parse IsUUIDShaped round-trips against, exported for the readers that compare an
+// identifier from a path against id::text: pgx and uuid_in both accept forms the column never
+// renders — 32 bare hex digits, braces, upper case — so a raw comparison answers 404 for a row
+// the same identifier finds through a WHERE.
+func CanonicalUUID(value string) (string, bool) {
 	var parsed pgtype.UUID
-	if err := parsed.Scan(subject); err != nil {
-		return false
+	if err := parsed.Scan(value); err != nil {
+		return "", false
 	}
 
 	canonical, err := parsed.Value()
 	if err != nil {
-		return false
+		return "", false
 	}
 
 	text, ok := canonical.(string)
 
-	return ok && strings.EqualFold(text, subject)
+	return text, ok
 }
 
 // rollbackTimeout bounds the rollback of a transaction whose context is already

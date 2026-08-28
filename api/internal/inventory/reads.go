@@ -57,8 +57,8 @@ type VialBody struct {
 	TotalAmount VialAmountBody `json:"total_amount"`
 	// Substance, not injections: it answers without a course, and the count below does not.
 	RemainingAmount VialAmountBody `json:"remaining_amount"`
-	DosesLeft       *int           `json:"doses_left,omitempty" doc:"Absent where no running course prescribes this drug: a count needs a dose to divide by, and inventing one would put a number on the screen nobody prescribed."`
-	CurrentDose     *VialDoseBody  `json:"current_dose,omitempty" doc:"The dose in force for this drug today. Absent for the same reasons as doses_left, and absent where two course items name the drug."`
+	DosesLeft       *int           `json:"doses_left,omitempty" doc:"Absent where no running course prescribes this drug, where two course positions name it, and on a vial that was thrown away: a count needs a dose to divide by, and a vial in the bin buys nothing."`
+	CurrentDose     *VialDoseBody  `json:"current_dose,omitempty" doc:"The dose in force for this drug today. Absent for the same three reasons as doses_left."`
 
 	Status     string  `json:"status" enum:"disposed,expiring,sealed,low,active"`
 	OpenedAt   *string `json:"opened_at,omitempty" format:"date" doc:"Absent while the vial is sealed; that absence is the whole of «sealed»."`
@@ -172,12 +172,15 @@ func (s *Service) readVial(ctx context.Context, in *VialInput) (*VialOutput, err
 		if err != nil {
 			return err
 		}
-		asked := strings.ToLower(in.VialID)
+		// Canonicalised and not merely lower-cased: huma's uuid format admits braces and
+		// the 32-digit form as well, and the sibling endpoint hands the raw parameter to a
+		// uuid column that parses all of them — so a comparison against id::text answers
+		// 404 for a vial the label-photo link finds.
+		asked, ok := database.CanonicalUUID(in.VialID)
+		if !ok {
+			return ErrNoVial
+		}
 		for _, vial := range shelf.cabinet.vials {
-			// Lower-cased because id::text is: the sibling endpoint hands the raw
-			// parameter to a uuid column, which parses either case, and two endpoints
-			// answering differently about one identifier is a 404 on a vial the caller
-			// owns.
 			if string(vial.ID) == asked {
 				out.Body = shelf.render(vial)
 
@@ -281,17 +284,14 @@ func (s shelf) doseOf(compound protocol.CompoundID) *protocol.Dose {
 // carries no dose either: the two halves of one screen agree.
 func (s shelf) hints() []VialReorderBody {
 	out := []VialReorderBody{}
-	seen := map[protocol.CompoundID]bool{}
 	for _, item := range s.plan.Items {
-		if item.CompoundID == nil || seen[*item.CompoundID] {
+		// One position per compound is what SoleItemFor answers, so walking the items
+		// cannot answer twice about one drug: a compound two of them name is silent at
+		// every visit.
+		if item.CompoundID == nil || protocol.SoleItemFor(s.plan, *item.CompoundID) == nil {
 			continue
 		}
-		seen[*item.CompoundID] = true
-		sole := protocol.SoleItemFor(s.plan, *item.CompoundID)
-		if sole == nil {
-			continue
-		}
-		hint := ReorderHintFor(*sole, s.cabinet, s.draws, protocol.PhaseDose(s.plan, sole.ID, s.today), s.today)
+		hint := ReorderHintFor(item, s.cabinet, s.draws, protocol.PhaseDose(s.plan, item.ID, s.today), s.today)
 		if hint == nil {
 			continue
 		}
@@ -327,11 +327,11 @@ func (s *Service) patientCalling(ctx context.Context) (database.Caller, error) {
 	if !ok {
 		return database.Caller{}, huma.Error401Unauthorized("no verified principal on the request context")
 	}
-	// A patient-only surface, for the reason readLabelPhoto records: a doctor reads the
-	// cabinet through the policies the day the dashboard draws one, and admitting them
-	// now publishes a surface nobody asked for.
+	// A patient-only surface. A doctor sees their patients' vials through the policies and
+	// will read this the day the dashboard draws a cabinet — but admitting them now
+	// publishes a surface nobody asked for, on rows whose admin policy is USING (true).
 	if principal.Role != "patient" {
-		return database.Caller{}, huma.Error403Forbidden("only a patient reads their own cabinet")
+		return database.Caller{}, huma.Error403Forbidden("only a patient reads their own vials")
 	}
 
 	// Lower-cased for the reason protocol and dosing lower-case theirs: RLS compares uuids
