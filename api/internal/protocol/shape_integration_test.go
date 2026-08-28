@@ -149,6 +149,20 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 			nil, "protocol_phases_dose_value_magnitude_check", "23514",
 		},
 		{
+			// The boundary, beside the absurd value: 1e19 alone leaves the constant
+			// itself unmeasured on both sides of the pair.
+			"a dose one milligram past a gram",
+			itemWith(func(i *protocol.DraftItem) {
+				i.Phases = []protocol.ProtocolPhase{{
+					FromWeek: 1, ToWeek: 4,
+					Dose: protocol.Dose{Value: 1001, Unit: protocol.MG},
+				}}
+			}),
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_dose_value_magnitude_check", "23514",
+		},
+		{
 			"a dose in a unit nobody prescribes",
 			itemWith(func(i *protocol.DraftItem) {
 				i.Phases = []protocol.ProtocolPhase{{
@@ -294,6 +308,10 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 		{Value: 1.005, Unit: protocol.MG},
 		{Value: 250, Unit: protocol.MCG},
 		{Value: 1000, Unit: protocol.MG},
+		// The microgram arm of the ceiling sits nowhere else in the suite: every other
+		// мкг fixture is 250 or 500, so a CHECK written 1000 instead of 1000000 would
+		// refuse a dose the writer takes and nothing would fail.
+		{Value: 1_000_000, Unit: protocol.MCG},
 	} {
 		t.Run(fmt.Sprintf("a phase of %v %s", taken.Value, taken.Unit), func(t *testing.T) {
 			dosed := protocol.Draft{

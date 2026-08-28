@@ -17,9 +17,9 @@ var ErrUnitHasNoAtom = errors.New("a quantity is counted in micrograms, and this
 // remainder is now a subtraction of quantities, so the sum lives here instead, in a
 // type where twelve doses of 0,25 мг are exactly 3 мг rather than nearly.
 //
-// A microgram is the atom because it is the finest thing the clinic prescribes. All
-// three operands are bounded to it in the schema: a vial's amount and a logged dose by
-// 000021, and a prescribed phase dose — the divisor — by 000023.
+// A microgram is the atom because it is the finest thing the clinic prescribes. All three
+// operands are bounded to it in the schema — a vial's amount and a logged dose by 000021,
+// the prescribed phase dose by 000023 — and bounded above by 000024.
 type Amount int64
 
 const microgramsPerMilligram = 1000
@@ -31,10 +31,9 @@ const microgramsPerMilligram = 1000
 // read. Most three-decimal values multiply exactly, 0,29 among them, so the case has to
 // be chosen rather than assumed.
 //
-// Magnitude is not bounded here and the schema bounds only scale: truncation of a value
-// out of range saturates on arm64 and wraps on amd64, so an absurd amount would answer
-// differently by machine. Unreachable while nothing writes the column — the endpoint of
-// step 6 is where the bound belongs.
+// Magnitude is not bounded here because 000024 bounds it in every column this reads, at a
+// gram per unit: without that, a value out of range saturates on arm64 and wraps on amd64,
+// and one row answers differently by machine.
 func AmountOf(value float64, unit protocol.DoseUnit) (Amount, error) {
 	switch unit {
 	case protocol.MG:

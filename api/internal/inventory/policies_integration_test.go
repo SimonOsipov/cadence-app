@@ -832,6 +832,11 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 		}{
 			{"a milligram amount at three decimals", "0.125, 'мг'"},
 			{"a whole number of micrograms", "250, 'мкг'"},
+			{"a milligram amount at the ceiling", "1000, 'мг'"},
+			// The мкг arm of the ceiling, which sits a million above every other
+			// microgram fixture here: written 1000 by mistake it would refuse this and
+			// nothing else in the suite would move.
+			{"a microgram amount at the ceiling", "1000000, 'мкг'"},
 		} {
 			t.Run(legal.name, func(t *testing.T) {
 				if err := database.WithServiceJob(

@@ -184,6 +184,15 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 			ErrDoseOffRange,
 		},
 		{
+			// The boundary itself, because 1e19 clamps the constant from nowhere: with
+			// only that case the ceiling could be a thousand times higher and this suite
+			// would not notice, and Go would be looser than the schema — which answers
+			// 23514 with no entry in this package's map, so a 500 about the form.
+			"a dose one milligram past a gram",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 1001, Unit: MG} },
+			ErrDoseOffRange,
+		},
+		{
 			"a microgram dose past a gram",
 			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 1_000_001, Unit: MCG} },
 			ErrDoseOffRange,

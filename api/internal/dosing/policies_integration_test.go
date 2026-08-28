@@ -723,6 +723,18 @@ func TestEachRowShapeRuleOnADoseFires(t *testing.T) {
 			"a whole number of micrograms", "2026-07-01", 3, 10, "mcg-accept-0001",
 			"/b.jpg", "250", "мкг",
 		},
+		{
+			// The ceiling from below, in both units, because every other fixture here
+			// is three orders of magnitude under it: written 1000 instead of 1000000
+			// the мкг arm would refuse a dose the writer takes, and the wizard would
+			// get a 422 for a value the clinic prescribes.
+			"a milligram dose at the ceiling", "2026-07-02", 3, 10, "mg-ceiling-0001",
+			"/c.jpg", "1000", "мг",
+		},
+		{
+			"a microgram dose at the ceiling", "2026-07-03", 3, 10, "mcg-ceiling-0001",
+			"/d.jpg", "1000000", "мкг",
+		},
 	} {
 		t.Run(day.name, func(t *testing.T) {
 			if affected := c.changed(t, patientA, "patient", `
