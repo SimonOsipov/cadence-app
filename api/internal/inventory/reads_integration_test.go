@@ -265,12 +265,14 @@ func TestWhatTheClinicWroteOnTheVialComesBackAsItself(t *testing.T) {
 
 // One identifier, one answer, whichever of the spellings the transport admits it arrives in.
 //
-// huma's uuid format takes four: the canonical one, upper case, thirty-two bare hex digits,
-// and braces — and the parser behind the comparison takes only two of those, while Postgres
-// takes a third. So the card and the label-photo link disagreed about the same string until
-// both compared in the one form Postgres renders. Measured spelling by spelling: capitals and
-// the bare digits name the vial, and the two neither parser canonicalises name nothing on
-// either endpoint rather than one each — the sibling half in photos_integration_test.go.
+// huma's uuid format takes four: the canonical one, thirty-two bare hex digits, braces, and
+// urn:uuid: — and case is a variant of the first rather than a fifth. The parser behind this
+// comparison renders the first two and refuses the other two; Postgres parses the braces as
+// well and refuses only the urn. So the card and the label-photo link disagreed about the
+// braced string, and the urn left the label endpoint as a 500. Both compare in the one form
+// Postgres renders now: capitals and the bare digits name the vial, and the two nothing
+// canonicalises name nothing on either endpoint — the sibling half is in
+// photos_integration_test.go.
 func TestOneIdentifierGetsOneAnswerFromBothEndpoints(t *testing.T) {
 	c := newClinic(t)
 	mux, calling := aCabinet(t, c)

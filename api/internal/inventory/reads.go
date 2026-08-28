@@ -33,11 +33,8 @@ type CabinetBody struct {
 	// Everything but the thrown away — that one is history, and still readable one by one.
 	// Held back and expired stay on the shelf: the patient owns them and the screen groups
 	// by the status they carry.
-	Vials []VialBody `json:"vials" nullable:"false"`
-	// One per prescribed compound, and none at all where two course positions name one
-	// drug: the weekly rate is a position's while the supply is the whole shelf's, so a
-	// hint folded from two of them divides the cabinet by half the prescription.
-	Reorder []VialReorderBody `json:"reorder" nullable:"false"`
+	Vials   []VialBody        `json:"vials" nullable:"false"`
+	Reorder []VialReorderBody `json:"reorder" nullable:"false" doc:"One per prescribed drug, and none at all for a drug two course positions name: the weekly rate is a position's while the supply is the whole shelf's, so a hint folded from two of them would divide the cabinet by half the prescription."`
 }
 
 type VialInput struct {

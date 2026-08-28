@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -295,9 +296,11 @@ func TestTheNeighboursAreAskedAboutTheCaller(t *testing.T) {
 // item order already agrees with the clock cannot tell the two rules apart.
 func TestTheNextDoseIsTheEarliestOpenOneByTheClock(t *testing.T) {
 	compound := CompoundID(theCompound.ID)
-	// Two drugs and not one twice: two positions naming one compound is the shape the
-	// cabinet refuses to count, so a fixture built that way would run this whole case
-	// inside the silent branch and stop measuring the count it is about.
+	// Two drugs on the morning-and-evening pair, and not one twice: two positions naming
+	// one compound is the shape the cabinet refuses to count, and a fixture built that
+	// way would run those subcases inside the silent branch. The half-past copy below
+	// keeps the morning drug on purpose — it is about which occurrence is next, and the
+	// cabinet is not asked twice in one answer.
 	other := CompoundID("other-compound")
 	morning := ProtocolItem{
 		ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
@@ -468,7 +471,7 @@ func TestTheCabinetIsAskedWithTheDoseOfTheDrugBeingOffered(t *testing.T) {
 		t.Fatalf("the cabinet was asked about %v, want the morning position", n.askedFor)
 	}
 	if len(n.askedAt) != 1 || n.askedAt[0] == nil || n.askedAt[0].Value != 0.25 {
-		t.Errorf("the cabinet was told to divide by %+v, want the morning drug's 0,25 мг", n.askedAt)
+		t.Errorf("the cabinet was told to divide by %v, want the morning drug's 0,25 мг", dosesOf(n.askedAt))
 	}
 }
 
@@ -531,4 +534,20 @@ func TestTheCabinetDividesByTheDoseOfTheDaysOwnPhase(t *testing.T) {
 			}
 		})
 	}
+}
+
+// dosesOf renders what the stub was asked to divide by. A []*Dose printed with %+v is a list
+// of addresses, which is what the first version of the failure above said.
+func dosesOf(asked []*Dose) []string {
+	out := make([]string, 0, len(asked))
+	for _, dose := range asked {
+		if dose == nil {
+			out = append(out, "nothing")
+
+			continue
+		}
+		out = append(out, fmt.Sprintf("%v %s", dose.Value, dose.Unit))
+	}
+
+	return out
 }

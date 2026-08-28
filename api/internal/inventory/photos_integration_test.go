@@ -212,9 +212,6 @@ func TestAnUnknownVialIsTheSameRefusalAsSomebodyElses(t *testing.T) {
 	}
 }
 
-// The same /v1/me refusals every neighbouring surface makes. The doctor is
-// refused although the policies would hand them the row: admitting them now
-// would publish a surface nothing has asked for.
 // The identifier reaches this endpoint in whatever spelling the transport admits, and it must
 // answer the same one the card does.
 //
@@ -248,6 +245,9 @@ func TestTheLabelLinkAnswersTheSameSpellingsTheCardDoes(t *testing.T) {
 	}
 }
 
+// The same /v1/me refusals every neighbouring surface makes. The doctor is
+// refused although the policies would hand them the row: admitting them now
+// would publish a surface nothing has asked for.
 func TestOnlyAPatientReachesTheLabel(t *testing.T) {
 	c := newClinic(t)
 	mux, signer, as := withLabelPhotos(t, c)

@@ -59,14 +59,13 @@ type (
 	// Cabinet answers what the medicine cabinet knows about one prescribed item: how many
 	// doses its open vial has left, and whether it is time to reorder.
 	// The item and not the compound, because the reorder hint is «weeks of supply» and
-	// the weeks come from the item's own rate — which is also why the caller must not
-	// hand it an item whose drug a second position also names: the rate would be half
-	// the prescription's while the shelf it divides is the whole drug's.
-	// The dose is passed in rather than looked up: the cabinet would have to import
-	// this package to find it, and the caller is already holding the plan it comes
-	// from. Nil where no phase covers the day, and nil where two positions name the
-	// drug — the cabinet then answers substance and status, but not a number of
-	// injections, and no hint either.
+	// the weeks come from the item's own rate. The dose is passed in rather than looked
+	// up: the cabinet would have to import this package to find it, and the caller is
+	// already holding the plan it comes from — and the caller resolves it from the drug,
+	// so it is nil where no phase covers the day and nil where two positions name the
+	// drug, whose rate would otherwise be half the prescription's while the shelf it
+	// divides is the whole drug's. On a nil dose the cabinet answers substance and
+	// status, and neither a count of injections nor a hint.
 	Cabinet interface {
 		SupplyFor(
 			ctx context.Context, tx pgx.Tx, patient civil.UserID, item ProtocolItem,

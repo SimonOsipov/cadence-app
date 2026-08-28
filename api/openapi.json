@@ -5,6 +5,7 @@
         "additionalProperties": false,
         "properties": {
           "reorder": {
+            "description": "One per prescribed drug, and none at all for a drug two course positions name: the weekly rate is a position's while the supply is the whole shelf's, so a hint folded from two of them would divide the cabinet by half the prescription.",
             "items": {
               "$ref": "#/components/schemas/VialReorderBody"
             },
@@ -1135,7 +1136,7 @@
           },
           "reorder": {
             "$ref": "#/components/schemas/ReorderBody",
-            "description": "Absent for the same three reasons as vial_doses_left, and when the supply is above the threshold or a sealed spare is standing by."
+            "description": "Absent for the same three reasons as vial_doses_left, and when the supply is above the threshold or a sealed spare is standing by. The weekly rate is one course position's, which is why two positions naming one drug answer nothing rather than half a rate."
           },
           "suggested_site": {
             "description": "Computed from what was logged, not frozen.",
@@ -1173,7 +1174,7 @@
             ]
           },
           "vial_doses_left": {
-            "description": "Of the open vial. Absent when the patient holds none of that drug, when no phase covers the day, and when two course positions name the drug — the rate would then be one position's while the vials are the drug's.",
+            "description": "Of the vial being drawn from. Absent when the patient holds no open, undisposed, not-held-back vial of that drug, when no phase covers the day, and when two course positions name the drug — the dose to divide by is ambiguous then, and the cabinet answers substance and status instead.",
             "format": "int64",
             "type": "integer"
           },
