@@ -713,16 +713,17 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			"'1 мг/мл', -1, 'мг', DATE '2026-12-31'", "vials_total_amount_check",
 		},
 		{
-			// The ceiling, per unit like the scale bound beside it: a gram of peptide in
-			// one vial is absurd, and int64 micrograms are what would carry it.
-			"a vial holding more than a gram",
+			// The vial's own ceiling, a hundred times the dose's: a container holds more
+			// than an injection, and a 10 мл vial of testosterone at 250 мг/мл is
+			// 2500 мг — refused by a dose ceiling and prescribed by this clinic.
+			"a vial holding more than a hundred grams",
 			"concentration_label, total_amount, amount_unit, expires_on",
-			"'1 мг/мл', 1001, 'мг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
+			"'1 мг/мл', 100001, 'мг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
 		},
 		{
-			"a vial holding a gram counted in micrograms",
+			"a vial holding a hundred grams counted in micrograms",
 			"concentration_label, total_amount, amount_unit, expires_on",
-			"'1 мг/мл', 1000001, 'мкг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
+			"'1 мг/мл', 100000001, 'мкг', DATE '2026-12-31'", "vials_total_amount_magnitude_check",
 		},
 		{
 			"a concentration with no label on it",
@@ -832,11 +833,14 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 		}{
 			{"a milligram amount at three decimals", "0.125, 'мг'"},
 			{"a whole number of micrograms", "250, 'мкг'"},
-			{"a milligram amount at the ceiling", "1000, 'мг'"},
-			// The мкг arm of the ceiling, which sits a million above every other
-			// microgram fixture here: written 1000 by mistake it would refuse this and
-			// nothing else in the suite would move.
-			{"a microgram amount at the ceiling", "1000000, 'мкг'"},
+			{"a milligram amount at the ceiling", "100000, 'мг'"},
+			// The мкг arm of the ceiling, eight orders above every other microgram
+			// fixture here: written a thousand times lower by mistake it would refuse
+			// this and nothing else in the suite would move.
+			{"a microgram amount at the ceiling", "100000000, 'мкг'"},
+			// The vial a dose ceiling would have refused, named as a case rather than
+			// left to the boundary: 10 мл of testosterone at 250 мг/мл.
+			{"a multi-dose hormone vial", "2500, 'мг'"},
 		} {
 			t.Run(legal.name, func(t *testing.T) {
 				if err := database.WithServiceJob(

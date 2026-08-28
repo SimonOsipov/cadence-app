@@ -27,12 +27,15 @@ ALTER TABLE app.dose_events
         OR (dose_unit = 'мкг' AND dose_value <= 1000000)
     );
 
--- The vial holds an amount rather than a dose, and the same ceiling fits: it is a
--- container of substance, and a gram of peptide in one vial is already absurd.
+-- The vial is a container and not a dose, so its ceiling is its own and a hundred times
+-- higher. The product runs hormone protocols beside the peptide ones: testosterone
+-- cypionate comes at 250 мг/мл in a 10 мл multi-dose vial, which is 2500 мг — two and a
+-- half times a dose ceiling, and a doctor meeting it would simply be unable to register
+-- the vial. A hundred grams keeps eleven orders of margin against MaxInt64 micrograms.
 ALTER TABLE app.vials
     ADD CONSTRAINT vials_total_amount_magnitude_check CHECK (
-        (amount_unit = 'мг'  AND total_amount <= 1000)
-        OR (amount_unit = 'мкг' AND total_amount <= 1000000)
+        (amount_unit = 'мг'  AND total_amount <= 100000)
+        OR (amount_unit = 'мкг' AND total_amount <= 100000000)
     );
 
 RESET ROLE;
