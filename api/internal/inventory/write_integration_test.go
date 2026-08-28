@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
-	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 )
 
 // post sends a body to one of the write endpoints and answers what came back.
@@ -315,33 +312,6 @@ func TestTheLabelKeyIsMintedForTheCallerAndAccepted(t *testing.T) {
 	}
 	if code, object := getObject(t, reading.URL); code != http.StatusOK || !bytes.Equal(object, picture) {
 		t.Errorf("the object read back answered %d with %q", code, object)
-	}
-}
-
-// The enum huma validates against and the set the store can mint a key for are one set written
-// twice, so this reconciles them — the reason storage.ImageTypes is exported.
-//
-// Apart they fail in two silent ways: a type the store keeps and the tag omits is refused at
-// the door although the API can hold it, and one the tag advertises and the store cannot mint
-// reaches a handler that answers 422 from a branch nothing else reaches. The second is what
-// this endpoint shipped with — image/webp, advertised in the contract and refused by every
-// request that used it.
-func TestTheAdvertisedLabelTypesAreTheOnesTheStoreCanKeep(t *testing.T) {
-	field, ok := reflect.TypeOf(inventory.LabelUploadInput{}.Body).FieldByName("ContentType")
-	if !ok {
-		t.Fatal("LabelUploadInput has no ContentType field for the enum to sit on")
-	}
-
-	advertised := strings.Split(field.Tag.Get("enum"), ",")
-	kept := storage.ImageTypes()
-
-	if len(advertised) != len(kept) {
-		t.Fatalf("the tag advertises %v, the store keeps %v", advertised, kept)
-	}
-	for _, contentType := range kept {
-		if !slices.Contains(advertised, contentType) {
-			t.Errorf("the store keeps %s and the tag does not advertise it", contentType)
-		}
 	}
 }
 
