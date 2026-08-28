@@ -396,6 +396,7 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 		open      int
 		spare     bool
 		heldBack  bool
+		expired   bool
 		otherOpen bool
 		named     bool
 	}{
@@ -411,6 +412,10 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 		// Held back is not a candidate at either layer, and not a second candidate
 		// either: it takes no part in a choice the server makes.
 		{name: "the only sealed vial is held back", heldBack: true},
+		// Expiry refuses at the second layer and not at IsDrawableFor: a patient who
+		// names an expired vial is telling the server something, and this is the server
+		// choosing for them — the same vial the hint has already written off.
+		{name: "the only sealed vial has expired", expired: true},
 		// And at the first layer too: a vial already open can be set aside, and it
 		// stops being the answer the moment it is.
 		{name: "the only open vial is held back", open: 1, heldBack: true},
@@ -425,6 +430,9 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 				sealASpareFor(t, c, patientA, cabinet.heldBack)
 			} else if cabinet.heldBack {
 				holdBack(t, c, patientA, c.vial[patientA])
+			}
+			if cabinet.expired {
+				expire(t, c, patientA, c.vial[patientA])
 			}
 			if cabinet.otherOpen {
 				openVials(t, c, patientB, 1)
@@ -474,9 +482,11 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 //
 // A patient whose only vial is held back resolves to nothing — and the vial standing next to
 // it in the cabinet, sealed, of the same compound, belonging to somebody else, must be
-// neither named nor opened. The predicate is the only thing between the two: this write runs
-// as cadence_patient, where vials_own_update is what refuses another patient's row, and a
-// resolution that dropped the patient from its WHERE would open a stranger's vial.
+// neither named nor opened. What refuses it here is RLS and not the Go predicate: this runs as
+// cadence_patient, where vials_own_select never shows the row and vials_own_update would
+// refuse it anyway. The predicate is measured where it is the only lock —
+// TestTheOpeningIsScopedByItsArgumentAndNotOnlyByThePolicy, on the admin seam. This case is
+// the seam a patient actually reaches.
 func TestOpeningTheFirstVialCannotReachAnotherPatientsShelf(t *testing.T) {
 	c, pool := logging(t)
 	holdBack(t, c, patientA, c.vial[patientA])
@@ -508,6 +518,28 @@ func openedOn(t *testing.T, c clinic, vial string) string {
 	`, []any{vial}, &opened)
 
 	return opened
+}
+
+// expire moves a vial's expiry behind the day the fixture logs on, which is 10 May in the
+// patients' own zone.
+func expire(t *testing.T, c clinic, patient, vial string) {
+	t.Helper()
+
+	if err := database.WithCaller(
+		t.Context(), c.request, database.Caller{Subject: patient, Role: "patient"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			tag, err := tx.Exec(ctx, `
+				UPDATE app.vials SET expires_on = DATE '2026-04-30' WHERE id = $1
+			`, vial)
+			if err == nil && tag.RowsAffected() != 1 {
+				return fmt.Errorf("expiring matched %d vials, want 1", tag.RowsAffected())
+			}
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("expiring a vial: %v", err)
+	}
 }
 
 // holdBack puts a vial aside, as the patient: held_back_at is in the patient's UPDATE grant

@@ -14,8 +14,13 @@ import (
 // opening the patient's last sealed one if that is what naming it takes.
 //
 // Resolved and never chosen: where the answer is ambiguous it is nothing, because the choice is
-// the patient's and arrives in the request. Nothing to draw from is a nil, not an error. On the
-// service seam the predicate below is the only lock — vials_service_read is USING (true).
+// the patient's and arrives in the request. Nothing to draw from is a nil, not an error.
+//
+// The two layers are locked differently, which matters when this is called from a new seam.
+// The read is guarded by its own predicate alone where the policy does not scope — on the
+// service seam vials_service_read is USING (true). The write below is refused by the seam
+// itself: the service role holds no UPDATE grant on app.vials at all, so it answers 42501
+// rather than filtering to no rows.
 //
 // Two layers, and the order is the whole point: «exactly one undisposed vial» on its own is
 // strictly worse than «exactly one open», because a patient holding an open vial and the
@@ -27,6 +32,29 @@ import (
 // the server makes for them may not reach it.
 func OpenVialFor(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string, today civil.Date,
+) (*string, error) {
+	open, err := theOpenOne(ctx, tx, patient, compound)
+	if err != nil || open != nil {
+		return open, err
+	}
+
+	opened, err := openTheLastSealed(ctx, tx, patient, compound, today)
+	if err != nil || opened != nil {
+		return opened, err
+	}
+
+	// Asked once more, and only here: the guard in that write refuses when another request
+	// opened the same vial and committed between the two layers, and by now that vial is
+	// open. Answering nil instead would charge the dose to no vial at all, and drawsOf
+	// skips events with none — so the remaining count would stay overstated by this dose
+	// for the life of the vial.
+	return theOpenOne(ctx, tx, patient, compound)
+}
+
+// theOpenOne is the patient's single open vial of this compound, and nothing where there is
+// not exactly one.
+func theOpenOne(
+	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string,
 ) (*string, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text
@@ -54,14 +82,11 @@ func OpenVialFor(
 
 	// LIMIT 2 and not LIMIT 1: the question is «is there exactly one», and a query taking
 	// the first would answer «yes» to a cabinet holding three.
-	if len(open) == 1 {
-		return &open[0], nil
-	}
-	if len(open) > 1 {
+	if len(open) != 1 {
 		return nil, nil
 	}
 
-	return openTheLastSealed(ctx, tx, patient, compound, today)
+	return &open[0], nil
 }
 
 // openTheLastSealed opens the patient's single sealed vial of this compound and names it,
@@ -72,6 +97,11 @@ func OpenVialFor(
 // the UPDATE is what refuses the loser rather than opening it twice on two different days.
 // The date is the patient's own day and never now(): a dose logged at half past midnight in
 // Yekaterinburg opens the vial on the day the patient is living in, not the server's.
+//
+// Expiry is a refusal here and deliberately not in IsDrawableFor: a patient who names an
+// expired vial is telling the server something it should believe, while this is the server
+// choosing for them — and choosing a vial the reorder hint has already written off as neither
+// spare nor supply would make the two halves of the cabinet disagree about one row.
 func openTheLastSealed(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string, today civil.Date,
 ) (*string, error) {
@@ -82,6 +112,7 @@ func openTheLastSealed(
 		    FROM app.vials
 		    WHERE patient_id = $1 AND compound_id = $2
 		      AND opened_at IS NULL AND disposed_at IS NULL AND held_back_at IS NULL
+		      AND expires_on >= $3::date
 		    LIMIT 2
 		), sole AS (
 		    SELECT id FROM available WHERE (SELECT count(*) FROM available) = 1

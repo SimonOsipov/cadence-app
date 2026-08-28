@@ -1112,14 +1112,69 @@ func TestTheCabinetReadIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) 
 	}
 }
 
-// Two requests reaching the last sealed vial at once open it once, and the loser draws from
-// nothing rather than opening it again on a different day.
+// The predicate that scopes the opening is measured where it is the only thing scoping it.
+//
+// On the request seam it is refused twice over — vials_own_select filters the CTE and
+// vials_own_update refuses the row — so dropping `patient_id = $1` there changes nothing and
+// a witness taken on it measures the policy rather than the predicate. vials_admin is
+// FOR ALL USING (true) with a full grant, which leaves the Go predicate alone. Patient A's
+// only vial is held back, so A has nothing available; B holds exactly one sealed vial, which
+// is the shape a dropped predicate opens — with two, LIMIT 2 makes the count read two and the
+// mutation would pass for the wrong reason.
+func TestTheOpeningIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) {
+	c := newClinic(t)
+
+	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx,
+			`UPDATE app.vials SET held_back_at = DATE '2026-05-03' WHERE id = $1`, c.vialA)
+		if err == nil && tag.RowsAffected() != 1 {
+			return fmt.Errorf("holding back matched %d rows, want 1", tag.RowsAffected())
+		}
+
+		return err
+	}); err != nil {
+		t.Fatalf("emptying the shelf: %v", err)
+	}
+
+	var resolved *string
+	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+		var err error
+		resolved, err = inventory.OpenVialFor(
+			ctx, tx, civil.UserID(patientA), c.compound, civil.NewDate(2026, time.May, 10),
+		)
+
+		return err
+	}); err != nil {
+		t.Fatalf("resolving as the admin: %v", err)
+	}
+
+	if resolved != nil {
+		t.Errorf("the resolution named %s while the patient asked for had nothing", *resolved)
+	}
+
+	var opened string
+	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT coalesce(to_char(opened_at, 'YYYY-MM-DD'), '') FROM app.vials WHERE id = $1`,
+			c.vialB).Scan(&opened)
+	}); err != nil {
+		t.Fatalf("reading the other patient's vial back: %v", err)
+	}
+	if opened != "" {
+		t.Errorf("another patient's vial was opened on %q", opened)
+	}
+}
+
+// Two requests reaching the last sealed vial at once open it once, on one day, and both draw
+// from it.
 //
 // The guard is `opened_at IS NULL` in the UPDATE, and nothing else measured it: the mutation
 // that removes it survives every other test in the tree, because no other test has two
 // transactions in flight. Postgres blocks the second UPDATE on the row lock and re-evaluates
-// its predicate against the committed version — so the guard is what turns «open it again»
-// into «no rows», and the second caller answers nothing.
+// the predicate against the committed version, so the guard is what turns «open it again on
+// my own day» into «no rows» — and the resolution then asks the first layer again and hands
+// back the vial the winner opened, because a dose charged to no vial overstates the remaining
+// count for the life of the vial.
 func TestTwoRequestsOpeningTheLastVialOpenItOnce(t *testing.T) {
 	c := newClinic(t)
 
@@ -1168,21 +1223,25 @@ func TestTwoRequestsOpeningTheLastVialOpenItOnce(t *testing.T) {
 		loser <- opened
 	}()
 
-	// Long enough for the second statement to reach the lock and block on it. If it has
-	// not, the case degenerates into two sequential requests, where the guard is not
-	// what answers — and the assertions below would still pass.
-	time.Sleep(500 * time.Millisecond)
+	// Waited for rather than slept through, and it is the test's premise rather than a
+	// flake guard: released too early the two requests run in sequence, the second one's
+	// first layer finds the vial already open and names it, and every assertion below
+	// passes without the guard ever being asked.
+	blocked := waitForALock(t, c)
 	close(release)
+	if !blocked {
+		t.Fatal("the second request never reached the lock, so the guard was never asked")
+	}
 
-	var second_ *string
+	var losing *string
 	select {
-	case second_ = <-loser:
+	case losing = <-loser:
 	case <-time.After(10 * time.Second):
 		t.Fatal("the second request never came back")
 	}
 
-	if second_ != nil {
-		t.Errorf("the second request opened %s as well", *second_)
+	if losing == nil || *losing != *winner {
+		t.Errorf("the second request drew from %v, want the vial the first opened", losing)
 	}
 
 	var opened string
@@ -1196,6 +1255,40 @@ func TestTwoRequestsOpeningTheLastVialOpenItOnce(t *testing.T) {
 	if opened != first.String() {
 		t.Errorf("the vial reads opened on %q, want the first request's day %q", opened, first)
 	}
+}
+
+// waitForALock reports whether a backend is waiting on a lock, which is the second request
+// having reached the row the first one holds.
+//
+// pg_locks and not pg_stat_activity: the two seams connect as different login roles, and
+// Postgres blanks wait_event_type for a session belonging to another user — measured, the
+// first version of this watched for a value it could never see. It answers rather than
+// failing, because the caller has a transaction to release before it can fail safely.
+func waitForALock(t *testing.T, c clinic) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var waiting int
+		if err := database.WithServiceJob(
+			t.Context(), c.service, seedJob,
+			func(ctx context.Context, tx pgx.Tx) error {
+				return tx.QueryRow(ctx, `
+					SELECT count(*) FROM pg_catalog.pg_locks WHERE NOT granted
+				`).Scan(&waiting)
+			},
+		); err != nil {
+			t.Errorf("watching for the lock: %v", err)
+
+			return false
+		}
+		if waiting > 0 {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	return false
 }
 
 // Opening a vial is the patient's own act, and the service seam cannot perform it.
