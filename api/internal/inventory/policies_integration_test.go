@@ -834,9 +834,10 @@ func TestEachRowShapeRuleOnAVialFires(t *testing.T) {
 			{"a milligram amount at three decimals", "0.125, 'мг'"},
 			{"a whole number of micrograms", "250, 'мкг'"},
 			{"a milligram amount at the ceiling", "100000, 'мг'"},
-			// The мкг arm of the ceiling, and the only microgram fixture in this suite
+			// The мкг arm of the ceiling, and the only accepted microgram amount here
 			// above 250: written a thousand times lower by mistake it would refuse this
-			// and nothing else here would move.
+			// and nothing else would move — the two мкг refusals stay refused, one by
+			// the scale bound and one by this one.
 			{"a microgram amount at the ceiling", "100000000, 'мкг'"},
 			// The vial a dose ceiling would have refused, named as a case rather than
 			// left to the boundary: 10 мл of testosterone at 250 мг/мл.
