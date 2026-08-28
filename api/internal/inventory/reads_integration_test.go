@@ -277,6 +277,22 @@ func TestAnIdentifierInCapitalsNamesTheSameVial(t *testing.T) {
 	}
 }
 
+// A subject in capitals is the same patient. Postgres compares uuids and does not care, so RLS
+// and the query both answer the caller's rows — and CabinetOf compares Go strings against a
+// patient_id::text that Postgres renders lower-case, so without normalising the shelf comes
+// back empty and the patient is told they own nothing.
+func TestASubjectInCapitalsIsTheSamePatient(t *testing.T) {
+	c := newClinic(t)
+	mux, calling := aCabinet(t, c)
+	calling(strings.ToUpper(patientA), "patient")
+
+	shelf := cabinetOf(t, mux)
+
+	if len(shelf.Vials) != 1 || shelf.Vials[0].ID != c.vialA {
+		t.Errorf("the cabinet answered %+v, want the caller's own vial", shelf.Vials)
+	}
+}
+
 // The day the counts are computed against is the patient's, not the server's — and at this
 // instant the two disagree.
 func TestTheCabinetIsAnsweredInThePatientsOwnDay(t *testing.T) {
