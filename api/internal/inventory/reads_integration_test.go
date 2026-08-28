@@ -157,6 +157,34 @@ func TestTheCabinetAnswersWhatIsLeftAndWhatItBuys(t *testing.T) {
 	}
 }
 
+// One hint per drug, not one per course position. Two items of one compound is a course the
+// schema permits — 000013 has no unique index on the pair — and the hint is asked per item,
+// because the weekly rate is an item's. Without the fold the patient is told twice to buy more
+// of the one substance, off the one shelf.
+func TestTwoCoursePositionsOfOneDrugAnswerOneHint(t *testing.T) {
+	c := newClinic(t)
+	prescribe(t, c, patientA)
+	alsoPrescribe(t, c, patientA)
+	openTheVial(t, c, patientA, c.vialA)
+
+	mux, calling := aCabinet(t, c)
+	calling(patientA, "patient")
+
+	shelf := cabinetOf(t, mux)
+
+	if len(shelf.Reorder) != 1 {
+		t.Fatalf("two positions of one drug answered %d hints: %+v", len(shelf.Reorder), shelf.Reorder)
+	}
+	if shelf.Reorder[0].CompoundID != c.compound {
+		t.Errorf("the hint is about %s, want the one compound %s", shelf.Reorder[0].CompoundID, c.compound)
+	}
+	// And the premise: the second position really is there and really carries a band, so
+	// the single hint is the fold rather than a course with one item after all.
+	if len(shelf.Vials) != 1 || shelf.Vials[0].CurrentDose != nil {
+		t.Errorf("two positions name one drug, so no dose is in force: %+v", shelf.Vials)
+	}
+}
+
 // §03's rule, and the reason the two numbers are not one field: substance is a fact about the
 // vial, and injections are a fact about a prescription.
 func TestWithoutARunningCourseTheSubstanceAnswersAndTheCountDoesNot(t *testing.T) {
@@ -357,6 +385,38 @@ func prescribe(t *testing.T, c clinic, patient string) {
 		},
 	); err != nil {
 		t.Fatalf("prescribing for %s: %v", patient, err)
+	}
+}
+
+// alsoPrescribe adds a second injection of the same compound to the running course: an evening
+// one, which §03 gives BPC-157 and nothing forbids of this drug.
+func alsoPrescribe(t *testing.T, c clinic, patient string) {
+	t.Helper()
+
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var item string
+			if err := tx.QueryRow(ctx, `
+				INSERT INTO app.protocol_items
+				    (protocol_id, kind, compound_id, cadence, days_of_week, times, loggable)
+				SELECT p.id, 'injection', $2, 'weekly', ARRAY[7]::smallint[],
+				       ARRAY['20:00']::time[], true
+				FROM app.protocols p
+				WHERE p.patient_id = $1 AND p.status = 'active'
+				RETURNING id::text
+			`, patient, c.compound).Scan(&item); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `
+				INSERT INTO app.protocol_phases (protocol_item_id, from_week, to_week, dose_value, dose_unit)
+				VALUES ($1, 1, 12, 0.25, 'мг')
+			`, item)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("prescribing a second position for %s: %v", patient, err)
 	}
 }
 
