@@ -101,6 +101,13 @@ export type Drug = {
     route?: string;
 };
 
+export type HeldBackInputBody = {
+    /**
+     * True puts the vial aside, false takes it back. Sending the value it already carries is not an error and does not move the day it was set aside on.
+     */
+    held_back: boolean;
+};
+
 export type Item = {
     cadence: 'weekly' | 'daily' | 'n_per_week';
     /**
@@ -1119,6 +1126,108 @@ export type ReadVialResponses = {
 };
 
 export type ReadVialResponse = ReadVialResponses[keyof ReadVialResponses];
+
+export type DisposeOfAVialData = {
+    body?: never;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}/dispose';
+};
+
+export type DisposeOfAVialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type DisposeOfAVialError = DisposeOfAVialErrors[keyof DisposeOfAVialErrors];
+
+export type DisposeOfAVialResponses = {
+    /**
+     * OK
+     */
+    200: VialBody;
+};
+
+export type DisposeOfAVialResponse = DisposeOfAVialResponses[keyof DisposeOfAVialResponses];
+
+export type HoldAVialBackData = {
+    body: HeldBackInputBody;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}/held-back';
+};
+
+export type HoldAVialBackErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type HoldAVialBackError = HoldAVialBackErrors[keyof HoldAVialBackErrors];
+
+export type HoldAVialBackResponses = {
+    /**
+     * OK
+     */
+    200: VialBody;
+};
+
+export type HoldAVialBackResponse = HoldAVialBackResponses[keyof HoldAVialBackResponses];
 
 export type ReadVialLabelPhotoData = {
     body?: never;

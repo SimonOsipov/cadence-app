@@ -91,6 +91,7 @@ func (s *Service) Register(api huma.API) {
 
 	s.registerReads(api)
 	s.registerWrites(api)
+	s.registerLifecycle(api)
 }
 
 func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*LabelPhotoOutput, error) {

@@ -31,6 +31,11 @@ var (
 	ErrAmountTooFine  = errors.New("an amount is measured to the microgram, not finer")
 	ErrAmountOffRange = errors.New("an amount lies between nothing and a hundred grams")
 	ErrKeyNotTheirs   = errors.New("the label photo key is not one this API minted for you")
+
+	// The two the lifecycle answers, and they are conflicts rather than bad forms: the
+	// request is well made and the vial is in a state that refuses it.
+	ErrAlreadyDisposed  = errors.New("this vial was already thrown away")
+	ErrDisposedTooEarly = errors.New("a vial cannot be thrown away before the day it was opened")
 )
 
 type NewVialInput struct {
@@ -71,6 +76,164 @@ type LabelUploadOutput struct {
 		Key       string `json:"key"`
 		ExpiresAt string `json:"expires_at" format:"date-time"`
 	}
+}
+
+type HeldBackInput struct {
+	VialID string `path:"vialId" format:"uuid"`
+	Body   struct {
+		HeldBack bool `json:"held_back" doc:"True puts the vial aside, false takes it back. Sending the value it already carries is not an error and does not move the day it was set aside on."`
+	}
+}
+
+type VialCardOutput struct {
+	Body VialBody
+}
+
+type DisposeInput struct {
+	VialID string `path:"vialId" format:"uuid"`
+}
+
+func (s *Service) registerLifecycle(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "hold-a-vial-back",
+		Method:      http.MethodPut,
+		Path:        "/v1/me/vials/{vialId}/held-back",
+		Summary:     "Put a vial aside, or take it back",
+		Description: "A vial the patient has set aside takes part in nothing the server " +
+			"decides for them: it is not opened by a dose, not counted as supply, and " +
+			"does not suppress the reorder hint as a spare. Idempotent — sending the " +
+			"value it already carries answers the same card.",
+		Tags: []string{"inventory"},
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusConflict,
+			http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable,
+		},
+	}, s.holdBack)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "dispose-of-a-vial",
+		Method:      http.MethodPost,
+		Path:        "/v1/me/vials/{vialId}/dispose",
+		Summary:     "Throw a vial away",
+		Description: "Marks the day it was thrown away and clears «set aside» in the same " +
+			"write, because the two are opposite ends of one lifecycle and a vial that " +
+			"could not be discarded while set aside would be a dead end. The row stays: " +
+			"the doses drawn from it are history, and a delete would take them with it.",
+		Tags: []string{"inventory"},
+		Errors: []int{
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusConflict,
+			http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable,
+		},
+	}, s.dispose)
+}
+
+func (s *Service) holdBack(ctx context.Context, in *HeldBackInput) (*VialCardOutput, error) {
+	return s.changeVial(ctx, in.VialID, func(ctx context.Context, tx pgx.Tx, vial, day string) error {
+		// Written by value and not by toggle: PUT says what the vial should be, and the
+		// day is only set where it was not set before, so repeating the request does not
+		// move the day the patient put it aside on.
+		_, err := tx.Exec(ctx, `
+			UPDATE app.vials
+			SET held_back_at = CASE WHEN $2 THEN coalesce(held_back_at, $3::date) END
+			WHERE id = $1
+		`, vial, in.Body.HeldBack, day)
+
+		return err
+	})
+}
+
+func (s *Service) dispose(ctx context.Context, in *DisposeInput) (*VialCardOutput, error) {
+	return s.changeVial(ctx, in.VialID, func(ctx context.Context, tx pgx.Tx, vial, day string) error {
+		// «Set aside» is cleared by the same statement: 000021 forbids the two together,
+		// so leaving it would make a vial the patient shelved impossible to throw away —
+		// the dead end that migration's own comment names.
+		tag, err := tx.Exec(ctx, `
+			UPDATE app.vials
+			SET disposed_at = $2::date, held_back_at = NULL
+			WHERE id = $1 AND disposed_at IS NULL
+		`, vial, day)
+		if err != nil {
+			return err
+		}
+		// Zero rows is «no vial of mine» and «already thrown away» at once, and the two
+		// are a 404 and a 409 — so the row is read rather than the count guessed at.
+		if tag.RowsAffected() == 0 {
+			return ErrAlreadyDisposed
+		}
+
+		return nil
+	})
+}
+
+// changeVial runs one write against the caller's own vial and answers the card it became.
+//
+// The refusal of a vial that is not there is the write's own: the UPDATE matches nothing under
+// the caller's policies, and the read that follows finds nothing either — which is where the
+// 404 comes from, without the statement having to distinguish the two.
+func (s *Service) changeVial(
+	ctx context.Context, asked string,
+	write func(ctx context.Context, tx pgx.Tx, vial, day string) error,
+) (*VialCardOutput, error) {
+	caller, err := s.patientCalling(ctx)
+	if err != nil {
+		return nil, err
+	}
+	vial, ok := database.CanonicalUUID(asked)
+	if !ok {
+		return nil, huma.Error404NotFound("no vial is readable here")
+	}
+
+	out := &VialCardOutput{}
+	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
+		shelf, err := s.shelfOf(ctx, tx, civil.UserID(caller.Subject))
+		if err != nil {
+			return err
+		}
+		if !holds(shelf, vial) {
+			return ErrNoVial
+		}
+		if err := write(ctx, tx, vial, shelf.today.String()); err != nil {
+			return classifyWrite(err)
+		}
+
+		// Read back through the shelf that answers the card, so the client redraws what
+		// the row became rather than what the request asked for.
+		after, err := s.shelfOf(ctx, tx, civil.UserID(caller.Subject))
+		if err != nil {
+			return err
+		}
+		for _, held := range after.cabinet.vials {
+			if string(held.ID) == vial {
+				out.Body = after.render(held)
+
+				return nil
+			}
+		}
+
+		return fmt.Errorf("the vial %s was written and not read back", vial)
+	}); err != nil {
+		return nil, answerWrite(err)
+	}
+
+	return out, nil
+}
+
+func holds(shelf shelf, vial string) bool {
+	for _, held := range shelf.cabinet.vials {
+		if string(held.ID) == vial {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Service) registerWrites(api huma.API) {
@@ -221,6 +384,8 @@ func classifyWrite(err error) error {
 		return ErrNoSuchCompound
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == keyIsUnderItsOwnPrefix:
 		return ErrKeyNotTheirs
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == disposedAfterOpening:
+		return ErrDisposedTooEarly
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == amountIsNoFinerThanTheAtom:
 		return ErrAmountTooFine
 	case pgErr.Code == checkViolation &&
@@ -240,10 +405,17 @@ const (
 	amountIsNoFinerThanTheAtom = "vials_total_amount_scale_check"
 	amountIsMoreThanNothing    = "vials_total_amount_check"
 	amountIsUnderItsCeiling    = "vials_total_amount_magnitude_check"
+	disposedAfterOpening       = "vials_disposed_after_opening"
 )
 
 func answerWrite(err error) error {
 	switch {
+	case errors.Is(err, ErrNoVial):
+		return huma.Error404NotFound("no vial is readable here")
+	case errors.Is(err, ErrAlreadyDisposed), errors.Is(err, ErrDisposedTooEarly):
+		// A conflict and not a bad form: the request is well made and the vial is in a
+		// state that refuses it, which a client resolves by reading the card again.
+		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, ErrNoSuchCompound), errors.Is(err, ErrKeyNotTheirs),
 		errors.Is(err, ErrAmountTooFine), errors.Is(err, ErrAmountOffRange):
 		// The schema's refusal read back as the field the caller filled in.
