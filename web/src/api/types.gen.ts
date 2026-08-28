@@ -453,6 +453,9 @@ export type TodayBody = {
     next_dose_compound?: CompoundBody;
     next_titration?: StepBody;
     part_of_day: 'night' | 'morning' | 'afternoon' | 'evening';
+    /**
+     * Absent for the same three reasons as vial_doses_left, and when the supply is above the threshold or a sealed spare is standing by.
+     */
     reorder?: ReorderBody;
     /**
      * Computed from what was logged, not frozen.
@@ -467,7 +470,7 @@ export type TodayBody = {
      */
     targets: MacrosBody | null;
     /**
-     * Of the open vial. Absent when the patient holds none of that drug.
+     * Of the open vial. Absent when the patient holds none of that drug, when no phase covers the day, and when two course positions name the drug — the rate would then be one position's while the vials are the drug's.
      */
     vial_doses_left?: number;
     week_protocol: Array<RowBody>;

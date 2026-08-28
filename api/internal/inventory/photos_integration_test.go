@@ -215,6 +215,39 @@ func TestAnUnknownVialIsTheSameRefusalAsSomebodyElses(t *testing.T) {
 // The same /v1/me refusals every neighbouring surface makes. The doctor is
 // refused although the policies would hand them the row: admitting them now
 // would publish a surface nothing has asked for.
+// The identifier reaches this endpoint in whatever spelling the transport admits, and it must
+// answer the same one the card does.
+//
+// huma's uuid format takes four spellings; pgx's parser canonicalises two of them, Postgres
+// itself parses a third and refuses the fourth. Handing the raw parameter to the query had
+// this endpoint sign a link for a braced identifier the card answered 404 for, and raise a
+// 22P02 — a 500 — for the urn form. Both are canonicalised now, so the pair agrees and the
+// unparseable spellings are «no photograph readable here» rather than a server error.
+func TestTheLabelLinkAnswersTheSameSpellingsTheCardDoes(t *testing.T) {
+	c := newClinic(t)
+	mux, signer, as := withLabelPhotos(t, c)
+	attachLabel(t, c, signer, patientA, c.vialA, []byte("a photograph"))
+	as(patientA, "patient")
+
+	for _, spelling := range []struct {
+		name   string
+		id     string
+		wanted int
+	}{
+		{"as it was written", c.vialA, http.StatusOK},
+		{"in capitals", strings.ToUpper(c.vialA), http.StatusOK},
+		{"without its hyphens", strings.ReplaceAll(c.vialA, "-", ""), http.StatusOK},
+		{"in braces", "{" + c.vialA + "}", http.StatusNotFound},
+		{"as a urn", "urn:uuid:" + c.vialA, http.StatusNotFound},
+	} {
+		t.Run(spelling.name, func(t *testing.T) {
+			if status, body := callLabel(t, mux, spelling.id); status != spelling.wanted {
+				t.Errorf("answered %d, want %d: %s", status, spelling.wanted, body)
+			}
+		})
+	}
+}
+
 func TestOnlyAPatientReachesTheLabel(t *testing.T) {
 	c := newClinic(t)
 	mux, signer, as := withLabelPhotos(t, c)

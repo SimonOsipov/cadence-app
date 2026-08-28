@@ -34,8 +34,9 @@ type CabinetBody struct {
 	// Held back and expired stay on the shelf: the patient owns them and the screen groups
 	// by the status they carry.
 	Vials []VialBody `json:"vials" nullable:"false"`
-	// One per prescribed compound, not one per course item: two items of a drug produce one
-	// hint about one cabinet.
+	// One per prescribed compound, and none at all where two course positions name one
+	// drug: the weekly rate is a position's while the supply is the whole shelf's, so a
+	// hint folded from two of them divides the cabinet by half the prescription.
 	Reorder []VialReorderBody `json:"reorder" nullable:"false"`
 }
 
@@ -172,10 +173,10 @@ func (s *Service) readVial(ctx context.Context, in *VialInput) (*VialOutput, err
 		if err != nil {
 			return err
 		}
-		// Canonicalised and not merely lower-cased: huma's uuid format admits braces and
-		// the 32-digit form as well, and the sibling endpoint hands the raw parameter to a
-		// uuid column that parses all of them — so a comparison against id::text answers
-		// 404 for a vial the label-photo link finds.
+		// The one form Postgres renders, and both endpoints of this pair compare in it:
+		// huma's format admits braces and urn:uuid: on top of the two pgx parses, so
+		// without this the card and the label-photo link disagreed about the same string.
+		// What cannot be canonicalised names nothing readable.
 		asked, ok := database.CanonicalUUID(in.VialID)
 		if !ok {
 			return ErrNoVial

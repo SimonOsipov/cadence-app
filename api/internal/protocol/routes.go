@@ -504,8 +504,8 @@ type TodayBody struct {
 	WeekProtocol    []RowBody `json:"week_protocol" nullable:"false"`
 	DoseLoggedToday bool      `json:"dose_logged_today"`
 
-	VialDosesLeft *int         `json:"vial_doses_left,omitempty" doc:"Of the open vial. Absent when the patient holds none of that drug."`
-	Reorder       *ReorderBody `json:"reorder,omitempty"`
+	VialDosesLeft *int         `json:"vial_doses_left,omitempty" doc:"Of the open vial. Absent when the patient holds none of that drug, when no phase covers the day, and when two course positions name the drug — the rate would then be one position's while the vials are the drug's."`
+	Reorder       *ReorderBody `json:"reorder,omitempty" doc:"Absent for the same three reasons as vial_doses_left, and when the supply is above the threshold or a sealed spare is standing by."`
 	NextTitration *StepBody    `json:"next_titration,omitempty"`
 
 	MealCount      *int        `json:"meal_count" doc:"Null until the nutrition context is built."`

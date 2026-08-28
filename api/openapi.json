@@ -1134,7 +1134,8 @@
             "type": "string"
           },
           "reorder": {
-            "$ref": "#/components/schemas/ReorderBody"
+            "$ref": "#/components/schemas/ReorderBody",
+            "description": "Absent for the same three reasons as vial_doses_left, and when the supply is above the threshold or a sealed spare is standing by."
           },
           "suggested_site": {
             "description": "Computed from what was logged, not frozen.",
@@ -1172,7 +1173,7 @@
             ]
           },
           "vial_doses_left": {
-            "description": "Of the open vial. Absent when the patient holds none of that drug.",
+            "description": "Of the open vial. Absent when the patient holds none of that drug, when no phase covers the day, and when two course positions name the drug — the rate would then be one position's while the vials are the drug's.",
             "format": "int64",
             "type": "integer"
           },

@@ -295,13 +295,17 @@ func TestTheNeighboursAreAskedAboutTheCaller(t *testing.T) {
 // item order already agrees with the clock cannot tell the two rules apart.
 func TestTheNextDoseIsTheEarliestOpenOneByTheClock(t *testing.T) {
 	compound := CompoundID(theCompound.ID)
+	// Two drugs and not one twice: two positions naming one compound is the shape the
+	// cabinet refuses to count, so a fixture built that way would run this whole case
+	// inside the silent branch and stop measuring the count it is about.
+	other := CompoundID("other-compound")
 	morning := ProtocolItem{
 		ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
 		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
 		Times: []civil.Slot{{Hour: 8}}, Loggable: true,
 	}
 	evening := ProtocolItem{
-		ID: "item-evening", Kind: KindInjection, CompoundID: &compound,
+		ID: "item-evening", Kind: KindInjection, CompoundID: &other,
 		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
 		Times: []civil.Slot{{Hour: 20}}, Loggable: true,
 	}
@@ -358,6 +362,7 @@ func TestTheNextDoseIsTheEarliestOpenOneByTheClock(t *testing.T) {
 func TestTheCardMovesToTheEveningOnceTheMorningIsLogged(t *testing.T) {
 	compound := CompoundID(theCompound.ID)
 	dose := Dose{Value: 0.25, Unit: MG}
+	other := CompoundID("other-compound")
 	plan := Plan{
 		Protocol: Protocol{
 			StartDate: civil.NewDate(2026, time.May, 4), Weeks: 12, Status: StatusActive,
@@ -369,7 +374,10 @@ func TestTheCardMovesToTheEveningOnceTheMorningIsLogged(t *testing.T) {
 				Times: []civil.Slot{{Hour: 8}}, Loggable: true,
 			},
 			{
-				ID: "item-evening", Kind: KindInjection, CompoundID: &compound,
+				// A second drug rather than the same one twice: one compound on two
+				// positions is what the cabinet refuses to count, and this case is
+				// about the card moving on, not about that silence.
+				ID: "item-evening", Kind: KindInjection, CompoundID: &other,
 				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
 				Times: []civil.Slot{{Hour: 20}}, Loggable: true,
 			},

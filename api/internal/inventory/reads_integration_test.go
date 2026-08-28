@@ -263,17 +263,39 @@ func TestWhatTheClinicWroteOnTheVialComesBackAsItself(t *testing.T) {
 	}
 }
 
-// One identifier, one answer. id::text is lower-case in Postgres and the sibling endpoint
-// hands the parameter to a uuid column, which parses either case — so a walk comparing raw
-// strings 404s a vial the caller owns and the label-photo link finds.
-func TestAnIdentifierInCapitalsNamesTheSameVial(t *testing.T) {
+// One identifier, one answer, whichever of the spellings the transport admits it arrives in.
+//
+// huma's uuid format takes four: the canonical one, upper case, thirty-two bare hex digits,
+// and braces — and the parser behind the comparison takes only two of those, while Postgres
+// takes a third. So the card and the label-photo link disagreed about the same string until
+// both compared in the one form Postgres renders. Measured spelling by spelling: capitals and
+// the bare digits name the vial, and the two neither parser canonicalises name nothing on
+// either endpoint rather than one each — the sibling half in photos_integration_test.go.
+func TestOneIdentifierGetsOneAnswerFromBothEndpoints(t *testing.T) {
 	c := newClinic(t)
 	mux, calling := aCabinet(t, c)
 	calling(patientA, "patient")
 
-	status, body := askCabinet(t, mux, "/v1/me/vials/"+strings.ToUpper(c.vialA))
-	if status != http.StatusOK {
-		t.Fatalf("the card answered %d for the caller's own vial: %s", status, body)
+	for _, spelling := range []struct {
+		name   string
+		id     string
+		wanted int
+	}{
+		{"as it was written", c.vialA, http.StatusOK},
+		{"in capitals", strings.ToUpper(c.vialA), http.StatusOK},
+		{"without its hyphens", strings.ReplaceAll(c.vialA, "-", ""), http.StatusOK},
+		{"in braces", "{" + c.vialA + "}", http.StatusNotFound},
+		{"as a urn", "urn:uuid:" + c.vialA, http.StatusNotFound},
+	} {
+		t.Run(spelling.name, func(t *testing.T) {
+			status, body := askCabinet(t, mux, "/v1/me/vials/"+spelling.id)
+			if status != spelling.wanted {
+				t.Errorf("the card answered %d, want %d: %s", status, spelling.wanted, body)
+			}
+			// The label endpoint's half of the pair is measured where a signer
+			// exists — this harness has none, and its assembly guard answers 500
+			// before any identifier is parsed.
+		})
 	}
 }
 

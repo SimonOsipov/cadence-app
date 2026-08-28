@@ -104,9 +104,18 @@ func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*Lab
 		return nil, err
 	}
 
+	// Canonicalised here as well as in readVial, so one identifier reaches one answer:
+	// huma's uuid format admits braces and urn:uuid:, pgx's parser takes neither, and
+	// Postgres takes the braces — which had the card answering 404 for a vial this
+	// endpoint signs a link to, and a 500 for the urn form both refuse.
+	asked, ok := database.CanonicalUUID(in.VialID)
+	if !ok {
+		return nil, huma.Error404NotFound("no photograph is readable here")
+	}
+
 	var key string
 	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
-		found, err := labelPhotoKeyOf(ctx, tx, in.VialID)
+		found, err := labelPhotoKeyOf(ctx, tx, asked)
 		if err != nil {
 			return err
 		}
