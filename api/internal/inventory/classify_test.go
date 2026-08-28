@@ -97,9 +97,6 @@ func TestTheAdvertisedLabelTypesAreTheOnesTheStoreCanKeep(t *testing.T) {
 	advertised := strings.Split(field.Tag.Get("enum"), ",")
 	kept := storage.ImageTypes()
 
-	if len(advertised) != len(kept) {
-		t.Fatalf("the tag advertises %v, the store keeps %v", advertised, kept)
-	}
 	for _, contentType := range kept {
 		if !slices.Contains(advertised, contentType) {
 			t.Errorf("the store keeps %s and the tag does not advertise it", contentType)
@@ -112,6 +109,11 @@ func TestTheAdvertisedLabelTypesAreTheOnesTheStoreCanKeep(t *testing.T) {
 		if !slices.Contains(kept, contentType) {
 			t.Errorf("the tag advertises %s and the store cannot keep it", contentType)
 		}
+	}
+	// After the two, and not before them: a count checked first preempts both messages
+	// and reports a cardinality where the name of the offending type is the useful half.
+	if len(advertised) != len(kept) {
+		t.Errorf("the tag advertises %v, the store keeps %v", advertised, kept)
 	}
 }
 
@@ -137,8 +139,10 @@ func TestTheAdvertisedLengthsAreTheOnesTheSchemaHolds(t *testing.T) {
 		{"LocationRU", "location_ru"},
 	} {
 		t.Run(bound.column, func(t *testing.T) {
+			// Anchored on the length call alone: it names the column, so a leading
+			// term could only move where the match starts, never what it captures.
 			found := regexp.MustCompile(
-				bound.column + `[\s\S]*?length\(` + bound.column + `\) BETWEEN (\d+) AND (\d+)`,
+				`length\(` + bound.column + `\) BETWEEN (\d+) AND (\d+)`,
 			).FindSubmatch(source)
 			if found == nil {
 				t.Fatalf("000015 does not bound %s the way this test reads it", bound.column)

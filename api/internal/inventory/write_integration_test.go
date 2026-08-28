@@ -200,6 +200,13 @@ func TestAVialTheSchemaWouldRefuseIsRefusedHere(t *testing.T) {
 			func(v map[string]any) { v["total_amount"] = map[string]any{"value": 100001, "unit": "мг"} },
 		},
 		{
+			// The door itself, which the numbers alone do not measure: the tags and the
+			// CHECKs agreeing says nothing about huma still enforcing them, and a door
+			// that stopped would send this through as an unmapped 23514, i.e. a 500.
+			"a lot number past the length the box has",
+			func(v map[string]any) { v["lot"] = strings.Repeat("7", 51) },
+		},
+		{
 			"a drug the directory does not have",
 			func(v map[string]any) { v["compound_id"] = "8a1f3b7c-0000-4000-8000-00000000dead" },
 		},
