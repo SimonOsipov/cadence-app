@@ -1136,22 +1136,23 @@ func TestTheOpeningIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) {
 		t.Fatalf("emptying the shelf: %v", err)
 	}
 
-	// The premise, arranged rather than inherited: this file's seed is shared by some
-	// thirty tests, and the day it opens B's vial or moves its expiry this witness goes
-	// vacuous — nil for the wrong reason, with the mutation it exists for surviving.
+	// The premise, written as the mutation would see it: the second layer's own predicate
+	// with the patient dropped. Counting B's shelf instead would still read one on the day
+	// a third owner joins a seed some thirty tests share — and then the mutated query
+	// reads two, opens nothing, and survives a witness that passed for the wrong reason.
 	var candidates int
 	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT count(*) FROM app.vials
-			WHERE patient_id = $1 AND compound_id = $2 AND opened_at IS NULL
+			WHERE compound_id = $1 AND opened_at IS NULL
 			  AND disposed_at IS NULL AND held_back_at IS NULL
 			  AND expires_on >= DATE '2026-05-10'
-		`, patientB, c.compound).Scan(&candidates)
+		`, c.compound).Scan(&candidates)
 	}); err != nil {
-		t.Fatalf("counting the other patient's shelf: %v", err)
+		t.Fatalf("counting what the opening could reach: %v", err)
 	}
 	if candidates != 1 {
-		t.Fatalf("the other patient holds %d vials the second layer would take, want 1", candidates)
+		t.Fatalf("%d vials are open to a resolution that forgot whose they are, want 1", candidates)
 	}
 
 	var resolved *string
@@ -1280,10 +1281,10 @@ func TestTwoRequestsOpeningTheLastVialOpenItOnce(t *testing.T) {
 //
 // pg_blocking_pids and not wait_event_type: the two seams connect as different login roles,
 // and Postgres blanks wait_event_type for another user's session — measured, the first version
-// watched for a value it could never see. pg_locks was the second, scoped to app.vials, and it
-// never fires either: a blocked UPDATE waits on the holder's transactionid, whose row names no
-// relation. This asks the question directly and stays inside this database, so a waiter
-// elsewhere in the cluster cannot satisfy the premise and let the two requests run in
+// watched for a value it could never see. pg_locks fires, but only cluster-wide: it cannot be
+// scoped to app.vials, because the blocked UPDATE waits on the holder's transactionid and that
+// row names no relation. This asks the question directly and stays inside this test's own
+// database, so a waiter elsewhere cannot satisfy the premise and let the two requests run in
 // sequence — which would pass every assertion without the guard ever being asked. It answers
 // rather than failing, because the caller has a transaction to release before it can fail
 // safely.

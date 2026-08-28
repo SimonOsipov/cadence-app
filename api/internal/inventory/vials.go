@@ -37,13 +37,10 @@ func OpenVialFor(
 	if err != nil {
 		return nil, err
 	}
-	// The three answers of the first layer are not two: one open vial is the answer, more
-	// than one is «ambiguous, and the patient chooses», and only none reaches the second
-	// layer. Collapsing the last two — which a refactor did, and a reviewer caught —
-	// opens a sealed spare for a patient who already has two open vials, in exactly the
-	// case the design refuses to guess in.
-	if sole := soleOf(open); sole != nil || len(open) > 1 {
-		return sole, nil
+	// More than one open vial is an answer — «ambiguous, and the patient chooses» — and
+	// not an absence, so only none reaches the second layer.
+	if len(open) > 0 {
+		return soleOf(open), nil
 	}
 
 	opened, err := openTheLastSealed(ctx, tx, patient, compound, today)
