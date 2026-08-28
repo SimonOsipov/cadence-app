@@ -2,7 +2,10 @@ package inventory
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -48,8 +51,10 @@ func TestEachConstraintTheFormCanBreakIsNamed(t *testing.T) {
 		err  error
 	}{
 		{
+			// A real constraint this switch deliberately does not map: huma's enum is
+			// the door for the unit, so reaching it means the door was bypassed.
 			"a constraint nothing here maps",
-			&pgconn.PgError{Code: "23514", ConstraintName: "vials_expires_on_check"},
+			&pgconn.PgError{Code: "23514", ConstraintName: "vials_amount_unit_check"},
 		},
 		{
 			// The same name under another code: a scale check cannot be a not-null
@@ -99,5 +104,56 @@ func TestTheAdvertisedLabelTypesAreTheOnesTheStoreCanKeep(t *testing.T) {
 		if !slices.Contains(advertised, contentType) {
 			t.Errorf("the store keeps %s and the tag does not advertise it", contentType)
 		}
+	}
+	// And the other direction by name rather than by count, so a divergence says which
+	// end it is on: this is the half that shipped, and «the store keeps heic» would have
+	// been a confusing way to report an advertised webp.
+	for _, contentType := range advertised {
+		if !slices.Contains(kept, contentType) {
+			t.Errorf("the tag advertises %s and the store cannot keep it", contentType)
+		}
+	}
+}
+
+// The three string bounds are written twice — in the tags huma refuses at the door and in the
+// CHECKs 000015 carries — and nothing reconciled them.
+//
+// Apart they fail the way the content type did: a tag wider than its CHECK sends the patient a
+// 23514 this package does not map, which answerWrite turns into a 500 about their own form.
+// Read out of the migration rather than repeated here, as storage's own key test reads its
+// prefix rule.
+func TestTheAdvertisedLengthsAreTheOnesTheSchemaHolds(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000015_inventory_tables.up.sql"))
+	if err != nil {
+		t.Fatalf("reading the migration: %v", err)
+	}
+
+	for _, bound := range []struct {
+		field  string
+		column string
+	}{
+		{"ConcentrationLabel", "concentration_label"},
+		{"Lot", "lot"},
+		{"LocationRU", "location_ru"},
+	} {
+		t.Run(bound.column, func(t *testing.T) {
+			found := regexp.MustCompile(
+				bound.column + `[\s\S]*?length\(` + bound.column + `\) BETWEEN (\d+) AND (\d+)`,
+			).FindSubmatch(source)
+			if found == nil {
+				t.Fatalf("000015 does not bound %s the way this test reads it", bound.column)
+			}
+
+			field, ok := reflect.TypeOf(NewVialBody{}).FieldByName(bound.field)
+			if !ok {
+				t.Fatalf("NewVialBody has no %s", bound.field)
+			}
+			if got, want := field.Tag.Get("minLength"), string(found[1]); got != want {
+				t.Errorf("the tag admits from %q, the schema from %q", got, want)
+			}
+			if got, want := field.Tag.Get("maxLength"), string(found[2]); got != want {
+				t.Errorf("the tag admits up to %q, the schema up to %q", got, want)
+			}
+		})
 	}
 }

@@ -264,8 +264,10 @@ func TestTheLabelKeyIsMintedForTheCallerAndAccepted(t *testing.T) {
 		t.Errorf("the link expires at %q, want %q", minted.ExpiresAt, want)
 	}
 	// And it writes: a URL that is merely non-empty is what a signature under the wrong
-	// bucket or the wrong clock also answers, and the object under that key would then
-	// never exist while the vial's row points at it.
+	// bucket, for a key the store has no room for, or with the wrong credentials also
+	// answers — and the object would then never exist while the vial's row points at it.
+	// Not the clock: the SDK stamps the request from the real one, so an injected clock
+	// moves expires_at and nothing else, which storage's own suite measured.
 	picture := []byte("a photograph of a label")
 	if code := putObject(t, minted.URL, picture); code != http.StatusOK {
 		t.Fatalf("the signed upload answered %d", code)
