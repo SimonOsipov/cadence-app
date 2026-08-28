@@ -42,11 +42,8 @@ func OpenVialFor(
 	// layer. Collapsing the last two — which a refactor did, and a reviewer caught —
 	// opens a sealed spare for a patient who already has two open vials, in exactly the
 	// case the design refuses to guess in.
-	if len(open) == 1 {
-		return &open[0], nil
-	}
-	if len(open) > 1 {
-		return nil, nil
+	if sole := soleOf(open); sole != nil || len(open) > 1 {
+		return sole, nil
 	}
 
 	opened, err := openTheLastSealed(ctx, tx, patient, compound, today)
@@ -62,11 +59,21 @@ func OpenVialFor(
 	// the first place this repeats the answer already given, at the cost of one indexed
 	// read on a path that has already made two.
 	again, err := openOnes(ctx, tx, patient, compound)
-	if err != nil || len(again) != 1 {
+	if err != nil {
 		return nil, err
 	}
 
-	return &again[0], nil
+	return soleOf(again), nil
+}
+
+// soleOf is «exactly one, or nothing»: the rule both readings of the first layer answer by,
+// written once so the second cannot drift into taking the first of two.
+func soleOf(open []string) *string {
+	if len(open) != 1 {
+		return nil
+	}
+
+	return &open[0]
 }
 
 // openOnes is the patient's open vials of this compound, two at most: the question every
