@@ -29,8 +29,12 @@ type Vial struct {
 	TotalAmount Amount
 	AmountUnit  protocol.DoseUnit
 	// Null until the vial is opened; that absence is the whole of «sealed».
-	OpenedAt       *civil.Date
-	ExpiresOn      civil.Date
+	OpenedAt  *civil.Date
+	ExpiresOn civil.Date
+	// The day the patient put it aside. Held back is not a status but a fact with a
+	// date: the vial is theirs and undisposed, and it takes no part in any choice the
+	// server makes for them.
+	HeldBackAt     *civil.Date
 	Lot            *string
 	LocationRU     *string
 	DisposedAt     *civil.Date
@@ -174,9 +178,14 @@ func ReorderHintFor(
 
 	// One compound at a time: without the filter, an unopened vial of anything else
 	// counts as the sealed spare that suppresses the hint.
+	//
+	// Held back is in the same filter and closes both halves of the rule with it: a
+	// shelved vial is neither a spare that makes reordering unnecessary nor supply whose
+	// doses count toward the weeks left.
 	var live []Vial
 	for _, vial := range cabinet.vials {
-		if vial.DisposedAt == nil && vial.CompoundID == compound && !vial.ExpiresOn.Before(today) {
+		if vial.DisposedAt == nil && vial.HeldBackAt == nil &&
+			vial.CompoundID == compound && !vial.ExpiresOn.Before(today) {
 			live = append(live, vial)
 		}
 	}

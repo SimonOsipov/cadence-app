@@ -487,3 +487,39 @@ func TestAMicrogramDoseDividesTheVialItIsPrescribedFrom(t *testing.T) {
 		t.Errorf("4000 мкг at 250 мкг apiece is %d injections, want 16", *left)
 	}
 }
+
+// A vial the patient set aside takes no part in the hint, on either half of the rule.
+//
+// The two halves fail differently, so both are measured: as a sealed spare it would suppress
+// the hint outright — the patient is told nothing while the only substance they have is the
+// one they deliberately shelved — and as an open vial its contents would be summed into the
+// weeks left, so the hint arrives late by however much it holds.
+func TestAHeldBackVialNeitherSuppressesTheHintNorFeedsIt(t *testing.T) {
+	open := vial(4, day(2026, time.May, 1), farOff)
+	shelved := vial(1, nil, farOff)
+	shelved.HeldBackAt = day(2026, time.May, 3)
+
+	suppressing := ReorderHintFor(
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, shelved}), drawn(open, 1), &step, today,
+	)
+	if suppressing == nil {
+		t.Fatal("a held-back spare suppressed the hint, and it is not supply the patient can use")
+	}
+	// The same three weeks the case without a spare answers: the shelved vial's own
+	// doses must not have been added to them.
+	if suppressing.WeeksLeft != 3 {
+		t.Errorf("the hint says %d weeks, want 3 — the held-back vial was counted", suppressing.WeeksLeft)
+	}
+
+	openShelved := vial(4, day(2026, time.May, 1), farOff)
+	openShelved.HeldBackAt = day(2026, time.May, 3)
+	fed := ReorderHintFor(
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, openShelved}), drawn(open, 1), &step, today,
+	)
+	if fed == nil {
+		t.Fatal("the hint disappeared with a held-back vial in the cabinet")
+	}
+	if fed.WeeksLeft != 3 {
+		t.Errorf("an open held-back vial added %d weeks to the hint", fed.WeeksLeft-3)
+	}
+}

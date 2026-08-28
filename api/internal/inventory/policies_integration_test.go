@@ -1097,6 +1097,7 @@ func TestTheCabinetReadIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) 
 					var err error
 					got, err = inventory.OpenVialFor(
 						ctx, tx, civil.UserID(who.patient), c.compound,
+						civil.NewDate(2026, time.May, 31),
 					)
 
 					return err
@@ -1108,6 +1109,119 @@ func TestTheCabinetReadIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) 
 				t.Errorf("resolved %v, want %s", got, who.want)
 			}
 		})
+	}
+}
+
+// Opening a vial is the patient's own act, and the service seam cannot perform it.
+//
+// The second layer writes, and the write is the one grant the service role was never given:
+// 000021 hands cadence_patient UPDATE on app.vials and hands the service role none. Measured
+// rather than reasoned, because the two ways this could fail are not alike — a missing policy
+// would filter the UPDATE to no rows and report success, leaving the resolution to answer
+// «nothing to draw from» and nobody the wiser, while a missing grant refuses out loud. It is
+// the second: 42501, permission denied, and the vial stays sealed. The step's own note
+// predicted the silent one, and the loud one is what the seam actually holds.
+func TestTheSecondLayerCannotOpenAVialFromTheServiceSeam(t *testing.T) {
+	c := newClinic(t)
+
+	var resolved *string
+	err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			resolved, err = inventory.OpenVialFor(
+				ctx, tx, civil.UserID(patientA), c.compound, civil.NewDate(2026, time.May, 10),
+			)
+
+			return err
+		},
+	)
+
+	var refusal *pgconn.PgError
+	if !errors.As(err, &refusal) || refusal.Code != "42501" {
+		t.Errorf("the service seam answered %v, want a 42501 on app.vials", err)
+	}
+	if resolved != nil {
+		t.Errorf("the service seam named vial %s", *resolved)
+	}
+
+	// And the row is untouched, which the error alone does not say: a statement can fail
+	// after writing when the failure is a later constraint rather than the grant.
+	var opened string
+	if qerr := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx,
+				`SELECT coalesce(to_char(opened_at, 'YYYY-MM-DD'), '') FROM app.vials WHERE id = $1`,
+				c.vialA).Scan(&opened)
+		},
+	); qerr != nil {
+		t.Fatalf("reading the vial back: %v", qerr)
+	}
+	if opened != "" {
+		t.Errorf("the vial was opened on %q by a seam with no UPDATE grant", opened)
+	}
+}
+
+// The count on «Сегодня» is read off the vial the patient is drawing from, and a shelved one
+// standing in front of it does not answer instead.
+//
+// The order is the whole test: vialsOf sorts by opened_at, so the held-back vial is opened a
+// day earlier than the other and the loop reaches it first. With the fixture the other way
+// round the filter could be deleted and nothing would move.
+func TestAHeldBackVialDoesNotAnswerForTheOneBeingDrawnFrom(t *testing.T) {
+	c := newClinic(t)
+
+	shelved := c.vialA
+	var drawing string
+	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			UPDATE app.vials SET opened_at = DATE '2026-05-01', total_amount = 2.0 WHERE id = $1
+		`, shelved); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO app.vials (patient_id, compound_id, concentration_label,
+			                       total_amount, amount_unit, opened_at, expires_on)
+			VALUES ($1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-05-02', DATE '2026-12-31')
+			RETURNING id::text
+		`, patientA, c.compound).Scan(&drawing); err != nil {
+			return err
+		}
+		// Held back after the fact, which is the only way: 000021 keeps the column out
+		// of the patient's INSERT grant on purpose.
+		_, err := tx.Exec(ctx, `
+			UPDATE app.vials SET held_back_at = DATE '2026-05-03' WHERE id = $1
+		`, shelved)
+
+		return err
+	}); err != nil {
+		t.Fatalf("filling the cabinet: %v", err)
+	}
+
+	var left *int
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			var err error
+			dose := protocol.Dose{Value: 0.25, Unit: protocol.MG}
+			left, _, err = inventory.NewSupply().SupplyFor(
+				ctx, tx, civil.UserID(patientA), anInjectionOf(c.compound),
+				&dose, civil.NewDate(2026, time.May, 10),
+			)
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("reading the supply: %v", err)
+	}
+
+	// Four doses in the vial being drawn from, eight in the shelved one.
+	if left == nil {
+		t.Fatal("the cabinet answered nothing while an open vial stood in it")
+	}
+	if *left != 4 {
+		t.Errorf("the card counts %d injections, want 4 — the shelved vial answered", *left)
 	}
 }
 

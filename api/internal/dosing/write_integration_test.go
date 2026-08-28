@@ -5,6 +5,7 @@ package dosing_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -381,6 +382,11 @@ func daysOn(t *testing.T, c clinic, patient, day string) int {
 // The vial is resolved and not chosen, which is the recorded invariant: exactly one open,
 // undisposed vial of the item's compound is the answer, and with two the server leaves it
 // empty rather than guessing — inventory.OpenVialFor's doc says why.
+//
+// The rule is two-layered since step 3: at zero open vials the single available one is the
+// answer and is opened by the same write. A rule of «exactly one undisposed» would have been
+// strictly worse than one layer — a patient holding an open vial and a sealed spare has two
+// candidates, so the arithmetic would stop exactly when the reorder hint had done its job.
 func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 	for _, cabinet := range []struct {
 		name string
@@ -388,18 +394,38 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 		// patient's is — the second axis is what holds the read's patient predicate,
 		// and without it the seeded twin is sealed and can never be the answer.
 		open      int
+		spare     bool
+		heldBack  bool
 		otherOpen bool
 		named     bool
 	}{
-		{name: "no open vial at all"},
+		// Layer two: one sealed vial and nothing open, so it is opened and named.
+		{name: "no open vial and a single sealed one", named: true},
 		{name: "one open vial", open: 1, named: true},
+		// The case the second layer exists for: a spare must not turn one candidate
+		// into two, which a rule of «exactly one undisposed» would have done.
+		{name: "one open vial beside a sealed spare", open: 1, spare: true, named: true},
 		{name: "two open vials of the same compound", open: 2},
-		{name: "only the other patient's vial is open", otherOpen: true},
+		// And layer two is «exactly one» too: two sealed vials name nothing.
+		{name: "two sealed vials and nothing open", spare: true},
+		// Held back is not a candidate at either layer, and not a second candidate
+		// either: it takes no part in a choice the server makes.
+		{name: "the only sealed vial is held back", heldBack: true},
+		// And at the first layer too: a vial already open can be set aside, and it
+		// stops being the answer the moment it is.
+		{name: "the only open vial is held back", open: 1, heldBack: true},
+		{name: "one open vial beside a held-back one", open: 1, spare: true, heldBack: true, named: true},
+		{name: "only the other patient's vial is open", otherOpen: true, named: true},
 		{name: "one each, and theirs is not the answer", open: 1, otherOpen: true, named: true},
 	} {
 		t.Run(cabinet.name, func(t *testing.T) {
 			c, pool := logging(t)
 			openVials(t, c, patientA, cabinet.open)
+			if cabinet.spare {
+				sealASpareFor(t, c, patientA, cabinet.heldBack)
+			} else if cabinet.heldBack {
+				holdBack(t, c, patientA, c.vial[patientA])
+			}
 			if cabinet.otherOpen {
 				openVials(t, c, patientB, 1)
 			}
@@ -424,8 +450,118 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 			if (logged.VialID != nil) != cabinet.named {
 				t.Errorf("the reply names vial %v, want named=%v", logged.VialID, cabinet.named)
 			}
+			// The second layer writes, and what it writes is the patient's own day.
+			// The fixture is built so the two disagree: at theMoment it is already
+			// 10 May in Yekaterinburg, where these patients live, and still the 9th in
+			// Moscow — and the server's own clock is neither.
+			opened := openedOn(t, c, c.vial[patientA])
+			switch {
+			case cabinet.open == 0 && cabinet.named:
+				if opened != "2026-05-10" {
+					t.Errorf("the vial was opened on %q, want the patient's own day", opened)
+				}
+			case cabinet.open == 0:
+				if opened != "" {
+					t.Errorf("a vial nobody could name was opened on %q", opened)
+				}
+			}
 		})
 	}
+}
+
+// The write the second layer performs is the patient's own, and the row it may touch is
+// theirs alone.
+//
+// A patient whose only vial is held back resolves to nothing — and the vial standing next to
+// it in the cabinet, sealed, of the same compound, belonging to somebody else, must be
+// neither named nor opened. The predicate is the only thing between the two: this write runs
+// as cadence_patient, where vials_own_update is what refuses another patient's row, and a
+// resolution that dropped the patient from its WHERE would open a stranger's vial.
+func TestOpeningTheFirstVialCannotReachAnotherPatientsShelf(t *testing.T) {
+	c, pool := logging(t)
+	holdBack(t, c, patientA, c.vial[patientA])
+
+	logged, err := dosing.Log(t.Context(), pool, caller(patientA), theMoment,
+		draftFor(c, patientA, nil))
+	if err != nil {
+		t.Fatalf("logging: %v", err)
+	}
+
+	if stored := vialOn(t, c, logged.EventID); stored != "" {
+		t.Errorf("the event was drawn from %s, and every vial in reach was held back or theirs", stored)
+	}
+	if opened := openedOn(t, c, c.vial[patientB]); opened != "" {
+		t.Errorf("another patient's vial was opened on %q", opened)
+	}
+	if opened := openedOn(t, c, c.vial[patientA]); opened != "" {
+		t.Errorf("a held-back vial was opened on %q", opened)
+	}
+}
+
+// openedOn is the day a vial was opened, empty for one still sealed.
+func openedOn(t *testing.T, c clinic, vial string) string {
+	t.Helper()
+
+	var opened string
+	ask(t, c, `
+		SELECT coalesce(to_char(opened_at, 'YYYY-MM-DD'), '') FROM app.vials WHERE id = $1
+	`, []any{vial}, &opened)
+
+	return opened
+}
+
+// holdBack puts a vial aside, as the patient: held_back_at is in the patient's UPDATE grant
+// and deliberately not in the service role's.
+func holdBack(t *testing.T, c clinic, patient, vial string) {
+	t.Helper()
+
+	if err := database.WithCaller(
+		t.Context(), c.request, database.Caller{Subject: patient, Role: "patient"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			tag, err := tx.Exec(ctx, `
+				UPDATE app.vials SET held_back_at = DATE '2026-05-03' WHERE id = $1
+			`, vial)
+			if err == nil && tag.RowsAffected() != 1 {
+				return fmt.Errorf("holding back matched %d vials, want 1", tag.RowsAffected())
+			}
+
+			return err
+		},
+	); err != nil {
+		t.Fatalf("holding back a vial: %v", err)
+	}
+}
+
+// sealASpareFor adds a second vial of the same compound, sealed — the spare a reorder hint
+// tells the patient to buy, and the one a rule of «exactly one undisposed» would trip over.
+//
+// Inserted and then held back in two statements because that is the grant: 000021 gives the
+// patient held_back_at on UPDATE and deliberately not on INSERT, no form creating a row
+// already put aside. Naming the column in the INSERT is refused for the grant and not for
+// the value, so the first version of this helper failed on a NULL.
+func sealASpareFor(t *testing.T, c clinic, patient string, heldBack bool) string {
+	t.Helper()
+
+	var spare string
+	if err := database.WithCaller(
+		t.Context(), c.request, database.Caller{Subject: patient, Role: "patient"},
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				INSERT INTO app.vials
+				    (patient_id, compound_id, concentration_label, total_amount, amount_unit,
+				     expires_on)
+				VALUES ($1, $2, '2,4 мг/0,75 мл', 1.0, 'мг', DATE '2026-12-31')
+				RETURNING id::text
+			`, patient, compoundID).Scan(&spare)
+		},
+	); err != nil {
+		t.Fatalf("sealing a spare: %v", err)
+	}
+	if heldBack {
+		holdBack(t, c, patient, spare)
+	}
+
+	return spare
 }
 
 // A disposed vial is still on the shelf as history, and drawing from it would put a dose into

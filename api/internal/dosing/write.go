@@ -215,7 +215,10 @@ func record(
 			return Logged{}, fmt.Errorf("%s: %w", *vial, ErrNoSuchVial)
 		}
 	case vial == nil && compound != nil:
-		resolved, err := inventory.OpenVialFor(ctx, tx, patient, string(*compound))
+		// slot.Date and not now(): Resolve builds the occurrence from a window of
+		// today..today in the patient's own zone, so this is the day they are living
+		// in — which is the day a vial opened by this write is opened on.
+		resolved, err := inventory.OpenVialFor(ctx, tx, patient, string(*compound), slot.Date)
 		if err != nil {
 			return Logged{}, err
 		}

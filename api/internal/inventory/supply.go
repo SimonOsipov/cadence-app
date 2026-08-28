@@ -53,7 +53,11 @@ func (s *Supply) SupplyFor(
 	// and without the ORDER BY two requests for one day could answer differently. The write
 	// refuses to guess here and leaves the vial empty; a read cannot refuse.
 	for _, vial := range cabinet.vials {
-		if vial.CompoundID != *item.CompoundID || vial.OpenedAt == nil || vial.DisposedAt != nil {
+		// Held back with the rest: the count on «Сегодня» would otherwise be read off a
+		// vial the patient has shelved, while the one they are drawing from stands
+		// behind it in the same order.
+		if vial.CompoundID != *item.CompoundID || vial.OpenedAt == nil ||
+			vial.DisposedAt != nil || vial.HeldBackAt != nil {
 			continue
 		}
 		left = RemainingDoses(vial, draws, dose)
@@ -72,7 +76,7 @@ func (s *Supply) SupplyFor(
 func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text, patient_id::text, compound_id::text, total_amount, amount_unit,
-		       opened_at, expires_on, disposed_at
+		       opened_at, expires_on, disposed_at, held_back_at
 		FROM app.vials
 		WHERE patient_id = $1
 		ORDER BY opened_at, id
@@ -90,9 +94,10 @@ func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, erro
 			opened   *time.Time
 			expires  time.Time
 			disposed *time.Time
+			heldBack *time.Time
 		)
 		if err := rows.Scan(&vial.ID, &vial.PatientID, &vial.CompoundID, &amount,
-			&vial.AmountUnit, &opened, &expires, &disposed); err != nil {
+			&vial.AmountUnit, &opened, &expires, &disposed, &heldBack); err != nil {
 			return nil, err
 		}
 		// Converted here rather than carried as a float: the schema bounds the scale
@@ -103,6 +108,7 @@ func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, erro
 		vial.ExpiresOn = civil.NewDate(expires.Year(), expires.Month(), expires.Day())
 		vial.OpenedAt = dayOf(opened)
 		vial.DisposedAt = dayOf(disposed)
+		vial.HeldBackAt = dayOf(heldBack)
 		vials = append(vials, vial)
 	}
 
