@@ -54,7 +54,7 @@ var (
 	// Everything deliberately not the pure half. vials.go reads the cabinet for the
 	// context that draws a dose from it, and this project puts the check, the transaction
 	// and the SQL in one file rather than behind a repository.
-	transport = []string{"photos.go", "doc.go", "vials.go", "supply.go", "reads.go"}
+	transport = []string{"photos.go", "doc.go", "vials.go", "supply.go", "reads.go", "write.go"}
 )
 
 func TestEveryFileInThePackageIsClassified(t *testing.T) {

@@ -346,6 +346,45 @@
         ],
         "type": "object"
       },
+      "LabelUploadInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/heic",
+              "image/webp"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_type"
+        ],
+        "type": "object"
+      },
+      "LabelUploadOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "key",
+          "expires_at"
+        ],
+        "type": "object"
+      },
       "LogDoseInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -612,6 +651,49 @@
         "required": [
           "email",
           "full_name"
+        ],
+        "type": "object"
+      },
+      "NewVialBody": {
+        "additionalProperties": false,
+        "properties": {
+          "compound_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "concentration_label": {
+            "description": "What the box says, transcribed. Nothing computes with it.",
+            "maxLength": 50,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expires_on": {
+            "format": "date",
+            "type": "string"
+          },
+          "label_photo_path": {
+            "description": "A key this API minted at POST /v1/me/vials/label-photo-uploads. Refused where it points anywhere but the caller's own prefix — the object store has no row-level security, so the key is the only thing saying whose object it is.",
+            "type": "string"
+          },
+          "location_ru": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "lot": {
+            "maxLength": 50,
+            "minLength": 1,
+            "type": "string"
+          },
+          "total_amount": {
+            "$ref": "#/components/schemas/VialAmountBody"
+          }
+        },
+        "required": [
+          "compound_id",
+          "concentration_label",
+          "total_amount",
+          "expires_on"
         ],
         "type": "object"
       },
@@ -2177,6 +2259,168 @@
           }
         },
         "summary": "The patient's cabinet",
+        "tags": [
+          "inventory"
+        ]
+      },
+      "post": {
+        "description": "Stores it sealed: an opening date is what «opened» means, and the first dose drawn from a vial is what sets it. The amount is kept in the unit the box carries and converted by nothing here. A label photograph is attached by sending back the key this API minted for it.",
+        "operationId": "add-vial",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewVialBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VialBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Put a vial in the cabinet",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/v1/me/vials/label-photo-uploads": {
+      "post": {
+        "description": "Answers a short-lived link that writes exactly one object, and the key to send back with the vial. The key is minted here and prefixed with the caller's own identifier: a client choosing its own could write under somebody else's prefix, and the store has no row-level security to stop it.",
+        "operationId": "start-label-photo-upload",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelUploadInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelUploadOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "A link to upload a photograph of a vial's label",
         "tags": [
           "inventory"
         ]

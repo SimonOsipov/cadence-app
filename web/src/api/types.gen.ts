@@ -135,6 +135,16 @@ export type LabelPhotoOutputBody = {
     url: string;
 };
 
+export type LabelUploadInputBody = {
+    content_type: 'image/jpeg' | 'image/png' | 'image/heic' | 'image/webp';
+};
+
+export type LabelUploadOutputBody = {
+    expires_at: string;
+    key: string;
+    url: string;
+};
+
 export type LogDoseInputBody = {
     /**
      * The client's own key. A retry from the offline queue carries the key generated when the patient tapped save, and the repeat answers what the first answered.
@@ -251,6 +261,22 @@ export type NewProviderBody = {
      * What the clinic calls them, in Russian. Shown to a patient beside the name on their care team.
      */
     title_ru?: string;
+};
+
+export type NewVialBody = {
+    compound_id: string;
+    /**
+     * What the box says, transcribed. Nothing computes with it.
+     */
+    concentration_label: string;
+    expires_on: string;
+    /**
+     * A key this API minted at POST /v1/me/vials/label-photo-uploads. Refused where it points anywhere but the caller's own prefix — the object store has no row-level security, so the key is the only thing saying whose object it is.
+     */
+    label_photo_path?: string;
+    location_ru?: string;
+    lot?: string;
+    total_amount: VialAmountBody;
 };
 
 export type OccurrenceBody = {
@@ -965,6 +991,88 @@ export type ReadCabinetResponses = {
 };
 
 export type ReadCabinetResponse = ReadCabinetResponses[keyof ReadCabinetResponses];
+
+export type AddVialData = {
+    body: NewVialBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/vials';
+};
+
+export type AddVialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type AddVialError = AddVialErrors[keyof AddVialErrors];
+
+export type AddVialResponses = {
+    /**
+     * Created
+     */
+    201: VialBody;
+};
+
+export type AddVialResponse = AddVialResponses[keyof AddVialResponses];
+
+export type StartLabelPhotoUploadData = {
+    body: LabelUploadInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/vials/label-photo-uploads';
+};
+
+export type StartLabelPhotoUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type StartLabelPhotoUploadError = StartLabelPhotoUploadErrors[keyof StartLabelPhotoUploadErrors];
+
+export type StartLabelPhotoUploadResponses = {
+    /**
+     * OK
+     */
+    200: LabelUploadOutputBody;
+};
+
+export type StartLabelPhotoUploadResponse = StartLabelPhotoUploadResponses[keyof StartLabelPhotoUploadResponses];
 
 export type ReadVialData = {
     body?: never;

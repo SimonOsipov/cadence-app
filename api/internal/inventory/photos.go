@@ -20,11 +20,11 @@ const LinkLifetime = 5 * time.Minute
 
 // Photos signs short-lived links to stored objects.
 //
-// The read half only: a label is attached after the vial exists, nothing creates
-// or updates a vial over HTTP until M4, and an upload link whose key no endpoint
-// could store would be a hole with no user.
+// Both halves since the vial can be created over HTTP: the upload link mints a key the
+// creation carries back, and the read link is signed only for a row the policies handed over.
 type Photos interface {
 	SignedGet(ctx context.Context, bucket, key, contentType string, ttl time.Duration) (storage.Link, error)
+	SignedPut(ctx context.Context, bucket, key string, ttl time.Duration) (storage.Link, error)
 }
 
 // ErrNoPhoto is one error for three cases — invisible, absent, no photograph —
@@ -90,6 +90,7 @@ func (s *Service) Register(api huma.API) {
 	}, s.readLabelPhoto)
 
 	s.registerReads(api)
+	s.registerWrites(api)
 }
 
 func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*LabelPhotoOutput, error) {
