@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -66,7 +67,7 @@ func cardFrom(t *testing.T, body []byte) vialCard {
 // the patient set it aside on, which is the field the cabinet reads.
 func TestAVialIsSetAsideAndTakenBackByTheSamePath(t *testing.T) {
 	c := newClinic(t)
-	mux, calling := aCabinet(t, c)
+	mux, calling, moveTo := aCabinetInTime(t, c)
 	calling(patientA, "patient")
 
 	status, body := send(t, mux, http.MethodPut, "/v1/me/vials/"+c.vialA+"/held-back",
@@ -81,7 +82,10 @@ func TestAVialIsSetAsideAndTakenBackByTheSamePath(t *testing.T) {
 		t.Fatalf("the vial was set aside on %v", card.HeldBackAt)
 	}
 
-	// Again, with the value it already carries: not an error, and the day does not move.
+	// Again, with the value it already carries, and a day later — because on the same day
+	// rewriting the date and leaving it are the same write, and this is the axis a fixed
+	// clock cannot measure at all.
+	moveTo(theCabinetHour.Add(24 * time.Hour))
 	repeat, body := send(t, mux, http.MethodPut, "/v1/me/vials/"+c.vialA+"/held-back",
 		map[string]any{"held_back": true})
 	if repeat != http.StatusOK {

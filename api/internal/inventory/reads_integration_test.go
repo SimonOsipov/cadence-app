@@ -31,6 +31,18 @@ var theCabinetHour = time.Date(2026, time.May, 9, 19, 30, 0, 0, time.UTC)
 func aCabinet(t *testing.T, c clinic) (*chi.Mux, func(subject, role string)) {
 	t.Helper()
 
+	mux, calling, _ := aCabinetInTime(t, c)
+
+	return mux, calling
+}
+
+// aCabinetInTime is the same cabinet with a clock the caller can move, for the one question a
+// fixed instant cannot answer: whether a write that repeats itself on another day rewrites a
+// date it should leave alone.
+func aCabinetInTime(t *testing.T, c clinic) (*chi.Mux, func(subject, role string), func(time.Time)) {
+	t.Helper()
+
+	now := theCabinetHour
 	var subject, role string
 	mux := chi.NewRouter()
 	mux.Use(func(next http.Handler) http.Handler {
@@ -45,11 +57,11 @@ func aCabinet(t *testing.T, c clinic) (*chi.Mux, func(subject, role string)) {
 			)))
 		})
 	})
-	inventory.NewService(func() time.Time { return theCabinetHour }, inventory.Deps{
+	inventory.NewService(func() time.Time { return now }, inventory.Deps{
 		RequestPool: c.request,
 	}).Register(httpserver.NewAPI(mux))
 
-	return mux, func(s, r string) { subject, role = s, r }
+	return mux, func(s, r string) { subject, role = s, r }, func(at time.Time) { now = at }
 }
 
 type cabinetBody struct {
