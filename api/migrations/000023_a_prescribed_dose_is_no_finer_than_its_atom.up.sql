@@ -11,12 +11,13 @@
 
 SET ROLE cadence_owner;
 
+-- A disjunction and not a CASE on the unit, for the reason 000021 records over the
+-- same bound on vials: a CASE with no arm for a unit yields NULL, and a CHECK over
+-- NULL passes, so a unit nobody prescribes would carry any scale at all through.
 ALTER TABLE app.protocol_phases
     ADD CONSTRAINT protocol_phases_dose_value_scale_check CHECK (
-        CASE dose_unit
-            WHEN 'мг'  THEN pg_catalog.scale(dose_value) <= 3
-            WHEN 'мкг' THEN pg_catalog.scale(dose_value) = 0
-        END
+        (dose_unit = 'мг'  AND pg_catalog.scale(dose_value) <= 3)
+        OR (dose_unit = 'мкг' AND pg_catalog.scale(dose_value) = 0)
     );
 
 RESET ROLE;

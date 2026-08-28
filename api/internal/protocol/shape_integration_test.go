@@ -5,6 +5,9 @@ package protocol_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +19,7 @@ import (
 
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
 
@@ -103,6 +107,32 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 			12, "",
 			civil.Date{},
 			nil, "protocol_phases_dose_value_check", "23514",
+		},
+		{
+			// 0,0001 мг is zero micrograms and 250,5 мкг is a tail the cabinet's
+			// integer arithmetic drops: both are doses nothing can be divided by.
+			"a dose finer than the microgram it is counted in",
+			itemWith(func(i *protocol.DraftItem) {
+				i.Phases = []protocol.ProtocolPhase{{
+					FromWeek: 1, ToWeek: 4,
+					Dose: protocol.Dose{Value: 0.0001, Unit: protocol.MG},
+				}}
+			}),
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_dose_value_scale_check", "23514",
+		},
+		{
+			"a microgram dose with a tail",
+			itemWith(func(i *protocol.DraftItem) {
+				i.Phases = []protocol.ProtocolPhase{{
+					FromWeek: 1, ToWeek: 4,
+					Dose: protocol.Dose{Value: 250.5, Unit: protocol.MCG},
+				}}
+			}),
+			12, "",
+			civil.Date{},
+			nil, "protocol_phases_dose_value_scale_check", "23514",
 		},
 		{
 			"a dose in a unit nobody prescribes",
@@ -240,6 +270,34 @@ func TestWhatGoRefusesTheSchemaRefusesToo(t *testing.T) {
 			t.Errorf("the schema refused a course Go accepts: %s/%s", code, name)
 		}
 	})
+
+	// The scale bound in the accept direction, which is where the two copies of it drift
+	// apart unseen: a refusal both sides make is measured above, and a dose both sides
+	// take only here. 2,01 мг is the case that caught the drift — Go refused it as too
+	// fine while the schema took it, and 2,00 and 2,02 went through either way.
+	for _, taken := range []protocol.Dose{
+		{Value: 2.01, Unit: protocol.MG},
+		{Value: 1.005, Unit: protocol.MG},
+		{Value: 250, Unit: protocol.MCG},
+	} {
+		t.Run(fmt.Sprintf("a phase of %v %s", taken.Value, taken.Unit), func(t *testing.T) {
+			dosed := protocol.Draft{
+				PatientID: shapePatient,
+				StartDate: civil.NewDate(2026, time.May, 4),
+				Weeks:     12,
+				Status:    protocol.StatusActive,
+				Items: []protocol.DraftItem{itemWith(func(i *protocol.DraftItem) {
+					i.Phases = []protocol.ProtocolPhase{{FromWeek: 1, ToWeek: 12, Dose: taken}}
+				})},
+			}
+			if err := dosed.Check(); err != nil {
+				t.Fatalf("Go refused it: %v", err)
+			}
+			if code, name := offer(t, pool, dosed); code != "" {
+				t.Errorf("the schema refused a dose Go accepts: %s/%s", code, name)
+			}
+		})
+	}
 }
 
 var aDose = protocol.Dose{Value: 0.25, Unit: protocol.MG}
@@ -418,4 +476,54 @@ func asStrings[T ~string](values []T) []string {
 	}
 
 	return out
+}
+
+// 000023's rollback, over the object it names.
+//
+// The chain-level tests unwind to zero, where 000013 drops app.protocol_phases outright,
+// so a down file that did nothing at all would pass both of them. This asks the question
+// they cannot: with the table still standing, is the constraint gone.
+func TestRollingBackTheScaleBoundLeavesTheTableWithoutIt(t *testing.T) {
+	db := cluster.NewDatabase(t)
+	conn := testsupport.Connect(t, db.SuperuserURL)
+	migrator := testsupport.Connect(t, db.MigrationURL)
+
+	// The premise, so the assertion below cannot pass by the constraint never having
+	// been there: the chain the fixture starts from must carry it.
+	if held := scaleBounds(t, conn); held != 1 {
+		t.Fatalf("the chain starts with %d scale bounds on protocol_phases, want 1", held)
+	}
+
+	applyMigration(t, migrator, "000023_a_prescribed_dose_is_no_finer_than_its_atom.down.sql")
+
+	if held := scaleBounds(t, conn); held != 0 {
+		t.Error("protocol_phases_dose_value_scale_check survived the rollback")
+	}
+}
+
+func scaleBounds(t *testing.T, conn *pgx.Conn) int {
+	t.Helper()
+
+	var held int
+	if err := conn.QueryRow(t.Context(), `
+		SELECT count(*) FROM pg_constraint
+		WHERE conname = 'protocol_phases_dose_value_scale_check'
+		  AND conrelid = 'app.protocol_phases'::regclass
+	`).Scan(&held); err != nil {
+		t.Fatalf("reading the constraint: %v", err)
+	}
+
+	return held
+}
+
+func applyMigration(t *testing.T, conn *pgx.Conn, name string) {
+	t.Helper()
+
+	statements, err := os.ReadFile(filepath.Join(testsupport.MigrationsPath(t), name))
+	if err != nil {
+		t.Fatalf("reading %s: %v", name, err)
+	}
+	if _, err := conn.Exec(t.Context(), string(statements)); err != nil {
+		t.Fatalf("applying %s: %v", name, err)
+	}
 }

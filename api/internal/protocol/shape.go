@@ -3,8 +3,9 @@ package protocol
 import (
 	"errors"
 	"fmt"
-	"math"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -31,6 +32,7 @@ var (
 	ErrPhaseRunsBackwards       = errors.New("a phase ends no earlier than it begins")
 	ErrPhaseOffCourse           = errors.New("a phase lies inside the weeks of its course")
 	ErrDoseOffRange             = errors.New("a dose is more than nothing")
+	ErrDoseTooFine              = errors.New("a dose is measured to the microgram, not finer")
 	ErrUnknownDoseUnit          = errors.New("the unit is not one of мг, мкг")
 	ErrPhasesOverlap            = errors.New("two phases of one item cover the same week")
 
@@ -64,7 +66,8 @@ func shapeRefusals() []error {
 		ErrWeeksOffRange, ErrNotADay, ErrUnknownStatus, ErrNoItems, ErrUnknownKind,
 		ErrUnknownCadence, ErrCadenceAgainstDays, ErrNoSlot, ErrInjectionWithoutCompound,
 		ErrCompoundOnAKindWithoutOne, ErrNoPhases, ErrPhaseRunsBackwards, ErrPhaseOffCourse,
-		ErrDoseOffRange, ErrUnknownDoseUnit, ErrPhasesOverlap, ErrCompoundRefUnclear,
+		ErrDoseOffRange, ErrDoseTooFine, ErrUnknownDoseUnit, ErrPhasesOverlap,
+		ErrCompoundRefUnclear,
 		ErrDrugNotDescribed, ErrItemNamedTwice, ErrDrugNameTooLong, ErrNotASlot,
 	}
 }
@@ -208,11 +211,17 @@ func (i DraftItem) checkPhases(weeks int) error {
 			return fmt.Errorf("phase %d covers weeks %d..%d of a %d-week course: %w",
 				n+1, phase.FromWeek, phase.ToWeek, weeks, ErrPhaseOffCourse)
 		}
-		if phase.Dose.Value <= 0 || finerThanItsAtom(phase.Dose) {
+		if phase.Dose.Value <= 0 {
 			return fmt.Errorf("phase %d doses %v: %w", n+1, phase.Dose.Value, ErrDoseOffRange)
 		}
+		// Before the scale, because the atom is the unit's: an unknown unit has none,
+		// and answering «finer than a microgram» about «ме» names the wrong field.
 		if _, ok := ParseDoseUnit(string(phase.Dose.Unit)); !ok {
 			return fmt.Errorf("phase %d in %q: %w", n+1, phase.Dose.Unit, ErrUnknownDoseUnit)
+		}
+		if finerThanItsAtom(phase.Dose) {
+			return fmt.Errorf("phase %d doses %v %s: %w",
+				n+1, phase.Dose.Value, phase.Dose.Unit, ErrDoseTooFine)
 		}
 	}
 
@@ -241,6 +250,9 @@ const (
 	maxCourseWeeks = 104
 	maxDrugName    = 200
 	maxDrugField   = 50
+	// pg_catalog.scale(dose_value) <= 3 on protocol_phases: the microgram, written
+	// as a milligram.
+	milligramDecimals = 3
 )
 
 // finerThanItsAtom is a dose the cabinet cannot divide by.
@@ -249,11 +261,19 @@ const (
 // decimals and a microgram value with any decimals at all lose their tail on the way in.
 // Measured on the unbounded column: 0,0001 мг converts to nothing, and the day card
 // stops answering how many injections are left rather than answering wrongly.
+//
+// Read off the decimal the value prints as, and deliberately not off value × 1000:
+// measured, 2,01 × 1000 is 2009,9999999999997726, so a bound decided on that product
+// refuses two decimals as three — 71 such values below 50 мг, while the schema's
+// pg_catalog.scale takes every one of them. This must accept whatever 000023 accepts.
 func finerThanItsAtom(dose Dose) bool {
-	scaled := dose.Value * 1000
+	atom := milligramDecimals
 	if dose.Unit == MCG {
-		scaled = dose.Value
+		atom = 0
 	}
 
-	return scaled != math.Trunc(scaled)
+	printed := strconv.FormatFloat(dose.Value, 'f', -1, 64)
+	point := strings.IndexByte(printed, '.')
+
+	return point >= 0 && len(printed)-point-1 > atom
 }

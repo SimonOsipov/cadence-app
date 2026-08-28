@@ -183,9 +183,11 @@ func TestTheCabinetIsAskedAboutTheDoseBeingOffered(t *testing.T) {
 	if len(n.askedFor) != 1 || n.askedFor[0] != "item-injection" {
 		t.Errorf("the cabinet was asked about %v", n.askedFor)
 	}
-	// The dose the cabinet divides by is this day's phase, not the plan's first or the
-	// item's default. Written down rather than compared to the fixture's own variable:
-	// an expectation read out of the thing under test moves with it.
+	// Which dose reached the cabinet, and not merely that one did: it was written into
+	// the stub and never read, so passing the course's start date instead of the day
+	// passed the whole suite. Written down rather than compared to the fixture's own
+	// variable. That it is the *day's* phase is measured where the plan titrates — this
+	// one has a single band, so every candidate is the same number.
 	if len(n.askedAt) != 1 || n.askedAt[0] == nil ||
 		n.askedAt[0].Value != 0.25 || n.askedAt[0].Unit != MG {
 		t.Errorf("the cabinet was told to divide by %+v, want 0,25 мг", n.askedAt)
@@ -409,12 +411,44 @@ func TestOnADayNoPhaseCoversTheCabinetIsAskedWithNoDose(t *testing.T) {
 	}
 
 	n := &stubNeighbours{}
-	today := todayFor(t, plan, true, civil.NewDate(2026, time.May, 24), civil.Slot{Hour: 7}, n)
+	todayFor(t, plan, true, civil.NewDate(2026, time.May, 24), civil.Slot{Hour: 7}, n)
 
 	if len(n.askedAt) != 1 || n.askedAt[0] != nil {
 		t.Errorf("the cabinet was told to divide by %+v, want nothing", n.askedAt)
 	}
-	if today.VialDosesLeft != nil {
-		t.Errorf("the card counts %v injections on a day nothing is prescribed", *today.VialDosesLeft)
+	// And no assertion on the card's own count here: the aggregate hands through
+	// whatever the cabinet answers, so with a stub it would measure the stub. That a
+	// dose of nothing buys no count is inventory's, at math_test.go's nil-dose case.
+}
+
+// The divisor is the band covering this day, and the fixture has to titrate before that
+// is measurable: with one band the day's phase, the plan's first and the item's only are
+// the same number, and all three survive.
+func TestTheCabinetDividesByTheDoseOfTheDaysOwnPhase(t *testing.T) {
+	// The course opens on Monday 4 May and the injection falls on Sundays: 10 May is
+	// week one's and 5 July is week nine's.
+	for _, day := range []struct {
+		name string
+		at   civil.Date
+		want Dose
+	}{
+		{"a day in the opening band", civil.NewDate(2026, time.May, 10), Dose{Value: 0.25, Unit: MG}},
+		{"a day past the titration", civil.NewDate(2026, time.July, 5), Dose{Value: 1, Unit: MG}},
+	} {
+		t.Run(day.name, func(t *testing.T) {
+			plan := aSchedulePlan()
+			plan.Phases["item-injection"] = []ProtocolPhase{
+				{FromWeek: 1, ToWeek: 4, Dose: Dose{Value: 0.25, Unit: MG}},
+				{FromWeek: 5, ToWeek: 12, Dose: Dose{Value: 1, Unit: MG}},
+			}
+
+			n := &stubNeighbours{site: "r-glute"}
+			todayFor(t, plan, true, day.at, civil.Slot{Hour: 7}, n)
+
+			if len(n.askedAt) != 1 || n.askedAt[0] == nil || *n.askedAt[0] != day.want {
+				t.Errorf("the cabinet was told to divide by %+v, want %v %s",
+					n.askedAt, day.want.Value, day.want.Unit)
+			}
+		})
 	}
 }

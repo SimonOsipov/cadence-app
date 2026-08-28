@@ -376,7 +376,9 @@ func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
 	drawn := seedVialOfAmount(t, conn, patient, semaglutide, "2.0")
 	untouched := seedVialOfAmount(t, conn, patient, semaglutide, "1.5")
 	mismatched := seedVialOfAmount(t, conn, patient, bpc, "1.5")
+	short := seedVialOfAmount(t, conn, patient, semaglutide, "0.1")
 	seedDose(t, conn, patient, course, item, drawn, "2026-06-02 08:00:00+03", "0.25", "мг")
+	seedDose(t, conn, patient, course, item, short, "2026-06-04 08:00:00+03", "0.25", "мг")
 	// A µg compound drawn in мг: the divisor exists but is in the wrong unit, and taking
 	// it would reconstruct six doses out of a vial that holds one and a half micrograms.
 	seedDose(t, conn, patient, course, item, mismatched, "2026-06-03 08:00:00+03", "0.25", "мг")
@@ -397,6 +399,9 @@ func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
 		// The filter is what makes this one fall back rather than divide by a
 		// milligram figure: 1.5 / 0.25 would be six.
 		{"a vial whose draws are in another unit", mismatched, 1},
+		// The clamp, and the only case that reaches it: 0,1 мг at 0,25 rounds to no
+		// doses at all, and vials_total_doses_check fails the rollback mid-flight.
+		{"a vial holding less than the dose drawn from it", short, 1},
 	} {
 		t.Run(want.name, func(t *testing.T) {
 			var doses int
@@ -406,6 +411,56 @@ func TestRollingBackTheCountReconstructsItFromTheDoses(t *testing.T) {
 			}
 			if doses != want.doses {
 				t.Errorf("the rollback reconstructed %d doses, want %d", doses, want.doses)
+			}
+		})
+	}
+
+	// The schema half, which the data half above cannot see: the one-step rollback
+	// witness in platform/database unwinds the head of the chain, and the head is 000023
+	// now — so every line here is unmeasured elsewhere. NOT NULL travels in both
+	// directions: the column comes back required and the two 000021 added stop being so.
+	for _, restored := range []struct {
+		what     string
+		question string
+		want     bool
+	}{
+		{
+			"total_doses comes back as a required integer",
+			`SELECT count(*) = 1 FROM information_schema.columns
+			  WHERE table_schema = 'app' AND table_name = 'vials'
+			    AND column_name = 'total_doses' AND data_type = 'integer'
+			    AND is_nullable = 'NO'`,
+			true,
+		},
+		{
+			"its CHECK comes back with it",
+			`SELECT count(*) = 1 FROM pg_constraint
+			  WHERE conname = 'vials_total_doses_check' AND conrelid = 'app.vials'::regclass`,
+			true,
+		},
+		{
+			"the amount stops being required",
+			`SELECT bool_and(is_nullable = 'YES') FROM information_schema.columns
+			  WHERE table_schema = 'app' AND table_name = 'vials'
+			    AND column_name IN ('total_amount', 'amount_unit')`,
+			true,
+		},
+		{
+			"the patient may write the count again",
+			`SELECT count(*) = 2 FROM information_schema.column_privileges
+			  WHERE table_schema = 'app' AND table_name = 'vials'
+			    AND column_name = 'total_doses' AND grantee = 'cadence_patient'
+			    AND privilege_type IN ('INSERT', 'UPDATE')`,
+			true,
+		},
+	} {
+		t.Run(restored.what, func(t *testing.T) {
+			var holds bool
+			if err := conn.QueryRow(ctx, restored.question).Scan(&holds); err != nil {
+				t.Fatalf("asking the schema: %v", err)
+			}
+			if holds != restored.want {
+				t.Errorf("the rollback left the schema without it")
 			}
 		})
 	}

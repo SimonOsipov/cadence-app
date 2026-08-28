@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -162,6 +163,18 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 			func(d *Draft) { d.Items[0].Phases[0].Dose.Value = 0 }, ErrDoseOffRange,
 		},
 		{
+			// The atom differs by unit: three decimals of a milligram are whole
+			// micrograms, and a microgram has no decimals to give.
+			"a dose finer than the microgram it is counted in",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 0.0001, Unit: MG} },
+			ErrDoseTooFine,
+		},
+		{
+			"a microgram dose with a tail",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 250.5, Unit: MCG} },
+			ErrDoseTooFine,
+		},
+		{
 			"a dose in a unit nobody prescribes",
 			func(d *Draft) { d.Items[0].Phases[0].Dose.Unit = "ме" }, ErrUnknownDoseUnit,
 		},
@@ -238,6 +251,27 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 		if err := plain.Check(); err != nil {
 			t.Errorf("a %s item was refused: %v", kind, err)
 		}
+	}
+}
+
+// The accept side of the scale bound, which the refusals above cannot supply: a rule that
+// refused every dose would pass both of them. The values are the ones a bound read off
+// value × 1000 refuses and the schema takes — finerThanItsAtom carries the measurement.
+func TestEveryDoseTheSchemasScaleAdmitsIsAccepted(t *testing.T) {
+	for _, dose := range []Dose{
+		{Value: 2.01, Unit: MG},
+		{Value: 1.005, Unit: MG},
+		{Value: 16.1, Unit: MG},
+		{Value: 0.001, Unit: MG},
+		{Value: 250, Unit: MCG},
+	} {
+		t.Run(fmt.Sprintf("%v %s", dose.Value, dose.Unit), func(t *testing.T) {
+			accepted := aPlan(func(d *Draft) { d.Items[0].Phases[0].Dose = dose })
+
+			if err := accepted.Check(); err != nil {
+				t.Errorf("a phase of %v %s was refused: %v", dose.Value, dose.Unit, err)
+			}
+		})
 	}
 }
 

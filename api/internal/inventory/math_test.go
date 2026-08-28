@@ -460,3 +460,30 @@ func TestTheLowThresholdIsAQuarterAndNotSomeOtherFraction(t *testing.T) {
 		}
 	}
 }
+
+// The microgram dose, which no other case in this file prescribes.
+//
+// Every fixture here is milligrams, so AmountOf's мкг arm is reached by the conversion
+// table and never through the divisor — the one place a wrong arm turns into a number on
+// the day card. BPC-157 is the compound it exists for: 250 мкг out of a 5 мг vial.
+func TestAMicrogramDoseDividesTheVialItIsPrescribedFrom(t *testing.T) {
+	bpc := protocol.CompoundID("bpc")
+	v := Vial{
+		ID: "v-bpc", PatientID: patient, CompoundID: bpc,
+		ConcentrationLabel: "5 мг/мл",
+		TotalAmount:        5_000, AmountUnit: protocol.MCG,
+		OpenedAt: day(2026, time.May, 1), ExpiresOn: farOff,
+	}
+	dose := protocol.Dose{Value: 250, Unit: protocol.MCG}
+
+	left := RemainingDoses(v, []Draw{{VialID: v.ID, Amount: 1_000}}, &dose)
+
+	if left == nil {
+		t.Fatal("a dose of 250 мкг bought no count at all")
+	}
+	// 4000 мкг at 250 apiece. Read as milligrams the dose would be 250 000 мкг and the
+	// answer none, which is the arm this case is here to hold.
+	if *left != 16 {
+		t.Errorf("4000 мкг at 250 мкг apiece is %d injections, want 16", *left)
+	}
+}

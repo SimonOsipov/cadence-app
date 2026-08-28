@@ -14,15 +14,15 @@ BEGIN
 END
 $$;
 
-ALTER TABLE IF EXISTS app.vials ADD COLUMN IF NOT EXISTS total_doses integer;
+ALTER TABLE app.vials ADD COLUMN IF NOT EXISTS total_doses integer;
 
 -- FORCE binds the owner, and cadence_migrator inherits it, so this UPDATE would be
 -- filtered to zero rows and report success. Same shape as 000021's backfill, same guard:
 -- row_security = off turns a table left off the list into a failure rather than silence.
 SET row_security = off;
-ALTER TABLE IF EXISTS app.vials       NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS app.compounds   NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS app.dose_events NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE app.vials       NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE app.compounds   NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE app.dose_events NO FORCE ROW LEVEL SECURITY;
 
 UPDATE app.vials v
 SET total_doses = GREATEST(1, pg_catalog.round(v.total_amount / COALESCE(
@@ -35,9 +35,9 @@ SET total_doses = GREATEST(1, pg_catalog.round(v.total_amount / COALESCE(
 FROM app.compounds c
 WHERE c.id = v.compound_id AND v.total_doses IS NULL;
 
-ALTER TABLE IF EXISTS app.dose_events FORCE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS app.compounds   FORCE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS app.vials       FORCE ROW LEVEL SECURITY;
+ALTER TABLE app.dose_events FORCE ROW LEVEL SECURITY;
+ALTER TABLE app.compounds   FORCE ROW LEVEL SECURITY;
+ALTER TABLE app.vials       FORCE ROW LEVEL SECURITY;
 RESET row_security;
 
 DO $$
@@ -48,15 +48,15 @@ BEGIN
 END
 $$;
 
-ALTER TABLE IF EXISTS app.vials ALTER COLUMN total_doses SET NOT NULL;
+ALTER TABLE app.vials ALTER COLUMN total_doses SET NOT NULL;
 -- Dropped before it is added: the down chain is applied twice by the idempotency test,
 -- and ADD CONSTRAINT has no IF NOT EXISTS.
-ALTER TABLE IF EXISTS app.vials DROP CONSTRAINT IF EXISTS vials_total_doses_check;
-ALTER TABLE IF EXISTS app.vials
+ALTER TABLE app.vials DROP CONSTRAINT IF EXISTS vials_total_doses_check;
+ALTER TABLE app.vials
     ADD CONSTRAINT vials_total_doses_check CHECK (total_doses > 0);
 
-ALTER TABLE IF EXISTS app.vials ALTER COLUMN total_amount DROP NOT NULL;
-ALTER TABLE IF EXISTS app.vials ALTER COLUMN amount_unit  DROP NOT NULL;
+ALTER TABLE app.vials ALTER COLUMN total_amount DROP NOT NULL;
+ALTER TABLE app.vials ALTER COLUMN amount_unit  DROP NOT NULL;
 
 GRANT INSERT (total_doses) ON app.vials TO cadence_patient;
 GRANT UPDATE (total_doses) ON app.vials TO cadence_patient;

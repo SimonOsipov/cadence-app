@@ -182,6 +182,7 @@ func refusalsCheckProduces(t *testing.T) []error {
 		func(d *Draft) { d.Items[0].Phases[0] = ProtocolPhase{FromWeek: 4, ToWeek: 1} },
 		func(d *Draft) { d.Items[0].Phases[0].FromWeek = 0 },
 		func(d *Draft) { d.Items[0].Phases[0].Dose.Value = 0 },
+		func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 0.0001, Unit: MG} },
 		func(d *Draft) { d.Items[0].Phases[0].Dose.Unit = "ме" },
 		func(d *Draft) { d.Items[0].Phases[1].FromWeek = 4 },
 		func(d *Draft) {
