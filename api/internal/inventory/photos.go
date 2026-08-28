@@ -33,6 +33,7 @@ type Photos interface {
 var ErrNoPhoto = errors.New("no photograph is readable here")
 
 type Service struct {
+	now      func() time.Time
 	requests *pgxpool.Pool
 	photos   Photos
 	bucket   string
@@ -45,8 +46,13 @@ type Deps struct {
 	Bucket      string
 }
 
-func NewService(deps Deps) *Service {
-	return &Service{requests: deps.RequestPool, photos: deps.Photos, bucket: deps.Bucket}
+// NewService takes the clock positionally, for the reason protocol.NewService records: the
+// cabinet's computed fields are answers about the patient's own day, and a package that reads
+// time.Now cannot be asked about another one.
+func NewService(now func() time.Time, deps Deps) *Service {
+	return &Service{
+		now: now, requests: deps.RequestPool, photos: deps.Photos, bucket: deps.Bucket,
+	}
 }
 
 // LabelPhotoInput names the vial whose label photograph is wanted.
@@ -83,6 +89,8 @@ func (s *Service) Register(api huma.API) {
 			http.StatusServiceUnavailable,
 		},
 	}, s.readLabelPhoto)
+
+	s.registerReads(api)
 }
 
 func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*LabelPhotoOutput, error) {

@@ -57,7 +57,7 @@ func withLabelPhotos(t *testing.T, c clinic) (*chi.Mux, *storage.Signer, func(su
 			)))
 		})
 	})
-	inventory.NewService(inventory.Deps{
+	inventory.NewService(func() time.Time { return theSigningMoment }, inventory.Deps{
 		RequestPool: c.request,
 		Photos:      signer,
 		Bucket:      labelBucket,

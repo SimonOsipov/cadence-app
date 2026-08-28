@@ -73,10 +73,14 @@ func (s *Supply) SupplyFor(
 	return left, hint, nil
 }
 
+// vialsOf is the patient's cabinet, whole: two readers taking different halves of one row are
+// two shapes of the same vial, and the cabinet's own card is built from what the day card
+// already reads.
 func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id::text, patient_id::text, compound_id::text, total_amount, amount_unit,
-		       opened_at, expires_on, disposed_at, held_back_at
+		SELECT id::text, patient_id::text, compound_id::text, concentration_label,
+		       total_amount, amount_unit, opened_at, expires_on, disposed_at, held_back_at,
+		       lot, location_ru, label_photo_path
 		FROM app.vials
 		WHERE patient_id = $1
 		ORDER BY opened_at, id
@@ -96,8 +100,9 @@ func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, erro
 			disposed *time.Time
 			heldBack *time.Time
 		)
-		if err := rows.Scan(&vial.ID, &vial.PatientID, &vial.CompoundID, &amount,
-			&vial.AmountUnit, &opened, &expires, &disposed, &heldBack); err != nil {
+		if err := rows.Scan(&vial.ID, &vial.PatientID, &vial.CompoundID,
+			&vial.ConcentrationLabel, &amount, &vial.AmountUnit, &opened, &expires,
+			&disposed, &heldBack, &vial.Lot, &vial.LocationRU, &vial.LabelPhotoPath); err != nil {
 			return nil, err
 		}
 		// Converted here rather than carried as a float: the schema bounds the scale

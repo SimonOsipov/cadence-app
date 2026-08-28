@@ -783,11 +783,21 @@ func (s *Service) patient(ctx context.Context) (civil.UserID, database.Caller, e
 	return civil.UserID(subject), database.Caller{Subject: subject, Role: principal.Role}, nil
 }
 
-// dayOf is the patient's own day and the hour within it. There is no default zone: every
-// occurrence is generated in the patient's day, so the server's would answer about a
-// different one for half a clinic.
+// dayOf is the patient's own day and the hour within it, read against this service's clock.
 func (s *Service) dayOf(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID,
+) (civil.Date, civil.Slot, error) {
+	return DayOf(ctx, tx, patient, s.now())
+}
+
+// DayOf is the patient's own day and the hour within it, at a given instant. There is no
+// default zone: every occurrence is generated in the patient's day, so the server's would
+// answer about a different one for half a clinic.
+//
+// Exported for the contexts that answer about a patient's day without owning the schedule —
+// the cabinet, whose remaining counts and expiry are questions about today.
+func DayOf(
+	ctx context.Context, tx pgx.Tx, patient civil.UserID, now time.Time,
 ) (civil.Date, civil.Slot, error) {
 	var zone *string
 	if err := tx.QueryRow(ctx,
@@ -803,7 +813,7 @@ func (s *Service) dayOf(
 		return civil.Date{}, civil.Slot{}, fmt.Errorf("the zone %q of %s: %w", *zone, patient, err)
 	}
 
-	local := s.now().In(where)
+	local := now.In(where)
 
 	return civil.NewDate(local.Year(), local.Month(), local.Day()),
 		civil.Slot{Hour: local.Hour(), Minute: local.Minute()}, nil

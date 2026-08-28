@@ -4,6 +4,11 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type CabinetBody = {
+    reorder: Array<VialReorderBody>;
+    vials: Array<VialBody>;
+};
+
 export type CompoundBody = {
     default_unit: 'мг' | 'мкг';
     icon: string;
@@ -476,6 +481,54 @@ export type TodayBody = {
     weight_series: Array<number> | null;
 };
 
+export type VialAmountBody = {
+    unit: 'мг' | 'мкг';
+    value: number;
+};
+
+export type VialBody = {
+    compound_id: string;
+    /**
+     * What the box says, transcribed. Nothing computes with it.
+     */
+    concentration_label: string;
+    /**
+     * The dose in force for this drug today. Absent for the same reasons as doses_left, and absent where two course items name the drug.
+     */
+    current_dose?: VialDoseBody;
+    disposed_at?: string;
+    /**
+     * Absent where no running course prescribes this drug: a count needs a dose to divide by, and inventing one would put a number on the screen nobody prescribed.
+     */
+    doses_left?: number;
+    expires_on: string;
+    has_label_photo: boolean;
+    /**
+     * The day the patient set it aside. A held-back vial is chosen by nothing the server decides for them.
+     */
+    held_back_at?: string;
+    id: string;
+    location_ru?: string;
+    lot?: string;
+    /**
+     * Absent while the vial is sealed; that absence is the whole of «sealed».
+     */
+    opened_at?: string;
+    remaining_amount: VialAmountBody;
+    status: 'disposed' | 'expiring' | 'sealed' | 'low' | 'active';
+    total_amount: VialAmountBody;
+};
+
+export type VialDoseBody = {
+    unit: 'мг' | 'мкг';
+    value: number;
+};
+
+export type VialReorderBody = {
+    compound_id: string;
+    weeks_left: number;
+};
+
 export type DashboardOverviewData = {
     body?: never;
     path?: never;
@@ -869,6 +922,98 @@ export type GetTodayResponses = {
 };
 
 export type GetTodayResponse = GetTodayResponses[keyof GetTodayResponses];
+
+export type ReadCabinetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/me/vials';
+};
+
+export type ReadCabinetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadCabinetError = ReadCabinetErrors[keyof ReadCabinetErrors];
+
+export type ReadCabinetResponses = {
+    /**
+     * OK
+     */
+    200: CabinetBody;
+};
+
+export type ReadCabinetResponse = ReadCabinetResponses[keyof ReadCabinetResponses];
+
+export type ReadVialData = {
+    body?: never;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}';
+};
+
+export type ReadVialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadVialError = ReadVialErrors[keyof ReadVialErrors];
+
+export type ReadVialResponses = {
+    /**
+     * OK
+     */
+    200: VialBody;
+};
+
+export type ReadVialResponse = ReadVialResponses[keyof ReadVialResponses];
 
 export type ReadVialLabelPhotoData = {
     body?: never;
