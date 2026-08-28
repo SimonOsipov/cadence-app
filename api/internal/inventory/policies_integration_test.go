@@ -1136,6 +1136,24 @@ func TestTheOpeningIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) {
 		t.Fatalf("emptying the shelf: %v", err)
 	}
 
+	// The premise, arranged rather than inherited: this file's seed is shared by some
+	// thirty tests, and the day it opens B's vial or moves its expiry this witness goes
+	// vacuous — nil for the wrong reason, with the mutation it exists for surviving.
+	var candidates int
+	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT count(*) FROM app.vials
+			WHERE patient_id = $1 AND compound_id = $2 AND opened_at IS NULL
+			  AND disposed_at IS NULL AND held_back_at IS NULL
+			  AND expires_on >= DATE '2026-05-10'
+		`, patientB, c.compound).Scan(&candidates)
+	}); err != nil {
+		t.Fatalf("counting the other patient's shelf: %v", err)
+	}
+	if candidates != 1 {
+		t.Fatalf("the other patient holds %d vials the second layer would take, want 1", candidates)
+	}
+
 	var resolved *string
 	if err := c.as(t, adminID, "admin", func(ctx context.Context, tx pgx.Tx) error {
 		var err error
@@ -1149,7 +1167,7 @@ func TestTheOpeningIsScopedByItsArgumentAndNotOnlyByThePolicy(t *testing.T) {
 	}
 
 	if resolved != nil {
-		t.Errorf("the resolution named %s while the patient asked for had nothing", *resolved)
+		t.Errorf("the resolution named %s, and the patient it was asked about had nothing", *resolved)
 	}
 
 	var opened string
@@ -1260,10 +1278,15 @@ func TestTwoRequestsOpeningTheLastVialOpenItOnce(t *testing.T) {
 // waitForALock reports whether a backend is waiting on a lock, which is the second request
 // having reached the row the first one holds.
 //
-// pg_locks and not pg_stat_activity: the two seams connect as different login roles, and
-// Postgres blanks wait_event_type for a session belonging to another user — measured, the
-// first version of this watched for a value it could never see. It answers rather than
-// failing, because the caller has a transaction to release before it can fail safely.
+// pg_blocking_pids and not wait_event_type: the two seams connect as different login roles,
+// and Postgres blanks wait_event_type for another user's session — measured, the first version
+// watched for a value it could never see. pg_locks was the second, scoped to app.vials, and it
+// never fires either: a blocked UPDATE waits on the holder's transactionid, whose row names no
+// relation. This asks the question directly and stays inside this database, so a waiter
+// elsewhere in the cluster cannot satisfy the premise and let the two requests run in
+// sequence — which would pass every assertion without the guard ever being asked. It answers
+// rather than failing, because the caller has a transaction to release before it can fail
+// safely.
 func waitForALock(t *testing.T, c clinic) bool {
 	t.Helper()
 
@@ -1274,7 +1297,9 @@ func waitForALock(t *testing.T, c clinic) bool {
 			t.Context(), c.service, seedJob,
 			func(ctx context.Context, tx pgx.Tx) error {
 				return tx.QueryRow(ctx, `
-					SELECT count(*) FROM pg_catalog.pg_locks WHERE NOT granted
+					SELECT count(*) FROM pg_catalog.pg_stat_activity
+					WHERE datname = pg_catalog.current_database()
+					  AND pg_catalog.cardinality(pg_catalog.pg_blocking_pids(pid)) > 0
 				`).Scan(&waiting)
 			},
 		); err != nil {

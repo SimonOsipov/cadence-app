@@ -396,7 +396,7 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 		open      int
 		spare     bool
 		heldBack  bool
-		expired   bool
+		expired   string
 		otherOpen bool
 		named     bool
 	}{
@@ -407,6 +407,10 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 		// into two, which a rule of «exactly one undisposed» would have done.
 		{name: "one open vial beside a sealed spare", open: 1, spare: true, named: true},
 		{name: "two open vials of the same compound", open: 2},
+		// The ambiguous first layer with something for the second to find. Until this
+		// row existed the only ambiguous fixture had an empty shelf behind it, so a
+		// resolution falling through to layer two was invisible to the whole suite.
+		{name: "two open vials beside a sealed spare", open: 2, spare: true},
 		// And layer two is «exactly one» too: two sealed vials name nothing.
 		{name: "two sealed vials and nothing open", spare: true},
 		// Held back is not a candidate at either layer, and not a second candidate
@@ -415,7 +419,11 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 		// Expiry refuses at the second layer and not at IsDrawableFor: a patient who
 		// names an expired vial is telling the server something, and this is the server
 		// choosing for them — the same vial the hint has already written off.
-		{name: "the only sealed vial has expired", expired: true},
+		{name: "the only sealed vial has expired", expired: "2026-04-30"},
+		// The boundary itself: stock expiring today has not expired, which is what the
+		// hint's own filter says of the same row. Without this case the comparison can
+		// be tightened to > and nothing moves.
+		{name: "the only sealed vial expires today", expired: "2026-05-10", named: true},
 		// And at the first layer too: a vial already open can be set aside, and it
 		// stops being the answer the moment it is.
 		{name: "the only open vial is held back", open: 1, heldBack: true},
@@ -426,13 +434,14 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 		t.Run(cabinet.name, func(t *testing.T) {
 			c, pool := logging(t)
 			openVials(t, c, patientA, cabinet.open)
+			spare := ""
 			if cabinet.spare {
-				sealASpareFor(t, c, patientA, cabinet.heldBack)
+				spare = sealASpareFor(t, c, patientA, cabinet.heldBack)
 			} else if cabinet.heldBack {
 				holdBack(t, c, patientA, c.vial[patientA])
 			}
-			if cabinet.expired {
-				expire(t, c, patientA, c.vial[patientA])
+			if cabinet.expired != "" {
+				expire(t, c, patientA, c.vial[patientA], cabinet.expired)
 			}
 			if cabinet.otherOpen {
 				openVials(t, c, patientB, 1)
@@ -471,6 +480,14 @@ func TestTheVialIsResolvedRatherThanChosen(t *testing.T) {
 			case cabinet.open == 0:
 				if opened != "" {
 					t.Errorf("a vial nobody could name was opened on %q", opened)
+				}
+			}
+			// A spare is never what the second layer opens, in any row here: it stands
+			// behind either an open vial or an ambiguity, and both stop the resolution
+			// before it writes.
+			if spare != "" {
+				if opened := openedOn(t, c, spare); opened != "" {
+					t.Errorf("the sealed spare was opened on %q", opened)
 				}
 			}
 		})
@@ -520,17 +537,17 @@ func openedOn(t *testing.T, c clinic, vial string) string {
 	return opened
 }
 
-// expire moves a vial's expiry behind the day the fixture logs on, which is 10 May in the
+// expire moves a vial's expiry to a given day, against the 10 May the fixture logs on in the
 // patients' own zone.
-func expire(t *testing.T, c clinic, patient, vial string) {
+func expire(t *testing.T, c clinic, patient, vial, on string) {
 	t.Helper()
 
 	if err := database.WithCaller(
 		t.Context(), c.request, database.Caller{Subject: patient, Role: "patient"},
 		func(ctx context.Context, tx pgx.Tx) error {
 			tag, err := tx.Exec(ctx, `
-				UPDATE app.vials SET expires_on = DATE '2026-04-30' WHERE id = $1
-			`, vial)
+				UPDATE app.vials SET expires_on = $2::date WHERE id = $1
+			`, vial, on)
 			if err == nil && tag.RowsAffected() != 1 {
 				return fmt.Errorf("expiring matched %d vials, want 1", tag.RowsAffected())
 			}

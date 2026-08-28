@@ -33,9 +33,20 @@ import (
 func OpenVialFor(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string, today civil.Date,
 ) (*string, error) {
-	open, err := theOpenOne(ctx, tx, patient, compound)
-	if err != nil || open != nil {
-		return open, err
+	open, err := openOnes(ctx, tx, patient, compound)
+	if err != nil {
+		return nil, err
+	}
+	// The three answers of the first layer are not two: one open vial is the answer, more
+	// than one is «ambiguous, and the patient chooses», and only none reaches the second
+	// layer. Collapsing the last two — which a refactor did, and a reviewer caught —
+	// opens a sealed spare for a patient who already has two open vials, in exactly the
+	// case the design refuses to guess in.
+	if len(open) == 1 {
+		return &open[0], nil
+	}
+	if len(open) > 1 {
+		return nil, nil
 	}
 
 	opened, err := openTheLastSealed(ctx, tx, patient, compound, today)
@@ -43,19 +54,26 @@ func OpenVialFor(
 		return opened, err
 	}
 
-	// Asked once more, and only here: the guard in that write refuses when another request
-	// opened the same vial and committed between the two layers, and by now that vial is
-	// open. Answering nil instead would charge the dose to no vial at all, and drawsOf
-	// skips events with none — so the remaining count would stay overstated by this dose
-	// for the life of the vial.
-	return theOpenOne(ctx, tx, patient, compound)
+	// Asked once more, and only where the second layer opened nothing: its guard refuses
+	// when another request opened the same vial and committed between the two layers, and
+	// by now that vial is open. Answering nil instead would charge the dose to no vial at
+	// all, and drawsOf skips events with none — so the remaining count would stay
+	// overstated by this dose for the life of the vial. Where there was nothing to open in
+	// the first place this repeats the answer already given, at the cost of one indexed
+	// read on a path that has already made two.
+	again, err := openOnes(ctx, tx, patient, compound)
+	if err != nil || len(again) != 1 {
+		return nil, err
+	}
+
+	return &again[0], nil
 }
 
-// theOpenOne is the patient's single open vial of this compound, and nothing where there is
-// not exactly one.
-func theOpenOne(
+// openOnes is the patient's open vials of this compound, two at most: the question every
+// caller asks is «is there exactly one», and the third row would not change any answer.
+func openOnes(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, compound string,
-) (*string, error) {
+) ([]string, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id::text
 		FROM app.vials
@@ -76,17 +94,10 @@ func theOpenOne(
 		}
 		open = append(open, id)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	// LIMIT 2 and not LIMIT 1: the question is «is there exactly one», and a query taking
-	// the first would answer «yes» to a cabinet holding three.
-	if len(open) != 1 {
-		return nil, nil
-	}
-
-	return &open[0], nil
+	// LIMIT 2 and not LIMIT 1: a query taking the first would answer «yes» to a cabinet
+	// holding three, and the count is what separates «the answer» from «the patient's
+	// choice».
+	return open, rows.Err()
 }
 
 // openTheLastSealed opens the patient's single sealed vial of this compound and names it,
