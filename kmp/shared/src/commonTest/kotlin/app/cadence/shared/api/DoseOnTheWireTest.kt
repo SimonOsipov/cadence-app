@@ -27,7 +27,6 @@ class DoseOnTheWireTest {
 
     // The set and not its size: iterating `entries` cannot see a unit leave the contract, and
     // this project has already paid for that once.
-    //
     // The identifier half of the same decision, and it has a cost the Linux gate cannot see:
     // the Cyrillic entry names reach the exported Objective-C header, and clang answers
     // «'swift_name' attribute has invalid identifier for the base name» on every translation

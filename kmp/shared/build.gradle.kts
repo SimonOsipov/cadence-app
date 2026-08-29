@@ -104,21 +104,28 @@ val generateApiConfig by tasks.registering {
  */
 val refuseDevAddressInRelease by tasks.registering {
     val base = apiBase
-    val dev = devApiBase
     doLast {
         // The shape and not the literal: an exact comparison against one URL is defeated by a
-        // trailing slash. What is refused is https missing, and a host that names this machine
-        // or a private network rather than the product — measured over the addresses a person
-        // would actually pass, including LOCALHOST, which the case-sensitive first version let
-        // through, and 10.0.2.2, which is how an Android emulator reaches its host.
+        // trailing slash. What is refused is https missing, and a host naming this machine, a
+        // container host or a private network rather than the product.
+        //
+        // Every address below was tried against this task rather than read off the regex, and
+        // twice the reading was wrong: the case-sensitive first version admitted LOCALHOST, and
+        // the second omitted 172.16/12 — Docker's own bridge — along with host.docker.internal
+        // and api.localhost. 10.0.2.2 is in it because that is how an Android emulator reaches
+        // its host.
         val address = base.get()
         val notTheProducts =
             Regex(
-                """//([^@/]*@)?(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1]|""" +
-                    """10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|[^/]*\.local)(:|/|$)""",
+                """//([^@/]*@)?(""" +
+                    """localhost|[^/:]*\.localhost|[^/:]*\.local|host\.docker\.internal|""" +
+                    """127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1]|169\.254\.\d+\.\d+|""" +
+                    """10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|""" +
+                    """172\.(1[6-9]|2\d|3[01])\.\d+\.\d+""" +
+                    """)(:|/|$)""",
                 RegexOption.IGNORE_CASE,
             )
-        check(address != dev && address.startsWith("https://") && !notTheProducts.containsMatchIn(address)) {
+        check(address.startsWith("https://") && !notTheProducts.containsMatchIn(address)) {
             "a release cannot be built against $address — pass -Pcadence.apiBase=https://…"
         }
     }

@@ -72,8 +72,11 @@ jobs:
           command -v shellcheck >/dev/null 2>&1 || {
             sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           }
-          # The same script all.sh runs, so the pre-PR command and this job cannot disagree
-          # about what «the shell is linted» means.
+          # The same script all.sh runs, so the file set and the flags cannot drift apart.
+          # The tool itself is not pinned — README records shellcheck as «any» and the runner
+          # ships what it ships — so a version bump can still be locally green and red here.
+          # Named rather than closed: pinning it is the deploy block's kind of work, and
+          # golangci-lint and XcodeGen are the precedents for how.
           ./scripts/gate/shell.sh
 
       # The stack filter decides which gates run at all, and a wrong answer of
@@ -198,7 +201,9 @@ jobs:
     # macOS runners bill at ten times the Linux rate, which is why the Android
     # half runs separately on Linux and the timeout is deliberately tight.
     #
-    # It starts on a change to `kmp/` or to `api/openapi.json`, and the contract is
+    # It starts on whatever the kmp filter in changed-stacks.sh answers true for — today
+    # `kmp/`, `api/openapi.json`, three gate scripts and this file, so a comment-only edit
+    # here books a macOS runner. The contract is
     # in that filter for the Linux half's sake: openApiDrift runs in kmp.sh and not
     # here. The macOS job is paid on a contract change for what it does prove — that
     # the regenerated client still compiles and links for the iOS target, which the
