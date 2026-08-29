@@ -166,6 +166,22 @@ This is also where what makes it checkable appears: Android tests with a runtime
 
 todoist: "6h8xx8WR6rgcmxpq"
 
+### step-1a: An XCTest host for the Keychain suite
+
+Opened by step 1's spike, which the spec named as a fallback without decomposing it.
+
+**Measured 2026-08-29.** `SecItemAdd` from `iosSimulatorArm64Test` answers -25291,
+`errSecNotAvailable`: a Kotlin/Native test binary is not an app bundle and has no keychain.
+The spec predicted -34018, `errSecMissingEntitlement` — the outcome it named was right and
+the code it guessed was not.
+
+An `iosAppTests` bundle hosted by `iosApp`, `:shared` exported from the ComposeApp framework
+so its types reach the Objective-C header, the suite moved there, and `ios.sh` running it.
+One test is the reason the others are not enough: both keychain attributes are read back off
+the item, because no behavioural assertion can see them.
+
+todoist: "6hPMWf3X2QP9fmvq"
+
 ### step-2: The client from `openapi.json`, configuration, and transport
 
 ⏸ **Requires `openapi.json`** from the "API Skeleton" block, step 2.

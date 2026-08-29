@@ -5,6 +5,7 @@
          in private storage, and the platform default would copy both into the
          user's cloud backup and into device-to-device transfer. -->
     <application
+        android:name=".CadenceApplication"
         android:allowBackup="false"
         android:label="Cadence"
         android:icon="@android:drawable/sym_def_app_icon"
