@@ -43,9 +43,9 @@ allprojects {
         // setFrom replaces detekt's defaults, so every source set is listed
         // explicitly — including the test ones. Test code is in scope: a test
         // is code the product depends on.
-        // `src/commonMain/generated/app/cadence/shared/api` is deliberately absent, and it is
-        // the package rather than the directory above it so that «unanalysed» and «written by
-        // the generator» name one set. detekt's list replaces its own
+        // `src/commonMain/generated` is absent at every depth, which is what the spec asks
+        // for — «its path allow-list does not contain `generated/`» — and the residual is
+        // named in shared/build.gradle.kts rather than closed. detekt's list replaces its own
         // defaults, so anything unnamed is unanalysed — and this is the one place where that
         // silence is chosen rather than inherited: the file is written by a generator, this
         // project cannot act on a finding in it, and a red gate nobody can clear is worse than

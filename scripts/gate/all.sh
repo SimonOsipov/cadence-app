@@ -23,6 +23,12 @@ ran+=("ruleset")
 "$here/changed-stacks_test.sh"
 ran+=("changed-stacks")
 
+# The shell gate, and it is here because its absence was measured: an unquoted expansion added
+# to kmp.sh passed every stage below and would have failed CI, where shellcheck is a job of its
+# own. A pre-PR command that cannot see a whole CI job is not the pre-PR command.
+"$here/shell.sh"
+ran+=("shell")
+
 "$here/go.sh"
 ran+=("go")
 

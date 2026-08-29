@@ -27,6 +27,14 @@ class DoseOnTheWireTest {
 
     // The set and not its size: iterating `entries` cannot see a unit leave the contract, and
     // this project has already paid for that once.
+    //
+    // The identifier half of the same decision, and it has a cost the Linux gate cannot see:
+    // the Cyrillic entry names reach the exported Objective-C header, and clang answers
+    // «'swift_name' attribute has invalid identifier for the base name» on every translation
+    // unit importing it — measured with xcrun clang -fsyntax-only against the linked framework.
+    // Warnings only; Xcode carries no -Werror. `x-enum-varnames` in the schema would buy ASCII
+    // names at the same wire values, and that is the schema's decision rather than this file's.
+
     @Test
     fun theContractAdmitsExactlyTheseTwoUnits() {
         assertEquals(listOf("мг", "мкг"), DoseBody.Unit.entries.map { it.value })
@@ -42,10 +50,14 @@ class DoseOnTheWireTest {
         }
     }
 
-    // The identifier half of the same decision, and it has a cost the Linux gate cannot see:
-    // the Cyrillic entry names reach the exported Objective-C header, and clang answers
-    // «'swift_name' attribute has invalid identifier for the base name» on every translation
-    // unit importing it — measured with xcrun clang -fsyntax-only against the linked framework.
-    // Warnings only; Xcode carries no -Werror. `x-enum-varnames` in the schema would buy ASCII
-    // names at the same wire values, and that is the schema's decision rather than this file's.
+    // The number is a Double, which is the generator's mapping of `format: double` rather than
+    // a choice made here. Pinned because §03's rule is that a dose is {value, unit}, and the
+    // day the contract carries a decimal instead, this is where it shows — at compile time, in
+    // the constructor call, which is where the mapping actually lives.
+    @Test
+    fun theValueIsADouble() {
+        val dose = DoseBody(DoseBody.Unit.мкг, 250.0)
+
+        assertEquals(250.0, dose.value)
+    }
 }

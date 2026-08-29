@@ -94,7 +94,8 @@ class CadenceHttpClientTest {
         }
 
     // A session printed into a log or a crash report must not carry the token with it. Ktor's
-    // own BearerTokens is a data class and would; ours is the type that crosses this seam.
+    // BearerTokens holds both in fields — measured with javap on the 3.5.1 artifact, it has no
+    // toString of its own — and this pins the type the app's own code holds.
     @Test
     fun aSessionDoesNotPrintItsTokens() {
         val printed = Session(access = STALE, refresh = "refresh-token").toString()

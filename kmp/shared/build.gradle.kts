@@ -18,9 +18,14 @@ val generatedClient = layout.buildDirectory.dir("generated-openapi")
 // the transport, and `theGeneratedCredentialHelpersAreNotUsed` is what keeps that true.
 val keptFromTheGenerator = listOf("apis", "models", "infrastructure", "auth")
 
-// Pointed at the package rather than at `generated/`, so that «written by the generator» and
-// «unanalysed» name the same set: a file dropped beside this path would otherwise compile into
-// commonMain and be invisible to both ktlint and detekt.
+// Pointed at the package rather than at `generated/`, so that ktlint's exemption and «written
+// by the generator» name the same set: a file dropped beside this path compiles into commonMain
+// and would otherwise be exempt from formatting too.
+//
+// detekt is a different story and the spec asks for it: its `source` list names seven `kotlin`
+// directories and `generated/` is under none of them, so nothing here is analysed by it at any
+// depth — measured. The residual is named rather than closed: a hand-written file under
+// `src/commonMain/generated/` is formatted by ktlint and unseen by detekt.
 val generatedInto = layout.projectDirectory.dir("src/commonMain/generated")
 val generatedPackage = "app/cadence/shared/api"
 
@@ -102,11 +107,18 @@ val refuseDevAddressInRelease by tasks.registering {
     val dev = devApiBase
     doLast {
         // The shape and not the literal: an exact comparison against one URL is defeated by a
-        // trailing slash, and by every other address that is not the product's. A release talks
-        // to a real host over TLS, so anything else is refused.
+        // trailing slash. What is refused is https missing, and a host that names this machine
+        // or a private network rather than the product — measured over the addresses a person
+        // would actually pass, including LOCALHOST, which the case-sensitive first version let
+        // through, and 10.0.2.2, which is how an Android emulator reaches its host.
         val address = base.get()
-        val loopback = Regex("""//(localhost|127\.0\.0\.1|\[::1\]|[^/]*\.local)(:|/|$)""")
-        check(address.startsWith("https://") && !loopback.containsMatchIn(address)) {
+        val notTheProducts =
+            Regex(
+                """//([^@/]*@)?(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1]|""" +
+                    """10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|[^/]*\.local)(:|/|$)""",
+                RegexOption.IGNORE_CASE,
+            )
+        check(address != dev && address.startsWith("https://") && !notTheProducts.containsMatchIn(address)) {
             "a release cannot be built against $address — pass -Pcadence.apiBase=https://…"
         }
     }

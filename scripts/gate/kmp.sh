@@ -44,12 +44,13 @@ echo "==> the generated credential helpers stay unused"
 # because ApiKeyAuth is the one helper that can put a credential in the query string, which is
 # what the spec forbids by name. iosApp/ is searched too: :shared is exported into the
 # framework, so ApiClient's setters are reachable from Swift.
-roots="shared/src composeApp/src androidApp/src iosApp/iosApp iosApp/iosAppTests"
-for root in $roots; do
+roots=(shared/src composeApp/src androidApp/src iosApp/iosApp iosApp/iosAppTests)
+for root in "${roots[@]}"; do
     [ -d "$root" ] || { echo "the credential guard searches $root, which is not there" >&2; exit 1; }
 done
-callers=$(grep -rn "setBearerToken\|setAccessToken\|setApiKey\|setUsername\|setPassword" \
-    $roots | grep -v "/generated/" || true)
+callers=$(grep -rn --include='*.kt' --include='*.swift' \
+    "setBearerToken\|setAccessToken\|setApiKey\|setUsername\|setPassword" \
+    "${roots[@]}" | grep -v "/generated/" || true)
 if [ -n "$callers" ]; then
     echo "the transport is not the only owner of the token any more:" >&2
     echo "$callers" >&2

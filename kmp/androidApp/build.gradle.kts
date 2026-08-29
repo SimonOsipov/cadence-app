@@ -46,9 +46,20 @@ kotlin {
     }
 }
 
-// The release cannot be assembled against the dev address. Hung off the outputs rather than
-// checked in a script; composeApp carries the same dependency on the iOS release links, and
-// between the two there is no release output that goes around it.
-tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
-    dependsOn(":shared:refuseDevAddressInRelease")
-}
+// The release cannot be built against the dev address, on the artifact producers rather than
+// on the lifecycle aliases: `assembleRelease` carried the dependency and `packageRelease` —
+// the task that actually writes build/outputs/apk/release — did not, so the rule had a bypass
+// one command wide. Measured with --dry-run on both.
+tasks
+    .matching {
+        it.name in
+            setOf(
+                "assembleRelease",
+                "bundleRelease",
+                "packageRelease",
+                "packageReleaseBundle",
+                "signReleaseBundle",
+            )
+    }.configureEach {
+        dependsOn(":shared:refuseDevAddressInRelease")
+    }
