@@ -61,4 +61,21 @@ xcodebuild \
     ARCHS=arm64 \
     build
 
+# The XCTest bundle, and it needs a named device rather than the generic destination the
+# build above takes: a test run has to boot a simulator, and `generic/platform=` names none.
+#
+# It exists because a keychain needs an app identity. Measured 2026-08-29: SecItemAdd from
+# a Kotlin/Native test binary answers -25291, errSecNotAvailable, so the Keychain suite
+# cannot live in shared/src/iosTest at all — only the refusal does.
+TEST_DESTINATION=${TEST_DESTINATION:-platform=iOS Simulator,name=iPhone 17}
+
+echo "==> xcodebuild test (the Keychain suite, hosted by the app)"
+xcodebuild \
+    -project iosApp/iosApp.xcodeproj \
+    -scheme iosApp \
+    -configuration Debug \
+    -destination "$TEST_DESTINATION" \
+    ARCHS=arm64 \
+    test
+
 echo "ios gate: green"

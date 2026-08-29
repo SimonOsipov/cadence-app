@@ -18,6 +18,12 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+            // :shared is exported so its types reach the framework's Objective-C header,
+            // which is the only way an XCTest bundle can call into them. The cost is real
+            // and named: every public declaration in :shared becomes visible to Swift, not
+            // just the one under test. It is exported rather than a second framework built
+            // because two frameworks carrying one Kotlin runtime is the worse trade.
+            export(project(":shared"))
         }
     }
 
@@ -33,7 +39,8 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":shared"))
+            // api rather than implementation: export above requires it.
+            api(project(":shared"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)

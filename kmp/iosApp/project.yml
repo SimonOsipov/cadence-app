@@ -42,7 +42,26 @@ targets:
     # it the project carries none, and only Xcode's autocreation saves a local
     # build — a fresh clone or a CI runner has nothing to pass to -scheme.
     scheme:
-      testTargets: []
+      testTargets:
+        - iosAppTests
+
+  # Hosted by the app on purpose, and that is the whole reason it exists: a keychain needs
+  # an app identity, and a Kotlin/Native test binary has none — measured, it answers
+  # errSecNotAvailable. See shared/src/iosTest/.../KeychainReachabilityTest.kt.
+  iosAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: iosAppTests
+    dependencies:
+      - target: iosApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.cadence.tests
+        GENERATE_INFOPLIST_FILE: YES
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../composeApp/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
     preBuildScripts:
       - name: Compile Kotlin Framework
         basedOnDependencyAnalysis: false
