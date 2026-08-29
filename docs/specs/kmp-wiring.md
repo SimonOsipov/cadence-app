@@ -165,11 +165,21 @@ Mapping to the original tasks: all three steps close SKL-11.
 This is also where what makes it checkable appears: Android tests with a runtime (Robolectric or a device in CI), an extension of `scripts/gate/kmp.sh`, the new source sets in the detekt allow-list. Plus the Keychain spike from `iosSimulatorArm64Test` with the XCTest-host fallback.
 
 > [!deviation] 2026-08-29
-> **The Apple `Settings` is ours, not the library's.** Measured against multiplatform-settings'
-> own reference and README: `KeychainSettings(serviceName: String)` is the whole constructor, so
-> neither `kSecAttrAccessible` nor `kSecAttrSynchronizable` reaches it. The spec named this
-> fallback in advance («a custom implementation stays the fallback if the `Settings` parameters
-> do not reach the accessibility class we need»), and it is the branch that was taken.
+> **The Apple `Settings` is ours, not the library's — and the first reason recorded here was
+> false.** It said `KeychainSettings(serviceName: String)` is the whole constructor, so the two
+> attributes could not reach it, and cited that as measured. It was not measured; it was read
+> off documentation that lists one constructor. Review objected, and the 1.3.0 klib settles it:
+> the class carries a second `vararg defaultProperties: Pair<CFStringRef?, CFTypeRef?>`
+> constructor, and the attributes do reach it. The lesson is one this project has already
+> written down — measure the library, not the docs — and it was not applied.
+>
+> Two reasons stand in its place. That constructor is `@ExperimentalSettingsApi` on top of the
+> class's own `@ExperimentalSettingsImplementation`, which is two experimental opt-ins on the
+> authentication path of a medical app; and `KeychainSettings` stores one keychain item per
+> key, while this store is one blob — and the blob is what carries «read it or do not overwrite
+> it», the invariant round one's critical was about. The spec's fallback clause is conditional
+> on the attributes being unreachable, so **this is a deviation from the spec's condition, not
+> a use of its escape hatch**, and it is worth re-opening if the per-key shape is ever wanted.
 >
 > **Robolectric ships no AndroidKeyStore provider** — `KeyStore.getInstance` answers
 > «AndroidKeyStore not found», measured. So `AndroidVault` takes its key as a parameter with the
@@ -201,11 +211,23 @@ This is also where what makes it checkable appears: Android tests with a runtime
 > survived. Statuses are answered rather than discarded on both platforms, and the fresh-install
 > guard marks itself only after a wipe that answered.
 >
-> **The gate was structurally blind to two of these.** detekt's `SwallowedException` and
-> `TooGenericExceptionCaught` both allow a parameter named `_`, which is how both catches were
-> written; armed in `config/detekt.yml`, they named all five sites. **Named gap:** there is no
+> **The gate was structurally blind to these.** detekt's `SwallowedException` and
+> `TooGenericExceptionCaught` allow two parameter names by default, `_` and `expected` — the
+> first is what Kotlin encourages for an unused parameter and the second is what a test writer
+> reaches for, so between them the default arms nothing. Narrowing to drop `_` alone left every
+> site invisible under the other name, which is what the second round caught. The allow-list is
+> empty now: a swallow is justified at its site or it is not justified. **Named gap:** there is no
 > logging in `:shared` at all, so every refusal above is silent to a developer as well as to the
 > patient. Not fixed here — it is a dependency decision, and it belongs with the transport.
+>
+> **Round two found four majors, every one inside round one's repairs.** `Vault.write` was given
+> an answer nobody read, so a refused write still looked kept. `remove` was gated by the same
+> flag as writing, so signing out of a store that could not be read did nothing at rest — the
+> opposite sign of the trade the flag exists to make. Android collapsed «corrupt» into «cannot
+> read now», so one kill mid-write would have left the store unwritable for the life of the
+> installation. And the citation above was wrong. **Named gap:** the per-name instance map is
+> not atomic, which becomes reachable when step 2 puts the session manager on a background
+> dispatcher.
 
 todoist: "6h8xx8WR6rgcmxpq"
 

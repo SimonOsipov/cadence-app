@@ -27,33 +27,37 @@ class VaultSettings(
 ) : Settings {
     private val entries: MutableMap<String, String>
 
+    private var writable: Boolean
+
     /**
-     * False where the store could not be read, in which case nothing here reaches the vault.
+     * False where the store could not be read, or where a write to it was refused.
      *
      * The running session still works — values put on this instance are answered by it — but
-     * they are not persisted, so the patient signs in again next launch instead of losing
-     * the session they had. The consumer is expected to surface this; there is no logging in
+     * they are not persisted, so the patient signs in again next launch instead of losing the
+     * session they had. It does not clear itself: an instance is cached for the life of the
+     * process, so a store first reached before the device was unlocked stays unwritable until
+     * the app is restarted. The consumer is expected to surface this; there is no logging in
      * this module to carry it, which is named as a gap rather than fixed here.
      */
-    val isWritable: Boolean
+    val isWritable: Boolean get() = writable
 
     init {
         when (val stored = vault.read()) {
             is Stored.Absent -> {
                 entries = mutableMapOf()
-                isWritable = true
+                writable = true
             }
 
             is Stored.Present -> {
                 // Bytes we wrote and cannot parse are our own corruption, and writing over
                 // them is right: keeping them would leave the store unusable for good.
                 entries = decode(stored.bytes)
-                isWritable = true
+                writable = true
             }
 
             is Stored.Unavailable -> {
                 entries = mutableMapOf()
-                isWritable = false
+                writable = false
             }
         }
     }
@@ -62,6 +66,8 @@ class VaultSettings(
 
     override val size: Int get() = entries.size
 
+    // Reaches the vault whatever the store's state: clear() is sign-out, and a session left
+    // at rest because the store could not be read is the opposite of what was asked for.
     override fun clear() {
         entries.clear()
         vault.wipe()
@@ -78,9 +84,18 @@ class VaultSettings(
         return vault.wipe()
     }
 
+    /**
+     * Removal on a store that cannot be rewritten wipes the whole thing.
+     *
+     * `supabase-kt` signs out with `remove(key)`, and the alternative here is to do nothing at
+     * rest — leaving the session on the device after the patient asked for it to go. Selective
+     * removal is not available: the blob is written whole, and this instance never read the
+     * other keys, so it cannot preserve them. Erasing more than was asked is the safe
+     * direction; keeping a session that was signed out of is not.
+     */
     override fun remove(key: String) {
         entries.remove(key)
-        flush()
+        if (writable) flush() else vault.wipe()
     }
 
     override fun hasKey(key: String): Boolean = entries.containsKey(key)
@@ -166,7 +181,7 @@ class VaultSettings(
     }
 
     private fun flush() {
-        if (!isWritable) return
+        if (!writable) return
 
         val blob =
             buildString {
@@ -175,10 +190,15 @@ class VaultSettings(
                     appendField(value)
                 }
             }
-        vault.write(blob.encodeToByteArray())
+        // The answer is consumed rather than discarded: the Apple vault deletes before it
+        // adds, so a refused add leaves the keychain empty while this map still answers with
+        // the value. Unnoticed, the caller writes, reads back its own copy, and the session is
+        // gone at rest until the next launch says so.
+        if (!vault.write(blob.encodeToByteArray())) writable = false
     }
 }
 
+@Suppress("SwallowedException")
 private fun decode(bytes: ByteArray): MutableMap<String, String> {
     val blob =
         try {

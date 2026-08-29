@@ -99,13 +99,13 @@ style:
     max: 3
 
 exceptions:
-  # Both rules exist to flag exactly the two catches secure storage needed, and detekt's
-  # own defaults let `_` past: `allowedExceptionNameRegex` is '_|(ignore|expected).*', and
-  # naming the parameter `_` — which is what Kotlin encourages for an unused one — matches
-  # it. Measured 2026-08-29 by arming these two lines and watching the storage catches
-  # appear. A swallowed exception on the authentication path is the defect this project can
-  # least afford to have made invisible by a naming convention.
+  # Both rules exist to flag exactly the catches secure storage needed, and detekt's defaults
+  # let two names past: `allowedExceptionNameRegex` is '_|(ignore|expected).*'. Measured
+  # 2026-08-29 — `_` is what Kotlin encourages for an unused parameter, and `expected` is what
+  # a test writer reaches for, so between them the default arms nothing. Emptied rather than
+  # narrowed: a swallowed exception on the authentication path is justified at the site, in a
+  # line naming what is swallowed and why, or it is not justified.
   TooGenericExceptionCaught:
-    allowedExceptionNameRegex: '(ignore|expected).*'
+    allowedExceptionNameRegex: '$a'
   SwallowedException:
-    allowedExceptionNameRegex: '(ignore|expected).*'
+    allowedExceptionNameRegex: '$a'

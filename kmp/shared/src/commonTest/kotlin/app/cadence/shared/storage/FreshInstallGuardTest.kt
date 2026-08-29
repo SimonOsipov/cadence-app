@@ -67,7 +67,7 @@ class FreshInstallGuardTest {
     // — the single outcome this function exists to prevent, reached by declaring success.
     @Test
     fun aWipeThatFailedLeavesTheGuardArmedForTheNextLaunch() {
-        val vault = storeHolding("rt-of-whoever-had-this-phone").also { it.bytes }
+        val vault = storeHolding("rt-of-whoever-had-this-phone")
         val stubborn = FakeVault(bytes = vault.bytes, wipes = false)
         val volatileStore = MapSettings()
 

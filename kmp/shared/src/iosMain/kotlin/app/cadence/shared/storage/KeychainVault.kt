@@ -27,6 +27,7 @@ import platform.Foundation.create
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
+import platform.Security.errSecItemNotFound
 import platform.Security.errSecSuccess
 import platform.Security.kSecAttrAccessible
 import platform.Security.kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -42,18 +43,21 @@ import platform.posix.memcpy
 private const val ACCOUNT = "store"
 private const val ATTRIBUTE_COUNT = 6L
 
-// errSecItemNotFound. Written as a number because the constant is not in the Kotlin bindings.
-private const val ITEM_NOT_FOUND = -25300
-
 /**
  * The whole store in one generic-password item.
  *
- * Ours rather than the library's `KeychainSettings`, and that is a measured constraint
- * rather than a preference: its entire constructor is `KeychainSettings(serviceName)`, so
- * neither the accessibility class nor the synchronisation flag reaches it. Both matter here.
- * `AfterFirstUnlockThisDeviceOnly` keeps the item readable to a background token refresh
- * while refusing to leave the device; synchronizable = false keeps it out of iCloud Keychain,
- * where the patient's session would otherwise land on their other devices.
+ * Ours rather than the library's `KeychainSettings`, and the reason recorded here first was
+ * wrong: that class does take the attributes, through a second `vararg defaultProperties`
+ * constructor — measured in the 1.3.0 klib after review said so. Two reasons stand. It
+ * carries `@ExperimentalSettingsApi` on top of the class's own
+ * `@ExperimentalSettingsImplementation`, which is two experimental opt-ins on the
+ * authentication path of a medical app; and it stores one keychain item per key, while the
+ * store above is one blob — and the blob is what carries «read it or do not overwrite it».
+ *
+ * The attributes are the point of the item either way. `AfterFirstUnlockThisDeviceOnly` keeps
+ * it readable to a background token refresh while refusing to leave the device;
+ * synchronizable = false keeps it out of iCloud Keychain, where the patient's session would
+ * otherwise land on their other devices.
  *
  * Written as delete-then-add rather than update: `SecItemAdd` over an existing account
  * answers `errSecDuplicateItem`, and one branch is cheaper to keep right than two.
@@ -78,7 +82,7 @@ class KeychainVault(
                         ?: Stored.Unavailable("the keychain answered success without data")
                 }
 
-                ITEM_NOT_FOUND -> {
+                errSecItemNotFound -> {
                     Stored.Absent
                 }
 
@@ -119,7 +123,7 @@ class KeychainVault(
         // Nothing to delete is a wipe that happened. Anything else is a store that may still
         // be there, and sign-out has to be able to tell: taken for done, it hands the next
         // person on the device this patient's session.
-        return status == errSecSuccess || status == ITEM_NOT_FOUND
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 
     /**

@@ -225,12 +225,9 @@ jobs:
           echo "/tmp/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
 
       - name: iOS tests, project drift check, xcodebuild
-        # The device is named here rather than left to the script's default: the XCTest
-        # bundle has to boot a simulator, and which ones exist is a property of the runner
-        # image. Pinned in one place, a changed image is a one-line fix rather than a gate
-        # that fails over a device list.
-        env:
-          TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=latest
+        # TEST_DESTINATION is deliberately not set here. The script's default already names a
+        # device with OS=latest, and repeating the string would put the runner image's device
+        # list in two files that have to agree — override it here on the day they diverge.
         run: ./scripts/gate/ios.sh
 
   web:

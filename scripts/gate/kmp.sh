@@ -18,13 +18,14 @@ echo "==> detekt"
 # `withHostTestBuilder {}` in its build file, so `testAndroidHostTest` resolves
 # to `:shared:testAndroidHostTest` and nothing else.
 #
-# Counted 2026-08-29, all three by running them rather than by arithmetic: 366
+# Counted 2026-08-29, every figure by running it rather than by arithmetic: 369
 # here, 353 of `:shared` again on the iOS simulator target, and composeApp's 494
 # Compose UI tests, which run under ios.sh on a macOS host and nowhere else. The
 # figures that stood here said 244 and 293 and had been overtaken by the ported
-# screens; recounting one of two numbers is how a comment ends up half true.
+# screens; recounting one number of several is how a comment ends up part true,
+# which is what happened to the fourth one on the first attempt at this paragraph.
 #
-# Eleven of the 366 run under a Robolectric runtime, which is what secure storage
+# Fifteen of the 369 run under a Robolectric runtime, which is what secure storage
 # needed to be checkable at all. The Keychain half is not here either: it needs an
 # app bundle, so it is an XCTest target under ios.sh.
 

@@ -133,6 +133,40 @@ class VaultSettingsTest {
         assertEquals(0, settings.size)
     }
 
+    // A vault that refuses the write must not leave the store looking written: the Apple one
+    // deletes before it adds, so a refused add empties the keychain while this map still
+    // answers with the value — and the caller reads back its own copy and believes it kept.
+    @Test
+    fun aRefusedWriteIsNoticedRatherThanDiscarded() {
+        val settings = VaultSettings(FakeVault(writes = false))
+
+        settings.putString("refresh_token", "rt-1")
+
+        assertFalse(settings.isWritable)
+    }
+
+    // Sign-out reaches the store even where it cannot be rewritten. Doing nothing at rest is
+    // the one outcome worse than erasing too much: the patient asked for the session to go,
+    // and the next launch would read it back.
+    @Test
+    fun signingOutOfAnUnreadableStoreStillWipesIt() {
+        val vault = FakeVault(bytes = "8:rt-token4:rt-1".encodeToByteArray(), unavailable = true)
+        val settings = VaultSettings(vault)
+
+        settings.remove("refresh_token")
+
+        assertNull(vault.bytes)
+    }
+
+    @Test
+    fun clearingAnUnreadableStoreStillWipesIt() {
+        val vault = FakeVault(bytes = "8:rt-token4:rt-1".encodeToByteArray(), unavailable = true)
+
+        VaultSettings(vault).clear()
+
+        assertNull(vault.bytes)
+    }
+
     // Sign-out has to be able to tell, which a Settings.clear() returning Unit cannot: a
     // wipe taken for done leaves the next person on the device holding this session.
     @Test

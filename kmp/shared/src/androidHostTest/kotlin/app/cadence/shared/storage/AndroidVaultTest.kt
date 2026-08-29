@@ -75,28 +75,30 @@ class AndroidVaultTest {
         assertIs<Stored.Absent>(vaultOver(aFile()).read())
     }
 
-    // Unavailable and not Absent, and the difference is the session: a tampered or
-    // unopenable store may still hold one, so the caller must not write over it. Read as
-    // «nothing here», the next write would erase what could not be opened this once.
+    // Present and empty rather than Unavailable, and the difference decides whether the
+    // installation ever writes again: bytes we hold the key for and cannot open are our own
+    // corruption, and corruption is replaceable. Read as «cannot read now», one kill
+    // mid-write would leave the store unwritable for good.
     @Test
-    fun aTamperedFileIsUnavailableRatherThanAbsent() {
+    fun aTamperedFileIsCorruptAndReplaceable() {
         val file = aFile()
         vaultOver(file).write("rt-1".encodeToByteArray())
         val bytes = file.readBytes()
         bytes[bytes.size - 1] = (bytes[bytes.size - 1] + 1).toByte()
         file.writeBytes(bytes)
 
-        assertIs<Stored.Unavailable>(vaultOver(file).read())
+        assertIs<Stored.Present>(vaultOver(file).read())
     }
 
-    // A file too short to hold an IV is not a truncated store, it is not a store at all —
-    // and it is still Unavailable rather than Absent, because something is there.
+    // A half-written file is the same case: replaceable, because writeBytes truncates before
+    // it writes and a kill in that window is how one is produced.
     @Test
-    fun aFileShorterThanItsIvIsUnavailable() {
+    fun aFileShorterThanItsIvIsCorruptAndReplaceable() {
         val file = aFile()
         file.writeBytes(ByteArray(TOO_SHORT_FOR_AN_IV))
 
-        assertIs<Stored.Unavailable>(vaultOver(file).read())
+        assertIs<Stored.Present>(vaultOver(file).read())
+        assertTrue(VaultSettings(vaultOver(file)).isWritable)
     }
 
     // A key this vault cannot get is «cannot read now», never «nothing stored» — a device

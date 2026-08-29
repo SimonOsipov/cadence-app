@@ -41,39 +41,68 @@ class AndroidVault(
 ) : Vault {
     override fun read(): Stored {
         if (!file.exists()) return Stored.Absent
+        val key = key() ?: return Stored.Unavailable("the keystore would not produce the key for $file")
 
-        val stored =
-            try {
-                file.readBytes()
-            } catch (expected: IOException) {
-                return Stored.Unavailable("reading $file: $expected")
-            }
-
-        return open(stored)
+        return stored()?.let { open(it, key) } ?: Stored.Unavailable("$file could not be read")
     }
 
-    /** A file too short to carry an IV is not a truncated store; it is not one of ours. */
-    private fun open(stored: ByteArray): Stored {
-        if (stored.size <= IV_BYTES) return Stored.Unavailable("$file holds ${stored.size} bytes")
+    @Suppress("SwallowedException")
+    private fun stored(): ByteArray? =
+        try {
+            file.readBytes()
+        } catch (expected: IOException) {
+            // The file is there and unreadable, which is «not now» rather than «not stored».
+            null
+        }
+
+    /**
+     * Null where the keystore would not hand the key over — a broken or absent provider, or a
+     * device that cannot hold a key at all. That is «cannot read now», never «nothing stored».
+     */
+    @Suppress("SwallowedException")
+    private fun key(): SecretKey? =
+        try {
+            keys()
+        } catch (expected: GeneralSecurityException) {
+            // Nothing to do with it and nowhere to report it: this module has no logging, which
+            // is a named gap in the step. The caller is told «unavailable», which is what it
+            // can act on.
+            null
+        } catch (expected: ProviderException) {
+            null
+        }
+
+    /**
+     * Bytes we hold the key for and still cannot open are ours and corrupt, and corrupt is
+     * replaceable — Present, so the store above may write over them.
+     *
+     * The distinction is the whole point and it is not cosmetic: `File.writeBytes` truncates
+     * before it writes, so one kill mid-write leaves a short file. Read as «cannot read now»,
+     * that file would make the store unwritable for the life of the installation and the
+     * patient would sign in again on every launch, for ever, with no path back. Unavailable is
+     * reserved for the case where the key itself could not be had.
+     */
+    @Suppress("SwallowedException")
+    private fun open(
+        stored: ByteArray,
+        key: SecretKey,
+    ): Stored {
+        if (stored.size <= IV_BYTES) return Stored.Present(ByteArray(0))
 
         return try {
             val cipher =
                 Cipher.getInstance(TRANSFORMATION).apply {
-                    init(Cipher.DECRYPT_MODE, keys(), GCMParameterSpec(TAG_BITS, stored, 0, IV_BYTES))
+                    init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, stored, 0, IV_BYTES))
                 }
             Stored.Present(cipher.doFinal(stored, IV_BYTES, stored.size - IV_BYTES))
         } catch (expected: GeneralSecurityException) {
-            // A restore brings a file no key here can open, and a half-written one fails the
-            // GCM tag. ProviderException is the other shape: a device whose keystore is
-            // broken refuses to hand the key over at all. None of the three says the patient
-            // is signed out — only that this store cannot be read now, which is why the
-            // answer is Unavailable and the caller may not write over it.
-            Stored.Unavailable("opening $file: $expected")
-        } catch (expected: ProviderException) {
-            Stored.Unavailable("the key for $file: $expected")
+            // The tag failed under a key we did have: the file is ours and unusable.
+            Stored.Present(ByteArray(0))
         }
     }
 
+    /** False rather than thrown: the caller is a Settings, which has no channel for an error. */
+    @Suppress("SwallowedException")
     override fun write(bytes: ByteArray): Boolean =
         try {
             val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, keys()) }
