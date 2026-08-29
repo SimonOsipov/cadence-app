@@ -43,6 +43,12 @@ allprojects {
         // setFrom replaces detekt's defaults, so every source set is listed
         // explicitly — including the test ones. Test code is in scope: a test
         // is code the product depends on.
+        // `src/commonMain/generated` is deliberately absent. detekt's list replaces its own
+        // defaults, so anything unnamed is unanalysed — and this is the one place where that
+        // silence is chosen rather than inherited: the file is written by a generator, this
+        // project cannot act on a finding in it, and a red gate nobody can clear is worse than
+        // a scope that says where it ends. What the client does is measured by the tests that
+        // use it, not by static analysis of it.
         source.setFrom(
             "src/commonMain/kotlin",
             "src/androidMain/kotlin",
