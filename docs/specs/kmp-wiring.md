@@ -164,6 +164,49 @@ Mapping to the original tasks: all three steps close SKL-11.
 
 This is also where what makes it checkable appears: Android tests with a runtime (Robolectric or a device in CI), an extension of `scripts/gate/kmp.sh`, the new source sets in the detekt allow-list. Plus the Keychain spike from `iosSimulatorArm64Test` with the XCTest-host fallback.
 
+> [!deviation] 2026-08-29
+> **The Apple `Settings` is ours, not the library's.** Measured against multiplatform-settings'
+> own reference and README: `KeychainSettings(serviceName: String)` is the whole constructor, so
+> neither `kSecAttrAccessible` nor `kSecAttrSynchronizable` reaches it. The spec named this
+> fallback in advance («a custom implementation stays the fallback if the `Settings` parameters
+> do not reach the accessibility class we need»), and it is the branch that was taken.
+>
+> **Robolectric ships no AndroidKeyStore provider** — `KeyStore.getInstance` answers
+> «AndroidKeyStore not found», measured. So `AndroidVault` takes its key as a parameter with the
+> Keystore as the default: the format, the IV's place, tampering, wiping and a key that cannot
+> be produced are all measured, and what stays unmeasured is the key acquisition itself, which
+> is platform API rather than ours. `androidDeviceTest` with an emulator was refused, because
+> `scripts/gate/kmp.sh` promises to run on any machine including Linux. **Named gap:** the
+> `KeyGenParameterSpec` — block mode, padding, 256 bits — has no executable witness on any
+> runtime.
+>
+> **`secureSettings` takes a name, which the spec did not say.** The acceptance criteria put the
+> session *and* the PKCE verifier in secure storage, and the store is written back whole — one
+> store shared between them would have the session's next write drop the verifier out of it,
+> silently, in the middle of accepting an invite. One instance per name, and one fresh-install
+> marker per store: a single marker is put down by whichever secret is asked for first and
+> would retire the guard before the second was ever touched.
+>
+> **Review found a critical and four majors, and the critical was invisible from inside.** A
+> YAML indent hung the Kotlin framework build phase on the new test target, so nothing produced
+> the framework `iosApp` links; the gate was green here only because the directory was already
+> on disk, and a clean clone — which is what CI is — would have failed. Re-verified by moving
+> the built framework away first.
+>
+> **«Unreadable is no session» needed its second half.** `Vault.read` answers Absent, Present or
+> Unavailable, and a store loaded from Unavailable refuses to write: the blob goes back whole,
+> so one write after one failed read replaced a live session with nothing. A device locked
+> between boot and first unlock is exactly that case, and it is the case a background token
+> refresh runs in. The test certifying the criterion asserted the reads and never that the bytes
+> survived. Statuses are answered rather than discarded on both platforms, and the fresh-install
+> guard marks itself only after a wipe that answered.
+>
+> **The gate was structurally blind to two of these.** detekt's `SwallowedException` and
+> `TooGenericExceptionCaught` both allow a parameter named `_`, which is how both catches were
+> written; armed in `config/detekt.yml`, they named all five sites. **Named gap:** there is no
+> logging in `:shared` at all, so every refusal above is silent to a developer as well as to the
+> patient. Not fixed here — it is a dependency decision, and it belongs with the transport.
+
 todoist: "6h8xx8WR6rgcmxpq"
 
 ### step-1a: An XCTest host for the Keychain suite
