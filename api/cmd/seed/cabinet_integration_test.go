@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -260,25 +259,27 @@ func TestACabinetFilledAfterItsCourseFollowsTheCourse(t *testing.T) {
 		`SELECT set_config('role', $1, false)`, "cadence_owner"); err != nil {
 		t.Fatalf("assuming the owner role: %v", err)
 	}
+	force := func(setting string) {
+		t.Helper()
+
+		for _, table := range []string{"app.dose_events", "app.vials", "app.protocols"} {
+			if _, err := conn.Exec(t.Context(),
+				`ALTER TABLE `+table+` `+setting+` ROW LEVEL SECURITY`); err != nil {
+				t.Fatalf("%s on %s: %v", setting, table, err)
+			}
+		}
+	}
+
+	force("NO FORCE")
 	for _, arranged := range []struct {
 		statement string
 		rows      int64
 	}{
-		{`ALTER TABLE app.dose_events NO FORCE ROW LEVEL SECURITY`, 0},
-		{`ALTER TABLE app.vials NO FORCE ROW LEVEL SECURITY`, 0},
-		{`ALTER TABLE app.protocols NO FORCE ROW LEVEL SECURITY`, 0},
 		{`DELETE FROM app.dose_events WHERE patient_id = $1`, semaglutideDrawn},
 		{`DELETE FROM app.vials WHERE patient_id = $1`, 4},
 		{`UPDATE app.protocols SET start_date = start_date - 28 WHERE patient_id = $1`, 1},
-		{`ALTER TABLE app.protocols FORCE ROW LEVEL SECURITY`, 0},
-		{`ALTER TABLE app.vials FORCE ROW LEVEL SECURITY`, 0},
-		{`ALTER TABLE app.dose_events FORCE ROW LEVEL SECURITY`, 0},
 	} {
-		args := []any{}
-		if strings.Contains(arranged.statement, "$1") {
-			args = append(args, string(patient))
-		}
-		tag, err := conn.Exec(t.Context(), arranged.statement, args...)
+		tag, err := conn.Exec(t.Context(), arranged.statement, string(patient))
 		if err != nil {
 			t.Fatalf("ageing the stand with %q: %v", arranged.statement, err)
 		}
@@ -287,12 +288,61 @@ func TestACabinetFilledAfterItsCourseFollowsTheCourse(t *testing.T) {
 				arranged.statement, tag.RowsAffected(), arranged.rows)
 		}
 	}
+	force("FORCE")
 
 	if err := seed(t.Context(), theClinic(), on); err != nil {
 		t.Fatalf("the second run: %v", err)
 	}
 
 	drawsMatchThePrescription(t, on, patient)
+	theShelfFollowsTheCourse(t, on, patient)
+}
+
+// theShelfFollowsTheCourse is the other half of the same anchor: the vial dates.
+//
+// A shelf left on the calendar puts the open vial's `opened_at` a month after the doses drawn
+// out of it, which the card draws as a vial whose history predates its opening. The two «is not
+// null» counts stand beside the comparisons so neither of them is a claim about nothing.
+func theShelfFollowsTheCourse(t *testing.T, on deps, patient civil.UserID) {
+	t.Helper()
+
+	var shelf struct{ opened, aside, offTheCourse, beforeOpening int }
+	if err := database.WithServiceJob(t.Context(), on.writes, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `
+				WITH course AS (
+				    SELECT start_date FROM app.protocols
+				    WHERE patient_id = $1 AND status = 'active'
+				)
+				SELECT
+				    count(*) FILTER (WHERE v.opened_at IS NOT NULL),
+				    count(*) FILTER (WHERE v.held_back_at IS NOT NULL),
+				    count(*) FILTER (
+				        WHERE coalesce(v.opened_at, v.held_back_at)
+				              IS DISTINCT FROM (SELECT start_date FROM course)
+				          AND (v.opened_at IS NOT NULL OR v.held_back_at IS NOT NULL)
+				    ),
+				    (SELECT count(*) FROM app.dose_events d
+				     JOIN app.vials dv ON dv.id = d.vial_id
+				     WHERE d.patient_id = $1 AND d.scheduled_for_date < dv.opened_at)
+				FROM app.vials v WHERE v.patient_id = $1
+			`, string(patient)).Scan(
+				&shelf.opened, &shelf.aside, &shelf.offTheCourse, &shelf.beforeOpening,
+			)
+		}); err != nil {
+		t.Fatalf("reading the seeded shelf: %v", err)
+	}
+
+	if shelf.opened != 1 || shelf.aside != 1 {
+		t.Fatalf("the shelf holds %d open and %d set-aside vials, want one of each",
+			shelf.opened, shelf.aside)
+	}
+	if shelf.offTheCourse != 0 {
+		t.Errorf("%d vials are dated off the day the course opened", shelf.offTheCourse)
+	}
+	if shelf.beforeOpening != 0 {
+		t.Errorf("%d doses are drawn from a vial before it was opened", shelf.beforeOpening)
+	}
 }
 
 // drawsMatchThePrescription asks the course what it prescribed on the day of each draw.
