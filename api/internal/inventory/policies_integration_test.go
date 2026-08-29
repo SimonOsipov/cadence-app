@@ -160,7 +160,7 @@ func (c *clinic) seed(ctx context.Context, tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO app.vials
 			    (patient_id, compound_id, concentration_label, total_amount, amount_unit, expires_on)
-			VALUES ($1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31')
+			VALUES ($1, $2, '1 мг/мл', 1, 'мг', DATE '2026-12-31')
 			RETURNING id::text
 		`, seeded.patient, c.compound).Scan(seeded.into); err != nil {
 			return fmt.Errorf("vial for %s: %w", seeded.patient, err)
@@ -1320,9 +1320,10 @@ func waitForALock(t *testing.T, c clinic) bool {
 // The three columns the amount model added carry the same reach as the row they sit on.
 //
 // The rows were witnessed when they were written — steps 3, 6 and 7 each measured their own —
-// and what is left is the columns: that a patient reads none of the three off somebody else's
-// vial, and writes none of them there either. Each is asked separately rather than as a row,
-// because a grant is per column and a registry that agrees about twelve of them can be wrong
+// and what is left is the columns. The read half is the row policy asked over three
+// projections rather than a column grant: SELECT on app.vials is granted table-wide, so there
+// is no per-column read privilege to measure. The column dimension is the write half below,
+// where the grant is per column and a registry agreeing about twelve of them can be wrong
 // about one.
 func TestTheAmountColumnsAreReadOnlyOnTheirOwnVial(t *testing.T) {
 	c := newClinic(t)
@@ -1378,27 +1379,43 @@ func TestTheAmountColumnsAreWrittenOnlyOnTheirOwnVial(t *testing.T) {
 				t.Fatalf("reading the other patient's vial: %v", err)
 			}
 			if want := map[string]string{
-				"total_amount": "1.0", "amount_unit": "мг", "held_back_at": "null",
+				"total_amount": "1", "amount_unit": "мг", "held_back_at": "null",
 			}[write.column]; held != want {
 				t.Errorf("the other patient's %s reads %q, want %q", write.column, held, want)
 			}
 
 			// And the same write on their own vial does land, so the zero above is the
-			// predicate rather than a statement that could never affect anything.
+			// predicate rather than a statement that could never affect anything — read
+			// back rather than counted, because a count is half a witness for a write.
 			if affected := c.changed(t, patientA, "patient",
 				`UPDATE app.vials SET `+write.set+` WHERE id = $1`, c.vialA); affected != 1 {
 				t.Errorf("writing %s on their own vial touched %d rows", write.column, affected)
+			}
+			var landed string
+			if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+				return tx.QueryRow(ctx,
+					`SELECT coalesce(`+write.column+`::text, 'null') FROM app.vials WHERE id = $1`,
+					c.vialA).Scan(&landed)
+			}); err != nil {
+				t.Fatalf("reading their own vial: %v", err)
+			}
+			if want := map[string]string{
+				"total_amount": "999", "amount_unit": "мкг", "held_back_at": "2026-05-03",
+			}[write.column]; landed != want {
+				t.Errorf("their own %s reads %q after the write, want %q", write.column, landed, want)
 			}
 		})
 	}
 }
 
-// The update policy answers on its own, measured where the read policy cannot stand in for it.
+// The update policy answers on its own, over a column the discriminator is not.
 //
 // An UPDATE naming a row by id reads that column, so vials_own_select refuses it first and
-// vials_own_update could be USING (true) with every case above still green — measured. A
-// statement with no WHERE and a constant assignment reads nothing, so the rows it touches are
-// the ones the update policy admits and nobody else's.
+// vials_own_update could be USING (true) with every case above it still green — measured. The
+// file already isolates that policy over patient_id itself, where a widened USING moves both
+// rows to the caller; this is the same shape over one of the three new columns, and it carries
+// patient_id for a reason: the policy's own WITH CHECK would otherwise refuse the widened case
+// with a 42501, killing the mutation by the half this test is not about.
 func TestTheUpdatePolicyScopesAWriteThatReadsNothing(t *testing.T) {
 	c := newClinic(t)
 
@@ -1414,11 +1431,12 @@ func TestTheUpdatePolicyScopesAWriteThatReadsNothing(t *testing.T) {
 		t.Fatalf("counting the cabinet: %v", err)
 	}
 	if vials != 2 {
-		t.Fatalf("the clinic holds %d vials, want one each", vials)
+		t.Fatalf("the clinic holds %d vials in all, want one for each patient", vials)
 	}
 
 	if affected := c.changed(t, patientA, "patient",
-		`UPDATE app.vials SET held_back_at = DATE '2026-05-03'`); affected != 1 {
+		`UPDATE app.vials SET held_back_at = DATE '2026-05-03', patient_id = $1`,
+		patientA); affected != 1 {
 		t.Errorf("an unfiltered write touched %d rows, want the caller's one", affected)
 	}
 
@@ -1458,6 +1476,10 @@ func TestAVialCannotBeCreatedAlreadySetAside(t *testing.T) {
 	if !errors.As(err, &refusal) || refusal.Code != "42501" {
 		t.Fatalf("creating a vial already set aside answered %v, want a 42501", err)
 	}
+	// The message cannot discriminate — measured, a column privilege refused on INSERT
+	// reads «permission denied for table vials» and names no column — so what separates
+	// this from vials_own_insert's WITH CHECK, which raises the same SQLSTATE, is the
+	// control below rather than the text.
 
 	// The same row without that column is accepted, so the refusal is the column and not
 	// the statement: a test that only saw the 42501 would pass against a patient who had
