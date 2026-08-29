@@ -104,7 +104,8 @@ exceptions:
   # 2026-08-29 — `_` is what Kotlin encourages for an unused parameter, and `expected` is what
   # a test writer reaches for, so between them the default arms nothing. Emptied rather than
   # narrowed: a swallowed exception on the authentication path is justified at the site, in a
-  # line naming what is swallowed and why, or it is not justified.
+  # line naming what is swallowed and why, or it is not justified. `$a` is the empty list:
+  # an anchored end-of-input followed by a character matches no name at all.
   TooGenericExceptionCaught:
     allowedExceptionNameRegex: '$a'
   SwallowedException:

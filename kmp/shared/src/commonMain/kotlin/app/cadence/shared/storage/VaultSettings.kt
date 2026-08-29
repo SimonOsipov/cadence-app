@@ -85,17 +85,23 @@ class VaultSettings(
     }
 
     /**
-     * Removal on a store that cannot be rewritten wipes the whole thing.
+     * Removal that could not be written selectively wipes the whole store.
      *
-     * `supabase-kt` signs out with `remove(key)`, and the alternative here is to do nothing at
-     * rest — leaving the session on the device after the patient asked for it to go. Selective
-     * removal is not available: the blob is written whole, and this instance never read the
-     * other keys, so it cannot preserve them. Erasing more than was asked is the safe
-     * direction; keeping a session that was signed out of is not.
+     * `supabase-kt` signs out with `remove(key)`, and the alternative is to do nothing at rest —
+     * leaving the session on the device after the patient asked for it to go. An instance that
+     * cannot write cannot rewrite the blob without one, so total erasure is the only erasure it
+     * has; erasing more than was asked is the safe direction, and keeping a session that was
+     * signed out of is not.
+     *
+     * The fallback is on the write not happening rather than on the flag alone: a store that
+     * was readable and whose write is then refused reaches the same place, and on Apple a
+     * refusal that came from the delete leaves the old blob — the very session — in the
+     * keychain.
      */
     override fun remove(key: String) {
         entries.remove(key)
-        if (writable) flush() else vault.wipe()
+        flush()
+        if (!writable) vault.wipe()
     }
 
     override fun hasKey(key: String): Boolean = entries.containsKey(key)

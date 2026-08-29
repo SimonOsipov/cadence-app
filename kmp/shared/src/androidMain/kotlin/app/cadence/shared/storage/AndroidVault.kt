@@ -7,6 +7,7 @@ import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.security.ProviderException
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -39,11 +40,16 @@ class AndroidVault(
     private val file: File,
     private val keys: () -> SecretKey = ::keystoreKey,
 ) : Vault {
+    // Carried out of the catches so Stored.Unavailable keeps the platform's own word, which is
+    // its whole contract — and with no logging in this module it is the only diagnostic there is.
+    private var keyRefusal: String? = null
+    private var readRefusal: String? = null
+
     override fun read(): Stored {
         if (!file.exists()) return Stored.Absent
-        val key = key() ?: return Stored.Unavailable("the keystore would not produce the key for $file")
+        val key = key() ?: return Stored.Unavailable("$file: ${keyRefusal ?: "the keystore produced no key"}")
 
-        return stored()?.let { open(it, key) } ?: Stored.Unavailable("$file could not be read")
+        return stored()?.let { open(it, key) } ?: Stored.Unavailable("$file: ${readRefusal ?: "unreadable"}")
     }
 
     @Suppress("SwallowedException")
@@ -52,6 +58,7 @@ class AndroidVault(
             file.readBytes()
         } catch (expected: IOException) {
             // The file is there and unreadable, which is «not now» rather than «not stored».
+            readRefusal = expected.toString()
             null
         }
 
@@ -64,11 +71,10 @@ class AndroidVault(
         try {
             keys()
         } catch (expected: GeneralSecurityException) {
-            // Nothing to do with it and nowhere to report it: this module has no logging, which
-            // is a named gap in the step. The caller is told «unavailable», which is what it
-            // can act on.
+            keyRefusal = expected.toString()
             null
         } catch (expected: ProviderException) {
+            keyRefusal = expected.toString()
             null
         }
 
@@ -95,9 +101,14 @@ class AndroidVault(
                     init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, stored, 0, IV_BYTES))
                 }
             Stored.Present(cipher.doFinal(stored, IV_BYTES, stored.size - IV_BYTES))
-        } catch (expected: GeneralSecurityException) {
-            // The tag failed under a key we did have: the file is ours and unusable.
+        } catch (expected: AEADBadTagException) {
+            // The tag failed under a key we did have: the file is ours and unusable, so it is
+            // replaceable. Narrower than GeneralSecurityException on purpose — an InvalidKey or
+            // a keystore daemon failing inside doFinal says nothing about the file, and reading
+            // those as replaceable would have the next write destroy a live session at rest.
             Stored.Present(ByteArray(0))
+        } catch (expected: GeneralSecurityException) {
+            Stored.Unavailable("$file: $expected")
         }
     }
 

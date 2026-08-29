@@ -87,7 +87,9 @@ class AndroidVaultTest {
         bytes[bytes.size - 1] = (bytes[bytes.size - 1] + 1).toByte()
         file.writeBytes(bytes)
 
-        assertIs<Stored.Present>(vaultOver(file).read())
+        // Empty, not merely Present: handing the unopenable ciphertext back as content would
+        // satisfy an `assertIs` and put bytes no key produced into the store.
+        assertContentEquals(ByteArray(0), (vaultOver(file).read() as Stored.Present).bytes)
     }
 
     // A half-written file is the same case: replaceable, because writeBytes truncates before

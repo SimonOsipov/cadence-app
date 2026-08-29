@@ -11,6 +11,7 @@ import platform.CoreFoundation.kCFTypeDictionaryValueCallBacks
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
 import platform.Security.SecItemAdd
+import platform.Security.errSecNotAvailable
 import platform.Security.kSecAttrAccount
 import platform.Security.kSecAttrService
 import platform.Security.kSecClass
@@ -20,9 +21,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 private const val ATTRIBUTE_COUNT = 4L
-
-// errSecNotAvailable, written as a number because the constant is not in the Kotlin bindings.
-private const val KEYCHAIN_UNAVAILABLE = -25291
 
 /**
  * The spike the spec asked for, kept as its answer rather than written up as a note.
@@ -64,6 +62,6 @@ class KeychainReachabilityTest {
         val status = SecItemAdd(item, null)
         CFRelease(item)
 
-        assertEquals(KEYCHAIN_UNAVAILABLE, status, "the keychain answered $status rather than refusing")
+        assertEquals(errSecNotAvailable, status, "the keychain answered $status rather than refusing")
     }
 }

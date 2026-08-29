@@ -158,6 +158,18 @@ class VaultSettingsTest {
         assertNull(vault.bytes)
     }
 
+    // The readable store whose write is refused reaches the same place, and on Apple a refusal
+    // that came from the delete leaves the old blob — the session just signed out of — in the
+    // keychain. Gated on the flag alone, this path neither rewrote nor wiped.
+    @Test
+    fun signingOutWhenTheWriteIsRefusedStillWipes() {
+        val vault = FakeVault(bytes = "8:rt-token4:rt-1".encodeToByteArray(), writes = false)
+
+        VaultSettings(vault).remove("refresh_token")
+
+        assertNull(vault.bytes)
+    }
+
     @Test
     fun clearingAnUnreadableStoreStillWipesIt() {
         val vault = FakeVault(bytes = "8:rt-token4:rt-1".encodeToByteArray(), unavailable = true)

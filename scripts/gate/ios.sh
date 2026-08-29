@@ -61,15 +61,13 @@ xcodebuild \
     ARCHS=arm64 \
     build
 
-# The XCTest bundle, and it needs a named device rather than the generic destination the
-# build above takes: a test run has to boot a simulator, and `generic/platform=` names none.
-#
-# It exists because a keychain needs an app identity. Measured 2026-08-29: SecItemAdd from
+# The XCTest bundle. It exists because a keychain needs an app identity. Measured 2026-08-29: SecItemAdd from
 # a Kotlin/Native test binary answers -25291, errSecNotAvailable, so the Keychain suite
 # cannot live in shared/src/iosTest at all — only the refusal does.
-# `OS=latest` rather than a pinned runtime, and a device name that has to exist: a test run
-# boots a simulator, and `generic/platform=` names none to boot. CI sets this explicitly,
-# because a change of macOS image otherwise takes the whole gate down over a device list.
+# A named device with OS=latest, because a test run boots a simulator and the generic
+# destination above names none to boot. This default is the only place the device is written:
+# CI takes it as it stands and overrides the variable on the day the runner image stops
+# carrying this one.
 TEST_DESTINATION=${TEST_DESTINATION:-platform=iOS Simulator,name=iPhone 17,OS=latest}
 
 echo "==> xcodebuild test (the Keychain suite, hosted by the app)"
