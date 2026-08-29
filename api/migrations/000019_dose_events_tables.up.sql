@@ -174,10 +174,15 @@ CREATE UNIQUE INDEX dose_events_one_per_slot
 CREATE INDEX dose_events_by_patient_and_day
     ON app.dose_events (patient_id, scheduled_for_date DESC);
 
--- What is left in a vial is total_amount minus the doses drawn from it, which is a
--- read per vial and the one that does not start from the patient. It is tenant-safe
--- only because the composite key above makes vial_id determine patient_id — that key
--- is load-bearing for this read, not only for the write.
+-- What is left in a vial is total_amount minus the doses drawn from it, and that
+-- subtraction reads this table the way everything else does — from the patient.
+-- inventory's drawsOf takes every event of theirs carrying a vial, and the per-vial
+-- sum happens in Go. No read on a request path filters this table by vial_id alone —
+-- 000021's backfill does, as the owner, where there is no tenant to scope to — so the
+-- tenant scope of that read is patient_id and the policy, not the composite key.
+--
+-- The index is for the other direction: a vial going away is checked against the
+-- events pointing at it, and that reference is RESTRICT.
 CREATE INDEX dose_events_by_vial ON app.dose_events (vial_id) WHERE vial_id IS NOT NULL;
 
 ALTER TABLE app.dose_events ENABLE ROW LEVEL SECURITY;

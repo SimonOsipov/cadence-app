@@ -630,16 +630,17 @@ first time a doctor titrates. What §03's `vials` holds is `concentration_label`
 And what is left in a vial is a subtraction over the history on every read, so a
 vial nothing has been drawn from is full by arithmetic rather than by assignment.
 
-**Two facts, and both are true until phase 4.** From 000021 the server takes an
-**amount**: `POST /v1/me/vials` carries `total_amount: {value, unit}`, the column
-pair is `total_amount`/`amount_unit`, and 000022 dropped `total_doses` — nothing
-on the server counts injections into a vial any more. The form still asks
-«Сколько доз», because porting it is phase 4's work and this file is where the
-next reader looks for the gap. Neither half is a defect; the pair is the
-divergence.
-
 Guarded by `AddVialScreenTest.theFormAsksForNoDoseBecauseTheProtocolDecidesIt`
 and `MockInventoryTest.anAddedVialComesBackFullBecauseNothingHasBeenDrawnFromIt`.
+
+**Two facts, and both are true until phase 4.** The schema holds an **amount**
+from 000021 — `total_amount`/`amount_unit` — and 000022 dropped `total_doses`, so
+nothing on the server counts injections into a vial any more; `POST /v1/me/vials`
+has taken `total_amount: {value, unit}` since it was written, which was after
+both. The form still asks «Сколько доз» (`AddVialScreen.kt:172`), because porting
+it is phase 4's work and this file is where the next reader looks for the gap.
+Neither half is a defect; the pair is the divergence, and the two tests above
+guard the client half of it alone.
 
 ## The vial sheet's two unbuilt actions say so
 
@@ -1318,8 +1319,10 @@ nullable; проверял, потому что запись об этом у м
 флакон **двумя слоями**, и порядок — суть правила. Первый: открытые флаконы этого
 препарата; ровно один — ответ, два и больше — пусто, потому что выбор принадлежит
 пациенту и приходит в запросе. Второй, и только когда открытых нет вовсе:
-последний запечатанный, не просроченный на сегодня, — и его открывает сама эта
-запись, а не экран, которого пациент не видит.
+**единственный** доступный запечатанный — не утилизированный, не отложенный и не
+просроченный на сегодня, — и его открывает сама эта запись, а не экран, которого
+пациент не видит. Сторож «ровно один» здесь тот же, что и в первом слое: двух
+доступных запечатанных достаточно, чтобы не открыть ни одного.
 
 Порядок именно такой, потому что «ровно один неутилизированный» одним слоем
 строго хуже: у пациента с открытым флаконом и запечатанным запасом, который
@@ -1339,7 +1342,10 @@ nullable; проверял, потому что запись об этом у м
 **Чем это платится:** ничем — при условии, что клиент присылает `vial_id`.
 Расхождение остаётся ровно для клиента, который его не пришлёт: KMP-мок в этом
 случае берёт самый полный; API берёт единственный открытый, а если открытых нет —
-открывает последний запечатанный, и только при двух открытых не берёт ничего. Мой комментарий в `vials.go`
+открывает единственный доступный запечатанный. Не берёт ничего он в трёх случаях:
+открытых два и больше; открытых нет и доступных запечатанных два и больше;
+открытых нет и доступных запечатанных нет ни одного — вовсе или потому, что все
+отложены, утилизированы или просрочены на сегодня. Мой комментарий в `vials.go`
 говорил «до появления выбора в M4» — это было неточно, выбор в KMP уже есть;
 недостаёт подключения тех экранов к API, то есть фазы 4.
 
@@ -1415,8 +1421,8 @@ actions say so» выше.
 
 **Почему это не дефект реализации:** счётная модель — третья поправка §03
 (`architecture-overview-v1.1.md:174`), и KMP реализует ровно её. Два канонических
-документа противоречат друг другу; шаг 3 закрыл инвариант 3 схемой, а не обошёл
-его — без миграции он недостижим.
+документа противоречат друг другу; шаг 3 закрыл схемой первую половину инварианта 3,
+а не обошёл её — без миграции она недостижима. Про вторую половину см. ниже.
 
 **Что предложено:** `architecture/proposals/a-vial-holds-an-amount.md` — флакон
 хранит количество вещества, израсходовано считается суммой `dose_value` событий
@@ -1430,5 +1436,8 @@ actions say so» выше.
 подсказка выдаётся на 0,5 и на 1,0 — при отсутствии запечатанного дубля того же
 препарата, что и есть вторая половина правила §03. `VialStatus` считает «мало» как
 четверть **количества**, а не числа доз, и потому отвечает и для курса, который
-закончился, и для препарата без справочной дозы. Инвариант 3 `inventory.md` закрыт
-схемой, а не обойдён.
+закончился, и для препарата без справочной дозы. Первая половина инварианта 3
+`inventory.md` — «недели считаются от текущей фазы» — закрыта схемой, а не обойдена.
+Вторая его фраза, про справочную дозу как запасной вариант без активного курса,
+остаётся невыполнимой: справочной дозы нет ни в `app.compounds`, ни где-либо ещё,
+и без курса подсказка молчит. Формулировку инварианта править при финализации.
