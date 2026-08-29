@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -75,7 +76,7 @@ func fillTheCabinet(
 // theShelf writes the four vials and answers the one doses are drawn from.
 //
 // The compounds are read by name rather than created: theCourse entered them through the
-// directory, and a second row for one drug would give the cabinet two compounds to divide by.
+// directory, and 000013's compounds_one_row_per_name would refuse a second row anyway.
 func theShelf(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, today civil.Date,
 ) (string, error) {
@@ -106,10 +107,12 @@ func theShelf(
 			openedAt: &opened, expiresOn: today.AddDays(300), lot: "SEM-4471", into: &open,
 		},
 		{
-			// Set aside on the day the course reached its second band, which is the
-			// kind of reason a patient shelves one: the dose changed.
+			// Shelved the day the course opened, which is when a patient has the reason:
+			// the 2 мг vial was opened instead and this one went back. A date ahead of
+			// today would be a card no endpoint can produce — the write path sets this
+			// to the patient's own today.
 			compound: semaglutide, label: "1 мг/мл", amount: heldBackVial, unit: "мг",
-			expiresOn: today.AddDays(200), heldBackAt: new(opened.AddDays(28)),
+			expiresOn: today.AddDays(200), heldBackAt: &opened,
 			lot: "SEM-4472",
 		},
 		{
@@ -117,8 +120,9 @@ func theShelf(
 			expiresOn: today.AddDays(240), lot: "BPC-0912",
 		},
 		{
-			// Inside the fortnight the status is counted by, so the shelf shows one
-			// of each state a patient can be in.
+			// Inside the fortnight the status is counted by. With the open vial and the
+			// sealed spare that is three of StatusOf's five states on the stand; «мало»
+			// is not among them, because the open one sits at half its amount.
 			compound: bpc, label: "5 мг/мл", amount: bpcVial, unit: "мкг",
 			expiresOn: today.AddDays(9), lot: "BPC-0913",
 		},
@@ -133,7 +137,7 @@ func theShelf(
 		`, string(patient), vial.compound, vial.label, vial.amount, vial.unit,
 			dayText(vial.openedAt), vial.expiresOn.String(), dayText(vial.heldBackAt),
 			vial.lot).Scan(&id); err != nil {
-			return "", fmt.Errorf("filling the cabinet of %s: %w", patient, err)
+			return "", fmt.Errorf("writing a vial: %w", err)
 		}
 		if vial.into != nil {
 			*vial.into = id
@@ -147,10 +151,14 @@ func theShelf(
 //
 // One a week on the course's own weekday, counted back from the day the seed runs, so the
 // last one is this week's and the shelf is at the threshold rather than approaching it.
+//
+// At the slot the item is prescribed at rather than one this command picks: a logged event meets
+// its occurrence on (item, date, slot), so a draw at the wrong hour leaves the schedule showing
+// four missed injections beside the four it was seeded to show.
 func drawFrom(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, vial string, today civil.Date,
 ) error {
-	course, item, compound, err := theInjection(ctx, tx, patient)
+	course, item, compound, slot, err := theInjection(ctx, tx, patient)
 	if err != nil {
 		return err
 	}
@@ -163,10 +171,10 @@ func drawFrom(
 			    (patient_id, protocol_id, protocol_item_id, vial_id, compound_id,
 			     scheduled_for_date, scheduled_for_time, injected_at,
 			     dose_value, dose_unit, site_code, client_request_id)
-			VALUES ($1, $2, $3, $4, $5, $6::date, TIME '08:00',
-			        ($6::date + TIME '08:00') AT TIME ZONE $7,
-			        $8::numeric, 'мг', $9, $10)
-		`, string(patient), course, item, vial, compound, day.String(), seededZone,
+			VALUES ($1, $2, $3, $4, $5, $6::date, $7::time,
+			        ($6::date + $7::time) AT TIME ZONE $8,
+			        $9::numeric, 'мг', $10, $11)
+		`, string(patient), course, item, vial, compound, day.String(), slot, seededZone,
 			semaglutideDose, siteRotation[week%len(siteRotation)],
 			fmt.Sprintf("seed-%s-%d", patient, week)); err != nil {
 			return fmt.Errorf("drawing the week %d dose for %s: %w", week+1, patient, err)
@@ -178,28 +186,55 @@ func drawFrom(
 
 func compoundNamed(ctx context.Context, tx pgx.Tx, name string) (string, error) {
 	var id string
-	if err := tx.QueryRow(ctx,
-		`SELECT id::text FROM app.compounds WHERE name_ru = $1`, name).Scan(&id); err != nil {
-		return "", fmt.Errorf("the directory has no %s to fill a vial with: %w", name, err)
+	err := tx.QueryRow(ctx,
+		`SELECT id::text FROM app.compounds WHERE name_ru = $1`, name).Scan(&id)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return "", fmt.Errorf("the directory has no %s to fill a vial with", name)
+	case err != nil:
+		return "", fmt.Errorf("looking for %s in the directory: %w", name, err)
 	}
 
 	return id, nil
 }
 
-// theInjection is the course, the position and the drug a seeded dose is attributed to.
-func theInjection(ctx context.Context, tx pgx.Tx, patient civil.UserID) (string, string, string, error) {
-	var course, item, compound string
-	if err := tx.QueryRow(ctx, `
-		SELECT p.id::text, i.id::text, i.compound_id::text
+// theInjection is the course, the position, the drug and the slot a seeded dose is attributed to.
+//
+// Refuses a second weekly injection rather than taking whichever row came back first, the way
+// OpenVialFor and CurrentDoseFor refuse: a course carrying two would attribute every draw to one
+// of them and leave the other's occurrences open, plausibly.
+func theInjection(
+	ctx context.Context, tx pgx.Tx, patient civil.UserID,
+) (course, item, compound, slot string, err error) {
+	rows, err := tx.Query(ctx, `
+		SELECT p.id::text, i.id::text, i.compound_id::text, i.times[1]::text
 		FROM app.protocols p
 		JOIN app.protocol_items i ON i.protocol_id = p.id
 		WHERE p.patient_id = $1 AND p.status = 'active' AND i.kind = 'injection'
 		  AND i.cadence = 'weekly'
-	`, string(patient)).Scan(&course, &item, &compound); err != nil {
-		return "", "", "", fmt.Errorf("the weekly injection of %s: %w", patient, err)
+	`, string(patient))
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("the weekly injection of %s: %w", patient, err)
+	}
+	defer rows.Close()
+
+	found := 0
+	for rows.Next() {
+		found++
+		if err := rows.Scan(&course, &item, &compound, &slot); err != nil {
+			return "", "", "", "", fmt.Errorf("the weekly injection of %s: %w", patient, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", "", "", fmt.Errorf("the weekly injection of %s: %w", patient, err)
+	}
+	if found != 1 {
+		return "", "", "", "", fmt.Errorf(
+			"%s holds %d weekly injections, and a draw is attributed to one", patient, found,
+		)
 	}
 
-	return course, item, compound, nil
+	return course, item, compound, slot, nil
 }
 
 func dayText(day *civil.Date) *string {

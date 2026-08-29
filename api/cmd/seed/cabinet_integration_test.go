@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/SimonOsipov/cadence-app/api/internal/dosing"
 	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
@@ -64,9 +66,12 @@ func TestTheSeededCabinetAnswersTheCabinetScreen(t *testing.T) {
 	}
 }
 
-// Every state a card can be in stands on the shelf, so no field of the screen is drawn from an
-// empty column — and the spare and the expiring one are the other drug's, which is what leaves
-// the hint above standing at all.
+// The shelf as the cards read it: an open vial, a sealed spare and one inside the fortnight
+// expiry is counted by — three of StatusOf's five, «мало» and «утилизирован» being absent by
+// arrangement — plus the set-aside one, which is the only fixture the new column has.
+//
+// The spare and the expiring one are the other drug's, which is what leaves the hint above
+// standing at all.
 func TestTheSeededShelfHoldsOneOfEachState(t *testing.T) {
 	on, db := seedStand(t)
 	theFirstAdministrator(t, db)
@@ -77,7 +82,9 @@ func TestTheSeededShelfHoldsOneOfEachState(t *testing.T) {
 
 	patient := thePersona(t, on)
 
-	var shelf struct{ open, sealed, aside, asideOfTheInjected, expiring, disposed, spare int }
+	var shelf struct {
+		open, sealed, aside, asideOfTheInjected, asideAhead, expiring, disposed, spare int
+	}
 	if err := database.WithServiceJob(t.Context(), on.writes, seedJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `
@@ -92,6 +99,7 @@ func TestTheSeededShelfHoldsOneOfEachState(t *testing.T) {
 				              WHERE patient_id = $1 AND opened_at IS NOT NULL
 				          )
 				    ),
+				    count(*) FILTER (WHERE held_back_at > $2::date),
 				    count(*) FILTER (WHERE expires_on <= $2::date + 14),
 				    count(*) FILTER (WHERE disposed_at IS NOT NULL),
 				    count(*) FILTER (
@@ -104,7 +112,7 @@ func TestTheSeededShelfHoldsOneOfEachState(t *testing.T) {
 				FROM app.vials WHERE patient_id = $1
 			`, string(patient), on.today.String()).Scan(
 				&shelf.open, &shelf.sealed, &shelf.aside, &shelf.asideOfTheInjected,
-				&shelf.expiring, &shelf.disposed, &shelf.spare,
+				&shelf.asideAhead, &shelf.expiring, &shelf.disposed, &shelf.spare,
 			)
 		}); err != nil {
 		t.Fatalf("reading the seeded shelf: %v", err)
@@ -121,6 +129,9 @@ func TestTheSeededShelfHoldsOneOfEachState(t *testing.T) {
 		// On the injected drug, which is the only placing that makes the exclusion visible:
 		// on the other one a shelved vial takes no part in any answer anyway.
 		{"set aside on the injected drug", shelf.asideOfTheInjected, 1},
+		// The write path stamps this with the patient's own today, so a day ahead of the
+		// stand's is a card no endpoint could have produced.
+		{"set aside on a day that has not happened", shelf.asideAhead, 0},
 		{"inside the fortnight expiry is counted by", shelf.expiring, 1},
 		{"disposed", shelf.disposed, 0},
 		// The half of the reorder rule the shelf would otherwise hide: one sealed vial of
@@ -160,13 +171,15 @@ func TestRunningTheSeedTwiceFillsOneCabinet(t *testing.T) {
 	}
 }
 
-// The history the journal draws: one draw a week, each on a day the injection is prescribed on,
-// the last of them in the week the seed is run.
+// The history as the schedule reads it: between the day the course opened and today, every
+// weekly injection is closed and none is left open.
 //
-// What is left in the vial is a subtraction of amounts and does not care which day a dose came
-// out of it, so nothing above would notice four draws on four consecutive days — and the
-// calendar would then show four logged dots against one prescribed occurrence.
-func TestTheSeededDrawsFallOnThePrescribedDays(t *testing.T) {
+// What is left in the vial is a subtraction of amounts and does not care when a dose came out of
+// it, so nothing above would notice four draws on four consecutive days or four at an hour the
+// injection is not prescribed at. An occurrence is closed by (item, date, slot) — statusOf in
+// internal/protocol/occurrence.go — so either miss draws four missed injections on the stand
+// beside the four it was seeded to show. Asked through the same seam the day sheet asks.
+func TestTheSeededDrawsCloseThePrescribedOccurrences(t *testing.T) {
 	on, db := seedStand(t)
 	theFirstAdministrator(t, db)
 
@@ -175,58 +188,45 @@ func TestTheSeededDrawsFallOnThePrescribedDays(t *testing.T) {
 	}
 
 	patient := thePersona(t, on)
-	item := theWeeklyInjection(t, planOf(t, on, patient))
+	plan := planOf(t, on, patient)
+	item := theWeeklyInjection(t, plan)
 
-	var days []civil.Date
+	var taken, open int
 	if err := database.WithServiceJob(t.Context(), on.writes, seedJob,
 		func(ctx context.Context, tx pgx.Tx) error {
-			rows, err := tx.Query(ctx, `
-				SELECT scheduled_for_date FROM app.dose_events
-				WHERE patient_id = $1 ORDER BY scheduled_for_date
-			`, string(patient))
-			if err != nil {
-				return err
-			}
-			defer rows.Close()
-
-			for rows.Next() {
-				var day time.Time
-				if err := rows.Scan(&day); err != nil {
+			history := dosing.NewHistory(time.Now)
+			// From the start date the course was read back with, not the one the seed
+			// computed: an expectation derived from the value under test moves with it.
+			for day := plan.Protocol.StartDate; !day.After(on.today); day = day.AddDays(1) {
+				oneDay, ok := civil.NewRange(day, day)
+				if !ok {
+					return fmt.Errorf("%v is not a day", day)
+				}
+				logged, err := history.LoggedSlotsIn(ctx, tx, patient, oneDay)
+				if err != nil {
 					return err
 				}
-				days = append(days, civil.NewDate(day.Year(), day.Month(), day.Day()))
+				for _, occurrence := range protocol.OccurrencesFor(plan, logged, day, on.today) {
+					switch {
+					case occurrence.ItemID != item.ID:
+					case occurrence.Status == protocol.StatusDone:
+						taken++
+					default:
+						open++
+					}
+				}
 			}
 
-			return rows.Err()
+			return nil
 		}); err != nil {
-		t.Fatalf("reading the seeded history: %v", err)
+		t.Fatalf("walking the course up to today: %v", err)
 	}
 
-	if len(days) != semaglutideDrawn {
-		t.Fatalf("the seeded history holds %d draws, want %d", len(days), semaglutideDrawn)
+	if taken != semaglutideDrawn {
+		t.Errorf("%d weekly injections read as taken, want %d", taken, semaglutideDrawn)
 	}
-
-	prescribed := map[time.Weekday]bool{}
-	for _, day := range item.DaysOfWeek {
-		prescribed[day] = true
-	}
-	for week, day := range days {
-		if !prescribed[day.Weekday()] {
-			t.Errorf("the week %d draw is on a %s, and no injection is prescribed then",
-				week+1, day.Weekday())
-		}
-		if week > 0 {
-			if gap := days[week-1].DaysUntil(day); gap != 7 {
-				t.Errorf("the week %d draw is %d days after the one before it, want seven",
-					week+1, gap)
-			}
-		}
-	}
-
-	// The last of them is this week's, which is what puts the shelf on the reorder threshold on
-	// the day somebody opens the stand rather than a fortnight after the seed was run.
-	if last := days[len(days)-1].DaysUntil(on.today); last < 0 || last >= 7 {
-		t.Errorf("the last draw is %d days before today, want it inside the current week", last)
+	if open != 0 {
+		t.Errorf("%d weekly injections stand open behind today, want none", open)
 	}
 }
 
