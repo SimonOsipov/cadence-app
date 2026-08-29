@@ -153,8 +153,11 @@ func theShelf(
 
 // drawFrom writes the doses the remaining amount is a subtraction of.
 //
-// One a week on the course's own weekday, counted back from the day the seed runs, so the
-// last one is this week's and the shelf is at the threshold rather than approaching it.
+// One a week counted forward from the day the course opened, read back from its start_date rather
+// than recomputed: on a stand seeded in one run that day is courseStart(today), which is what puts
+// the last draw in this week and the shelf on the reorder threshold. Do not anchor this to the
+// calendar — on a stand whose course an earlier run prescribed the two dates differ, and 0,25 мг
+// would be written against weeks the course prescribes 0,5 for.
 //
 // At the slot the item is prescribed at rather than one this command picks: a logged event meets
 // its occurrence on (item, date, slot), so a draw at the wrong hour leaves the schedule showing

@@ -300,13 +300,15 @@ func TestACabinetFilledAfterItsCourseFollowsTheCourse(t *testing.T) {
 
 // theShelfFollowsTheCourse is the other half of the same anchor: the vial dates.
 //
-// A shelf left on the calendar puts the open vial's `opened_at` a month after the doses drawn
-// out of it, which the card draws as a vial whose history predates its opening. The two «is not
-// null» counts stand beside the comparisons so neither of them is a claim about nothing.
+// A shelf left on the calendar puts the open vial's `opened_at` a month after the doses drawn out
+// of it, which the card draws as a vial whose history predates its opening. The two «is not null»
+// counts and the drawn count stand beside the comparisons so that none of them is a claim about
+// nothing: `scheduled_for_date < NULL` is NULL, so a draw carrying no vial would be counted by
+// neither leg of the last one.
 func theShelfFollowsTheCourse(t *testing.T, on deps, patient civil.UserID) {
 	t.Helper()
 
-	var shelf struct{ opened, aside, offTheCourse, beforeOpening int }
+	var shelf struct{ opened, aside, offTheCourse, drawn, beforeOpening int }
 	if err := database.WithServiceJob(t.Context(), on.writes, seedJob,
 		func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx, `
@@ -324,10 +326,14 @@ func theShelfFollowsTheCourse(t *testing.T, on deps, patient civil.UserID) {
 				    ),
 				    (SELECT count(*) FROM app.dose_events d
 				     JOIN app.vials dv ON dv.id = d.vial_id
+				     WHERE d.patient_id = $1),
+				    (SELECT count(*) FROM app.dose_events d
+				     JOIN app.vials dv ON dv.id = d.vial_id
 				     WHERE d.patient_id = $1 AND d.scheduled_for_date < dv.opened_at)
 				FROM app.vials v WHERE v.patient_id = $1
 			`, string(patient)).Scan(
-				&shelf.opened, &shelf.aside, &shelf.offTheCourse, &shelf.beforeOpening,
+				&shelf.opened, &shelf.aside, &shelf.offTheCourse,
+				&shelf.drawn, &shelf.beforeOpening,
 			)
 		}); err != nil {
 		t.Fatalf("reading the seeded shelf: %v", err)
@@ -336,6 +342,10 @@ func theShelfFollowsTheCourse(t *testing.T, on deps, patient civil.UserID) {
 	if shelf.opened != 1 || shelf.aside != 1 {
 		t.Fatalf("the shelf holds %d open and %d set-aside vials, want one of each",
 			shelf.opened, shelf.aside)
+	}
+	if shelf.drawn != semaglutideDrawn {
+		t.Fatalf("%d doses are drawn from a vial on the shelf, want %d",
+			shelf.drawn, semaglutideDrawn)
 	}
 	if shelf.offTheCourse != 0 {
 		t.Errorf("%d vials are dated off the day the course opened", shelf.offTheCourse)
