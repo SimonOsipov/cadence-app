@@ -86,6 +86,12 @@ func TestAVialIsSetAsideAndTakenBackByTheSamePath(t *testing.T) {
 	// rewriting the date and leaving it are the same write, and this is the axis a fixed
 	// clock cannot measure at all.
 	moveTo(theCabinetHour.Add(24 * time.Hour))
+	// The premise, measured rather than assumed: without it a harness that stopped moving
+	// its clock would leave the assertion below true under every implementation, which is
+	// how the mutation this case exists for survived in the first place.
+	if today := dayTheServerIsOn(t, mux, c); today != "2026-05-11" {
+		t.Fatalf("the clock reads %q after moving a day, want 2026-05-11", today)
+	}
 	repeat, body := send(t, mux, http.MethodPut, "/v1/me/vials/"+c.vialA+"/held-back",
 		map[string]any{"held_back": true})
 	if repeat != http.StatusOK {
@@ -179,8 +185,54 @@ func TestNothingWrittenIsReadRatherThanGuessedAt(t *testing.T) {
 	}
 }
 
-// Neither write reaches another patient's shelf, and the witness is the row read back rather
-// than the count: an UPDATE the policies filter reports success over no rows.
+// A thrown-away vial has no lifecycle left to change, and says so as a conflict.
+//
+// This is the sequence idempotence-by-value is argued from: the offline queue delivers a «put
+// it aside» that was written before the patient discarded the vial. Without a guard the write
+// met 000021's CHECK and left as a 500 — which the queue retries for ever — and the two values
+// answered differently, 200 for taking it back and 500 for setting it aside.
+func TestAThrownAwayVialRefusesToBeSetAside(t *testing.T) {
+	c := newClinic(t)
+	mux, calling := aCabinet(t, c)
+	calling(patientA, "patient")
+
+	if status, body := send(t, mux, http.MethodPost,
+		"/v1/me/vials/"+c.vialA+"/dispose", nil); status != http.StatusOK {
+		t.Fatalf("throwing it away answered %d: %s", status, body)
+	}
+
+	for _, asked := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"set aside", map[string]any{"held_back": true}},
+		// Both values, because the vial is past the point either can mean anything —
+		// and answering 200 to one of them was the asymmetry that gave this away.
+		{"taken back", map[string]any{"held_back": false}},
+	} {
+		t.Run(asked.name, func(t *testing.T) {
+			status, body := send(t, mux, http.MethodPut,
+				"/v1/me/vials/"+c.vialA+"/held-back", asked.body)
+			if status != http.StatusConflict {
+				t.Errorf("answered %d, want 409: %s", status, body)
+			}
+		})
+	}
+
+	// And the row is unchanged: a conflict that had already written something would be
+	// worse than the 500 it replaced.
+	status, body := send(t, mux, http.MethodGet, "/v1/me/vials/"+c.vialA, nil)
+	if status != http.StatusOK {
+		t.Fatalf("reading the card answered %d: %s", status, body)
+	}
+	if card := cardFrom(t, body); card.HeldBackAt != nil {
+		t.Errorf("a thrown-away vial is set aside on %v", card.HeldBackAt)
+	}
+}
+
+// Neither write reaches another patient's shelf, and the witness is the row read back as its
+// owner: the shelf refuses the vial before any statement runs, so a status alone would say
+// nothing about whether something was written.
 func TestNeitherWriteReachesAnotherPatientsVial(t *testing.T) {
 	c := newClinic(t)
 	mux, calling := aCabinet(t, c)
@@ -246,4 +298,28 @@ func TestOnlyAPatientChangesAVialsLifecycle(t *testing.T) {
 			}
 		})
 	}
+}
+
+// dayTheServerIsOn asks the cabinet what day it thinks it is, by setting a second vial aside
+// and reading the day it wrote.
+func dayTheServerIsOn(t *testing.T, mux *chi.Mux, c clinic) string {
+	t.Helper()
+
+	status, body := post(t, mux, "/v1/me/vials", aVial(c, nil))
+	if status != http.StatusCreated {
+		t.Fatalf("adding a vial to ask the date with answered %d: %s", status, body)
+	}
+	spare := cardFrom(t, body).ID
+
+	status, body = send(t, mux, http.MethodPut, "/v1/me/vials/"+spare+"/held-back",
+		map[string]any{"held_back": true})
+	if status != http.StatusOK {
+		t.Fatalf("setting the spare aside answered %d: %s", status, body)
+	}
+	card := cardFrom(t, body)
+	if card.HeldBackAt == nil {
+		t.Fatal("the spare came back not set aside")
+	}
+
+	return *card.HeldBackAt
 }
