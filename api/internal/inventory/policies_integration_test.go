@@ -1408,7 +1408,8 @@ func TestTheAmountColumnsAreWrittenOnlyOnTheirOwnVial(t *testing.T) {
 	}
 }
 
-// The update policy answers on its own, over a column the discriminator is not.
+// The update policy answers on its own, on a statement that reads nothing and carries the
+// discriminator so that the count is what refuses.
 //
 // An UPDATE naming a row by id reads that column, so vials_own_select refuses it first and
 // vials_own_update could be USING (true) with every case above it still green — measured. The
@@ -1440,16 +1441,16 @@ func TestTheUpdatePolicyScopesAWriteThatReadsNothing(t *testing.T) {
 		t.Errorf("an unfiltered write touched %d rows, want the caller's one", affected)
 	}
 
-	var held string
-	if err := c.as(t, patientB, "patient", func(ctx context.Context, tx pgx.Tx) error {
-		return tx.QueryRow(ctx,
-			`SELECT coalesce(held_back_at::text, 'null') FROM app.vials WHERE id = $1`,
-			c.vialB).Scan(&held)
-	}); err != nil {
-		t.Fatalf("reading the other patient's vial: %v", err)
-	}
+	// Read down the service path and not as its owner: this statement assigns patient_id,
+	// so a widened policy moves the row out of B's reach entirely and a read as B would
+	// answer «no rows» — a harness failure by the look of it, rather than the theft it is.
+	held := c.serviceString(t,
+		`SELECT coalesce(held_back_at::text, 'null') FROM app.vials WHERE id = $1`, c.vialB)
 	if held != "null" {
 		t.Errorf("the other patient's vial was set aside on %s", held)
+	}
+	if owner := c.ownerOf(t, c.vialB); owner != patientB {
+		t.Errorf("the other patient's vial now belongs to %s", owner)
 	}
 }
 
@@ -1476,14 +1477,13 @@ func TestAVialCannotBeCreatedAlreadySetAside(t *testing.T) {
 	if !errors.As(err, &refusal) || refusal.Code != "42501" {
 		t.Fatalf("creating a vial already set aside answered %v, want a 42501", err)
 	}
-	// The message cannot discriminate — measured, a column privilege refused on INSERT
-	// reads «permission denied for table vials» and names no column — so what separates
-	// this from vials_own_insert's WITH CHECK, which raises the same SQLSTATE, is the
-	// control below rather than the text.
+	// Measured: a column privilege refused on INSERT reads «permission denied for table
+	// vials» and names no column, so the text cannot separate this from vials_own_insert's
+	// WITH CHECK, which raises the same SQLSTATE.
 
-	// The same row without that column is accepted, so the refusal is the column and not
-	// the statement: a test that only saw the 42501 would pass against a patient who had
-	// lost INSERT on app.vials altogether.
+	// That separation is this: the same row without the column is accepted, so the refusal
+	// is the column and not the statement, and the case cannot pass against a patient who
+	// had lost INSERT on app.vials altogether.
 	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `
 			INSERT INTO app.vials (patient_id, compound_id, concentration_label,
