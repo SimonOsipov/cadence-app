@@ -16,8 +16,10 @@ echo "==> detekt"
 
 # `:shared` only, and not by choice of this line. composeApp declares no
 # `withHostTestBuilder {}` in its build file, so `testAndroidHostTest` resolves
-# to `:shared:testAndroidHostTest` and nothing else — 244 of the tree's 537
-# tests. The other 293 are every Compose UI test there is, and they run under
+# to `:shared:testAndroidHostTest` and nothing else — 353 of them, counted on
+# 2026-08-29 rather than carried forward: the figure that stood here said 244
+# and had been overtaken by the ported screens. Eight run under a Robolectric
+# runtime, which is what secure storage needed to be checkable at all. The other 293 are every Compose UI test there is, and they run under
 # ios.sh, on macOS, and nowhere else.
 #
 # This comment used to claim the opposite: "unqualified, so every module that
