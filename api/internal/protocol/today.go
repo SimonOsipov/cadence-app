@@ -59,12 +59,16 @@ type (
 	// Cabinet answers what the medicine cabinet knows about one prescribed item: how many
 	// doses its open vial has left, and whether it is time to reorder.
 	// The item and not the compound, because the reorder hint is «weeks of supply» and
-	// the weeks come from the item's own rate — passing the two apart is where they
-	// disagree, which is the reason inventory's own function takes the item too.
+	// the weeks come from the item's own rate. The dose is passed in rather than looked
+	// up: the cabinet would have to import this package to find it, and the caller is
+	// already holding the plan it comes from — and the caller resolves it from the drug,
+	// so it is nil where no phase covers the day and nil where two positions name the
+	// drug, which leaves no single dose to divide by. On a nil dose the cabinet answers
+	// substance and status, and neither a count of injections nor a hint.
 	Cabinet interface {
 		SupplyFor(
 			ctx context.Context, tx pgx.Tx, patient civil.UserID, item ProtocolItem,
-			today civil.Date,
+			dose *Dose, today civil.Date,
 		) (*int, *ReorderHint, error)
 	}
 
@@ -99,6 +103,16 @@ func earlier(a, b civil.Slot) bool {
 	}
 
 	return a.Minute < b.Minute
+}
+
+// doseOfTheDrug is what the course prescribes of this item's drug today, and nothing where the
+// item names none — which is what SupplyFor answers about anyway.
+func doseOfTheDrug(plan Plan, item ProtocolItem, at civil.Date) *Dose {
+	if item.CompoundID == nil {
+		return nil
+	}
+
+	return CurrentDoseFor(plan, *item.CompoundID, at)
 }
 
 // TodayFor assembles the hero screen from the plan, the day and what the neighbours answer.
@@ -167,7 +181,9 @@ func TodayFor(
 			if item.ID != today.NextDose.ItemID {
 				continue
 			}
-			left, reorder, err := cabinet.SupplyFor(ctx, tx, patient, item, at)
+			// From the drug and not from this position, so the day card and the
+			// cabinet screen cannot disagree about one vial — see Cabinet above.
+			left, reorder, err := cabinet.SupplyFor(ctx, tx, patient, item, doseOfTheDrug(plan, item, at), at)
 			if err != nil {
 				return Today{}, err
 			}

@@ -111,6 +111,44 @@ func PhaseDose(plan Plan, itemID ProtocolItemID, d civil.Date) *Dose {
 	return nil
 }
 
+// CurrentDoseFor is the dose the course prescribes of a compound on a day, for callers that
+// hold a drug rather than an item — the cabinet, whose vials name compounds.
+//
+// Nothing where two items name one compound, by the precedent OpenVialFor sets: 000013 has no
+// unique index on the pair, so a course can carry an injection and a supplement of one drug,
+// and answering either dose would put a number on a screen that half the prescription
+// contradicts. An item that names the compound and carries no phase falls through to
+// PhaseDose's own nil — Draft.Check requires phases of injections only, so a supplement
+// naming a drug is a legal course.
+func CurrentDoseFor(plan Plan, compound CompoundID, d civil.Date) *Dose {
+	item := SoleItemFor(plan, compound)
+	if item == nil {
+		return nil
+	}
+
+	return PhaseDose(plan, item.ID, d)
+}
+
+// SoleItemFor is the one course position prescribing a compound, and nothing where two do.
+//
+// The ambiguity rule itself, so the readings that need the position rather than the dose —
+// the cabinet's reorder hint divides by an item's own weekly rate — refuse on the same terms
+// instead of carrying a second copy of it.
+func SoleItemFor(plan Plan, compound CompoundID) *ProtocolItem {
+	var sole *ProtocolItem
+	for i, item := range plan.Items {
+		if item.CompoundID == nil || *item.CompoundID != compound {
+			continue
+		}
+		if sole != nil {
+			return nil
+		}
+		sole = &plan.Items[i]
+	}
+
+	return sole
+}
+
 // DosesPerWeek is derived, not seeded: a stored copy goes stale the first time a protocol is
 // edited.
 func DosesPerWeek(item ProtocolItem) float64 {

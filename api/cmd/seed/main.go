@@ -184,7 +184,7 @@ func seed(ctx context.Context, of clinic, on deps) error {
 		staff[member.slug] = userID
 	}
 
-	courses := 0
+	courses, cabinets := 0, 0
 	for _, person := range of.patients {
 		// As the patient's own primary specialist, which is who creates a patient
 		// in the product: a doctor may put themselves on a care team and nobody else.
@@ -216,10 +216,20 @@ func seed(ctx context.Context, of clinic, on deps) error {
 		if written {
 			courses++
 		}
+
+		// After the course, because the doses are attributed to its own weekly
+		// injection and the vials name the compounds it entered in the directory.
+		filled, err := fillTheCabinet(ctx, on.writes, civil.UserID(userID), on.today)
+		if err != nil {
+			return fmt.Errorf("filling the cabinet of %s: %w", person.fullName, err)
+		}
+		if filled {
+			cabinets++
+		}
 	}
 
-	fmt.Printf("seed: %d members of staff, %d patients, %d courses\n",
-		len(of.staff), len(of.patients), courses)
+	fmt.Printf("seed: %d members of staff, %d patients, %d courses, %d cabinets\n",
+		len(of.staff), len(of.patients), courses, cabinets)
 
 	return nil
 }

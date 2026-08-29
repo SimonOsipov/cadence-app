@@ -85,7 +85,7 @@ func contexts(opts Options) []boundedContext {
 			Profiles:   profiles,
 			Directory:  directory,
 		}).Register},
-		{"inventory", inventory.NewService(inventory.Deps{
+		{"inventory", inventory.NewService(time.Now, inventory.Deps{
 			RequestPool: opts.Pool,
 			Photos:      opts.Photos,
 			Bucket:      opts.VialsBucket,

@@ -27,7 +27,7 @@ func NewSupply() *Supply { return &Supply{} }
 // «0 доз осталось» card over an empty cabinet says the patient ran out, and they never had one.
 func (s *Supply) SupplyFor(
 	ctx context.Context, tx pgx.Tx, patient civil.UserID, item protocol.ProtocolItem,
-	today civil.Date,
+	dose *protocol.Dose, today civil.Date,
 ) (*int, *protocol.ReorderHint, error) {
 	if item.CompoundID == nil {
 		return nil, nil, nil
@@ -37,7 +37,7 @@ func (s *Supply) SupplyFor(
 	if err != nil {
 		return nil, nil, err
 	}
-	drawnFrom, err := drawnFromOf(ctx, tx, patient)
+	draws, err := drawsOf(ctx, tx, patient)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -53,27 +53,34 @@ func (s *Supply) SupplyFor(
 	// and without the ORDER BY two requests for one day could answer differently. The write
 	// refuses to guess here and leaves the vial empty; a read cannot refuse.
 	for _, vial := range cabinet.vials {
-		if vial.CompoundID != *item.CompoundID || vial.OpenedAt == nil || vial.DisposedAt != nil {
+		// Held back with the rest: the count on «Сегодня» would otherwise be read off a
+		// vial the patient has shelved, while the one they are drawing from stands
+		// behind it in the same order.
+		if vial.CompoundID != *item.CompoundID || vial.OpenedAt == nil ||
+			vial.DisposedAt != nil || vial.HeldBackAt != nil {
 			continue
 		}
-		remaining := RemainingDoses(vial, drawnFrom)
-		left = &remaining
+		left = RemainingDoses(vial, draws, dose)
 
 		break
 	}
 
 	var hint *protocol.ReorderHint
-	if mine := ReorderHintFor(item, cabinet, drawnFrom, today); mine != nil {
+	if mine := ReorderHintFor(item, cabinet, draws, dose, today); mine != nil {
 		hint = &protocol.ReorderHint{CompoundID: mine.CompoundID, WeeksLeft: mine.WeeksLeft}
 	}
 
 	return left, hint, nil
 }
 
+// vialsOf is the patient's cabinet, whole: two readers taking different halves of one row are
+// two shapes of the same vial, and the cabinet's own card is built from what the day card
+// already reads.
 func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id::text, patient_id::text, compound_id::text, total_doses,
-		       opened_at, expires_on, disposed_at
+		SELECT id::text, patient_id::text, compound_id::text, concentration_label,
+		       total_amount, amount_unit, opened_at, expires_on, disposed_at, held_back_at,
+		       lot, location_ru, label_photo_path
 		FROM app.vials
 		WHERE patient_id = $1
 		ORDER BY opened_at, id
@@ -87,29 +94,38 @@ func vialsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Vial, erro
 	for rows.Next() {
 		var (
 			vial     Vial
+			amount   float64
 			opened   *time.Time
 			expires  time.Time
 			disposed *time.Time
+			heldBack *time.Time
 		)
-		if err := rows.Scan(&vial.ID, &vial.PatientID, &vial.CompoundID, &vial.TotalDoses,
-			&opened, &expires, &disposed); err != nil {
+		if err := rows.Scan(&vial.ID, &vial.PatientID, &vial.CompoundID,
+			&vial.ConcentrationLabel, &amount, &vial.AmountUnit, &opened, &expires,
+			&disposed, &heldBack, &vial.Lot, &vial.LocationRU, &vial.LabelPhotoPath); err != nil {
 			return nil, err
+		}
+		// Converted here rather than carried as a float: the schema bounds the scale
+		// per unit so nothing is lost, and above this line no sum of quantities exists.
+		if vial.TotalAmount, err = AmountOf(amount, vial.AmountUnit); err != nil {
+			return nil, fmt.Errorf("the amount in vial %s: %w", vial.ID, err)
 		}
 		vial.ExpiresOn = civil.NewDate(expires.Year(), expires.Month(), expires.Day())
 		vial.OpenedAt = dayOf(opened)
 		vial.DisposedAt = dayOf(disposed)
+		vial.HeldBackAt = dayOf(heldBack)
 		vials = append(vials, vial)
 	}
 
 	return vials, rows.Err()
 }
 
-// drawnFromOf is every dose the patient has drawn from any vial — the subtraction's other
-// half. Doses with no vial named are not in it, which is what makes an unnamed vial cost that
-// vial's count one dose rather than somebody else's.
-func drawnFromOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]VialID, error) {
+// drawsOf is every dose the patient has drawn from any vial, with how much came out —
+// the subtraction's other half. Doses with no vial named are not in it, which is what makes
+// an unnamed vial cost that vial's contents one dose rather than somebody else's.
+func drawsOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]Draw, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT vial_id::text
+		SELECT vial_id::text, dose_value, dose_unit
 		FROM app.dose_events
 		WHERE patient_id = $1 AND vial_id IS NOT NULL
 	`, string(patient))
@@ -118,13 +134,20 @@ func drawnFromOf(ctx context.Context, tx pgx.Tx, patient civil.UserID) ([]VialID
 	}
 	defer rows.Close()
 
-	var drawn []VialID
+	var drawn []Draw
 	for rows.Next() {
-		var id VialID
-		if err := rows.Scan(&id); err != nil {
+		var (
+			draw  Draw
+			value float64
+			unit  protocol.DoseUnit
+		)
+		if err := rows.Scan(&draw.VialID, &value, &unit); err != nil {
 			return nil, err
 		}
-		drawn = append(drawn, id)
+		if draw.Amount, err = AmountOf(value, unit); err != nil {
+			return nil, fmt.Errorf("a dose drawn by %s: %w", patient, err)
+		}
+		drawn = append(drawn, draw)
 	}
 
 	return drawn, rows.Err()

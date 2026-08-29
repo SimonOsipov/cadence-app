@@ -1,5 +1,5 @@
 -- dose_events — «the core clinical fact stream» (§03). The one table everything
--- else is measured against: adherence, a vial's remaining count, the missed-dose
+-- else is measured against: adherence, what is left in a vial, the missed-dose
 -- sweep, and the day's «с дозой» mark all read it and none of them stores a copy.
 --
 -- Three references and each of them belongs to somebody. A dose event that pointed
@@ -120,8 +120,8 @@ CREATE TABLE app.dose_events (
     -- editor removes a line from a prescription — and a referential action runs as
     -- the table owner, consulting neither grant nor policy. Under CASCADE, a doctor
     -- dropping an item deleted every dose the patient had logged against it
-    -- (measured), silently returning those doses to the vial whose remaining count
-    -- is a subtraction over these rows. That contradicts this table's own rule: a
+    -- (measured), silently returning that substance to the vial whose remaining
+    -- amount is a subtraction over these rows. That contradicts this table's own rule: a
     -- logged dose is a fact, and a mistake is corrected by the clinic rather than by
     -- the row disappearing.
     -- cadence_admin holds DELETE on compounds, and a dose logged with the vial
@@ -174,10 +174,15 @@ CREATE UNIQUE INDEX dose_events_one_per_slot
 CREATE INDEX dose_events_by_patient_and_day
     ON app.dose_events (patient_id, scheduled_for_date DESC);
 
--- remaining = total_doses − count(dose_events WHERE vial_id = …), which is a count
--- per vial and the one read that does not start from the patient. It is tenant-safe
--- only because the composite key above makes vial_id determine patient_id — that key
--- is load-bearing for this read, not only for the write.
+-- What is left in a vial is total_amount minus the doses drawn from it, and that
+-- subtraction reads this table the way everything else does — from the patient.
+-- inventory's drawsOf takes every event of theirs carrying a vial, and the per-vial
+-- sum happens in Go. No read on a request path filters this table by vial_id alone —
+-- 000021's backfill does, as the owner, where there is no tenant to scope to — so the
+-- tenant scope of that read is patient_id and the policy, not the composite key.
+--
+-- The index is for the other direction: a vial going away is checked against the
+-- events pointing at it, and that reference is RESTRICT.
 CREATE INDEX dose_events_by_vial ON app.dose_events (vial_id) WHERE vial_id IS NOT NULL;
 
 ALTER TABLE app.dose_events ENABLE ROW LEVEL SECURITY;

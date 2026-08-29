@@ -16,7 +16,11 @@ var (
 	nextID  int
 )
 
-func vial(totalDoses int, openedAt *civil.Date, expiresOn civil.Date) Vial {
+// step is the dose every case in this file is written against: the cabinet counts
+// substance, and a case that says «eight doses» means eight of these.
+var step = protocol.Dose{Value: 0.25, Unit: protocol.MG}
+
+func vial(doses int, openedAt *civil.Date, expiresOn civil.Date) Vial {
 	nextID++
 
 	return Vial{
@@ -24,10 +28,24 @@ func vial(totalDoses int, openedAt *civil.Date, expiresOn civil.Date) Vial {
 		PatientID:          patient,
 		CompoundID:         sema,
 		ConcentrationLabel: "1 мг/мл",
-		TotalDoses:         totalDoses,
+		TotalAmount:        Amount(doses) * 250,
+		AmountUnit:         protocol.MG,
 		OpenedAt:           openedAt,
 		ExpiresOn:          expiresOn,
 	}
+}
+
+// dosesLeft is RemainingDoses at the standard step, dereferenced. Every case here
+// prescribes a dose, so a nil is a broken fixture rather than a case.
+func dosesLeft(t *testing.T, v Vial, draws []Draw) int {
+	t.Helper()
+
+	left := RemainingDoses(v, draws, &step)
+	if left == nil {
+		t.Fatal("the fixture prescribes a dose and RemainingDoses answered nothing")
+	}
+
+	return *left
 }
 
 func day(year int, month time.Month, d int) *civil.Date {
@@ -59,10 +77,10 @@ func weeklyItem(compound protocol.CompoundID, daysAWeek int) protocol.ProtocolIt
 
 // drawn is the narrow shape RemainingDoses takes: which vial each logged dose came
 // out of, and nothing else about it.
-func drawn(v Vial, times int) []VialID {
-	out := make([]VialID, times)
+func drawn(v Vial, times int) []Draw {
+	out := make([]Draw, times)
 	for i := range out {
-		out[i] = v.ID
+		out[i] = Draw{VialID: v.ID, Amount: 250}
 	}
 
 	return out
@@ -72,7 +90,7 @@ func TestLoggingADoseDecrementsTheVialItCameFrom(t *testing.T) {
 	v := vial(4, nil, farOff)
 
 	for _, c := range []struct{ logged, remaining int }{{0, 4}, {2, 2}, {4, 0}} {
-		if got := RemainingDoses(v, drawn(v, c.logged)); got != c.remaining {
+		if got := dosesLeft(t, v, drawn(v, c.logged)); got != c.remaining {
 			t.Errorf("%d logged: want %d remaining, got %d", c.logged, c.remaining, got)
 		}
 	}
@@ -83,7 +101,7 @@ func TestDosesFromOtherVialsDoNotCount(t *testing.T) {
 	mine := vial(4, nil, farOff)
 	other := vial(4, nil, farOff)
 
-	if got := RemainingDoses(mine, drawn(other, 3)); got != 4 {
+	if got := dosesLeft(t, mine, drawn(other, 3)); got != 4 {
 		t.Errorf("another vial's doses counted: got %d, want 4", got)
 	}
 }
@@ -91,7 +109,7 @@ func TestDosesFromOtherVialsDoNotCount(t *testing.T) {
 func TestRemainingNeverGoesNegative(t *testing.T) {
 	v := vial(2, nil, farOff)
 
-	if got := RemainingDoses(v, drawn(v, 5)); got != 0 {
+	if got := dosesLeft(t, v, drawn(v, 5)); got != 0 {
 		t.Errorf("got %d, want 0", got)
 	}
 }
@@ -162,8 +180,8 @@ func TestAHintIsAboutOneCompoundAndCountsOnlyItsVials(t *testing.T) {
 	bpcSpare := vial(30, nil, farOff)
 	bpcSpare.CompoundID = protocol.CompoundID("bpc")
 
-	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, today)
-	withOtherCompound := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, bpcSpare}), nil, today)
+	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, &step, today)
+	withOtherCompound := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, bpcSpare}), nil, &step, today)
 
 	if alone == nil || withOtherCompound == nil || *alone != *withOtherCompound {
 		t.Fatalf("a vial of another compound changed the answer: %v vs %v", alone, withOtherCompound)
@@ -181,14 +199,14 @@ func TestTheReorderHintNeedsBothNoSparesAndLittleSupply(t *testing.T) {
 	// anyway, passing without the spare check ever running.
 	spare := vial(1, nil, farOff)
 
-	if got := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, spare}), drawn(open, 3), today); got != nil {
+	if got := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, spare}), drawn(open, 3), &step, today); got != nil {
 		t.Errorf("a sealed spare is exactly what makes reordering unnecessary: got %v", got)
 	}
-	if got := ReorderHintFor(weeklyItem(sema, 0), CabinetOf(patient, []Vial{open}), nil, today); got != nil {
+	if got := ReorderHintFor(weeklyItem(sema, 0), CabinetOf(patient, []Vial{open}), nil, &step, today); got != nil {
 		t.Errorf("an item prescribed on no day has no weekly rate: got %v", got)
 	}
 
-	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open}), drawn(open, 1), today)
+	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open}), drawn(open, 1), &step, today)
 
 	if hint == nil {
 		t.Fatal("three doses at one a week is three weeks of supply and no spare")
@@ -204,7 +222,7 @@ func TestAnExpiredVialIsNeitherASpareNorSupply(t *testing.T) {
 	open := vial(4, day(2026, time.May, 1), farOff)
 	dead := vial(4, nil, today.AddDays(-1))
 
-	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, dead}), drawn(open, 2), today)
+	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, dead}), drawn(open, 2), &step, today)
 
 	if hint == nil || hint.WeeksLeft != 2 {
 		t.Errorf("the expired vial is not two more weeks of supply: got %v", hint)
@@ -213,7 +231,7 @@ func TestAnExpiredVialIsNeitherASpareNorSupply(t *testing.T) {
 	// Boundary: a vial expiring *today* is still usable and still suppresses the hint.
 	expiringToday := vial(4, nil, today)
 	if got := ReorderHintFor(
-		weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, expiringToday}), drawn(open, 2), today,
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, expiringToday}), drawn(open, 2), &step, today,
 	); got != nil {
 		t.Errorf("stock that expires today has not expired yet: got %v", got)
 	}
@@ -224,7 +242,7 @@ func TestADisposedVialIsNeitherASpareNorSupply(t *testing.T) {
 	binned := vial(4, nil, farOff)
 	binned.DisposedAt = day(2026, time.May, 2)
 
-	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, binned}), drawn(open, 1), today)
+	hint := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, binned}), drawn(open, 1), &step, today)
 
 	if hint == nil || hint.WeeksLeft != 3 {
 		t.Errorf("got %v, want 3 weeks", hint)
@@ -248,7 +266,7 @@ func TestFourWeeksOfSupplyIsAHintAndFiveIsNot(t *testing.T) {
 	} {
 		open := vial(c.doses, day(2026, time.May, 1), farOff)
 
-		got := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open}), nil, today)
+		got := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{open}), nil, &step, today)
 
 		switch {
 		case c.hint && got == nil:
@@ -276,7 +294,7 @@ func TestAnItemWithNoWeeklyRateGetsNoHintEvenWhenTheVialIsEmpty(t *testing.T) {
 	// uses the drained vial because that is the case both architectures fail.
 	drained := vial(4, day(2026, time.May, 1), farOff)
 
-	if got := ReorderHintFor(weeklyItem(sema, 0), CabinetOf(patient, []Vial{drained}), drawn(drained, 4), today); got != nil {
+	if got := ReorderHintFor(weeklyItem(sema, 0), CabinetOf(patient, []Vial{drained}), drawn(drained, 4), &step, today); got != nil {
 		t.Errorf("an item prescribed on no day: got %v, want no hint", got)
 	}
 }
@@ -296,9 +314,9 @@ func TestAnotherPatientsVialsChangeNothing(t *testing.T) {
 	theirs := vial(30, day(2026, time.May, 1), farOff)
 	theirs.PatientID = other
 
-	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, today)
+	alone := ReorderHintFor(weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine}), nil, &step, today)
 	mixed := ReorderHintFor(
-		weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, theirs}), nil, today,
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{mine, theirs}), nil, &step, today,
 	)
 
 	if alone == nil || mixed == nil || *alone != *mixed {
@@ -308,8 +326,200 @@ func TestAnotherPatientsVialsChangeNothing(t *testing.T) {
 	// And their cabinet holds only their own row, with their own number of weeks —
 	// different from the mixed answer, so this cannot pass on the same arithmetic.
 	if got := ReorderHintFor(
-		weeklyItem(sema, 1), CabinetOf(other, []Vial{mine, theirs}), nil, today,
+		weeklyItem(sema, 1), CabinetOf(other, []Vial{mine, theirs}), nil, &step, today,
 	); got != nil {
 		t.Errorf("thirty weeks of supply is no reorder hint: got %v", got)
+	}
+}
+
+// BG-001, and the whole reason the vial stopped counting injections.
+//
+// One vial of 2 мг against a course that titrates 0,25 → 0,5 → 1,0. The count model
+// stored eight injections and kept answering eight at every dose, so the hint stayed
+// silent through the phase where supply actually halved and then halved again. The
+// numbers below are the proposal's measured table, and the weeks are asserted rather
+// than the presence of a hint: «выдаётся» and «выдаётся with the right number» differ
+// by exactly the defect this replaces.
+func TestTheReorderHintFollowsTheTitration(t *testing.T) {
+	v := vial(8, day(2026, time.May, 1), farOff)
+	weekly := weeklyItem(sema, 1)
+	cabinet := CabinetOf(patient, []Vial{v})
+
+	for _, phase := range []struct {
+		name  string
+		dose  protocol.Dose
+		weeks *int
+	}{
+		{"the starting dose", protocol.Dose{Value: 0.25, Unit: protocol.MG}, nil},
+		{"after the first step up", protocol.Dose{Value: 0.5, Unit: protocol.MG}, ptr(4)},
+		{"at the full dose", protocol.Dose{Value: 1, Unit: protocol.MG}, ptr(2)},
+	} {
+		t.Run(phase.name, func(t *testing.T) {
+			got := ReorderHintFor(weekly, cabinet, nil, &phase.dose, today)
+
+			switch {
+			case phase.weeks == nil && got != nil:
+				t.Errorf("eight weeks of supply asked for a reorder: %+v", got)
+			case phase.weeks != nil && got == nil:
+				t.Error("the hint stayed silent past the threshold — this is BG-001")
+			case phase.weeks != nil && got.WeeksLeft != *phase.weeks:
+				t.Errorf("the hint says %d weeks, want %d", got.WeeksLeft, *phase.weeks)
+			}
+		})
+	}
+}
+
+// The division floors, and the boundary is where it shows. Two milligrams at 0,3 is six
+// injections and a remainder that buys nothing: rounding up would promise a dose the
+// vial cannot give.
+func TestARemainderTooSmallForADoseBuysNothing(t *testing.T) {
+	v := vial(8, day(2026, time.May, 1), farOff)
+
+	for _, c := range []struct {
+		name string
+		dose protocol.Dose
+		want int
+	}{
+		{"a dose that divides evenly", protocol.Dose{Value: 0.5, Unit: protocol.MG}, 4},
+		{"a dose that leaves a remainder", protocol.Dose{Value: 0.3, Unit: protocol.MG}, 6},
+		{"a dose larger than the vial", protocol.Dose{Value: 3, Unit: protocol.MG}, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := dosesLeftAt(t, v, nil, c.dose); got != c.want {
+				t.Errorf("2 мг at %v gives %d injections, want %d", c.dose.Value, got, c.want)
+			}
+		})
+	}
+}
+
+// A course that has ended prescribes nothing, and a drug the doctor typed has no
+// reference dose. Both answer the same way: the substance is known, the number of
+// injections is not, and inventing one is what invariant 3 refuses.
+func TestWithNoDoseThereIsNoCountOfInjections(t *testing.T) {
+	v := vial(8, day(2026, time.May, 1), farOff)
+
+	if got := RemainingDoses(v, nil, nil); got != nil {
+		t.Errorf("with no dose the vial claims %d injections", *got)
+	}
+	if got := RemainingAmount(v, nil); got != 2_000 {
+		t.Errorf("the substance is %d мкг, want 2000 — that part is always answerable", got)
+	}
+	if got := StatusOf(v, nil, today); got != StatusActive {
+		t.Errorf("with no dose the status is %v, want active — «low» is a fraction, not a count", got)
+	}
+}
+
+func ptr(n int) *int { return &n }
+
+func dosesLeftAt(t *testing.T, v Vial, draws []Draw, dose protocol.Dose) int {
+	t.Helper()
+
+	left := RemainingDoses(v, draws, &dose)
+	if left == nil {
+		t.Fatalf("no count at %v %s", dose.Value, dose.Unit)
+	}
+
+	return *left
+}
+
+// Weeks are not doses, and in every other fixture here they are the same number: the
+// cadence is one injection a week, so eight doses read as eight weeks whichever the
+// arithmetic returns. Twice a week is where they part.
+func TestTheHintCountsWeeksAndNotDoses(t *testing.T) {
+	v := vial(8, day(2026, time.May, 1), farOff)
+	cabinet := CabinetOf(patient, []Vial{v})
+	dose := protocol.Dose{Value: 0.25, Unit: protocol.MG}
+
+	got := ReorderHintFor(weeklyItem(sema, 2), cabinet, nil, &dose, today)
+	if got == nil {
+		t.Fatal("eight doses at two a week is four weeks, which is inside the threshold")
+	}
+	if got.WeeksLeft != 4 {
+		t.Errorf("the hint says %d, want 4 — eight doses, two a week", got.WeeksLeft)
+	}
+}
+
+// The quarter is a quarter, not «some fraction». Every other case here divides evenly
+// into thousands of micrograms, so the threshold's magnitude is free to drift.
+func TestTheLowThresholdIsAQuarterAndNotSomeOtherFraction(t *testing.T) {
+	v := Vial{
+		ID: "odd", PatientID: patient, CompoundID: sema,
+		TotalAmount: 1_000, AmountUnit: protocol.MG,
+		OpenedAt: day(2026, time.May, 1), ExpiresOn: farOff,
+	}
+
+	// 220 of 1000 is below a quarter; 260 is above. A threshold of a fifth would call
+	// the first one active, and one of a third would call the second one low.
+	for _, c := range []struct {
+		drawn Amount
+		want  VialStatus
+	}{{780, StatusLow}, {740, StatusActive}} {
+		draws := []Draw{{VialID: v.ID, Amount: c.drawn}}
+		if got := StatusOf(v, draws, today); got != c.want {
+			t.Errorf("%d мкг drawn of 1000 reads %v, want %v", c.drawn, got, c.want)
+		}
+	}
+}
+
+// The microgram dose, which no other case in this file prescribes.
+//
+// Every fixture here is milligrams, so AmountOf's мкг arm is reached by the conversion
+// table and never through the divisor — the one place a wrong arm turns into a number on
+// the day card. BPC-157 is the compound it exists for: 250 мкг out of a 5 мг vial.
+func TestAMicrogramDoseDividesTheVialItIsPrescribedFrom(t *testing.T) {
+	bpc := protocol.CompoundID("bpc")
+	v := Vial{
+		ID: "v-bpc", PatientID: patient, CompoundID: bpc,
+		ConcentrationLabel: "5 мг/мл",
+		TotalAmount:        5_000, AmountUnit: protocol.MCG,
+		OpenedAt: day(2026, time.May, 1), ExpiresOn: farOff,
+	}
+	dose := protocol.Dose{Value: 250, Unit: protocol.MCG}
+
+	left := RemainingDoses(v, []Draw{{VialID: v.ID, Amount: 1_000}}, &dose)
+
+	if left == nil {
+		t.Fatal("a dose of 250 мкг bought no count at all")
+	}
+	// 4000 мкг at 250 apiece. Read as milligrams the dose would be 250 000 мкг and the
+	// answer none, which is the arm this case is here to hold.
+	if *left != 16 {
+		t.Errorf("4000 мкг at 250 мкг apiece is %d injections, want 16", *left)
+	}
+}
+
+// A vial the patient set aside takes no part in the hint, on either half of the rule.
+//
+// The two halves fail differently, so both are measured: as a sealed spare it would suppress
+// the hint outright — the patient is told nothing while the only substance they have is the
+// one they deliberately shelved — and as an open vial its contents would be summed into the
+// weeks left, so the hint arrives late by however much it holds.
+func TestAHeldBackVialNeitherSuppressesTheHintNorFeedsIt(t *testing.T) {
+	open := vial(4, day(2026, time.May, 1), farOff)
+	shelved := vial(1, nil, farOff)
+	shelved.HeldBackAt = day(2026, time.May, 3)
+
+	suppressing := ReorderHintFor(
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, shelved}), drawn(open, 1), &step, today,
+	)
+	if suppressing == nil {
+		t.Fatal("a held-back spare suppressed the hint, and it is not supply the patient can use")
+	}
+	// The same three weeks the case without a spare answers: the shelved vial's own
+	// doses must not have been added to them.
+	if suppressing.WeeksLeft != 3 {
+		t.Errorf("the hint says %d weeks, want 3 — the held-back vial was counted", suppressing.WeeksLeft)
+	}
+
+	openShelved := vial(4, day(2026, time.May, 1), farOff)
+	openShelved.HeldBackAt = day(2026, time.May, 3)
+	fed := ReorderHintFor(
+		weeklyItem(sema, 1), CabinetOf(patient, []Vial{open, openShelved}), drawn(open, 1), &step, today,
+	)
+	if fed == nil {
+		t.Fatal("the hint disappeared with a held-back vial in the cabinet")
+	}
+	if fed.WeeksLeft != 3 {
+		t.Errorf("an open held-back vial added %d weeks to the hint", fed.WeeksLeft-3)
 	}
 }

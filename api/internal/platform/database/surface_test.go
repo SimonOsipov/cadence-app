@@ -38,6 +38,9 @@ import (
 // the fast gate, and golangci-lint never sees integration-tagged code.
 func exportedSurface() []string {
 	return []string{
+		// The parse IsUUIDShaped round-trips against, exported for the readers that
+		// compare an identifier from a path against one Postgres rendered.
+		"CanonicalUUID(string) (string, bool)",
 		"HealthCheck(context.Context, *pgxpool.Pool) error",
 		"IsUUIDShaped(string) bool",
 		// Takes an error and no pool: it reads what a failure was.

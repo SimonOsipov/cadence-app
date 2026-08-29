@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/storage"
 )
@@ -21,11 +20,11 @@ const LinkLifetime = 5 * time.Minute
 
 // Photos signs short-lived links to stored objects.
 //
-// The read half only: a label is attached after the vial exists, nothing creates
-// or updates a vial over HTTP until M4, and an upload link whose key no endpoint
-// could store would be a hole with no user.
+// Both halves since the vial can be created over HTTP: the upload link mints a key the
+// creation carries back, and the read link is signed only for a row the policies handed over.
 type Photos interface {
 	SignedGet(ctx context.Context, bucket, key, contentType string, ttl time.Duration) (storage.Link, error)
+	SignedPut(ctx context.Context, bucket, key string, ttl time.Duration) (storage.Link, error)
 }
 
 // ErrNoPhoto is one error for three cases — invisible, absent, no photograph —
@@ -33,6 +32,7 @@ type Photos interface {
 var ErrNoPhoto = errors.New("no photograph is readable here")
 
 type Service struct {
+	now      func() time.Time
 	requests *pgxpool.Pool
 	photos   Photos
 	bucket   string
@@ -45,8 +45,13 @@ type Deps struct {
 	Bucket      string
 }
 
-func NewService(deps Deps) *Service {
-	return &Service{requests: deps.RequestPool, photos: deps.Photos, bucket: deps.Bucket}
+// NewService takes the clock positionally, for the reason protocol.NewService records: the
+// cabinet's computed fields are answers about the patient's own day, and a package that reads
+// time.Now cannot be asked about another one.
+func NewService(now func() time.Time, deps Deps) *Service {
+	return &Service{
+		now: now, requests: deps.RequestPool, photos: deps.Photos, bucket: deps.Bucket,
+	}
 }
 
 // LabelPhotoInput names the vial whose label photograph is wanted.
@@ -83,6 +88,10 @@ func (s *Service) Register(api huma.API) {
 			http.StatusServiceUnavailable,
 		},
 	}, s.readLabelPhoto)
+
+	s.registerReads(api)
+	s.registerWrites(api)
+	s.registerLifecycle(api)
 }
 
 func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*LabelPhotoOutput, error) {
@@ -92,23 +101,23 @@ func (s *Service) readLabelPhoto(ctx context.Context, in *LabelPhotoInput) (*Lab
 		)
 	}
 
-	principal, ok := auth.PrincipalFrom(ctx)
-	if !ok {
-		return nil, huma.Error401Unauthorized("no verified principal on the request context")
-	}
-	// A patient-only surface. A doctor sees their patients' vials through the
-	// policies, and will read this the day the dashboard shows a cabinet — but
-	// admitting them now would publish a surface nothing has asked for, on rows
-	// whose admin policy is USING (true).
-	if principal.Role != "patient" {
-		return nil, huma.Error403Forbidden("only a patient reads their own photographs")
+	caller, err := s.patientCalling(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	caller := database.Caller{Subject: principal.Subject, Role: principal.Role}
+	// Canonicalised here as well as in readVial, so one identifier reaches one answer:
+	// huma's uuid format admits braces and urn:uuid:, pgx's parser takes neither, and
+	// Postgres takes the braces — which had the card answering 404 for a vial this
+	// endpoint signs a link to, and a 500 for the urn form both refuse.
+	asked, ok := database.CanonicalUUID(in.VialID)
+	if !ok {
+		return nil, huma.Error404NotFound("no photograph is readable here")
+	}
 
 	var key string
 	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
-		found, err := labelPhotoKeyOf(ctx, tx, in.VialID)
+		found, err := labelPhotoKeyOf(ctx, tx, asked)
 		if err != nil {
 			return err
 		}

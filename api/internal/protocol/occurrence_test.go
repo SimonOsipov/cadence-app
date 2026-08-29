@@ -542,3 +542,175 @@ func TestEachOccurrenceOwnsItsDose(t *testing.T) {
 		t.Errorf("the evening slot moved with the morning one: %v", bpcSlots[1].Dose.Value)
 	}
 }
+
+// The cabinet's way in: it holds a compound and needs the dose the course prescribes of it
+// today, where every other reading here starts from an item.
+func TestTheCurrentDoseOfACompoundIsTheDoseOfTheItemPrescribingIt(t *testing.T) {
+	plan := defaultBandsPlan()
+
+	if got := CurrentDoseFor(plan, CompoundID("sema"), bandsStart); got == nil || *got != quarter {
+		t.Errorf("the course prescribes %v of sema on its first day, want %v", got, quarter)
+	}
+	// The same day of the ninth week, so the answer is a phase and not a constant.
+	if got := CurrentDoseFor(plan, CompoundID("sema"), bandsStart.AddDays(56)); got == nil || *got != whole {
+		t.Errorf("in week nine the course prescribes %v, want %v", got, whole)
+	}
+}
+
+// The crossing itself: from a drug to the position prescribing it, and to *that* position's
+// phases.
+//
+// The plan these tests start from names its one item and its one compound with the same
+// string, so «index the phase map by the compound id» answers correctly there and is held by
+// nothing but this case; «take Items[0]» is held here and by the no-phase row below. Measured
+// both ways. Here the two ids differ textually, the answer is the second item, and the first
+// carries a dose of its own to be answered by mistake.
+func TestTheDoseIsTheOneBelongingToTheItemThatNamesTheDrug(t *testing.T) {
+	bpcItem, semaItem := ProtocolItemID("bpc-daily"), ProtocolItemID("sema-weekly")
+	perDay := Dose{Value: 250, Unit: MCG}
+	plan := Plan{
+		Protocol: Protocol{
+			ID: ProtocolID("pr"), PatientID: civil.UserID("p"),
+			StartDate: bandsStart, Weeks: 12, Status: StatusActive,
+		},
+		Items: []ProtocolItem{
+			{
+				ID: bpcItem, ProtocolID: ProtocolID("pr"), Kind: KindInjection,
+				CompoundID: compoundPtr("cmp-bpc"), Cadence: CadenceDaily,
+				Times: []civil.Slot{{Hour: 8}}, Loggable: true,
+			},
+			{
+				ID: semaItem, ProtocolID: ProtocolID("pr"), Kind: KindInjection,
+				CompoundID: compoundPtr("cmp-sema"), Cadence: CadenceWeekly,
+				DaysOfWeek: []time.Weekday{time.Sunday},
+				Times:      []civil.Slot{{Hour: 7}}, Loggable: true,
+			},
+		},
+		Phases: map[ProtocolItemID][]ProtocolPhase{
+			bpcItem:  {{FromWeek: 1, ToWeek: 12, Dose: perDay}},
+			semaItem: {{FromWeek: 1, ToWeek: 12, Dose: quarter}},
+		},
+	}
+
+	for _, asked := range []struct {
+		compound CompoundID
+		want     Dose
+	}{
+		{CompoundID("cmp-sema"), quarter},
+		{CompoundID("cmp-bpc"), perDay},
+	} {
+		t.Run(string(asked.compound), func(t *testing.T) {
+			got := CurrentDoseFor(plan, asked.compound, bandsStart)
+			if got == nil || *got != asked.want {
+				t.Errorf("the course prescribes %v of %s, want %v", got, asked.compound, asked.want)
+			}
+		})
+	}
+}
+
+// Every way the answer is nothing, and they are not one case: a compound nobody prescribes, a
+// day inside a wash-out, a cancelled course — and two items naming one compound, which is the
+// rule this seam exists to state.
+func TestTheCurrentDoseIsNothingRatherThanAGuess(t *testing.T) {
+	// Two items of one course naming one compound. The schema permits it — 000013 has no
+	// unique index on the pair — and Draft.Check refuses two items naming the same *row*,
+	// not the same drug, so a doctor can prescribe this and the server must not pick one.
+	twice := defaultBandsPlan()
+	second := ProtocolItemID("sema-evening")
+	twice.Items = append(twice.Items, ProtocolItem{
+		ID:         second,
+		ProtocolID: ProtocolID("pr"),
+		Kind:       KindInjection,
+		CompoundID: compoundPtr("sema"),
+		Cadence:    CadenceWeekly,
+		DaysOfWeek: []time.Weekday{time.Sunday},
+		Times:      []civil.Slot{{Hour: 19}},
+		Loggable:   true,
+	})
+	twice.Phases[second] = []ProtocolPhase{{FromWeek: 1, ToWeek: 12, Dose: half}}
+
+	// The premise: each item on its own does answer, so the nil below is the ambiguity
+	// rule and not an empty plan.
+	if one, other := PhaseDose(twice, sema, bandsStart), PhaseDose(twice, second, bandsStart); one == nil || other == nil {
+		t.Fatalf("the fixture prescribes %v and %v; both items must carry a dose", one, other)
+	}
+	if got := CurrentDoseFor(twice, CompoundID("sema"), bandsStart); got != nil {
+		t.Errorf("two items name sema and the answer was %v, want nothing", *got)
+	}
+
+	unphasedPlan, glycine := unphased(t)
+
+	for _, quiet := range []struct {
+		name     string
+		plan     Plan
+		compound CompoundID
+		day      civil.Date
+	}{
+		{"a compound the course does not prescribe", defaultBandsPlan(), CompoundID("bpc"), bandsStart},
+		{
+			"a day inside a wash-out",
+			bandsPlan(StatusActive, brokenPhases), CompoundID("sema"), bandsStart.AddDays(28),
+		},
+		{
+			"a course that was cancelled",
+			bandsPlan(StatusCancelled, shuffledPhases), CompoundID("sema"), bandsStart,
+		},
+		{"a day before the course opens", defaultBandsPlan(), CompoundID("sema"), bandsStart.AddDays(-1)},
+		{"an item that names the drug and is dosed by no phase", unphasedPlan, glycine, bandsStart},
+	} {
+		t.Run(quiet.name, func(t *testing.T) {
+			if got := CurrentDoseFor(quiet.plan, quiet.compound, quiet.day); got != nil {
+				t.Errorf("the answer was %v, want nothing", *got)
+			}
+		})
+	}
+}
+
+// unphased is a course carrying a supplement that names a drug and prescribes no band for it,
+// which Draft.Check permits: only an injection is required to be dosed. It answers the
+// compound too, so the item, the guard below and the case asking cannot name three things.
+func unphased(t *testing.T) (Plan, CompoundID) {
+	t.Helper()
+
+	supplement, compound := ProtocolItemID("glycine-nightly"), CompoundID("cmp-glycine")
+	plan := defaultBandsPlan()
+	plan.Items = append(plan.Items, ProtocolItem{
+		ID: supplement, ProtocolID: ProtocolID("pr"), Kind: KindSupplement,
+		CompoundID: &compound, Cadence: CadenceDaily,
+		Times: []civil.Slot{{Hour: 22}}, Loggable: true,
+	})
+
+	// Guarded, or the case degenerates into a second «a compound nobody prescribes».
+	naming := 0
+	for _, item := range plan.Items {
+		if item.CompoundID != nil && *item.CompoundID == compound {
+			naming++
+		}
+	}
+	if naming != 1 {
+		t.Fatalf("%d items name the supplement, want 1", naming)
+	}
+	if bands := plan.Phases[supplement]; len(bands) != 0 {
+		t.Fatalf("the supplement carries %d phases; the case is that it carries none", len(bands))
+	}
+
+	return plan, compound
+}
+
+// An item that names no drug is not an item naming this one: a weigh-in carries a nil
+// compound, and reading it as a match would answer the scale's dose to the cabinet.
+func TestAnItemWithNoDrugIsNotTheOnePrescribingIt(t *testing.T) {
+	plan := defaultBandsPlan()
+	plan.Items = append(plan.Items, ProtocolItem{
+		ID:         weighIn,
+		ProtocolID: ProtocolID("pr"),
+		Kind:       KindWeighIn,
+		Cadence:    CadenceWeekly,
+		DaysOfWeek: []time.Weekday{time.Monday},
+		Times:      []civil.Slot{{Hour: 8}},
+	})
+
+	if got := CurrentDoseFor(plan, CompoundID("sema"), bandsStart); got == nil || *got != quarter {
+		t.Errorf("a weigh-in beside the injection changed the answer to %v, want %v", got, quarter)
+	}
+}

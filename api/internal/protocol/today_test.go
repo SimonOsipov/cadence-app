@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -21,7 +22,9 @@ type stubNeighbours struct {
 	reorder *ReorderHint
 
 	askedFor []ProtocolItemID
-	windows  []civil.Range
+	// What dose the cabinet was told to divide by — nil where no phase covers the day.
+	askedAt []*Dose
+	windows []civil.Range
 	// Every subject the aggregate passed, so «it asks about the token's patient» is
 	// measurable rather than traced: substituting the plan's own patient id survived the
 	// whole suite while the fixture had data for one patient.
@@ -50,10 +53,12 @@ func (s *stubNeighbours) LoggedSlotsIn(
 }
 
 func (s *stubNeighbours) SupplyFor(
-	_ context.Context, _ pgx.Tx, patient civil.UserID, item ProtocolItem, _ civil.Date,
+	_ context.Context, _ pgx.Tx, patient civil.UserID, item ProtocolItem, dose *Dose,
+	_ civil.Date,
 ) (*int, *ReorderHint, error) {
 	s.subjects = append(s.subjects, patient)
 	s.askedFor = append(s.askedFor, item.ID)
+	s.askedAt = append(s.askedAt, dose)
 
 	return s.left, s.reorder, s.cabinetFails
 }
@@ -179,6 +184,15 @@ func TestTheCabinetIsAskedAboutTheDoseBeingOffered(t *testing.T) {
 	if len(n.askedFor) != 1 || n.askedFor[0] != "item-injection" {
 		t.Errorf("the cabinet was asked about %v", n.askedFor)
 	}
+	// Which dose reached the cabinet, and not merely that one did: it was written into
+	// the stub and never read, so passing the course's start date instead of the day
+	// passed the whole suite. Written down rather than compared to the fixture's own
+	// variable. That it is the *day's* phase is measured where the plan titrates — this
+	// one has a single band, so every candidate is the same number.
+	if len(n.askedAt) != 1 || n.askedAt[0] == nil ||
+		n.askedAt[0].Value != 0.25 || n.askedAt[0].Unit != MG {
+		t.Errorf("the cabinet was told to divide by %v, want 0,25 мг", dosesOf(n.askedAt))
+	}
 	if today.VialDosesLeft == nil || *today.VialDosesLeft != 3 {
 		t.Errorf("the vial has %v doses left", today.VialDosesLeft)
 	}
@@ -282,13 +296,19 @@ func TestTheNeighboursAreAskedAboutTheCaller(t *testing.T) {
 // item order already agrees with the clock cannot tell the two rules apart.
 func TestTheNextDoseIsTheEarliestOpenOneByTheClock(t *testing.T) {
 	compound := CompoundID(theCompound.ID)
+	// Two drugs on the morning-and-evening pair, and not one twice: two positions naming
+	// one compound is the shape the cabinet refuses to count, and a fixture built that
+	// way would run those subcases inside the silent branch. The half-past copy below
+	// keeps the morning drug and so runs inside that branch on purpose: nothing it
+	// asserts — which occurrence is next, and which item was asked about — reads a count.
+	other := CompoundID("other-compound")
 	morning := ProtocolItem{
 		ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
 		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
 		Times: []civil.Slot{{Hour: 8}}, Loggable: true,
 	}
 	evening := ProtocolItem{
-		ID: "item-evening", Kind: KindInjection, CompoundID: &compound,
+		ID: "item-evening", Kind: KindInjection, CompoundID: &other,
 		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
 		Times: []civil.Slot{{Hour: 20}}, Loggable: true,
 	}
@@ -345,6 +365,7 @@ func TestTheNextDoseIsTheEarliestOpenOneByTheClock(t *testing.T) {
 func TestTheCardMovesToTheEveningOnceTheMorningIsLogged(t *testing.T) {
 	compound := CompoundID(theCompound.ID)
 	dose := Dose{Value: 0.25, Unit: MG}
+	other := CompoundID("other-compound")
 	plan := Plan{
 		Protocol: Protocol{
 			StartDate: civil.NewDate(2026, time.May, 4), Weeks: 12, Status: StatusActive,
@@ -356,7 +377,10 @@ func TestTheCardMovesToTheEveningOnceTheMorningIsLogged(t *testing.T) {
 				Times: []civil.Slot{{Hour: 8}}, Loggable: true,
 			},
 			{
-				ID: "item-evening", Kind: KindInjection, CompoundID: &compound,
+				// A second drug rather than the same one twice: one compound on two
+				// positions is what the cabinet refuses to count, and this case is
+				// about the card moving on, not about that silence.
+				ID: "item-evening", Kind: KindInjection, CompoundID: &other,
 				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
 				Times: []civil.Slot{{Hour: 20}}, Loggable: true,
 			},
@@ -379,4 +403,151 @@ func TestTheCardMovesToTheEveningOnceTheMorningIsLogged(t *testing.T) {
 	if !today.DoseLoggedToday {
 		t.Error("the day is not marked as carrying a dose")
 	}
+}
+
+// A day inside the course that no phase covers.
+//
+// Gaps between phases are legal and deliberately so, and on such a day nothing is
+// prescribed — so the cabinet is asked with no dose, and the card answers substance and
+// status without a count of injections. The interface says this in its own comment and
+// nothing measured it.
+func TestOnADayNoPhaseCoversTheCabinetIsAskedWithNoDose(t *testing.T) {
+	plan := aSchedulePlan()
+	// Prescribed in weeks 1-2 and again from week 6. The course starts on 4 May and the
+	// injection falls on Sundays, so 24 May is week three's — inside the course, inside
+	// the gap, and an occurrence is still generated for it with no dose on it.
+	plan.Phases["item-injection"] = []ProtocolPhase{
+		{FromWeek: 1, ToWeek: 2, Dose: Dose{Value: 0.25, Unit: MG}},
+		{FromWeek: 6, ToWeek: 12, Dose: Dose{Value: 1, Unit: MG}},
+	}
+
+	n := &stubNeighbours{}
+	todayFor(t, plan, true, civil.NewDate(2026, time.May, 24), civil.Slot{Hour: 7}, n)
+
+	if len(n.askedAt) != 1 || n.askedAt[0] != nil {
+		t.Errorf("the cabinet was told to divide by %v, want nothing", dosesOf(n.askedAt))
+	}
+	// And no assertion on the card's own count here: the aggregate hands through
+	// whatever the cabinet answers, so with a stub it would measure the stub. That a
+	// dose of nothing buys no count is inventory's, at math_test.go's nil-dose case.
+}
+
+// The drug the cabinet is asked about is the one the hero card offers, not whichever the course
+// happens to list first.
+//
+// Resolving the divisor from the drug rather than from the position made «which drug» a
+// question worth asking, and no fixture asked it: the two positions here carry different drugs
+// and different doses, and the one that is next is listed second, so an implementation reading
+// the plan's first position answers a milligram where the card offers a quarter of one.
+func TestTheCabinetIsAskedWithTheDoseOfTheDrugBeingOffered(t *testing.T) {
+	compound, other := CompoundID(theCompound.ID), CompoundID("other-compound")
+	plan := Plan{
+		Protocol: Protocol{
+			PatientID: "3c1f3b7c-0000-4000-8000-0000000000a1",
+			StartDate: civil.NewDate(2026, time.May, 4), Weeks: 12, Status: StatusActive,
+		},
+		Items: []ProtocolItem{
+			{
+				ID: "item-evening", Kind: KindInjection, CompoundID: &other,
+				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+				Times: []civil.Slot{{Hour: 20}}, Loggable: true,
+			},
+			{
+				ID: "item-morning", Kind: KindInjection, CompoundID: &compound,
+				Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+				Times: []civil.Slot{{Hour: 8}}, Loggable: true,
+			},
+		},
+		Phases: map[ProtocolItemID][]ProtocolPhase{
+			"item-evening": {{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 1, Unit: MG}}},
+			"item-morning": {{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 0.25, Unit: MG}}},
+		},
+	}
+
+	n := &stubNeighbours{site: "r-glute"}
+	todayFor(t, plan, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n)
+
+	if len(n.askedFor) != 1 || n.askedFor[0] != "item-morning" {
+		t.Fatalf("the cabinet was asked about %v, want the morning position", n.askedFor)
+	}
+	if len(n.askedAt) != 1 || n.askedAt[0] == nil || n.askedAt[0].Value != 0.25 {
+		t.Errorf("the cabinet was told to divide by %v, want the morning drug's 0,25 мг", dosesOf(n.askedAt))
+	}
+}
+
+// Two course positions of one drug, and the day card goes quiet about it — the same answer the
+// cabinet gives, and for the same reason: the rate is a position's while the vials are the
+// drug's, so a count divided by one of the two doses contradicts the other half of the
+// prescription. Measured through the stub, which records what it was asked to divide by.
+func TestTwoPositionsOfOneDrugLeaveTheDayCardWithNoDivisor(t *testing.T) {
+	plan := aSchedulePlan()
+	evening := ProtocolItemID("item-injection-evening")
+	compound := CompoundID(theCompound.ID)
+	plan.Items = append(plan.Items, ProtocolItem{
+		ID: evening, Kind: KindInjection, CompoundID: &compound,
+		Cadence: CadenceWeekly, DaysOfWeek: []time.Weekday{time.Sunday},
+		Times: []civil.Slot{{Hour: 19}}, Loggable: true,
+	})
+	plan.Phases[evening] = []ProtocolPhase{{FromWeek: 1, ToWeek: 12, Dose: Dose{Value: 0.5, Unit: MG}}}
+
+	left := 3
+	n := &stubNeighbours{site: "r-glute", left: &left}
+	today := todayFor(t, plan, true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n)
+
+	if len(n.askedAt) != 1 || n.askedAt[0] != nil {
+		t.Errorf("the cabinet was told to divide by %v, want nothing", dosesOf(n.askedAt))
+	}
+	// And the premise: each position on its own does prescribe today, so the silence is
+	// the ambiguity rule rather than a day nothing covers.
+	if one, other := PhaseDose(plan, "item-injection", today.Date), PhaseDose(plan, evening, today.Date); one == nil || other == nil {
+		t.Fatalf("the fixture prescribes %v and %v; both positions must carry a dose", one, other)
+	}
+}
+
+// The divisor is the band covering this day, and the fixture has to titrate before that
+// is measurable: with one band the day's phase, the plan's first and the item's only are
+// the same number, and all three survive.
+func TestTheCabinetDividesByTheDoseOfTheDaysOwnPhase(t *testing.T) {
+	// The course opens on Monday 4 May and the injection falls on Sundays: 10 May is
+	// week one's and 5 July is week nine's.
+	for _, day := range []struct {
+		name string
+		at   civil.Date
+		want Dose
+	}{
+		{"a day in the opening band", civil.NewDate(2026, time.May, 10), Dose{Value: 0.25, Unit: MG}},
+		{"a day past the titration", civil.NewDate(2026, time.July, 5), Dose{Value: 1, Unit: MG}},
+	} {
+		t.Run(day.name, func(t *testing.T) {
+			plan := aSchedulePlan()
+			plan.Phases["item-injection"] = []ProtocolPhase{
+				{FromWeek: 1, ToWeek: 4, Dose: Dose{Value: 0.25, Unit: MG}},
+				{FromWeek: 5, ToWeek: 12, Dose: Dose{Value: 1, Unit: MG}},
+			}
+
+			n := &stubNeighbours{site: "r-glute"}
+			todayFor(t, plan, true, day.at, civil.Slot{Hour: 7}, n)
+
+			if len(n.askedAt) != 1 || n.askedAt[0] == nil || *n.askedAt[0] != day.want {
+				t.Errorf("the cabinet was told to divide by %v, want %v %s",
+					dosesOf(n.askedAt), day.want.Value, day.want.Unit)
+			}
+		})
+	}
+}
+
+// A []*Dose printed with %+v is a list of addresses, which is what these failures said until
+// somebody read one.
+func dosesOf(asked []*Dose) []string {
+	out := make([]string, 0, len(asked))
+	for _, dose := range asked {
+		if dose == nil {
+			out = append(out, "nothing")
+
+			continue
+		}
+		out = append(out, fmt.Sprintf("%v %s", dose.Value, dose.Unit))
+	}
+
+	return out
 }

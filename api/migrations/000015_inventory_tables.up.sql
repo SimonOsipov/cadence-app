@@ -2,11 +2,11 @@
 -- reordering.
 --
 -- Three of those four words name a status, and there is no status column below.
--- §03's third correction derives all of them on read, and the remaining count
--- with them: remaining is total_doses minus the number of dose events drawn from
--- this vial, so there is no counter to drift out of step with the history. If a
--- later migration is about to add `status` or `remaining` here, it is undoing
--- this one.
+-- §03's third correction derives all of them on read, and what is left in a vial
+-- with them: a subtraction over the history rather than a stored counter, so there
+-- is nothing that can drift out of step with it. What is subtracted changed —
+-- dose counts here, substance from 000022 on — and the rule did not. If a later
+-- migration is about to add `status` or `remaining` here, it is undoing this one.
 --
 -- Tables and RLS here, policies and grants in the next migration, as with both
 -- pairs before it.
@@ -20,9 +20,10 @@ CREATE TABLE app.vials (
     -- empty somebody's medicine cabinet.
     compound_id         uuid NOT NULL REFERENCES app.compounds (id) ON DELETE RESTRICT,
     -- A label, not a number: «1 мг/мл» is what is printed on the vial, and the
-    -- clinic transcribes it rather than computing with it. Doses are counted, not
-    -- measured out of a concentration.
+    -- clinic transcribes it rather than computing with it. What a vial holds and
+    -- what a dose takes out of it are stated, never derived from this string.
     concentration_label text NOT NULL CHECK (pg_catalog.length(concentration_label) BETWEEN 1 AND 50),
+    -- Dropped by 000022, which makes what a vial holds an amount of substance.
     total_doses         integer NOT NULL CHECK (total_doses > 0),
     -- Null until the vial is opened, and that is the whole of what «sealed» means
     -- — there is no column saying so.

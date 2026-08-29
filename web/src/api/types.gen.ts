@@ -4,6 +4,14 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type CabinetBody = {
+    /**
+     * At most one per prescribed drug, and only where the supply has fallen to the reorder threshold. Absent while it is above it or a sealed spare is standing by, absent without a running course, and absent for a drug two course positions name — the weekly rate is a position's while the supply is the whole shelf's, so a hint folded from two of them would divide the cabinet by half the prescription.
+     */
+    reorder: Array<VialReorderBody>;
+    vials: Array<VialBody>;
+};
+
 export type CompoundBody = {
     default_unit: 'мг' | 'мкг';
     icon: string;
@@ -93,6 +101,13 @@ export type Drug = {
     route?: string;
 };
 
+export type HeldBackInputBody = {
+    /**
+     * True puts the vial aside, false takes it back. Sending the value it already carries is not an error and does not move the day it was set aside on.
+     */
+    held_back: boolean;
+};
+
 export type Item = {
     cadence: 'weekly' | 'daily' | 'n_per_week';
     /**
@@ -124,6 +139,19 @@ export type Item = {
 
 export type LabelPhotoOutputBody = {
     expires_at: string;
+    url: string;
+};
+
+export type LabelUploadInputBody = {
+    /**
+     * What the client is about to upload. It decides the key's extension, and the read side serves the object as this and nothing else.
+     */
+    content_type: 'image/jpeg' | 'image/png' | 'image/heic';
+};
+
+export type LabelUploadOutputBody = {
+    expires_at: string;
+    key: string;
     url: string;
 };
 
@@ -243,6 +271,22 @@ export type NewProviderBody = {
      * What the clinic calls them, in Russian. Shown to a patient beside the name on their care team.
      */
     title_ru?: string;
+};
+
+export type NewVialBody = {
+    compound_id: string;
+    /**
+     * What the box says, transcribed. Nothing computes with it.
+     */
+    concentration_label: string;
+    expires_on: string;
+    /**
+     * A key this API minted at POST /v1/me/vials/label-photo-uploads. Refused where it points anywhere but the caller's own prefix — the object store has no row-level security, so the key is the only thing saying whose object it is.
+     */
+    label_photo_path?: string;
+    location_ru?: string;
+    lot?: string;
+    total_amount: VialAmountBody;
 };
 
 export type OccurrenceBody = {
@@ -448,6 +492,9 @@ export type TodayBody = {
     next_dose_compound?: CompoundBody;
     next_titration?: StepBody;
     part_of_day: 'night' | 'morning' | 'afternoon' | 'evening';
+    /**
+     * Absent everywhere vial_doses_left is, and additionally when the supply is above the threshold or a sealed spare is standing by. The weekly rate is one course position's, which is why two positions naming one drug answer nothing rather than half a rate.
+     */
     reorder?: ReorderBody;
     /**
      * Computed from what was logged, not frozen.
@@ -462,7 +509,7 @@ export type TodayBody = {
      */
     targets: MacrosBody | null;
     /**
-     * Of the open vial. Absent when the patient holds none of that drug.
+     * Of the vial being drawn from, and only while a dose is still due today: absent once the day's injection is logged, on a day prescribing none, and outside a running course. Absent too when the patient holds no open, undisposed, not-held-back vial of that drug, when no phase covers the day, and when two course positions name the drug — the dose to divide by is ambiguous then, and the cabinet answers substance and status instead.
      */
     vial_doses_left?: number;
     week_protocol: Array<RowBody>;
@@ -474,6 +521,54 @@ export type TodayBody = {
      * Null until the measurements context is built.
      */
     weight_series: Array<number> | null;
+};
+
+export type VialAmountBody = {
+    unit: 'мг' | 'мкг';
+    value: number;
+};
+
+export type VialBody = {
+    compound_id: string;
+    /**
+     * What the box says, transcribed. Nothing computes with it.
+     */
+    concentration_label: string;
+    /**
+     * The dose in force for this drug today. Absent for the same three reasons as doses_left.
+     */
+    current_dose?: VialDoseBody;
+    disposed_at?: string;
+    /**
+     * Absent where no running course prescribes this drug, where two course positions name it, and on a vial that was thrown away: a count needs a dose to divide by, and a vial in the bin buys nothing.
+     */
+    doses_left?: number;
+    expires_on: string;
+    has_label_photo: boolean;
+    /**
+     * The day the patient set it aside. A held-back vial is chosen by nothing the server decides for them.
+     */
+    held_back_at?: string;
+    id: string;
+    location_ru?: string;
+    lot?: string;
+    /**
+     * Absent while the vial is sealed; that absence is the whole of «sealed».
+     */
+    opened_at?: string;
+    remaining_amount: VialAmountBody;
+    status: 'disposed' | 'expiring' | 'sealed' | 'low' | 'active';
+    total_amount: VialAmountBody;
+};
+
+export type VialDoseBody = {
+    unit: 'мг' | 'мкг';
+    value: number;
+};
+
+export type VialReorderBody = {
+    compound_id: string;
+    weeks_left: number;
 };
 
 export type DashboardOverviewData = {
@@ -869,6 +964,270 @@ export type GetTodayResponses = {
 };
 
 export type GetTodayResponse = GetTodayResponses[keyof GetTodayResponses];
+
+export type ReadCabinetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/me/vials';
+};
+
+export type ReadCabinetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadCabinetError = ReadCabinetErrors[keyof ReadCabinetErrors];
+
+export type ReadCabinetResponses = {
+    /**
+     * OK
+     */
+    200: CabinetBody;
+};
+
+export type ReadCabinetResponse = ReadCabinetResponses[keyof ReadCabinetResponses];
+
+export type AddVialData = {
+    body: NewVialBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/vials';
+};
+
+export type AddVialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type AddVialError = AddVialErrors[keyof AddVialErrors];
+
+export type AddVialResponses = {
+    /**
+     * Created
+     */
+    201: VialBody;
+};
+
+export type AddVialResponse = AddVialResponses[keyof AddVialResponses];
+
+export type StartLabelPhotoUploadData = {
+    body: LabelUploadInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/vials/label-photo-uploads';
+};
+
+export type StartLabelPhotoUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+};
+
+export type StartLabelPhotoUploadError = StartLabelPhotoUploadErrors[keyof StartLabelPhotoUploadErrors];
+
+export type StartLabelPhotoUploadResponses = {
+    /**
+     * Created
+     */
+    201: LabelUploadOutputBody;
+};
+
+export type StartLabelPhotoUploadResponse = StartLabelPhotoUploadResponses[keyof StartLabelPhotoUploadResponses];
+
+export type ReadVialData = {
+    body?: never;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}';
+};
+
+export type ReadVialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type ReadVialError = ReadVialErrors[keyof ReadVialErrors];
+
+export type ReadVialResponses = {
+    /**
+     * OK
+     */
+    200: VialBody;
+};
+
+export type ReadVialResponse = ReadVialResponses[keyof ReadVialResponses];
+
+export type DisposeOfAVialData = {
+    body?: never;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}/dispose';
+};
+
+export type DisposeOfAVialErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type DisposeOfAVialError = DisposeOfAVialErrors[keyof DisposeOfAVialErrors];
+
+export type DisposeOfAVialResponses = {
+    /**
+     * OK
+     */
+    200: VialBody;
+};
+
+export type DisposeOfAVialResponse = DisposeOfAVialResponses[keyof DisposeOfAVialResponses];
+
+export type HoldAVialBackData = {
+    body: HeldBackInputBody;
+    path: {
+        vialId: string;
+    };
+    query?: never;
+    url: '/v1/me/vials/{vialId}/held-back';
+};
+
+export type HoldAVialBackErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type HoldAVialBackError = HoldAVialBackErrors[keyof HoldAVialBackErrors];
+
+export type HoldAVialBackResponses = {
+    /**
+     * OK
+     */
+    200: VialBody;
+};
+
+export type HoldAVialBackResponse = HoldAVialBackResponses[keyof HoldAVialBackResponses];
 
 export type ReadVialLabelPhotoData = {
     body?: never;

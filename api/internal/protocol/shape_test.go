@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"errors"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -162,6 +164,49 @@ func TestEachRuleTheSchemaHoldsIsAskedHereFirst(t *testing.T) {
 			func(d *Draft) { d.Items[0].Phases[0].Dose.Value = 0 }, ErrDoseOffRange,
 		},
 		{
+			// The atom differs by unit: three decimals of a milligram are whole
+			// micrograms, and a microgram has no decimals to give.
+			"a dose finer than the microgram it is counted in",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 0.0001, Unit: MG} },
+			ErrDoseTooFine,
+		},
+		{
+			"a microgram dose with a tail",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 250.5, Unit: MCG} },
+			ErrDoseTooFine,
+		},
+		{
+			// The other end of the range: 1e19 мг prints with no decimal point at all,
+			// so the scale bound takes it, and the microgram count then saturates or
+			// wraps depending on the machine that reads the row.
+			"a dose past a gram",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 1e19, Unit: MG} },
+			ErrDoseOffRange,
+		},
+		{
+			// The boundary itself, because 1e19 clamps the constant from nowhere: with
+			// only that case the ceiling could be a thousand times higher and this suite
+			// would not notice, and Go would be looser than the schema — which answers
+			// 23514 with no entry in this package's map, so a 500 about the form.
+			"a dose one milligram past a gram",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 1001, Unit: MG} },
+			ErrDoseOffRange,
+		},
+		{
+			"a microgram dose past a gram",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: 1_000_001, Unit: MCG} },
+			ErrDoseOffRange,
+		},
+		{
+			// Unreachable over HTTP, where the decoder has no literal for it, and
+			// guarded for the reason the clock's hours are: cmd/seed builds drafts by
+			// hand, and a NaN loses every comparison — the column would then hold a
+			// value Postgres orders above every number.
+			"a dose that is not a number",
+			func(d *Draft) { d.Items[0].Phases[0].Dose = Dose{Value: math.NaN(), Unit: MG} },
+			ErrDoseOffRange,
+		},
+		{
 			"a dose in a unit nobody prescribes",
 			func(d *Draft) { d.Items[0].Phases[0].Dose.Unit = "ме" }, ErrUnknownDoseUnit,
 		},
@@ -238,6 +283,30 @@ func TestACourseWithGapsBetweenItsPhasesIsLegal(t *testing.T) {
 		if err := plain.Check(); err != nil {
 			t.Errorf("a %s item was refused: %v", kind, err)
 		}
+	}
+}
+
+// The accept side of the two bounds, which the refusals above cannot supply: a rule that
+// refused every dose would pass all of them. The first three are the drift cases a bound
+// read off value × 1000 refuses and the schema takes; then the atom's own edges — three
+// decimals of a milligram, a whole microgram — and the ceiling's, a gram in either unit.
+func TestEveryDoseTheSchemaAdmitsIsAccepted(t *testing.T) {
+	for _, dose := range []Dose{
+		{Value: 2.01, Unit: MG},
+		{Value: 1.005, Unit: MG},
+		{Value: 16.1, Unit: MG},
+		{Value: 0.001, Unit: MG},
+		{Value: 250, Unit: MCG},
+		{Value: 1000, Unit: MG},
+		{Value: 1_000_000, Unit: MCG},
+	} {
+		t.Run(fmt.Sprintf("%v %s", dose.Value, dose.Unit), func(t *testing.T) {
+			accepted := aPlan(func(d *Draft) { d.Items[0].Phases[0].Dose = dose })
+
+			if err := accepted.Check(); err != nil {
+				t.Errorf("a phase of %v %s was refused: %v", dose.Value, dose.Unit, err)
+			}
+		})
 	}
 }
 

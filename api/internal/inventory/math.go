@@ -7,7 +7,7 @@ import (
 
 // §03: «low <25%», «expiring ≤14 d», «≤4 weeks supply».
 const (
-	lowFraction  = 0.25
+	lowQuarter   = 4
 	expiringDays = 14
 	reorderWeeks = 4
 )
@@ -24,27 +24,40 @@ type Vial struct {
 	// A label, not a number: «1 мг/мл» is what the vial says, and the clinic
 	// transcribes it rather than computing with it.
 	ConcentrationLabel string
-	TotalDoses         int
+	// How much substance the vial holds, and the unit the clinic wrote it in. The
+	// unit is carried for rendering; the arithmetic below is in micrograms.
+	TotalAmount Amount
+	AmountUnit  protocol.DoseUnit
 	// Null until the vial is opened; that absence is the whole of «sealed».
-	OpenedAt       *civil.Date
-	ExpiresOn      civil.Date
+	OpenedAt  *civil.Date
+	ExpiresOn civil.Date
+	// The day the patient put it aside. Held back is not a status but a fact with a
+	// date: the vial is theirs and undisposed, and it takes no part in any choice the
+	// server makes for them.
+	HeldBackAt     *civil.Date
 	Lot            *string
 	LocationRU     *string
 	DisposedAt     *civil.Date
 	LabelPhotoPath *string
 }
 
-// RemainingDoses is total minus the number of doses drawn from this vial. There is
-// no counter to drift, because there is no counter.
+// Draw is one dose taken out of a vial: which vial, and how much.
 //
-// It takes the vials that doses came out of rather than the dose events
-// themselves, for the reason OccurrencesFor takes a LoggedSlot: the import runs one
-// way, and inventory does not learn what a dose event is.
-func RemainingDoses(vial Vial, drawnFrom []VialID) int {
-	remaining := vial.TotalDoses
-	for _, from := range drawnFrom {
-		if from == vial.ID {
-			remaining--
+// The quantity travels with the identifier because the subtraction is of substance
+// now. It is still not a dose event — inventory does not learn what one of those is,
+// for the reason OccurrencesFor takes a LoggedSlot rather than a dose.
+type Draw struct {
+	VialID VialID
+	Amount Amount
+}
+
+// RemainingAmount is what the vial holds minus what has been drawn out of it. There
+// is no counter to drift, because there is no counter.
+func RemainingAmount(vial Vial, draws []Draw) Amount {
+	remaining := vial.TotalAmount
+	for _, draw := range draws {
+		if draw.VialID == vial.ID {
+			remaining -= draw.Amount
 		}
 	}
 	if remaining < 0 {
@@ -52,6 +65,27 @@ func RemainingDoses(vial Vial, drawnFrom []VialID) int {
 	}
 
 	return remaining
+}
+
+// RemainingDoses is how many more injections the vial holds at a given dose.
+//
+// Absent rather than zero when there is no dose to divide by: a course may have
+// ended, and a compound the doctor typed has no reference dose to fall back on —
+// silence is honester than a number nobody prescribed. This is why the dose arrives
+// as a parameter and not as a lookup: the arithmetic must not learn where it came
+// from, exactly as it does not learn where today came from.
+func RemainingDoses(vial Vial, draws []Draw, dose *protocol.Dose) *int {
+	if dose == nil {
+		return nil
+	}
+	each, err := AmountOfDose(*dose)
+	if err != nil || each <= 0 {
+		return nil
+	}
+
+	left := int(RemainingAmount(vial, draws) / each)
+
+	return &left
 }
 
 // VialStatus is computed on read, per §03's L10 — there is no column for it.
@@ -72,7 +106,10 @@ const (
 // Expiring is tested before sealed deliberately. Unopened stock about to be wasted
 // is exactly the vial worth warning about, and an earlier order read sealed first
 // and said nothing.
-func StatusOf(vial Vial, drawnFrom []VialID, today civil.Date) VialStatus {
+//
+// «Low» takes no dose: it is a quarter of the substance, so it answers for a course
+// that ended and for a drug with no reference dose — which the count model could not.
+func StatusOf(vial Vial, draws []Draw, today civil.Date) VialStatus {
 	switch {
 	case vial.DisposedAt != nil:
 		return StatusDisposed
@@ -80,7 +117,9 @@ func StatusOf(vial Vial, drawnFrom []VialID, today civil.Date) VialStatus {
 		return StatusExpiring
 	case vial.OpenedAt == nil:
 		return StatusSealed
-	case float64(RemainingDoses(vial, drawnFrom)) < float64(vial.TotalDoses)*lowFraction:
+	// Multiplied rather than divided: a quarter of an odd number of micrograms is
+	// not one, and the boundary is «below a quarter», not «below a quarter rounded».
+	case RemainingAmount(vial, draws)*lowQuarter < vial.TotalAmount:
 		return StatusLow
 	default:
 		return StatusActive
@@ -121,13 +160,17 @@ type ReorderHint struct {
 // The compound and the weekly rate come off the same item so they cannot disagree: passed
 // separately, BPC's rate against semaglutide's stock reads «0 weeks left», plausibly. today is
 // a parameter because expired stock is neither a spare nor supply.
+//
+// The dose is the phase's, which is what makes this answer differently at 0,25 and at
+// 1,0 мг out of the same vial — the whole of BG-001.
 func ReorderHintFor(
 	item protocol.ProtocolItem,
 	cabinet Cabinet,
-	drawnFrom []VialID,
+	draws []Draw,
+	dose *protocol.Dose,
 	today civil.Date,
 ) *ReorderHint {
-	if item.CompoundID == nil {
+	if item.CompoundID == nil || dose == nil {
 		return nil
 	}
 	compound := *item.CompoundID
@@ -135,9 +178,14 @@ func ReorderHintFor(
 
 	// One compound at a time: without the filter, an unopened vial of anything else
 	// counts as the sealed spare that suppresses the hint.
+	//
+	// Held back is in the same filter and closes both halves of the rule with it: a
+	// shelved vial is neither a spare that makes reordering unnecessary nor supply whose
+	// doses count toward the weeks left.
 	var live []Vial
 	for _, vial := range cabinet.vials {
-		if vial.DisposedAt == nil && vial.CompoundID == compound && !vial.ExpiresOn.Before(today) {
+		if vial.DisposedAt == nil && vial.HeldBackAt == nil &&
+			vial.CompoundID == compound && !vial.ExpiresOn.Before(today) {
 			live = append(live, vial)
 		}
 	}
@@ -152,7 +200,11 @@ func ReorderHintFor(
 
 	doses := 0
 	for _, vial := range live {
-		doses += RemainingDoses(vial, drawnFrom)
+		left := RemainingDoses(vial, draws, dose)
+		if left == nil {
+			return nil
+		}
+		doses += *left
 	}
 
 	weeksLeft := int(float64(doses) / perWeek)

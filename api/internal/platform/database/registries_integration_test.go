@@ -207,8 +207,8 @@ func columnGrantRegistry() map[string][]string {
 		// is constrained to the patient's own prefix in 000015, which is a stronger
 		// statement than a grant because it binds every role.
 		"INSERT/vials/cadence_patient": {
-			"compound_id", "concentration_label", "disposed_at", "expires_on",
-			"label_photo_path", "location_ru", "lot", "opened_at", "patient_id", "total_doses",
+			"amount_unit", "compound_id", "concentration_label", "disposed_at", "expires_on",
+			"label_photo_path", "location_ru", "lot", "opened_at", "patient_id", "total_amount",
 		},
 		// entry_date is writable: moving a day is an edit of which day the entry is
 		// about. patient_id is not — half the primary key, and moving a row between
@@ -228,8 +228,9 @@ func columnGrantRegistry() map[string][]string {
 			"scheduled_for_date", "scheduled_for_time", "side_effects", "site_code", "vial_id",
 		},
 		"UPDATE/vials/cadence_patient": {
-			"compound_id", "concentration_label", "disposed_at", "expires_on",
-			"label_photo_path", "location_ru", "lot", "opened_at", "patient_id", "total_doses",
+			"amount_unit", "compound_id", "concentration_label", "disposed_at", "expires_on",
+			"held_back_at", "label_photo_path", "location_ru", "lot", "opened_at", "patient_id",
+			"total_amount",
 		},
 	}
 }

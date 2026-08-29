@@ -42,6 +42,16 @@ var (
 	// in-process callers — and it is named rather than left as a 500 because the offline
 	// queue would re-send a request that always fails.
 	ErrNoteSaysNothing = errors.New("a note is either absent or says something")
+
+	// A dose finer than the unit's atom: 000021 bounds the scale because the vial
+	// arithmetic is integer micrograms, and a value that rounds to zero there is a
+	// vial that never empties. Named so the wizard sees a refusal rather than a 500.
+	ErrDoseTooFine = errors.New("a dose is measured to the microgram, not finer")
+
+	// The other end of the same bound, 000024. Named for the same reason: the count of
+	// micrograms is int64, and a value past it saturates on one architecture and wraps
+	// on the other, so the refusal has to happen before the row exists.
+	ErrDoseTooLarge = errors.New("a dose is measured in milligrams, not grams")
 )
 
 // Logged is what the write answers. The identifiers are absent for every outcome but Written,
@@ -205,7 +215,10 @@ func record(
 			return Logged{}, fmt.Errorf("%s: %w", *vial, ErrNoSuchVial)
 		}
 	case vial == nil && compound != nil:
-		resolved, err := inventory.OpenVialFor(ctx, tx, patient, string(*compound))
+		// slot.Date and not now(): Resolve builds the occurrence from a window of
+		// today..today in the patient's own zone, so this is the day they are living
+		// in — which is the day a vial opened by this write is opened on.
+		resolved, err := inventory.OpenVialFor(ctx, tx, patient, string(*compound), slot.Date)
 		if err != nil {
 			return Logged{}, err
 		}
@@ -574,6 +587,10 @@ func classify(err error) error {
 		return ErrPhotoNotTheirs
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == noteSaysSomething:
 		return ErrNoteSaysNothing
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == doseIsNotFinerThanTheAtom:
+		return ErrDoseTooFine
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == doseIsUnderItsCeiling:
+		return ErrDoseTooLarge
 	default:
 		return err
 	}
@@ -584,10 +601,12 @@ const (
 	foreignKeyViolation = "23503"
 	checkViolation      = "23514"
 
-	oneDosePerSlot          = "dose_events_one_per_slot"
-	vialIsTheirOwn          = "dose_events_drawn_from_their_own_vial"
-	photoIsUnderTheirPrefix = "dose_events_photo_key_is_under_its_own_prefix"
-	noteSaysSomething       = "dose_events_note_check"
+	doseIsNotFinerThanTheAtom = "dose_events_dose_value_scale_check"
+	doseIsUnderItsCeiling     = "dose_events_dose_value_magnitude_check"
+	oneDosePerSlot            = "dose_events_one_per_slot"
+	vialIsTheirOwn            = "dose_events_drawn_from_their_own_vial"
+	photoIsUnderTheirPrefix   = "dose_events_photo_key_is_under_its_own_prefix"
+	noteSaysSomething         = "dose_events_note_check"
 )
 
 // errLostTheSlot never leaves this package: it is the race becoming the outcome that names
