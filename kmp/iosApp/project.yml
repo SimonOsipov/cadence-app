@@ -45,6 +45,17 @@ targets:
       testTargets:
         - iosAppTests
 
+    preBuildScripts:
+      - name: Compile Kotlin Framework
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "YES" = "$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED" ]; then
+            echo "Skipping Gradle task: the IDE builds the framework itself"
+            exit 0
+          fi
+          cd "$SRCROOT/.."
+          ./gradlew :composeApp:embedAndSignAppleFrameworkForXcode
+
   # Hosted by the app on purpose, and that is the whole reason it exists: a keychain needs
   # an app identity, and a Kotlin/Native test binary has none — measured, it answers
   # errSecNotAvailable. See shared/src/iosTest/.../KeychainReachabilityTest.kt.
@@ -62,13 +73,3 @@ targets:
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/../composeApp/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
-    preBuildScripts:
-      - name: Compile Kotlin Framework
-        basedOnDependencyAnalysis: false
-        script: |
-          if [ "YES" = "$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED" ]; then
-            echo "Skipping Gradle task: the IDE builds the framework itself"
-            exit 0
-          fi
-          cd "$SRCROOT/.."
-          ./gradlew :composeApp:embedAndSignAppleFrameworkForXcode

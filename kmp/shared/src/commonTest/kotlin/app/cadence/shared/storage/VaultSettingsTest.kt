@@ -1,27 +1,13 @@
 package app.cadence.shared.storage
 
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** A vault holding bytes in memory, standing in for Keychain and Keystore alike. */
-private class FakeVault(
-    var bytes: ByteArray? = null,
-    private val readFails: Boolean = false,
-) : Vault {
-    override fun read(): ByteArray? = if (readFails) error("unreadable") else bytes
-
-    override fun write(bytes: ByteArray) {
-        this.bytes = bytes
-    }
-
-    override fun wipe() {
-        bytes = null
-    }
-}
-
 class VaultSettingsTest {
     @Test
     fun aValueSurvivesANewInstanceOverTheSameVault() {
@@ -32,14 +18,41 @@ class VaultSettingsTest {
     }
 
     // The whole reason this type exists rather than a plain map: the session is what is
-    // stored, and a blob no key here can open must read as «not signed in» rather than take
+    // stored, and a store no key here can open must read as «not signed in» rather than take
     // the app down on launch.
     @Test
     fun unreadableStorageIsNoSessionRatherThanACrash() {
-        val settings = VaultSettings(FakeVault(readFails = true))
+        val settings = VaultSettings(FakeVault(unavailable = true))
 
         assertNull(settings.getStringOrNull("refresh_token"))
         assertEquals(0, settings.size)
+    }
+
+    // And the other half of that sentence, which the assertion above cannot make: reading
+    // nothing must not become writing nothing. The blob goes back whole, so one write after
+    // one failed read would replace a live session with an empty store — «unreadable is no
+    // session» is about reading, and this is what stops it becoming a claim about erasing.
+    @Test
+    fun anUnreadableStoreIsNotOverwrittenByTheNextWrite() {
+        val session = "8:rt-token4:rt-1".encodeToByteArray()
+        val vault = FakeVault(bytes = session, unavailable = true)
+        val settings = VaultSettings(vault)
+
+        settings.putString("refresh_token", "rt-2")
+
+        assertContentEquals(session, vault.bytes)
+        assertFalse(settings.isWritable)
+    }
+
+    // The running session still answers, so a device that cannot reach its store is usable
+    // until it is restarted rather than unusable now.
+    @Test
+    fun anUnreadableStoreStillAnswersWithinTheSession() {
+        val settings = VaultSettings(FakeVault(unavailable = true))
+
+        settings.putString("refresh_token", "rt-2")
+
+        assertEquals("rt-2", settings.getStringOrNull("refresh_token"))
     }
 
     @Test
@@ -47,6 +60,20 @@ class VaultSettingsTest {
         val settings = VaultSettings(FakeVault(bytes = byteArrayOf(7, 7, 7)))
 
         assertNull(settings.getStringOrNull("refresh_token"))
+    }
+
+    // Corruption of our own format is ours to replace: bytes that reached us through the
+    // platform's integrity check and still will not parse are a defect here, and keeping them
+    // would leave the store unusable for the life of the installation.
+    @Test
+    fun aStoreWeCannotParseIsStillWritable() {
+        val vault = FakeVault(bytes = byteArrayOf(7, 7, 7))
+        val settings = VaultSettings(vault)
+
+        settings.putString("refresh_token", "rt-1")
+
+        assertTrue(settings.isWritable)
+        assertEquals("rt-1", VaultSettings(vault).getStringOrNull("refresh_token"))
     }
 
     // Every type supabase-kt's SettingsSessionManager reaches for, because a store that
@@ -76,6 +103,9 @@ class VaultSettingsTest {
         assertEquals(awkward, VaultSettings(vault).getStringOrNull("token"))
     }
 
+    // Read back through a new instance, because in memory it passes with flush() deleted from
+    // remove() — and remove(key) is a sign-out path, so the token would stay in the keychain
+    // while the app believed it was gone.
     @Test
     fun removingAndClearingReachTheVault() {
         val vault = FakeVault()
@@ -84,10 +114,32 @@ class VaultSettingsTest {
         settings.putString("b", "2")
 
         settings.remove("a")
-        assertFalse(settings.hasKey("a"))
-        assertTrue(settings.hasKey("b"))
+
+        val reread = VaultSettings(vault)
+        assertFalse(reread.hasKey("a"))
+        assertTrue(reread.hasKey("b"))
 
         settings.clear()
         assertEquals(0, VaultSettings(vault).size)
+    }
+
+    // The one branch throwOnInvalidSequence exists for. Bytes that passed the platform's
+    // integrity check and are still not text are this module's own corruption, and the
+    // previous fixture — 7, 7, 7 — is valid UTF-8 that never reached it.
+    @Test
+    fun bytesThatAreNotTextAreAlsoNoSession() {
+        val settings = VaultSettings(FakeVault(bytes = byteArrayOf(0xC3.toByte())))
+
+        assertEquals(0, settings.size)
+    }
+
+    // Sign-out has to be able to tell, which a Settings.clear() returning Unit cannot: a
+    // wipe taken for done leaves the next person on the device holding this session.
+    @Test
+    fun clearingAnswersWhetherTheStoreIsActuallyGone() {
+        val refuses = FakeVault(bytes = "x".encodeToByteArray(), wipes = false)
+
+        assertFalse(VaultSettings(refuses).clearAndConfirm())
+        assertTrue(VaultSettings(FakeVault()).clearAndConfirm())
     }
 }

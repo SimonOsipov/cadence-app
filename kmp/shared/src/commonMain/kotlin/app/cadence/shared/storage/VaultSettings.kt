@@ -8,9 +8,11 @@ private const val LENGTH_END = ':'
  * A [Settings] whose whole store is one blob in a [Vault], so the platform protects a single
  * object rather than a key at a time.
  *
- * Every failure to read is «no session»: a lock screen the patient changed, a restore onto
- * another device, a half-written file. The alternative is a medical app that will not open
- * because of a value it could simply have asked for again.
+ * A store that could not be read is empty here and **not writable**: see [isWritable]. That
+ * asymmetry is the point of the class. «Unreadable storage is no session» is a statement
+ * about reading, and without the second half it becomes one about erasing — the blob is
+ * written back whole, so one write after one failed read replaces a live session with
+ * nothing.
  *
  * Framing is length-prefixed rather than separated, because a separator is a character some
  * token is eventually allowed to contain — and the token that contains it would empty the
@@ -23,7 +25,38 @@ private const val LENGTH_END = ':'
 class VaultSettings(
     private val vault: Vault,
 ) : Settings {
-    private val entries: MutableMap<String, String> = load()
+    private val entries: MutableMap<String, String>
+
+    /**
+     * False where the store could not be read, in which case nothing here reaches the vault.
+     *
+     * The running session still works — values put on this instance are answered by it — but
+     * they are not persisted, so the patient signs in again next launch instead of losing
+     * the session they had. The consumer is expected to surface this; there is no logging in
+     * this module to carry it, which is named as a gap rather than fixed here.
+     */
+    val isWritable: Boolean
+
+    init {
+        when (val stored = vault.read()) {
+            is Stored.Absent -> {
+                entries = mutableMapOf()
+                isWritable = true
+            }
+
+            is Stored.Present -> {
+                // Bytes we wrote and cannot parse are our own corruption, and writing over
+                // them is right: keeping them would leave the store unusable for good.
+                entries = decode(stored.bytes)
+                isWritable = true
+            }
+
+            is Stored.Unavailable -> {
+                entries = mutableMapOf()
+                isWritable = false
+            }
+        }
+    }
 
     override val keys: Set<String> get() = entries.keys
 
@@ -32,6 +65,17 @@ class VaultSettings(
     override fun clear() {
         entries.clear()
         vault.wipe()
+    }
+
+    /**
+     * Clearing, and whether it happened. Sign-out and the fresh-install guard both need the
+     * answer: a wipe that failed and was taken for done leaves the next person on the device
+     * holding this session.
+     */
+    fun clearAndConfirm(): Boolean {
+        entries.clear()
+
+        return vault.wipe()
     }
 
     override fun remove(key: String) {
@@ -122,6 +166,8 @@ class VaultSettings(
     }
 
     private fun flush() {
+        if (!isWritable) return
+
         val blob =
             buildString {
                 for ((key, value) in entries) {
@@ -131,24 +177,19 @@ class VaultSettings(
             }
         vault.write(blob.encodeToByteArray())
     }
+}
 
-    private fun load(): MutableMap<String, String> {
-        val bytes =
-            try {
-                vault.read()
-            } catch (_: Throwable) {
-                null
-            } ?: return mutableMapOf()
+private fun decode(bytes: ByteArray): MutableMap<String, String> {
+    val blob =
+        try {
+            bytes.decodeToString(throwOnInvalidSequence = true)
+        } catch (expected: CharacterCodingException) {
+            // Bytes that passed the platform's own integrity check and are still not text are
+            // this module's own corruption. There is nowhere to report it from here.
+            return mutableMapOf()
+        }
 
-        val blob =
-            try {
-                bytes.decodeToString(throwOnInvalidSequence = true)
-            } catch (_: CharacterCodingException) {
-                return mutableMapOf()
-            }
-
-        return decode(blob)
-    }
+    return decode(blob)
 }
 
 private fun StringBuilder.appendField(field: String) {

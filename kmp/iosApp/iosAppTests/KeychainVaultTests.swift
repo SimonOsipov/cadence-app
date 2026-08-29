@@ -17,13 +17,21 @@ final class KeychainVaultTests: XCTestCase {
     }
 
     func testWhatIsWrittenComesBack() {
-        vault.write(bytes: bytes("rt-1"))
+        XCTAssertTrue(vault.write(bytes: bytes("rt-1")))
 
         XCTAssertEqual(text(vault.read()), "rt-1")
     }
 
-    func testNothingWrittenReadsAsNothing() {
-        XCTAssertNil(KeychainVault(service: "\(service).empty").read())
+    /// Absent, not Unavailable, and the difference is what the caller may do next: a store that
+    /// was never written may be written over, and one that merely could not be read may not.
+    func testNothingWrittenIsAbsentRatherThanUnavailable() {
+        XCTAssertTrue(KeychainVault(service: "\(service).empty").read() is StoredAbsent)
+    }
+
+    /// Nothing to delete is a wipe that happened. Reported as failure, the fresh-install guard
+    /// above this would refuse to arm and would run again on every launch for ever.
+    func testWipingWhatWasNeverThereSucceeds() {
+        XCTAssertTrue(KeychainVault(service: "\(service).empty").wipe())
     }
 
     /// A second write updates rather than adding a second item: `SecItemAdd` over an existing
@@ -36,12 +44,12 @@ final class KeychainVaultTests: XCTestCase {
         XCTAssertEqual(text(vault.read()), "rt-2")
     }
 
-    func testWipingLeavesNothingBehind() {
+    func testWipingLeavesNothingBehindAndSaysSo() {
         vault.write(bytes: bytes("rt-1"))
 
-        vault.wipe()
+        XCTAssertTrue(vault.wipe())
 
-        XCTAssertNil(vault.read())
+        XCTAssertTrue(vault.read() is StoredAbsent)
     }
 
     /// Two services are two stores: the session and the PKCE verifier live side by side, and one
@@ -88,8 +96,8 @@ final class KeychainVaultTests: XCTestCase {
         return array
     }
 
-    private func text(_ array: KotlinByteArray?) -> String? {
-        guard let array else { return nil }
+    private func text(_ stored: Stored) -> String? {
+        guard let array = (stored as? StoredPresent)?.bytes else { return nil }
         var utf8: [UInt8] = []
         for index in 0..<array.size {
             utf8.append(UInt8(bitPattern: array.get(index: index)))

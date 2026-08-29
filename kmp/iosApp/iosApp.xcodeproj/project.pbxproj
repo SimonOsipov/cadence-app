@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00EDA552CF3EFAB9429AEDDA /* SecureSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED86389B0F306E988EF432D /* SecureSettingsTests.swift */; };
 		307C2654CD5972A25FB7FD87 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668CECA83ACC03A83C85A623 /* iOSApp.swift */; };
 		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
 		EFE6ED7C8739E9B6CD6E2015 /* KeychainVaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C96260AC017F3CCCEBB46C /* KeychainVaultTests.swift */; };
@@ -26,6 +27,7 @@
 		17C96260AC017F3CCCEBB46C /* KeychainVaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainVaultTests.swift; sourceTree = "<group>"; };
 		56583BC252B5F01ED9DEA19D /* iosAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		668CECA83ACC03A83C85A623 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
+		7ED86389B0F306E988EF432D /* SecureSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureSettingsTests.swift; sourceTree = "<group>"; };
 		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C117AD187833E2513BD2F553 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -55,6 +57,7 @@
 			isa = PBXGroup;
 			children = (
 				17C96260AC017F3CCCEBB46C /* KeychainVaultTests.swift */,
+				7ED86389B0F306E988EF432D /* SecureSettingsTests.swift */,
 			);
 			path = iosAppTests;
 			sourceTree = "<group>";
@@ -75,6 +78,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 29DCA9F0B3A40325067EB163 /* Build configuration list for PBXNativeTarget "iosApp" */;
 			buildPhases = (
+				4B44A75E2FD10EFE3C97FCF5 /* Compile Kotlin Framework */,
 				297B59D9CE634556D6007C40 /* Sources */,
 			);
 			buildRules = (
@@ -92,7 +96,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D61171475B3FE2835E331C49 /* Build configuration list for PBXNativeTarget "iosAppTests" */;
 			buildPhases = (
-				BC9D9D2110A7C4D4528E2849 /* Compile Kotlin Framework */,
 				3CB0F17B3E63CC78541E1D6D /* Sources */,
 			);
 			buildRules = (
@@ -139,7 +142,7 @@
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		BC9D9D2110A7C4D4528E2849 /* Compile Kotlin Framework */ = {
+		4B44A75E2FD10EFE3C97FCF5 /* Compile Kotlin Framework */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -175,6 +178,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EFE6ED7C8739E9B6CD6E2015 /* KeychainVaultTests.swift in Sources */,
+				00EDA552CF3EFAB9429AEDDA /* SecureSettingsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

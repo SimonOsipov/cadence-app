@@ -42,6 +42,9 @@ import platform.posix.memcpy
 private const val ACCOUNT = "store"
 private const val ATTRIBUTE_COUNT = 6L
 
+// errSecItemNotFound. Written as a number because the constant is not in the Kotlin bindings.
+private const val ITEM_NOT_FOUND = -25300
+
 /**
  * The whole store in one generic-password item.
  *
@@ -59,7 +62,7 @@ private const val ATTRIBUTE_COUNT = 6L
 class KeychainVault(
     private val service: String,
 ) : Vault {
-    override fun read(): ByteArray? =
+    override fun read(): Stored =
         memScoped {
             val query = attributes()
             CFDictionaryAddValue(query, kSecReturnData, kCFBooleanTrue)
@@ -67,25 +70,56 @@ class KeychainVault(
             val status = SecItemCopyMatching(query, found.ptr)
             CFRelease(query)
 
-            if (status != errSecSuccess) return@memScoped null
+            when (status) {
+                errSecSuccess -> {
+                    (CFBridgingRelease(found.value) as? NSData)
+                        ?.toByteArray()
+                        ?.let { Stored.Present(it) }
+                        ?: Stored.Unavailable("the keychain answered success without data")
+                }
 
-            (CFBridgingRelease(found.value) as? NSData)?.toByteArray()
+                ITEM_NOT_FOUND -> {
+                    Stored.Absent
+                }
+
+                // Everything else is «there may be a session and it cannot be read now», and
+                // the one that matters is -25308, errSecInteractionNotAllowed: the device has
+                // not been unlocked since boot. That is precisely the window
+                // AfterFirstUnlockThisDeviceOnly was chosen to survive, and the window a
+                // background token refresh runs in.
+                else -> {
+                    Stored.Unavailable("the keychain answered $status")
+                }
+            }
         }
 
-    override fun write(bytes: ByteArray) {
-        wipe()
+    override fun write(bytes: ByteArray): Boolean {
+        if (!wipe()) return false
+
         val item = attributes()
         val data = CFBridgingRetain(bytes.toNSData())
         CFDictionaryAddValue(item, kSecValueData, data)
         CFRelease(data)
-        SecItemAdd(item, null)
+        val status = SecItemAdd(item, null)
         CFRelease(item)
+
+        // Answered rather than discarded: this deletes before it adds, so a dropped failure
+        // leaves the keychain empty while the caller's own copy still holds the session — the
+        // app works until it is restarted and then signs the patient out for no visible
+        // reason. errSecMissingEntitlement in a mis-signed release does exactly that on every
+        // write.
+        return status == errSecSuccess
     }
 
-    override fun wipe() {
+    override fun wipe(): Boolean {
         val query = attributes()
-        SecItemDelete(query)
+        val status = SecItemDelete(query)
         CFRelease(query)
+
+        // Nothing to delete is a wipe that happened. Anything else is a store that may still
+        // be there, and sign-out has to be able to tell: taken for done, it hands the next
+        // person on the device this patient's session.
+        return status == errSecSuccess || status == ITEM_NOT_FOUND
     }
 
     /**

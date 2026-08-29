@@ -16,15 +16,18 @@ echo "==> detekt"
 
 # `:shared` only, and not by choice of this line. composeApp declares no
 # `withHostTestBuilder {}` in its build file, so `testAndroidHostTest` resolves
-# to `:shared:testAndroidHostTest` and nothing else — 355 of them, counted on
-# 2026-08-29 rather than carried forward: the figure that stood here said 244
-# and had been overtaken by the ported screens. Ten run under a Robolectric
-# runtime, which is what secure storage needed to be checkable at all. The other 293 are every Compose UI test there is, and they run under
-# ios.sh, on macOS, and nowhere else.
+# to `:shared:testAndroidHostTest` and nothing else.
 #
-# This comment used to claim the opposite: "unqualified, so every module that
-# grows host tests is picked up". composeApp grew 293 of them and was not
-# picked up, and the line read as if it had been.
+# Counted 2026-08-29, all three by running them rather than by arithmetic: 366
+# here, 353 of `:shared` again on the iOS simulator target, and composeApp's 494
+# Compose UI tests, which run under ios.sh on a macOS host and nowhere else. The
+# figures that stood here said 244 and 293 and had been overtaken by the ported
+# screens; recounting one of two numbers is how a comment ends up half true.
+#
+# Eleven of the 366 run under a Robolectric runtime, which is what secure storage
+# needed to be checkable at all. The Keychain half is not here either: it needs an
+# app bundle, so it is an XCTest target under ios.sh.
+
 echo "==> unit tests (:shared only — composeApp needs ios.sh)"
 ./gradlew testAndroidHostTest
 

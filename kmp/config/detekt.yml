@@ -97,3 +97,15 @@ style:
     excludes: ['**/CadenceIcons.kt']
   ReturnCount:
     max: 3
+
+exceptions:
+  # Both rules exist to flag exactly the two catches secure storage needed, and detekt's
+  # own defaults let `_` past: `allowedExceptionNameRegex` is '_|(ignore|expected).*', and
+  # naming the parameter `_` — which is what Kotlin encourages for an unused one — matches
+  # it. Measured 2026-08-29 by arming these two lines and watching the storage catches
+  # appear. A swallowed exception on the authentication path is the defect this project can
+  # least afford to have made invisible by a naming convention.
+  TooGenericExceptionCaught:
+    allowedExceptionNameRegex: '(ignore|expected).*'
+  SwallowedException:
+    allowedExceptionNameRegex: '(ignore|expected).*'

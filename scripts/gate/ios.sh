@@ -67,7 +67,10 @@ xcodebuild \
 # It exists because a keychain needs an app identity. Measured 2026-08-29: SecItemAdd from
 # a Kotlin/Native test binary answers -25291, errSecNotAvailable, so the Keychain suite
 # cannot live in shared/src/iosTest at all — only the refusal does.
-TEST_DESTINATION=${TEST_DESTINATION:-platform=iOS Simulator,name=iPhone 17}
+# `OS=latest` rather than a pinned runtime, and a device name that has to exist: a test run
+# boots a simulator, and `generic/platform=` names none to boot. CI sets this explicitly,
+# because a change of macOS image otherwise takes the whole gate down over a device list.
+TEST_DESTINATION=${TEST_DESTINATION:-platform=iOS Simulator,name=iPhone 17,OS=latest}
 
 echo "==> xcodebuild test (the Keychain suite, hosted by the app)"
 xcodebuild \

@@ -6,6 +6,11 @@ plugins {
 }
 
 dependencies {
+    // Declared rather than inherited: this module calls installSecureStorage directly, and it
+    // compiles today only because :composeApp exports :shared for the iOS framework's header.
+    // Undoing that export is an iOS decision, and it would break this build with nothing about
+    // Android in the diff.
+    implementation(project(":shared"))
     implementation(project(":composeApp"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.runtime)
