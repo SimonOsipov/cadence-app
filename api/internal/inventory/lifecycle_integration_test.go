@@ -221,10 +221,10 @@ func TestAThrownAwayVialRefusesToBeSetAside(t *testing.T) {
 		})
 	}
 
-	// What the refusal must not have moved is the disposal itself: «set aside» could not
-	// have been written whatever happened, since 000021 refuses the pair and the whole
-	// transaction rolls back — so the schema holds that half and this reads the half the
-	// code holds.
+	// Both halves, and they are held by different things: that the disposal stayed is the
+	// code's, while «set aside» could not have been written whatever happened, because
+	// 000021 refuses the pair and the transaction rolls back. The second is kept as the
+	// statement of what the endpoint must never produce, not as a measurement of it.
 	status, body := send(t, mux, http.MethodGet, "/v1/me/vials/"+c.vialA, nil)
 	if status != http.StatusOK {
 		t.Fatalf("reading the card answered %d: %s", status, body)
@@ -243,8 +243,8 @@ func TestAThrownAwayVialRefusesToBeSetAside(t *testing.T) {
 // Nothing in this endpoint can produce it on its own — disposal writes the patient's own day —
 // but opened_at is written by the dosing path on the day a dose was drawn, and the patient's
 // zone is rewritten on every sign-in. A move west across midnight leaves today behind the day
-// the vial was opened on, and 000015's CHECK refuses the write; unmapped, that is a 500 the
-// offline queue retries until local midnight.
+// the vial was opened on, and 000015's CHECK refuses the write — which unmapped reaches the
+// patient as a server error about a state they can see, where a conflict names it.
 func TestAVialOpenedAfterTodayIsAConflictRatherThanAServerError(t *testing.T) {
 	c := newClinic(t)
 	mux, calling := aCabinet(t, c)
@@ -255,7 +255,12 @@ func TestAVialOpenedAfterTodayIsAConflictRatherThanAServerError(t *testing.T) {
 
 	status, body := send(t, mux, http.MethodPost, "/v1/me/vials/"+c.vialA+"/dispose", nil)
 	if status != http.StatusConflict {
-		t.Errorf("throwing away a vial opened tomorrow answered %d, want 409: %s", status, body)
+		t.Fatalf("throwing away a vial opened tomorrow answered %d, want 409: %s", status, body)
+	}
+	// Which conflict, because answerWrite folds both into one status: without this the
+	// case passes just as well when the disposal is refused for having happened already.
+	if !strings.Contains(string(body), "before the day it was opened") {
+		t.Errorf("the conflict reads %s", body)
 	}
 }
 

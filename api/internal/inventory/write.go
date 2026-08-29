@@ -37,7 +37,8 @@ var (
 	ErrAlreadyDisposed = errors.New("this vial was already thrown away")
 	// Reachable, and not through this endpoint's own arithmetic: the day is the patient's,
 	// their zone is rewritten on every sign-in, and a move west across midnight puts today
-	// behind the day a dose opened the vial on.
+	// behind the day a dose opened the vial on — a state the patient resolves by waiting or
+	// by moving back, which is what a conflict says and an unclassified error does not.
 	ErrDisposedTooEarly = errors.New("a vial cannot be thrown away before the day it was opened")
 )
 
@@ -142,11 +143,12 @@ func (s *Service) holdBack(ctx context.Context, in *HeldBackInput) (*VialOutput,
 		//
 		// The guard is on «put it aside» alone, and that asymmetry is the promise this
 		// endpoint makes rather than an oversight. 000021 forbids the two flags together,
-		// so setting one on a thrown-away vial raised that CHECK as a 500 — retried for
-		// ever by the queue that sent it. Taking it back needs no guard: disposal already
-		// cleared the flag, so a request asking for the value the vial carries is the
-		// idempotent repeat this endpoint promises, and refusing it would break the
-		// promise exactly where the offline queue makes it matter.
+		// so setting one on a thrown-away vial raised that CHECK unclassified — a server
+		// error about a state the patient can see and resolve, where a 409 names it.
+		// Taking it back needs no guard: disposal already cleared the flag, so a request
+		// asking for the value the vial carries is the idempotent repeat this endpoint
+		// promises, and refusing it would break the promise exactly where the offline
+		// queue makes it matter.
 		tag, err := tx.Exec(ctx, `
 			UPDATE app.vials
 			SET held_back_at = CASE WHEN $2 THEN coalesce(held_back_at, $3::date) END
@@ -397,7 +399,7 @@ func classifyWrite(err error) error {
 	switch {
 	case pgErr.Code == foreignKeyViolation && pgErr.ConstraintName == vialNamesADrug:
 		return ErrNoSuchCompound
-	case pgErr.Code == checkViolation && pgErr.ConstraintName == disposedBeforeOpening:
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == disposedNoEarlierThanOpened:
 		return ErrDisposedTooEarly
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == keyIsUnderItsOwnPrefix:
 		return ErrKeyNotTheirs
@@ -415,12 +417,12 @@ const (
 	foreignKeyViolation = "23503"
 	checkViolation      = "23514"
 
-	vialNamesADrug             = "vials_compound_id_fkey"
-	keyIsUnderItsOwnPrefix     = "vials_photo_key_is_under_its_own_prefix"
-	disposedBeforeOpening      = "vials_disposed_after_opening"
-	amountIsNoFinerThanTheAtom = "vials_total_amount_scale_check"
-	amountIsMoreThanNothing    = "vials_total_amount_check"
-	amountIsUnderItsCeiling    = "vials_total_amount_magnitude_check"
+	vialNamesADrug              = "vials_compound_id_fkey"
+	keyIsUnderItsOwnPrefix      = "vials_photo_key_is_under_its_own_prefix"
+	disposedNoEarlierThanOpened = "vials_disposed_after_opening"
+	amountIsNoFinerThanTheAtom  = "vials_total_amount_scale_check"
+	amountIsMoreThanNothing     = "vials_total_amount_check"
+	amountIsUnderItsCeiling     = "vials_total_amount_magnitude_check"
 )
 
 func answerWrite(err error) error {
