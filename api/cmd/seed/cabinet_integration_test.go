@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,19 +250,41 @@ func TestACabinetFilledAfterItsCourseFollowsTheCourse(t *testing.T) {
 
 	patient := thePersona(t, on)
 
-	// The stand as it stands four weeks on, with the cabinet not yet filled. Arranged as the
-	// owner: no seam this command runs on deletes a dose, which is the point of the state.
+	// The stand as it stands four weeks on, with the cabinet not yet filled.
+	//
+	// Arranged as the owner and with FORCE lifted for the two tables: no seam this command runs
+	// on deletes a dose or a vial, and the owner is inside the policies like everybody else. The
+	// rows affected are counted, because a filtered DELETE reports success over nothing.
 	conn := testsupport.Connect(t, db.MigrationURL)
-	if _, err := conn.Exec(t.Context(), `SELECT set_config('role', $1, false)`, "cadence_owner"); err != nil {
+	if _, err := conn.Exec(t.Context(),
+		`SELECT set_config('role', $1, false)`, "cadence_owner"); err != nil {
 		t.Fatalf("assuming the owner role: %v", err)
 	}
-	for _, statement := range []string{
-		`DELETE FROM app.dose_events WHERE patient_id = $1`,
-		`DELETE FROM app.vials WHERE patient_id = $1`,
-		`UPDATE app.protocols SET start_date = start_date - 28 WHERE patient_id = $1`,
+	for _, arranged := range []struct {
+		statement string
+		rows      int64
+	}{
+		{`ALTER TABLE app.dose_events NO FORCE ROW LEVEL SECURITY`, 0},
+		{`ALTER TABLE app.vials NO FORCE ROW LEVEL SECURITY`, 0},
+		{`ALTER TABLE app.protocols NO FORCE ROW LEVEL SECURITY`, 0},
+		{`DELETE FROM app.dose_events WHERE patient_id = $1`, semaglutideDrawn},
+		{`DELETE FROM app.vials WHERE patient_id = $1`, 4},
+		{`UPDATE app.protocols SET start_date = start_date - 28 WHERE patient_id = $1`, 1},
+		{`ALTER TABLE app.protocols FORCE ROW LEVEL SECURITY`, 0},
+		{`ALTER TABLE app.vials FORCE ROW LEVEL SECURITY`, 0},
+		{`ALTER TABLE app.dose_events FORCE ROW LEVEL SECURITY`, 0},
 	} {
-		if _, err := conn.Exec(t.Context(), statement, string(patient)); err != nil {
-			t.Fatalf("ageing the stand with %q: %v", statement, err)
+		args := []any{}
+		if strings.Contains(arranged.statement, "$1") {
+			args = append(args, string(patient))
+		}
+		tag, err := conn.Exec(t.Context(), arranged.statement, args...)
+		if err != nil {
+			t.Fatalf("ageing the stand with %q: %v", arranged.statement, err)
+		}
+		if tag.RowsAffected() != arranged.rows {
+			t.Fatalf("%q touched %d rows, want %d",
+				arranged.statement, tag.RowsAffected(), arranged.rows)
 		}
 	}
 
@@ -317,9 +340,15 @@ func drawsMatchThePrescription(t *testing.T, on deps, patient civil.UserID) {
 	item := theWeeklyInjection(t, plan)
 	for _, drawn := range draws {
 		prescribed := protocol.CurrentDoseFor(plan, *item.CompoundID, drawn.day)
-		if prescribed == nil || prescribed.Value != drawn.value {
-			t.Errorf("the draw on %s took %v мг, and the course prescribes %v that day",
-				drawn.day, drawn.value, prescribed)
+		if prescribed == nil {
+			t.Errorf("the draw on %s is attributed to a day the course prescribes nothing on",
+				drawn.day)
+
+			continue
+		}
+		if prescribed.Value != drawn.value {
+			t.Errorf("the draw on %s took %v %s, and the course prescribes %v that day",
+				drawn.day, drawn.value, prescribed.Unit, prescribed.Value)
 		}
 	}
 }
