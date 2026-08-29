@@ -1,12 +1,14 @@
 ---
 type: spec
 project: cadence
-status: approved
+status: done
 priority: p2
 created: 2026-08-26
 todoist_parent: "6hMhfRfpXJ9p5P8q"
 components: [inventory, dosing, protocol, api, data-layer]
 proposal: "20-Projects/cadence/architecture/proposals/a-vial-holds-an-amount.md"
+adr: "[[20-Projects/cadence/adr/ADR-014-a-vial-holds-an-amount|adr/ADR-014-a-vial-holds-an-amount]]"
+completed: 2026-08-29
 ---
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/inventory-server-side.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
