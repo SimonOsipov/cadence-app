@@ -34,6 +34,7 @@ func TestEachConstraintTheFormCanBreakIsNamed(t *testing.T) {
 		{"an amount finer than a microgram", "23514", "vials_total_amount_scale_check", ErrAmountTooFine},
 		{"an amount of nothing", "23514", "vials_total_amount_check", ErrAmountOffRange},
 		{"an amount past the ceiling", "23514", "vials_total_amount_magnitude_check", ErrAmountOffRange},
+		{"a day that moved backwards", "23514", "vials_disposed_after_opening", ErrDisposedTooEarly},
 	} {
 		t.Run(refusal.name, func(t *testing.T) {
 			got := classifyWrite(&pgconn.PgError{Code: refusal.code, ConstraintName: refusal.constraint})
@@ -68,6 +69,7 @@ func TestEachConstraintTheFormCanBreakIsNamed(t *testing.T) {
 			got := classifyWrite(unknown.err)
 			for _, named := range []error{
 				ErrNoSuchCompound, ErrKeyNotTheirs, ErrAmountTooFine, ErrAmountOffRange,
+				ErrDisposedTooEarly,
 			} {
 				if errors.Is(got, named) {
 					t.Errorf("%v was read as %v", unknown.err, named)

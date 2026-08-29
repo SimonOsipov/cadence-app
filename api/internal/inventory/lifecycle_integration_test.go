@@ -148,8 +148,8 @@ func TestASetAsideVialCanStillBeThrownAway(t *testing.T) {
 	}
 }
 
-// Zero rows affected is «no vial of mine» and «already thrown away» at once, and the two are
-// different answers — so the row is read rather than the count guessed at.
+// «No vial of mine» and «already thrown away» are different answers, and the shelf read before
+// the write is what separates them: after it, zero rows can only mean the second.
 func TestNothingWrittenIsReadRatherThanGuessedAt(t *testing.T) {
 	c := newClinic(t)
 	mux, calling := aCabinet(t, c)
@@ -201,32 +201,61 @@ func TestAThrownAwayVialRefusesToBeSetAside(t *testing.T) {
 		t.Fatalf("throwing it away answered %d: %s", status, body)
 	}
 
+	// Setting it aside is the conflict; taking it back is the value the vial already
+	// carries, because disposal cleared the flag — and refusing that would break the
+	// idempotence this endpoint promises exactly where the queue makes it matter.
 	for _, asked := range []struct {
-		name string
-		body map[string]any
+		name  string
+		body  map[string]any
+		wants int
 	}{
-		{"set aside", map[string]any{"held_back": true}},
-		// Both values, because the vial is past the point either can mean anything —
-		// and answering 200 to one of them was the asymmetry that gave this away.
-		{"taken back", map[string]any{"held_back": false}},
+		{"set aside", map[string]any{"held_back": true}, http.StatusConflict},
+		{"taken back", map[string]any{"held_back": false}, http.StatusOK},
 	} {
 		t.Run(asked.name, func(t *testing.T) {
 			status, body := send(t, mux, http.MethodPut,
 				"/v1/me/vials/"+c.vialA+"/held-back", asked.body)
-			if status != http.StatusConflict {
-				t.Errorf("answered %d, want 409: %s", status, body)
+			if status != asked.wants {
+				t.Errorf("answered %d, want %d: %s", status, asked.wants, body)
 			}
 		})
 	}
 
-	// And the row is unchanged: a conflict that had already written something would be
-	// worse than the 500 it replaced.
+	// What the refusal must not have moved is the disposal itself: «set aside» could not
+	// have been written whatever happened, since 000021 refuses the pair and the whole
+	// transaction rolls back — so the schema holds that half and this reads the half the
+	// code holds.
 	status, body := send(t, mux, http.MethodGet, "/v1/me/vials/"+c.vialA, nil)
 	if status != http.StatusOK {
 		t.Fatalf("reading the card answered %d: %s", status, body)
 	}
-	if card := cardFrom(t, body); card.HeldBackAt != nil {
+	card := cardFrom(t, body)
+	if card.DisposedAt == nil || *card.DisposedAt != "2026-05-10" || card.Status != "disposed" {
+		t.Errorf("the vial reads thrown away on %v with status %q", card.DisposedAt, card.Status)
+	}
+	if card.HeldBackAt != nil {
 		t.Errorf("a thrown-away vial is set aside on %v", card.HeldBackAt)
+	}
+}
+
+// A day that moved backwards under the patient is a conflict, not a server error.
+//
+// Nothing in this endpoint can produce it on its own — disposal writes the patient's own day —
+// but opened_at is written by the dosing path on the day a dose was drawn, and the patient's
+// zone is rewritten on every sign-in. A move west across midnight leaves today behind the day
+// the vial was opened on, and 000015's CHECK refuses the write; unmapped, that is a 500 the
+// offline queue retries until local midnight.
+func TestAVialOpenedAfterTodayIsAConflictRatherThanAServerError(t *testing.T) {
+	c := newClinic(t)
+	mux, calling := aCabinet(t, c)
+	calling(patientA, "patient")
+
+	changeVial(t, c, patientA, c.vialA,
+		`UPDATE app.vials SET opened_at = DATE '2026-05-11' WHERE id = $1`)
+
+	status, body := send(t, mux, http.MethodPost, "/v1/me/vials/"+c.vialA+"/dispose", nil)
+	if status != http.StatusConflict {
+		t.Errorf("throwing away a vial opened tomorrow answered %d, want 409: %s", status, body)
 	}
 }
 

@@ -32,9 +32,13 @@ var (
 	ErrAmountOffRange = errors.New("an amount lies between nothing and a hundred grams")
 	ErrKeyNotTheirs   = errors.New("the label photo key is not one this API minted for you")
 
-	// The one the lifecycle answers, and it is a conflict rather than a bad form: the
+	// The two the lifecycle answers, and they are conflicts rather than bad forms: the
 	// request is well made and the vial is in a state that refuses it.
 	ErrAlreadyDisposed = errors.New("this vial was already thrown away")
+	// Reachable, and not through this endpoint's own arithmetic: the day is the patient's,
+	// their zone is rewritten on every sign-in, and a move west across midnight puts today
+	// behind the day a dose opened the vial on.
+	ErrDisposedTooEarly = errors.New("a vial cannot be thrown away before the day it was opened")
 )
 
 type NewVialInput struct {
@@ -136,15 +140,17 @@ func (s *Service) holdBack(ctx context.Context, in *HeldBackInput) (*VialOutput,
 		// day is only set where it was not set before, so repeating the request does not
 		// move the day the patient put it aside on.
 		//
-		// Guarded on disposal like the disposal itself, and not only because 000021
-		// forbids the two flags together: a thrown-away vial has no lifecycle left to
-		// change, and without the guard the offline queue's delayed «put it aside» raised
-		// that CHECK as a 500 — which a client retries for ever, where a 409 tells it to
-		// read the card again.
+		// The guard is on «put it aside» alone, and that asymmetry is the promise this
+		// endpoint makes rather than an oversight. 000021 forbids the two flags together,
+		// so setting one on a thrown-away vial raised that CHECK as a 500 — retried for
+		// ever by the queue that sent it. Taking it back needs no guard: disposal already
+		// cleared the flag, so a request asking for the value the vial carries is the
+		// idempotent repeat this endpoint promises, and refusing it would break the
+		// promise exactly where the offline queue makes it matter.
 		tag, err := tx.Exec(ctx, `
 			UPDATE app.vials
 			SET held_back_at = CASE WHEN $2 THEN coalesce(held_back_at, $3::date) END
-			WHERE id = $1 AND disposed_at IS NULL
+			WHERE id = $1 AND (NOT $2 OR disposed_at IS NULL)
 		`, vial, in.Body.HeldBack, day)
 		if err != nil {
 			return err
@@ -170,8 +176,8 @@ func (s *Service) dispose(ctx context.Context, in *DisposeInput) (*VialOutput, e
 		if err != nil {
 			return err
 		}
-		// Zero rows is «no vial of mine» and «already thrown away» at once, and the two
-		// are a 404 and a 409 — so the row is read rather than the count guessed at.
+		// The shelf was read before this statement, so zero rows here means one thing
+		// only: the vial is already thrown away.
 		if tag.RowsAffected() == 0 {
 			return ErrAlreadyDisposed
 		}
@@ -182,10 +188,11 @@ func (s *Service) dispose(ctx context.Context, in *DisposeInput) (*VialOutput, e
 
 // changeVial runs one write against the caller's own vial and answers the card it became.
 //
-// The shelf is read first, so «not here», «not yours» and «not a readable identifier» are one
-// 404 before anything is written. What zero rows means afterwards is then a single thing — the
-// vial is in a state this write refuses — which is why the two answers can be told apart at
-// all: a count alone cannot separate an absent row from a conflicting one.
+// The shelf is read first, so «not here» and «not yours» meet one 404 before anything is
+// written — an identifier no parser renders is refused earlier still, without a transaction.
+// What zero rows means afterwards is then a single thing, that the vial is in a state this
+// write refuses, which is what lets the two answers be told apart: a count alone cannot
+// separate an absent row from a conflicting one.
 func (s *Service) changeVial(
 	ctx context.Context, asked string,
 	write func(ctx context.Context, tx pgx.Tx, vial, day string) error,
@@ -390,6 +397,8 @@ func classifyWrite(err error) error {
 	switch {
 	case pgErr.Code == foreignKeyViolation && pgErr.ConstraintName == vialNamesADrug:
 		return ErrNoSuchCompound
+	case pgErr.Code == checkViolation && pgErr.ConstraintName == disposedBeforeOpening:
+		return ErrDisposedTooEarly
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == keyIsUnderItsOwnPrefix:
 		return ErrKeyNotTheirs
 	case pgErr.Code == checkViolation && pgErr.ConstraintName == amountIsNoFinerThanTheAtom:
@@ -408,6 +417,7 @@ const (
 
 	vialNamesADrug             = "vials_compound_id_fkey"
 	keyIsUnderItsOwnPrefix     = "vials_photo_key_is_under_its_own_prefix"
+	disposedBeforeOpening      = "vials_disposed_after_opening"
 	amountIsNoFinerThanTheAtom = "vials_total_amount_scale_check"
 	amountIsMoreThanNothing    = "vials_total_amount_check"
 	amountIsUnderItsCeiling    = "vials_total_amount_magnitude_check"
@@ -417,7 +427,7 @@ func answerWrite(err error) error {
 	switch {
 	case errors.Is(err, ErrNoVial):
 		return huma.Error404NotFound("no vial is readable here")
-	case errors.Is(err, ErrAlreadyDisposed):
+	case errors.Is(err, ErrAlreadyDisposed), errors.Is(err, ErrDisposedTooEarly):
 		// A conflict and not a bad form: the request is well made and the vial is in a
 		// state that refuses it, which a client resolves by reading the card again.
 		return huma.Error409Conflict(err.Error())
