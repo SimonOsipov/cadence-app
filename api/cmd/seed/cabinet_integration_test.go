@@ -22,8 +22,7 @@ import (
 //
 // Four vials and four dose events say nothing about what a patient sees: what is left in a vial
 // is the amount minus the doses drawn from it, so the shelf is only observable through the
-// arithmetic. Counted back from the day the seed runs rather than written down, so the answer is
-// the same whenever it is run — the lesson MockSeed's expired course taught.
+// arithmetic.
 func TestTheSeededCabinetAnswersTheCabinetScreen(t *testing.T) {
 	on, db := seedStand(t)
 	theFirstAdministrator(t, db)

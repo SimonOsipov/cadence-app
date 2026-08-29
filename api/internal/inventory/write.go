@@ -22,9 +22,9 @@ import (
 // Named rather than re-checked in Go: this write is one row, and every bound it can break maps
 // to one field, so the amount's bounds stay where the schema keeps them. The string lengths are
 // a different case and are duplicated in the tags above — huma refuses those at the door with
-// the field named, which a CHECK cannot do. Draft.Check
-// duplicates them on the course path for the opposite reason — a course is twelve items, and a
-// constraint naming no row cannot say which one. Measured here: with a Go copy in place,
+// the field named, which a CHECK cannot do. Draft.Check duplicates them on the course path for
+// the opposite reason — a course is twelve items, and a constraint naming no row cannot say
+// which one. Measured here: with a Go copy in place,
 // deleting it changed no answer this suite could see.
 var (
 	ErrNoSuchCompound = errors.New("no such drug in the directory")

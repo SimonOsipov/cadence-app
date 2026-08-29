@@ -181,11 +181,8 @@ func TodayFor(
 			if item.ID != today.NextDose.ItemID {
 				continue
 			}
-			// The dose the cabinet divides by is resolved from the drug and not from
-			// this position: with two positions of one compound the shelf answers
-			// nothing about it, and a day card dividing by one of the two doses would
-			// contradict the cabinet screen about the same vial. Identical wherever the
-			// drug has one position, which is every course but the ambiguous one.
+			// From the drug and not from this position, so the day card and the
+			// cabinet screen cannot disagree about one vial — see Cabinet above.
 			left, reorder, err := cabinet.SupplyFor(ctx, tx, patient, item, doseOfTheDrug(plan, item, at), at)
 			if err != nil {
 				return Today{}, err

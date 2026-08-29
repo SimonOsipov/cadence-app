@@ -174,11 +174,9 @@ func TestTheCabinetAnswersWhatIsLeftAndWhatItBuys(t *testing.T) {
 
 // Two course positions of one drug answer no hint, for the reason the card answers no dose.
 //
-// The rate is a position's and the supply is the cabinet's: folding two positions into one
-// hint divides the whole shelf by half the prescription's rate, so a patient injecting twice a
-// week is told four doses are four weeks. Measured on this fixture — it answered exactly that
-// — and the same arithmetic goes silent where the truth is three weeks, which is the shape of
-// the bug this feature exists to fix. Silence is what CurrentDoseFor already answers here.
+// The reason is on hints(); measured on this fixture, which answered exactly what that comment
+// predicts — four doses read as four weeks at a rate of two a week, and silence where the truth
+// is three. Silence is what CurrentDoseFor already answers on the same course.
 func TestTwoCoursePositionsOfOneDrugAnswerNoHint(t *testing.T) {
 	c := newClinic(t)
 	prescribe(t, c, patientA)
