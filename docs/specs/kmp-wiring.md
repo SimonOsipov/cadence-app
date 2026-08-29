@@ -8,7 +8,6 @@ todoist_parent: "6h8xwxQ2mQWC4Mpq"
 components: [kmp-app]
 proposal: "[[20-Projects/cadence/architecture/proposals/api-openapi-code-first|architecture/proposals/api-openapi-code-first]]"
 ---
-
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/kmp-wiring.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
 
 # KMP Wiring
