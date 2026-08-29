@@ -42,6 +42,10 @@ val copyGeneratedClient by tasks.registering(Sync::class) {
  * The contract is generated from the API's own code and the client from the contract, so a
  * drift here means one of the two moved without the other — and the compiler would not say so,
  * because both halves compile against whichever version is in the tree.
+ *
+ * It catches a contract that moved, not a file somebody edited: the copy runs first, so a hand
+ * edit is reverted rather than reported. Measured both ways — adding a property to the spec
+ * fails this task and names the file; appending a line to a generated file does not.
  */
 val openApiDrift by tasks.registering {
     dependsOn(copyGeneratedClient)

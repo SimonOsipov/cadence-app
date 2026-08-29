@@ -33,6 +33,24 @@ echo "==> detekt"
 echo "==> unit tests (:shared only — composeApp needs ios.sh)"
 ./gradlew testAndroidHostTest
 
+# The generator brings its own credential helpers — every *Api extends ApiClient, which holds a
+# map of them — and they come into the tree because the client will not compile without them.
+# They stay unused: the token is attached by the transport, in one place, and two mechanisms
+# under refresh-token rotation mean a revoked session. Grepped rather than promised, and outside
+# the generated tree because inside it the calls are the generator's own.
+echo "==> the generated credential helpers stay unused"
+callers=$(grep -rn "setBearerToken\|setAccessToken\|setUsername\|setPassword" \
+    --include="*.kt" shared/src composeApp/src androidApp/src 2>/dev/null |
+    grep -v "/generated/" || true)
+if [ -n "$callers" ]; then
+    echo "the transport is not the only owner of the token any more:" >&2
+    echo "$callers" >&2
+    exit 1
+fi
+
+echo "==> the client matches the contract"
+./gradlew :shared:openApiDrift
+
 echo "==> assemble"
 ./gradlew :androidApp:assembleDebug
 
