@@ -14,6 +14,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/inventory"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
 
@@ -194,7 +195,10 @@ func TestTheSeededDrawsCloseThePrescribedOccurrences(t *testing.T) {
 	var taken, open int
 	if err := database.WithServiceJob(t.Context(), on.writes, seedJob,
 		func(ctx context.Context, tx pgx.Tx) error {
-			history := dosing.NewHistory(time.Now)
+			history := dosing.NewHistory(func() time.Time {
+				return time.Date(on.today.Year, on.today.Month, on.today.Day,
+					12, 0, 0, 0, time.UTC)
+			})
 			// From the start date the course was read back with, not the one the seed
 			// computed: an expectation derived from the value under test moves with it.
 			for day := plan.Protocol.StartDate; !day.After(on.today); day = day.AddDays(1) {
@@ -227,6 +231,96 @@ func TestTheSeededDrawsCloseThePrescribedOccurrences(t *testing.T) {
 	}
 	if open != 0 {
 		t.Errorf("%d weekly injections stand open behind today, want none", open)
+	}
+}
+
+// A stand whose course an earlier run prescribed and whose cabinet this one fills. The two passes
+// are independently idempotent, so they meet in this state, and the cabinet has to follow the
+// course rather than the calendar: anchored to the day the seed runs, the draws would land in
+// weeks the course prescribes 0,5 мг for and claim 0,25 — a history contradicting the
+// prescription it is attributed to.
+func TestACabinetFilledAfterItsCourseFollowsTheCourse(t *testing.T) {
+	on, db := seedStand(t)
+	theFirstAdministrator(t, db)
+
+	if err := seed(t.Context(), theClinic(), on); err != nil {
+		t.Fatalf("the first run: %v", err)
+	}
+
+	patient := thePersona(t, on)
+
+	// The stand as it stands four weeks on, with the cabinet not yet filled. Arranged as the
+	// owner: no seam this command runs on deletes a dose, which is the point of the state.
+	conn := testsupport.Connect(t, db.MigrationURL)
+	if _, err := conn.Exec(t.Context(), `SELECT set_config('role', $1, false)`, "cadence_owner"); err != nil {
+		t.Fatalf("assuming the owner role: %v", err)
+	}
+	for _, statement := range []string{
+		`DELETE FROM app.dose_events WHERE patient_id = $1`,
+		`DELETE FROM app.vials WHERE patient_id = $1`,
+		`UPDATE app.protocols SET start_date = start_date - 28 WHERE patient_id = $1`,
+	} {
+		if _, err := conn.Exec(t.Context(), statement, string(patient)); err != nil {
+			t.Fatalf("ageing the stand with %q: %v", statement, err)
+		}
+	}
+
+	if err := seed(t.Context(), theClinic(), on); err != nil {
+		t.Fatalf("the second run: %v", err)
+	}
+
+	drawsMatchThePrescription(t, on, patient)
+}
+
+// drawsMatchThePrescription asks the course what it prescribed on the day of each draw.
+func drawsMatchThePrescription(t *testing.T, on deps, patient civil.UserID) {
+	t.Helper()
+
+	type draw struct {
+		day   civil.Date
+		value float64
+	}
+	var draws []draw
+	if err := database.WithServiceJob(t.Context(), on.writes, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `
+				SELECT scheduled_for_date, dose_value::float8 FROM app.dose_events
+				WHERE patient_id = $1 ORDER BY scheduled_for_date
+			`, string(patient))
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+
+			for rows.Next() {
+				var day time.Time
+				var value float64
+				if err := rows.Scan(&day, &value); err != nil {
+					return err
+				}
+				draws = append(draws, draw{
+					day:   civil.NewDate(day.Year(), day.Month(), day.Day()),
+					value: value,
+				})
+			}
+
+			return rows.Err()
+		}); err != nil {
+		t.Fatalf("reading the seeded history: %v", err)
+	}
+
+	if len(draws) != semaglutideDrawn {
+		t.Fatalf("the seeded history holds %d draws, want %d", len(draws), semaglutideDrawn)
+	}
+
+	plan := planOf(t, on, patient)
+	item := theWeeklyInjection(t, plan)
+	for _, drawn := range draws {
+		prescribed := protocol.CurrentDoseFor(plan, *item.CompoundID, drawn.day)
+		if prescribed == nil || prescribed.Value != drawn.value {
+			t.Errorf("the draw on %s took %v мг, and the course prescribes %v that day",
+				drawn.day, drawn.value, prescribed)
+		}
 	}
 }
 

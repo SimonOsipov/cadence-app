@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,11 +56,15 @@ func fillTheCabinet(
 			return nil
 		}
 
-		shelf, err := theShelf(ctx, tx, patient, today)
+		course, err := theInjection(ctx, tx, patient)
 		if err != nil {
 			return err
 		}
-		if err := drawFrom(ctx, tx, patient, shelf, today); err != nil {
+		shelf, err := theShelf(ctx, tx, patient, course.startedOn, today)
+		if err != nil {
+			return err
+		}
+		if err := drawFrom(ctx, tx, patient, shelf, course); err != nil {
 			return err
 		}
 		filled = true
@@ -78,7 +83,7 @@ func fillTheCabinet(
 // The compounds are read by name rather than created: theCourse entered them through the
 // directory, and 000013's compounds_one_row_per_name would refuse a second row anyway.
 func theShelf(
-	ctx context.Context, tx pgx.Tx, patient civil.UserID, today civil.Date,
+	ctx context.Context, tx pgx.Tx, patient civil.UserID, opened, today civil.Date,
 ) (string, error) {
 	semaglutide, err := compoundNamed(ctx, tx, "Семаглутид")
 	if err != nil {
@@ -89,7 +94,6 @@ func theShelf(
 		return "", err
 	}
 
-	opened := courseStart(today)
 	var open string
 	for _, vial := range []struct {
 		compound   string
@@ -156,16 +160,10 @@ func theShelf(
 // its occurrence on (item, date, slot), so a draw at the wrong hour leaves the schedule showing
 // four missed injections beside the four it was seeded to show.
 func drawFrom(
-	ctx context.Context, tx pgx.Tx, patient civil.UserID, vial string, today civil.Date,
+	ctx context.Context, tx pgx.Tx, patient civil.UserID, vial string, course weeklyInjection,
 ) error {
-	course, item, compound, slot, err := theInjection(ctx, tx, patient)
-	if err != nil {
-		return err
-	}
-
-	opened := courseStart(today)
 	for week := range semaglutideDrawn {
-		day := opened.AddDays(week * 7)
+		day := course.startedOn.AddDays(week * 7)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO app.dose_events
 			    (patient_id, protocol_id, protocol_item_id, vial_id, compound_id,
@@ -174,10 +172,11 @@ func drawFrom(
 			VALUES ($1, $2, $3, $4, $5, $6::date, $7::time,
 			        ($6::date + $7::time) AT TIME ZONE $8,
 			        $9::numeric, 'мг', $10, $11)
-		`, string(patient), course, item, vial, compound, day.String(), slot, seededZone,
+		`, string(patient), course.protocol, course.item, vial, course.compound,
+			day.String(), course.slot, seededZone,
 			semaglutideDose, siteRotation[week%len(siteRotation)],
 			fmt.Sprintf("seed-%s-%d", patient, week)); err != nil {
-			return fmt.Errorf("drawing the week %d dose for %s: %w", week+1, patient, err)
+			return fmt.Errorf("drawing the week %d dose: %w", week+1, err)
 		}
 	}
 
@@ -198,43 +197,58 @@ func compoundNamed(ctx context.Context, tx pgx.Tx, name string) (string, error) 
 	return id, nil
 }
 
-// theInjection is the course, the position, the drug and the slot a seeded dose is attributed to.
+// weeklyInjection is the prescription a seeded draw is attributed to, and the day it opened.
+type weeklyInjection struct {
+	protocol  string
+	item      string
+	compound  string
+	slot      string
+	startedOn civil.Date
+}
+
+// theInjection reads that prescription back.
+//
+// The day comes from the course rather than from courseStart: a stand whose course was prescribed
+// by an earlier run and whose cabinet is filled by this one would otherwise anchor the draws to a
+// different Sunday, and 0,25 мг would be written against weeks the course prescribes 0,5 for.
 //
 // Refuses a second weekly injection rather than taking whichever row came back first, the way
 // OpenVialFor and CurrentDoseFor refuse: a course carrying two would attribute every draw to one
 // of them and leave the other's occurrences open, plausibly.
-func theInjection(
-	ctx context.Context, tx pgx.Tx, patient civil.UserID,
-) (course, item, compound, slot string, err error) {
+func theInjection(ctx context.Context, tx pgx.Tx, patient civil.UserID) (weeklyInjection, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT p.id::text, i.id::text, i.compound_id::text, i.times[1]::text
+		SELECT p.id::text, i.id::text, i.compound_id::text, i.times[1]::text, p.start_date
 		FROM app.protocols p
 		JOIN app.protocol_items i ON i.protocol_id = p.id
 		WHERE p.patient_id = $1 AND p.status = 'active' AND i.kind = 'injection'
 		  AND i.cadence = 'weekly'
 	`, string(patient))
 	if err != nil {
-		return "", "", "", "", fmt.Errorf("the weekly injection of %s: %w", patient, err)
+		return weeklyInjection{}, fmt.Errorf("the weekly injection: %w", err)
 	}
 	defer rows.Close()
 
-	found := 0
+	var found int
+	var injection weeklyInjection
 	for rows.Next() {
 		found++
-		if err := rows.Scan(&course, &item, &compound, &slot); err != nil {
-			return "", "", "", "", fmt.Errorf("the weekly injection of %s: %w", patient, err)
+		var startedOn time.Time
+		if err := rows.Scan(&injection.protocol, &injection.item, &injection.compound,
+			&injection.slot, &startedOn); err != nil {
+			return weeklyInjection{}, fmt.Errorf("the weekly injection: %w", err)
 		}
+		injection.startedOn = civil.NewDate(startedOn.Year(), startedOn.Month(), startedOn.Day())
 	}
 	if err := rows.Err(); err != nil {
-		return "", "", "", "", fmt.Errorf("the weekly injection of %s: %w", patient, err)
+		return weeklyInjection{}, fmt.Errorf("the weekly injection: %w", err)
 	}
 	if found != 1 {
-		return "", "", "", "", fmt.Errorf(
-			"%s holds %d weekly injections, and a draw is attributed to one", patient, found,
+		return weeklyInjection{}, fmt.Errorf(
+			"the patient holds %d weekly injections, and a draw is attributed to one", found,
 		)
 	}
 
-	return course, item, compound, slot, nil
+	return injection, nil
 }
 
 func dayText(day *civil.Date) *string {
