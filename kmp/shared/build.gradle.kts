@@ -64,6 +64,72 @@ val openApiDrift by tasks.registering {
     }
 }
 
+// The address the app talks to, and where it comes from. Modules on
+// `com.android.kotlin.multiplatform.library` have neither `buildConfig` nor build variants, so
+// there is nothing to read a constant out of — this is the named mechanism the spec asks for: a
+// task writing one Kotlin file into a registered source directory.
+val devApiBase = "http://localhost:8080"
+val apiBase = providers.gradleProperty("cadence.apiBase").orElse(devApiBase)
+
+val generateApiConfig by tasks.registering {
+    val into = layout.buildDirectory.dir("generated-config")
+    val base = apiBase
+    outputs.dir(into)
+    inputs.property("base", base)
+    doLast {
+        val file = into.get().file("app/cadence/shared/net/ApiConfig.kt").asFile
+        file.parentFile.mkdirs()
+        file.writeText(
+            """
+            package app.cadence.shared.net
+
+            /** Written by the build. Set with `-Pcadence.apiBase=…`; the default is the dev contour. */
+            const val API_BASE: String = "${base.get()}"
+
+            """.trimIndent(),
+        )
+    }
+}
+
+/**
+ * Refuses a release built against the dev address.
+ *
+ * An enforced rule rather than an intention, which is what the spec asks: it hangs off the
+ * release outputs themselves, so there is no path to one that skips it.
+ */
+val refuseDevAddressInRelease by tasks.registering {
+    val base = apiBase
+    val dev = devApiBase
+    doLast {
+        check(base.get() != dev) {
+            "a release cannot be built against the dev address $dev — pass -Pcadence.apiBase=…"
+        }
+    }
+}
+
+/**
+ * Fails where the generator's Ktor and ours are not the same version.
+ *
+ * They are both 3.5.1 today and that is a coincidence, not a guarantee: the generator pins Ktor
+ * in the build file it writes, and the catalog pins ours, and neither knows about the other. Two
+ * versions in one link are what the message from that day would not say.
+ */
+val ktorAlignment by tasks.registering {
+    dependsOn(tasks.named("openApiGenerate"))
+    val generatedBuildFile = generatedClient.map { it.file("build.gradle.kts") }
+    val ours = libs.versions.ktor.get()
+    doLast {
+        val theirs =
+            Regex("""val ktor_version = "([^"]+)"""")
+                .find(generatedBuildFile.get().asFile.readText())
+                ?.groupValues
+                ?.get(1)
+        check(theirs == ours) {
+            "the generator builds against Ktor $theirs and the catalog pins $ours"
+        }
+    }
+}
+
 openApiGenerate {
     generatorName.set("kotlin")
     library.set("multiplatform")
@@ -101,6 +167,7 @@ kotlin {
     sourceSets {
         commonMain {
             kotlin.srcDir(generatedInto)
+            kotlin.srcDir(generateApiConfig)
         }
         commonMain.dependencies {
             // api, not implementation: LocalDate and TimeZone are in this
@@ -115,6 +182,7 @@ kotlin {
             // could drift to another version of the type it is handed.
             api(libs.multiplatform.settings)
             api(libs.ktor.client.core)
+            implementation(libs.ktor.client.auth)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
         }

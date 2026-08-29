@@ -45,3 +45,9 @@ kotlin {
         jvmTarget = JvmTarget.JVM_17
     }
 }
+
+// The release cannot be assembled against the dev address. Hung off the outputs rather than
+// checked in a script, so there is no path to a release artifact that goes around it.
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
+    dependsOn(":shared:refuseDevAddressInRelease")
+}
