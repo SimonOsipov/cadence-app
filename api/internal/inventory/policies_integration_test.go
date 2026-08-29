@@ -1393,6 +1393,48 @@ func TestTheAmountColumnsAreWrittenOnlyOnTheirOwnVial(t *testing.T) {
 	}
 }
 
+// The update policy answers on its own, measured where the read policy cannot stand in for it.
+//
+// An UPDATE naming a row by id reads that column, so vials_own_select refuses it first and
+// vials_own_update could be USING (true) with every case above still green — measured. A
+// statement with no WHERE and a constant assignment reads nothing, so the rows it touches are
+// the ones the update policy admits and nobody else's.
+func TestTheUpdatePolicyScopesAWriteThatReadsNothing(t *testing.T) {
+	c := newClinic(t)
+
+	// Both patients hold exactly one vial, so «one row» is the caller's own and «two» is
+	// the whole table — the two answers this case has to tell apart.
+	var vials int
+	if err := database.WithServiceJob(
+		t.Context(), c.service, seedJob,
+		func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT count(*) FROM app.vials`).Scan(&vials)
+		},
+	); err != nil {
+		t.Fatalf("counting the cabinet: %v", err)
+	}
+	if vials != 2 {
+		t.Fatalf("the clinic holds %d vials, want one each", vials)
+	}
+
+	if affected := c.changed(t, patientA, "patient",
+		`UPDATE app.vials SET held_back_at = DATE '2026-05-03'`); affected != 1 {
+		t.Errorf("an unfiltered write touched %d rows, want the caller's one", affected)
+	}
+
+	var held string
+	if err := c.as(t, patientB, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx,
+			`SELECT coalesce(held_back_at::text, 'null') FROM app.vials WHERE id = $1`,
+			c.vialB).Scan(&held)
+	}); err != nil {
+		t.Fatalf("reading the other patient's vial: %v", err)
+	}
+	if held != "null" {
+		t.Errorf("the other patient's vial was set aside on %s", held)
+	}
+}
+
 // «Set aside» is a column the patient may write and may not create with, and the difference is
 // the grant rather than a policy.
 //
