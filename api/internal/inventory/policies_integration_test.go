@@ -1317,6 +1317,122 @@ func waitForALock(t *testing.T, c clinic) bool {
 	return false
 }
 
+// The three columns the amount model added carry the same reach as the row they sit on.
+//
+// The rows were witnessed when they were written — steps 3, 6 and 7 each measured their own —
+// and what is left is the columns: that a patient reads none of the three off somebody else's
+// vial, and writes none of them there either. Each is asked separately rather than as a row,
+// because a grant is per column and a registry that agrees about twelve of them can be wrong
+// about one.
+func TestTheAmountColumnsAreReadOnlyOnTheirOwnVial(t *testing.T) {
+	c := newClinic(t)
+
+	for _, column := range []string{"total_amount", "amount_unit", "held_back_at"} {
+		t.Run(column, func(t *testing.T) {
+			// Selected by the other patient's id and not by the whole table: the answer
+			// «no rows» has to be about that vial rather than about an empty cabinet.
+			seen := c.visible(t, patientA, "patient", `
+				SELECT coalesce(`+column+`::text, 'null') FROM app.vials WHERE id = '`+c.vialB+`'
+			`)
+			if len(seen) != 0 {
+				t.Errorf("the other patient's %s reads %v", column, seen)
+			}
+			// And their own answers, so the query above is measuring the predicate and
+			// not a column name nothing can read.
+			own := c.visible(t, patientA, "patient", `
+				SELECT coalesce(`+column+`::text, 'null') FROM app.vials WHERE id = '`+c.vialA+`'
+			`)
+			if len(own) != 1 {
+				t.Errorf("their own %s reads %v", column, own)
+			}
+		})
+	}
+}
+
+// Writing them on somebody else's vial touches nothing, and the row is read back as its owner
+// to say so: an UPDATE the policies filter reports success over no rows, so the count alone is
+// half a witness and «no error» is none at all.
+func TestTheAmountColumnsAreWrittenOnlyOnTheirOwnVial(t *testing.T) {
+	c := newClinic(t)
+
+	for _, write := range []struct {
+		column string
+		set    string
+	}{
+		{"total_amount", "total_amount = 999"},
+		{"amount_unit", "amount_unit = 'мкг'"},
+		{"held_back_at", "held_back_at = DATE '2026-05-03'"},
+	} {
+		t.Run(write.column, func(t *testing.T) {
+			if affected := c.changed(t, patientA, "patient",
+				`UPDATE app.vials SET `+write.set+` WHERE id = $1`, c.vialB); affected != 0 {
+				t.Errorf("writing %s on the other patient's vial touched %d rows", write.column, affected)
+			}
+
+			var held string
+			if err := c.as(t, patientB, "patient", func(ctx context.Context, tx pgx.Tx) error {
+				return tx.QueryRow(ctx,
+					`SELECT coalesce(`+write.column+`::text, 'null') FROM app.vials WHERE id = $1`,
+					c.vialB).Scan(&held)
+			}); err != nil {
+				t.Fatalf("reading the other patient's vial: %v", err)
+			}
+			if want := map[string]string{
+				"total_amount": "1.0", "amount_unit": "мг", "held_back_at": "null",
+			}[write.column]; held != want {
+				t.Errorf("the other patient's %s reads %q, want %q", write.column, held, want)
+			}
+
+			// And the same write on their own vial does land, so the zero above is the
+			// predicate rather than a statement that could never affect anything.
+			if affected := c.changed(t, patientA, "patient",
+				`UPDATE app.vials SET `+write.set+` WHERE id = $1`, c.vialA); affected != 1 {
+				t.Errorf("writing %s on their own vial touched %d rows", write.column, affected)
+			}
+		})
+	}
+}
+
+// «Set aside» is a column the patient may write and may not create with, and the difference is
+// the grant rather than a policy.
+//
+// 000021 leaves held_back_at out of the INSERT list on purpose: putting a vial aside is an act
+// on one that already exists, and no form creates a row already shelved. A grant is refused
+// before any row is considered, so this is a 42501 rather than an empty result.
+func TestAVialCannotBeCreatedAlreadySetAside(t *testing.T) {
+	c := newClinic(t)
+
+	err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO app.vials (patient_id, compound_id, concentration_label,
+			                       total_amount, amount_unit, expires_on, held_back_at)
+			VALUES ($1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31', DATE '2026-05-03')
+		`, patientA, c.compound)
+
+		return err
+	})
+
+	var refusal *pgconn.PgError
+	if !errors.As(err, &refusal) || refusal.Code != "42501" {
+		t.Fatalf("creating a vial already set aside answered %v, want a 42501", err)
+	}
+
+	// The same row without that column is accepted, so the refusal is the column and not
+	// the statement: a test that only saw the 42501 would pass against a patient who had
+	// lost INSERT on app.vials altogether.
+	if err := c.as(t, patientA, "patient", func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO app.vials (patient_id, compound_id, concentration_label,
+			                       total_amount, amount_unit, expires_on)
+			VALUES ($1, $2, '1 мг/мл', 1.0, 'мг', DATE '2026-12-31')
+		`, patientA, c.compound)
+
+		return err
+	}); err != nil {
+		t.Errorf("the same vial without the column was refused too: %v", err)
+	}
+}
+
 // Opening a vial is the patient's own act, and the service seam cannot perform it.
 //
 // The second layer writes, and the write is the one grant the service role was never given:
