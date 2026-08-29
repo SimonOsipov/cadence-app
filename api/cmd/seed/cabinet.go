@@ -153,11 +153,9 @@ func theShelf(
 
 // drawFrom writes the doses the remaining amount is a subtraction of.
 //
-// One a week counted forward from the day the course opened, read back from its start_date rather
-// than recomputed: on a stand seeded in one run that day is courseStart(today), which is what puts
-// the last draw in this week and the shelf on the reorder threshold. Do not anchor this to the
-// calendar — on a stand whose course an earlier run prescribed the two dates differ, and 0,25 мг
-// would be written against weeks the course prescribes 0,5 for.
+// One a week counted forward from the day the course opened — read back on theInjection, which
+// says why. On a stand seeded in one run that day is courseStart(today), and that is what puts the
+// last draw in this week and the shelf on the reorder threshold.
 //
 // At the slot the item is prescribed at rather than one this command picks: a logged event meets
 // its occurrence on (item, date, slot), so a draw at the wrong hour leaves the schedule showing
@@ -212,8 +210,9 @@ type weeklyInjection struct {
 // theInjection reads that prescription back.
 //
 // The day comes from the course rather than from courseStart: a stand whose course was prescribed
-// by an earlier run and whose cabinet is filled by this one would otherwise anchor the draws to a
-// different Sunday, and 0,25 мг would be written against weeks the course prescribes 0,5 for.
+// a week or more before its cabinet is filled would otherwise anchor the draws to a later Sunday,
+// and 0,25 мг would be written against weeks the course prescribes 0,5 for. Within one Sunday week
+// the two agree, which is why a stand seeded in one run cannot show it.
 //
 // Refuses a second weekly injection rather than taking whichever row came back first, the way
 // OpenVialFor and CurrentDoseFor refuse: a course carrying two would attribute every draw to one

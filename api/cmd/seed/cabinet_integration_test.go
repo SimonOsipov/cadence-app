@@ -301,10 +301,10 @@ func TestACabinetFilledAfterItsCourseFollowsTheCourse(t *testing.T) {
 // theShelfFollowsTheCourse is the other half of the same anchor: the vial dates.
 //
 // A shelf left on the calendar puts the open vial's `opened_at` a month after the doses drawn out
-// of it, which the card draws as a vial whose history predates its opening. The two «is not null»
-// counts and the drawn count stand beside the comparisons so that none of them is a claim about
-// nothing: `scheduled_for_date < NULL` is NULL, so a draw carrying no vial would be counted by
-// neither leg of the last one.
+// of it, which the card draws as a vial whose history predates its opening. Each comparison stands
+// beside a count that says its rows exist: a draw carrying no vial is dropped by the join and one
+// drawn from an unopened vial compares against NULL, so both legs of the last pair would otherwise
+// be empty and silent.
 func theShelfFollowsTheCourse(t *testing.T, on deps, patient civil.UserID) {
 	t.Helper()
 
@@ -326,7 +326,7 @@ func theShelfFollowsTheCourse(t *testing.T, on deps, patient civil.UserID) {
 				    ),
 				    (SELECT count(*) FROM app.dose_events d
 				     JOIN app.vials dv ON dv.id = d.vial_id
-				     WHERE d.patient_id = $1),
+				     WHERE d.patient_id = $1 AND dv.opened_at IS NOT NULL),
 				    (SELECT count(*) FROM app.dose_events d
 				     JOIN app.vials dv ON dv.id = d.vial_id
 				     WHERE d.patient_id = $1 AND d.scheduled_for_date < dv.opened_at)
