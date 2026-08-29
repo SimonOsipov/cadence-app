@@ -25,6 +25,13 @@ class DoseOnTheWireTest {
         assertTrue(json.contains("\"value\":0.25"), "the value went as $json")
     }
 
+    // The set and not its size: iterating `entries` cannot see a unit leave the contract, and
+    // this project has already paid for that once.
+    @Test
+    fun theContractAdmitsExactlyTheseTwoUnits() {
+        assertEquals(listOf("мг", "мкг"), DoseBody.Unit.entries.map { it.value })
+    }
+
     @Test
     fun everyUnitTheContractAdmitsSurvivesTheRoundTrip() {
         for (unit in DoseBody.Unit.entries) {
@@ -35,13 +42,10 @@ class DoseOnTheWireTest {
         }
     }
 
-    // The number is a Double and that is the generator's mapping of `format: double`, not a
-    // choice made here — recorded because §03's own rule is that a dose is {value, unit}, and
-    // the day the contract carries a decimal instead, this is where it shows.
-    @Test
-    fun theValueIsADouble() {
-        val dose: DoseBody = DoseBody(DoseBody.Unit.мкг, 250.0)
-
-        assertEquals(250.0, dose.value)
-    }
+    // The identifier half of the same decision, and it has a cost the Linux gate cannot see:
+    // the Cyrillic entry names reach the exported Objective-C header, and clang answers
+    // «'swift_name' attribute has invalid identifier for the base name» on every translation
+    // unit importing it — measured with xcrun clang -fsyntax-only against the linked framework.
+    // Warnings only; Xcode carries no -Werror. `x-enum-varnames` in the schema would buy ASCII
+    // names at the same wire values, and that is the schema's decision rather than this file's.
 }

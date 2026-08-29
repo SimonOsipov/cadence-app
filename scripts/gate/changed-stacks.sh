@@ -53,7 +53,13 @@ emit() {
 }
 
 emit api "$(count '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)')"
-emit kmp "$(count '^(kmp/|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
+# api/openapi.json is in here for the reason it is in the web filter: the KMP client is
+# generated from it and committed, and openApiDrift is the gate that catches the two moving
+# apart. Without it a contract-only change answers kmp=false, both KMP jobs skip, and a
+# skipped job satisfies a required check — so the drift gate would never run for the single
+# change class it exists to catch. Measured against real history: 4f3875b touched api/, docs/
+# and web/ and no kmp/ file at all.
+emit kmp "$(count '^(kmp/|api/openapi\.json|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
 
 # Four paths outside web/ are in here because the web gate reads them, and a gate
 # that is skipped for a change it would have failed on is worse than no gate: the

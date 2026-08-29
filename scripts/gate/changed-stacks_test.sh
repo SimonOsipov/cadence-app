@@ -52,6 +52,10 @@ echo "==> the other stacks"
 check "go source"                       true  api     "api/internal/identity/onboarding.go"
 check "go untouched"                    false api     "web/src/app.tsx"
 check "kmp source"                      true  kmp     "kmp/shared/src/Foo.kt"
+# The client is generated from the contract and committed, so a contract-only change has to
+# reach the job that runs openApiDrift — the one change class that gate exists to catch.
+check "the API's contract"              true  kmp     "api/openapi.json"
+check "other go"                        false kmp     "api/internal/identity/roster.go"
 check "a ruleset edit reaches the gate" true  scripts ".github/rulesets/main.json"
 # The gate scripts themselves, and the mutant this closes is the sharp one: drop
 # `scripts/` from that pattern and a pull request touching only scripts/ skips the

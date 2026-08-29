@@ -12,9 +12,10 @@ import kotlinx.serialization.json.Json
 /**
  * The session as this app carries it, which is deliberately not Ktor's `BearerTokens`.
  *
- * That one is a data class and prints both tokens; a session reaches a log or a crash report
- * the moment anything holds it in a field. This one redacts, and it is converted at the plugin
- * boundary where nothing prints.
+ * Measured against the 3.5.1 artifact rather than assumed: `BearerTokens` has no `toString`,
+ * so it prints an identity — but it carries both tokens in fields, and a session reaches a log
+ * or a crash report the moment the app's own code holds one. This is the type the app holds,
+ * and it redacts; Ktor's is built at the plugin boundary, where nothing prints.
  */
 class Session(
     val access: String,

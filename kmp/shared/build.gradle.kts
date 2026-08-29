@@ -7,22 +7,22 @@ plugins {
     alias(libs.plugins.openapi.generator)
 }
 
-// The client is generated from the contract the API commits, and only three directories of
-// what the generator emits are kept: it writes a whole standalone Gradle project — wrapper,
-// docs, a `src/test/kotlin` source set invalid for KMP, and a build with no androidTarget() —
-// so it cannot be included as it stands.
+// The client is generated from the contract the API commits, and four of the directories it
+// emits are kept. It writes a whole standalone Gradle project — its own build files, docs, and
+// a `src/test/kotlin` source set invalid for KMP — so it cannot be included as it stands.
 val generatedClient = layout.buildDirectory.dir("generated-openapi")
 
-// The rest of what the generator writes — its own build files, docs, and a `src/test/kotlin`
-// source set KMP cannot compile — is left in the build directory.
-//
 // `auth` is here and the spec's list of three is short by it, measured: every `*Api` extends
 // `ApiClient`, and `ApiClient` holds a map of the generator's own credential helpers. It comes
 // along because it will not compile otherwise, and it stays unused — the token is attached by
 // the transport, and `theGeneratedCredentialHelpersAreNotUsed` is what keeps that true.
 val keptFromTheGenerator = listOf("apis", "models", "infrastructure", "auth")
 
+// Pointed at the package rather than at `generated/`, so that «written by the generator» and
+// «unanalysed» name the same set: a file dropped beside this path would otherwise compile into
+// commonMain and be invisible to both ktlint and detekt.
 val generatedInto = layout.projectDirectory.dir("src/commonMain/generated")
+val generatedPackage = "app/cadence/shared/api"
 
 /**
  * Committed rather than generated at build time, so a clone builds without the generator and a
@@ -33,7 +33,7 @@ val copyGeneratedClient by tasks.registering(Sync::class) {
     from(generatedClient.map { it.dir("src/commonMain/kotlin/app/cadence/shared/api") }) {
         include(keptFromTheGenerator.map { "$it/**" })
     }
-    into(generatedInto.dir("app/cadence/shared/api"))
+    into(generatedInto.dir(generatedPackage))
 }
 
 /**
@@ -101,8 +101,13 @@ val refuseDevAddressInRelease by tasks.registering {
     val base = apiBase
     val dev = devApiBase
     doLast {
-        check(base.get() != dev) {
-            "a release cannot be built against the dev address $dev — pass -Pcadence.apiBase=…"
+        // The shape and not the literal: an exact comparison against one URL is defeated by a
+        // trailing slash, and by every other address that is not the product's. A release talks
+        // to a real host over TLS, so anything else is refused.
+        val address = base.get()
+        val loopback = Regex("""//(localhost|127\.0\.0\.1|\[::1\]|[^/]*\.local)(:|/|$)""")
+        check(address.startsWith("https://") && !loopback.containsMatchIn(address)) {
+            "a release cannot be built against $address — pass -Pcadence.apiBase=https://…"
         }
     }
 }

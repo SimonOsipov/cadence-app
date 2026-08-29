@@ -64,10 +64,12 @@ class CadenceHttpClientTest {
             answers.forEach { assertEquals(HttpStatusCode.OK, it.status) }
 
             // The witness that the five were actually in flight together, and without it the
-            // assertion above passes for the wrong reason: runTest is single-threaded, and five
-            // requests taking turns would give 1 refusal, 1 refresh and 1 retry followed by four
-            // calls already carrying the fresh token — seven. Ten is five refusals, one refresh
-            // and five retries, which is the shape this test is named after. Measured.
+            // assertion above passes for the wrong reason: runTest is single-threaded, and one
+            // refresh is also what taking turns produces. Sequentially the engine sees six —
+            // one refusal, one retry, then four already carrying the fresh token, the refresh
+            // itself never reaching it. Ten is five refusals and five retries. Both numbers
+            // measured by running each shape; the first figure written here said seven and was
+            // arithmetic rather than measurement.
             assertEquals(10, engineCalls, "the requests did not meet the expiry together")
         }
 

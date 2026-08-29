@@ -66,3 +66,11 @@ compose.resources {
     publicResClass = false
     packageOfResClass = "app.cadence.design.generated"
 }
+
+// The iOS half of the same refusal. `API_BASE` lives in `:shared`, which this module exports
+// into the framework, so a release framework would otherwise link with the dev address
+// compiled in — measured, it did. Android's release tasks carry the same dependency in
+// androidApp/build.gradle.kts; between them there is no release output that skips it.
+tasks.matching { it.name.startsWith("link") && it.name.contains("Release") }.configureEach {
+    dependsOn(":shared:refuseDevAddressInRelease")
+}

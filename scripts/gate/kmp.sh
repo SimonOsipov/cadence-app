@@ -39,9 +39,17 @@ echo "==> unit tests (:shared only — composeApp needs ios.sh)"
 # under refresh-token rotation mean a revoked session. Grepped rather than promised, and outside
 # the generated tree because inside it the calls are the generator's own.
 echo "==> the generated credential helpers stay unused"
-callers=$(grep -rn "setBearerToken\|setAccessToken\|setUsername\|setPassword" \
-    --include="*.kt" shared/src composeApp/src androidApp/src 2>/dev/null |
-    grep -v "/generated/" || true)
+# The roots are checked rather than swallowed: `2>/dev/null` over a renamed one would answer
+# empty and pass, which is the shape of a guard that cannot fail. setApiKey is in the pattern
+# because ApiKeyAuth is the one helper that can put a credential in the query string, which is
+# what the spec forbids by name. iosApp/ is searched too: :shared is exported into the
+# framework, so ApiClient's setters are reachable from Swift.
+roots="shared/src composeApp/src androidApp/src iosApp/iosApp iosApp/iosAppTests"
+for root in $roots; do
+    [ -d "$root" ] || { echo "the credential guard searches $root, which is not there" >&2; exit 1; }
+done
+callers=$(grep -rn "setBearerToken\|setAccessToken\|setApiKey\|setUsername\|setPassword" \
+    $roots | grep -v "/generated/" || true)
 if [ -n "$callers" ]; then
     echo "the transport is not the only owner of the token any more:" >&2
     echo "$callers" >&2
@@ -49,7 +57,7 @@ if [ -n "$callers" ]; then
 fi
 
 echo "==> the client matches the contract"
-./gradlew :shared:openApiDrift
+./gradlew :shared:openApiDrift :shared:ktorAlignment
 
 echo "==> assemble"
 ./gradlew :androidApp:assembleDebug
