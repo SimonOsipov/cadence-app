@@ -12,6 +12,7 @@ import io.github.jan.supabase.auth.SettingsCodeVerifierCache
 import io.github.jan.supabase.auth.SettingsSessionManager
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.createSupabaseClient
+import kotlinx.coroutines.CancellationException
 
 /**
  * The Auth module, pointed at our own GoTrue and holding its secrets where we put them.
@@ -53,11 +54,32 @@ fun SupabaseClient.sessionTokens(): SessionTokens =
     object : SessionTokens {
         override suspend fun current(): Session? = auth.currentSessionOrNull()?.asSession()
 
-        override suspend fun refreshed(): Session? {
-            auth.refreshCurrentSession()
-
-            return auth.currentSessionOrNull()?.asSession()
-        }
+        /**
+         * Null rather than a throw, which is what the caller's contract says and what the module
+         * does not do.
+         *
+         * Measured in the 3.7.0 artifact: `refreshCurrentSession` answers by throwing —
+         * `IllegalStateException("No refresh token found in current session")` where nothing is
+         * stored, and out of the HTTP call where the token is refused. Left to propagate, the
+         * first request of a signed-out app throws instead of routing to sign-in, and the
+         * screen's «signed out» state becomes unreachable: every refusal would arrive as «the
+         * server is unavailable», which is the one confusion three states exist to prevent.
+         *
+         * The session is **not** cleared here, and that is a divergence from the spec's wording.
+         * A refusal and a network blip arrive alike, and clearing on both would sign a patient
+         * out because their train went into a tunnel — the same rule the vault keeps: do not
+         * erase on a failure you cannot name. What clears a session is signing out.
+         */
+        @Suppress("TooGenericExceptionCaught")
+        override suspend fun refreshed(): Session? =
+            try {
+                auth.refreshCurrentSession()
+                auth.currentSessionOrNull()?.asSession()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (expected: Exception) {
+                null
+            }
     }
 
 private fun io.github.jan.supabase.auth.user.UserSession.asSession() =

@@ -21,6 +21,18 @@ private const val GOTRUE = "http://localhost:9999"
  */
 @RunWith(RobolectricTestRunner::class)
 class CadenceAuthAndroidTest {
+    // The contract the transport was written against, and the one the module does not keep:
+    // refreshCurrentSession throws rather than answering. Left to propagate, the first request
+    // of a signed-out app throws instead of routing to sign-in, and «signed out» stops being a
+    // state the screen can reach — every refusal arrives as «the server is unavailable».
+    @Test
+    fun refreshingWithNoSessionAnswersNothingRatherThanThrowing() =
+        runTest {
+            val tokens = cadenceAuth(url = GOTRUE) { MapSettings() }.sessionTokens()
+
+            assertNull(tokens.refreshed())
+        }
+
     // «No session», not an empty one that reads as signed in: the transport asks this before
     // every request, and an empty answer would send one with no token and read the 401 as an
     // expiry — refreshing a session that never existed.

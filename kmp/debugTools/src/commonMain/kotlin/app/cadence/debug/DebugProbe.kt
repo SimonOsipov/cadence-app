@@ -5,6 +5,7 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 
 /**
  * `GET /v1/me` through the client that carries the session, which is the whole pipeline in one
@@ -29,6 +30,10 @@ suspend fun probeMe(
             answer.status == HttpStatusCode.Unauthorized -> ProbeState.SignedOut
             else -> ProbeState.Unavailable("the API answered ${answer.status}")
         }
+    } catch (cancelled: CancellationException) {
+        // The screen leaves composition mid-request. Cancellation is not a server failure, and
+        // reported as one it would have the effect body carry on instead of unwinding.
+        throw cancelled
     } catch (expected: Exception) {
         // No answer at all: a host that is down, a name that does not resolve, a socket that
         // closed. «Signed out» would be the wrong word — it sends a developer to re-authenticate
@@ -53,6 +58,8 @@ suspend fun probeHealth(
 ): Boolean =
     try {
         raw.get("$base/healthz").status.isSuccess()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (expected: Exception) {
         false
     }
