@@ -41,8 +41,10 @@ framework=composeApp/build/bin/iosSimulatorArm64/debugFramework/ComposeApp.frame
 # inside $( … ): an exit there ends the subshell and the caller reads the empty output as data.
 marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
     debugTools/src/commonMain/kotlin/app/cadence/debug/DebugScreen.kt)
-[ -n "$marker" ] || {
-    echo "DEBUG_SCREEN_MARKER could not be read from the source — this check greps for nothing" >&2
+entry=$(sed -n 's/^fun \([A-Za-z]*\)().*UIViewController.*/\1/p' \
+    composeApp/src/debugToolsIosMain/kotlin/app/cadence/DebugViewController.kt)
+[ -n "$marker" ] && [ -n "$entry" ] || {
+    echo "the screen or its entry point could not be read from the source — this greps nothing" >&2
     exit 1
 }
 
@@ -71,9 +73,9 @@ header=$framework/Headers/ComposeApp.h
     echo "the framework header is not there — nothing was grepped" >&2
     exit 1
 }
-entry_hits=$(grep -c debugViewController "$header" || true)
+entry_hits=$(grep -c "$entry" "$header" || true)
 if [ "${entry_hits:-0}" -eq 0 ]; then
-    echo "debugViewController is not in the framework header — Swift cannot reach the screen" >&2
+    echo "$entry is not in the framework header — Swift cannot reach the screen" >&2
     exit 1
 fi
 

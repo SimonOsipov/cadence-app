@@ -23,9 +23,11 @@ echo "==> detekt"
 # `:debugTools` both declare `withHostTestBuilder {}`, so the unqualified task resolves to both.
 # composeApp declares none, so its tests are not here — they need ios.sh.
 #
-# Counted 2026-08-30 by running it rather than by arithmetic: 383 in `:shared` and 8 in
-# `:debugTools`. Two figures elsewhere: 356 of `:shared` again on the iOS simulator target, and
-# composeApp's 494 Compose UI tests, which run under ios.sh on a macOS host and nowhere else.
+# Counted 2026-08-30 by running it rather than by arithmetic: 383 in `:shared` and 12 in
+# `:debugTools`. Two figures elsewhere, re-measured the same day: 367 of `:shared` again on the
+# iOS simulator target, and composeApp's 494 Compose UI tests, which run under ios.sh on a macOS
+# host and nowhere else. Every figure here is the whole measurement — correcting one of several
+# is how this paragraph was part-true twice.
 #
 # Four files in `:shared` run under a Robolectric runtime, which is what secure storage needed to
 # be checkable at all. The Keychain half is not here either: it needs an app bundle, so it is an

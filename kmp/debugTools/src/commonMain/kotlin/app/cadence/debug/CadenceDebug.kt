@@ -22,17 +22,17 @@ import kotlinx.coroutines.CancellationException
  * itself is measurable off a device — the engine, both addresses, and the secure stores.
  *
  * Two clients and not one: [health] must go out with no credential attached, and there is no way
- * to un-attach the `Auth` plugin for one call. The engine is shared because neither client owns
- * it — `HttpClient(engine)` does not close an engine it was handed.
+ * to un-attach the `Auth` plugin for one call. The engine is shared by all three — the auth
+ * module included, which is what makes the address it uses observable — because none of them owns
+ * it: `HttpClient(engine)` does not close an engine it was handed.
  */
-
 class CadenceDebug(
     private val api: String = API_BASE,
     gotrue: String = AUTH_BASE,
     engine: HttpClientEngine = debugEngine(),
     stores: (String) -> Settings = ::secureSettings,
 ) {
-    private val supabase = cadenceAuth(url = gotrue, stores = stores)
+    private val supabase = cadenceAuth(url = gotrue, stores = stores, engine = engine)
     private val identity = IdentityApi(api, cadenceHttpClient(engine, supabase.sessionTokens()))
     private val raw = HttpClient(engine)
 

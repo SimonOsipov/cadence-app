@@ -12,6 +12,7 @@ import io.github.jan.supabase.auth.SettingsCodeVerifierCache
 import io.github.jan.supabase.auth.SettingsSessionManager
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.createSupabaseClient
+import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -29,13 +30,17 @@ import kotlinx.coroutines.CancellationException
  * lose the verifier to the session's next write, in the middle of accepting an invite.
  *
  * [stores] is a parameter so the seam can be measured without a device; production passes
- * [secureSettings].
+ * [secureSettings]. [engine] is one for the same reason and a sharper one: the module builds its
+ * own client, so left to itself nothing outside this file can observe which address it talks to —
+ * a test can only restate the argument it just passed.
  */
 fun cadenceAuth(
     url: String,
     stores: (String) -> Settings = ::secureSettings,
+    engine: HttpClientEngine? = null,
 ): SupabaseClient =
     createSupabaseClient(supabaseUrl = url, supabaseKey = "") {
+        engine?.let { httpEngine = it }
         install(Auth) {
             customUrl = url
             sessionManager = SettingsSessionManager(stores(SESSION_STORE))

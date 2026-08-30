@@ -5,7 +5,9 @@ import app.cadence.shared.storage.SESSION_STORE
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
@@ -22,6 +24,12 @@ private const val GOTRUE = "http://gotrue.test"
 
 private val json = headersOf(HttpHeaders.ContentType, "application/json")
 
+// A GoTrue token response, so a sign-in in these tests produces a real session — which is what
+// puts a Bearer on the API call. Anything less and the credential assertions measure nothing.
+private const val TOKEN =
+    """{"access_token":"an-access-token","refresh_token":"a-refresh-token",""" +
+        """"expires_in":3600,"token_type":"bearer"}"""
+
 private const val ME =
     """{"sub":"9f3c…","role":"patient","expires_at":"2026-09-01T00:00:00Z","full_name":"Марина"}"""
 
@@ -34,32 +42,73 @@ private const val ME =
  */
 @RunWith(RobolectricTestRunner::class)
 class CadenceDebugTest {
-    private val asked = mutableListOf<String>()
+    private val asked = mutableListOf<Pair<String, String?>>()
 
-    private fun wiring(stores: (String) -> Settings = { MapSettings() }) =
-        CadenceDebug(
-            api = API,
-            gotrue = GOTRUE,
-            engine =
-                MockEngine { request ->
-                    asked += request.url.toString()
-                    respond(ME, HttpStatusCode.OK, json)
-                },
-            stores = stores,
-        )
+    private fun wiring(
+        stores: (String) -> Settings = { MapSettings() },
+        answer: MockRequestHandler = { request ->
+            respond(if ("token" in request.url.encodedPath) TOKEN else ME, HttpStatusCode.OK, json)
+        },
+    ) = CadenceDebug(
+        api = API,
+        gotrue = GOTRUE,
+        engine =
+            MockEngine { request ->
+                asked += request.url.toString() to request.headers[HttpHeaders.Authorization]
+                answer(request)
+            },
+        stores = stores,
+    )
 
-    // The two addresses are not interchangeable and nothing said so: swapped in the body, the
-    // eight probe tests and the whole gate stayed green, because the artifact greps measure
-    // presence and not wiring.
+    // The two addresses are not interchangeable and nothing said so. Sign-in is in here because
+    // it is the only call that carries the GoTrue address: the auth module builds its own client,
+    // so until it was handed this engine, pointing it at the API address survived every test and
+    // the whole gate — and on the production path that is the password going to the wrong host.
     @Test
     fun eachCallGoesToItsOwnService() =
         runTest {
             val debug = wiring()
 
+            debug.signIn("someone@cadence.local", "a-password")
             assertIs<ProbeState.SignedIn>(debug.me())
             assertTrue(debug.health())
 
-            assertEquals(listOf("$API/v1/me", "$API/healthz"), asked)
+            val hosts = asked.map { (url, _) -> url }
+            assertTrue(hosts[0].startsWith(GOTRUE), "sign-in did not go to GoTrue: ${hosts[0]}")
+            assertEquals(listOf("$API/v1/me", "$API/healthz"), hosts.drop(1))
+        }
+
+    // The step's own acceptance, checked on the client CadenceDebug builds rather than on one a
+    // test builds: /healthz is outside the contract so there is nothing to attach a Bearer to,
+    // and giving `raw` the auth plugin left every other assertion here green.
+    @Test
+    fun healthCarriesNoCredentialAndTheApiCallDoes() =
+        runTest {
+            val debug = wiring()
+
+            debug.signIn("someone@cadence.local", "a-password")
+            debug.me()
+            debug.health()
+
+            val me = asked.single { (url, _) -> url.endsWith("/v1/me") }
+            val health = asked.single { (url, _) -> url.endsWith("/healthz") }
+
+            assertEquals("Bearer an-access-token", me.second)
+            assertEquals(null, health.second, "the health probe carried a credential")
+        }
+
+    // What reaches the screen on a refusal is the exception's class. Its message is not safe to
+    // print: kotlinx.serialization appends the input it could not decode, and on this path that
+    // input is GoTrue's token response.
+    @Test
+    fun aRefusedSignInReportsAClassAndNotAMessage() =
+        runTest {
+            val debug = wiring(answer = { respondError(HttpStatusCode.BadRequest) })
+
+            val outcome = debug.signIn("someone@cadence.local", "the-wrong-password")
+
+            val refused = assertIs<SignIn.Refused>(outcome)
+            assertTrue(" " !in refused.why, "a message reached the screen: ${refused.why}")
         }
 
     // Two stores and not one, checked where they are actually handed out. The blob is written
@@ -68,7 +117,7 @@ class CadenceDebugTest {
     fun theSessionAndTheVerifierGetDifferentStores() {
         val handed = mutableMapOf<String, Settings>()
 
-        wiring { name -> handed.getOrPut(name) { MapSettings() } }
+        wiring(stores = { name -> handed.getOrPut(name) { MapSettings() } })
 
         assertEquals(setOf(SESSION_STORE, PKCE_STORE), handed.keys)
         assertTrue(handed[SESSION_STORE] !== handed[PKCE_STORE])

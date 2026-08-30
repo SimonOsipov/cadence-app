@@ -50,10 +50,10 @@ class CadenceAuthAndroidTest {
 
             // Read back through secureSettings, which is the claim: the manager and the store
             // under the session's name are one. What this does **not** show is the bytes
-            // crossing the vault — measured, Robolectric has no AndroidKeyStore, so the real
-            // key fails, AndroidVault answers Unavailable and VaultSettings holds the write in
-            // memory. Asserting a file here fails on a correct implementation. The crossing is
-            // AndroidVaultTest's, which supplies its own key through the vault's seam.
+            // crossing the vault — measured, Robolectric has no AndroidKeyStore, so the key is
+            // never issued, `write` refuses, and VaultSettings keeps the value in memory with
+            // `writable = false`. Asserting a file here fails on a correct implementation. The
+            // crossing is AndroidVaultTest's, which supplies its own key through the vault seam.
             assertTrue(
                 secureSettings(SESSION_STORE).keys.isNotEmpty(),
                 "the manager and the session store are not the same store",
@@ -68,7 +68,7 @@ class CadenceAuthAndroidTest {
     @Test
     fun refreshingWithNoSessionAnswersNothingRatherThanThrowing() =
         runTest {
-            val tokens = cadenceAuth(url = GOTRUE) { MapSettings() }.sessionTokens()
+            val tokens = cadenceAuth(url = GOTRUE, stores = { MapSettings() }).sessionTokens()
 
             assertNull(tokens.refreshed())
         }
@@ -79,7 +79,7 @@ class CadenceAuthAndroidTest {
     @Test
     fun aFreshInstallHandsTheTransportNothing() =
         runTest {
-            val tokens = cadenceAuth(url = GOTRUE) { MapSettings() }.sessionTokens()
+            val tokens = cadenceAuth(url = GOTRUE, stores = { MapSettings() }).sessionTokens()
 
             assertNull(tokens.current())
         }
