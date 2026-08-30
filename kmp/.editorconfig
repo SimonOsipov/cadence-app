@@ -20,3 +20,11 @@ ktlint_standard_chain-method-continuation = disabled
 
 [*.{yml,yaml,json}]
 indent_size = 2
+
+# The generated client. ktlint is switched off for it rather than filtered in Gradle, because
+# this is the mechanism ktlint itself reads and it applies to every entry point — the gate, the
+# IDE and a hook alike. Measured: 1868 findings against files whose own header says «Do not edit
+# this file manually», and formatting them would be undone by the next regeneration, which
+# openApiDrift then fails on.
+[**/src/commonMain/generated/app/cadence/shared/api/**.kt]
+ktlint = disabled

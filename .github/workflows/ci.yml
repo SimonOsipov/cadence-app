@@ -72,8 +72,12 @@ jobs:
           command -v shellcheck >/dev/null 2>&1 || {
             sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           }
-          shellcheck --version
-          shellcheck -x scripts/gate/*.sh scripts/ralph/*.sh
+          # The same script all.sh runs, so the file set and the flags cannot drift apart.
+          # The tool itself is not pinned — README records shellcheck as «any» and the runner
+          # ships what it ships — so a version bump can still be locally green and red here.
+          # Named rather than closed: pinning it is the deploy block's kind of work, and
+          # golangci-lint and XcodeGen are the precedents for how.
+          ./scripts/gate/shell.sh
 
       # The stack filter decides which gates run at all, and a wrong answer of
       # false skips a job — which GitHub counts as a satisfied required check.
@@ -195,8 +199,17 @@ jobs:
     needs: changes
     if: needs.changes.outputs.kmp == 'true'
     # macOS runners bill at ten times the Linux rate, which is why the Android
-    # half runs separately on Linux, this job only starts when kmp/ changed, and
-    # the timeout is deliberately tight.
+    # half runs separately on Linux and the timeout is deliberately tight.
+    #
+    # It starts on whatever the kmp filter in changed-stacks.sh answers true for — today
+    # `kmp/`, `api/openapi.json`, three gate scripts and this file, so a comment-only edit
+    # here books a macOS runner.
+    #
+    # The contract is in that filter for the Linux half's sake: openApiDrift runs in
+    # kmp.sh and not here. The macOS job is paid on a contract change for what it does prove — that
+    # the regenerated client still compiles and links for the iOS target, which the
+    # Linux half never builds — and one shared filter is cheaper to keep right than
+    # two that must agree.
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -225,6 +238,9 @@ jobs:
           echo "/tmp/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
 
       - name: iOS tests, project drift check, xcodebuild
+        # TEST_DESTINATION is deliberately not set here. The script's default already names a
+        # device with OS=latest, and repeating the string would put the runner image's device
+        # list in two files that have to agree — override it here on the day they diverge.
         run: ./scripts/gate/ios.sh
 
   web:

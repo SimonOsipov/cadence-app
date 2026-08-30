@@ -23,6 +23,12 @@ ran+=("ruleset")
 "$here/changed-stacks_test.sh"
 ran+=("changed-stacks")
 
+# The shell gate, and it is here because its absence was measured: an unquoted expansion added
+# to kmp.sh passed every stage below and would have failed CI, where shellcheck is a job of its
+# own. A pre-PR command that cannot see a whole CI job is not the pre-PR command.
+"$here/shell.sh"
+ran+=("shell")
+
 "$here/go.sh"
 ran+=("go")
 
@@ -57,9 +63,15 @@ else
 fi
 
 echo
-# Never an unqualified "all green": on a host without Xcode the majority of the
-# KMP tests — 293 of 537, every Compose UI test there is — did not run, and
-# without Docker neither did the RLS invariants.
+# Never an unqualified "all green": on a host without Xcode most of the KMP tests do not
+# run, and without Docker neither do the RLS invariants.
+#
+# Counted 2026-08-30 by running each suite: 395 run here (383 in :shared, 12 in
+# :debugTools), and 869 do not — composeApp's 494 Compose UI tests, :shared's 367 on the
+# simulator target, and the 8 XCTest cases that need an app bundle. The figures this line
+# carried before, 293 of 537, were made false by the branch that added :debugTools and the
+# Keychain suite; they are here rather than in kmp.sh because this is the script that
+# decides what to claim.
 if [ ${#skipped[@]} -eq 0 ]; then
     echo "gates green: ${ran[*]}"
 else

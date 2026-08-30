@@ -23,6 +23,62 @@ fi
 echo "==> kotlin tests on the iOS simulator target"
 ./gradlew :shared:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test
 
+# Kotlin/Native links what is reachable, so this measures reachability itself — the Android grep
+# can only measure that the module is on the variant, a debug APK being unminified.
+#
+# Counted 2026-08-30 by running it: 41 for the screen and 5 for the entry point with the property,
+# 0 and 0 without, and the ObjC header carries the entry point only with it — which is what makes
+# the screen callable from Swift rather than merely present.
+echo "==> the debug screen is in the framework only behind -Pcadence.debugTools"
+framework=composeApp/build/bin/iosSimulatorArm64/debugFramework/ComposeApp.framework
+
+# Counted, never `grep -q` under pipefail — the trap is recorded in changed-stacks.sh. Measured on
+# the framework this file greps: the marker is there 41 times and `grep -q` answered no.
+# Read from the Kotlin constant rather than spelled here — kmp.sh does the same, and a second
+# spelling is a check that goes quiet the day the class is renamed. Resolved at top level, not
+# inside $( … ) — see changed-stacks.sh.
+marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
+    debugTools/src/commonMain/kotlin/app/cadence/debug/DebugScreen.kt)
+entry=$(sed -n 's/^fun \([A-Za-z]*\)().*UIViewController.*/\1/p' \
+    composeApp/src/debugToolsIosMain/kotlin/app/cadence/DebugViewController.kt)
+if [ -z "$marker" ] || [ -z "$entry" ]; then
+    echo "the screen or its entry point could not be read from the source — this greps nothing" >&2
+    exit 1
+fi
+
+screen_hits() {
+    local found
+    found=$(strings -a "$framework/ComposeApp" | grep -c "$marker" || true)
+    echo "$found"
+}
+
+./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --rerun-tasks
+if [ "$(screen_hits)" -ne 0 ]; then
+    echo "the debug screen is in a framework built without -Pcadence.debugTools" >&2
+    exit 1
+fi
+
+./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --rerun-tasks -Pcadence.debugTools
+if [ "$(screen_hits)" -eq 0 ]; then
+    echo "the debug screen is missing from a framework built with -Pcadence.debugTools" >&2
+    exit 1
+fi
+# `grep -c` on a missing file prints nothing, and `[ "" -eq 0 ]` is a usage error the `if` reads
+# as false, so the header's existence is asserted first.
+header=$framework/Headers/ComposeApp.h
+[ -f "$header" ] || {
+    echo "the framework header is not there — nothing was grepped" >&2
+    exit 1
+}
+entry_hits=$(grep -c "$entry" "$header" || true)
+if [ "${entry_hits:-0}" -eq 0 ]; then
+    echo "$entry is not in the framework header — Swift cannot reach the screen" >&2
+    exit 1
+fi
+
+# Left as the property found it, so the xcodebuild below measures the shipping shape.
+./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --rerun-tasks
+
 echo "==> xcodegen (the .xcodeproj is generated from project.yml)"
 # The drift check compares the regenerated project byte for byte, so it is only
 # meaningful with the XcodeGen version the committed project was written by:
@@ -60,5 +116,23 @@ xcodebuild \
     -destination "$DESTINATION" \
     ARCHS=arm64 \
     build
+
+# The XCTest bundle exists because a keychain needs an app identity; KeychainReachabilityTest
+# pins the refusal that proves it.
+#
+# A named device with OS=latest, because a test run boots a simulator and the generic
+# destination above names none to boot. This default is the only place the device is written:
+# CI takes it as it stands and overrides the variable on the day the runner image stops
+# carrying this one.
+TEST_DESTINATION=${TEST_DESTINATION:-platform=iOS Simulator,name=iPhone 17,OS=latest}
+
+echo "==> xcodebuild test (the Keychain suite, hosted by the app)"
+xcodebuild \
+    -project iosApp/iosApp.xcodeproj \
+    -scheme iosApp \
+    -configuration Debug \
+    -destination "$TEST_DESTINATION" \
+    ARCHS=arm64 \
+    test
 
 echo "ios gate: green"

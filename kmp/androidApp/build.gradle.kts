@@ -6,7 +6,17 @@ plugins {
 }
 
 dependencies {
+    // Declared rather than inherited: this module calls installSecureStorage directly, and it
+    // compiles today only because :composeApp exports :shared for the iOS framework's header.
+    // Undoing that export is an iOS decision, and it would break this build with nothing about
+    // Android in the diff.
+    implementation(project(":shared"))
     implementation(project(":composeApp"))
+    // debugImplementation and not implementation: this is where the variants are real, and it
+    // is the only reason :debugTools is a module rather than a source set in composeApp, which
+    // has none — a `debugMain` directory there is ignored silently, so the screen would have
+    // ended up nowhere while its acceptance passed vacuously. The gate greps both artifacts.
+    debugImplementation(project(":debugTools"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.runtime)
 }
@@ -40,3 +50,21 @@ kotlin {
         jvmTarget = JvmTarget.JVM_17
     }
 }
+
+// The release cannot be built against the dev address, on the artifact producers rather than
+// on the lifecycle aliases: `assembleRelease` carried the dependency and `packageRelease` —
+// the task that actually writes build/outputs/apk/release — did not, so the rule had a bypass
+// one command wide. Measured with --dry-run on both.
+tasks
+    .matching {
+        it.name in
+            setOf(
+                "assembleRelease",
+                "bundleRelease",
+                "packageRelease",
+                "packageReleaseBundle",
+                "signReleaseBundle",
+            )
+    }.configureEach {
+        dependsOn(":shared:refuseDevAddressInRelease")
+    }
