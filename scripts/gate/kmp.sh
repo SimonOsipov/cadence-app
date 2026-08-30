@@ -142,7 +142,34 @@ release_apk=$(find androidApp/build/outputs/apk/release -name '*.apk' | head -1)
 
 count_marker "$debug_apk"
 if [ "$marker_hits" -eq 0 ]; then
-    echo "$marker is absent from the debug artifact — the module is wired to nothing" >&2
+    echo "$marker is absent from the debug artifact — the module is not on the variant" >&2
+    exit 1
+fi
+
+# Inclusion is not reachability, and on Android the grep above measures only the first. A debug
+# build is not minified, so `debugImplementation` ships the whole module whether or not anything
+# calls it: with the composition root deleted the marker still answered 8 in the dex. What makes
+# the screen reachable here is the manifest entry, so that is what is checked.
+#
+# The same defect is loud on Apple and silent here — Kotlin/Native drops what nothing calls, so
+# `strings` on the framework answered 0 for exactly this. ios.sh owns that half.
+# The task directory under merged_manifests carries the AGP task name, so the path is found
+# rather than spelled. Found empty means the build did not produce one, which is not a pass.
+root_entry='android:name="app.cadence.android.DebugActivity"'
+debug_manifests=$(find androidApp/build/intermediates/merged_manifests/debug -name AndroidManifest.xml)
+release_manifests=$(find androidApp/build/intermediates/merged_manifests/release -name AndroidManifest.xml)
+[ -n "$debug_manifests" ] && [ -n "$release_manifests" ] || {
+    echo "the merged manifests to grep are not there" >&2
+    exit 1
+}
+# shellcheck disable=SC2086  # deliberately word-split: find answered one path per line
+if ! grep -q "$root_entry" $debug_manifests; then
+    echo "the debug variant has no DebugActivity — the screen is compiled and unreachable" >&2
+    exit 1
+fi
+# shellcheck disable=SC2086
+if grep -q "$root_entry" $release_manifests; then
+    echo "DebugActivity is in the release manifest" >&2
     exit 1
 fi
 count_marker "$release_apk"
