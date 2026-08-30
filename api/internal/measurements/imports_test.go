@@ -81,8 +81,9 @@ var (
 	// the overlay's choice of position. No clock, no query, no request.
 	arithmetic = []string{"types.go", "parse.go", "meta.go", "window.go", "series.go", "overlay.go"}
 	// Everything that is deliberately not it. Named for what it is rather than «transport»,
-	// which the reads and the write of step 6 will not be either.
-	notTheArithmetic = []string{"routes.go", "doc.go"}
+	// which the reads and the write of step 6 are not either: they take a transaction and
+	// know nothing of HTTP.
+	notTheArithmetic = []string{"routes.go", "doc.go", "read.go", "write.go"}
 )
 
 func TestEveryFileInThePackageIsClassified(t *testing.T) {

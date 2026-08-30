@@ -35,3 +35,38 @@ func Meta(m Metric) (MetricMeta, bool) {
 
 	return MetricMeta{}, false
 }
+
+// Bounds is what a reading of the metric may plausibly be, or false for a metric off the set.
+//
+// 000025 constrains `value` to being finite and nothing more, and names this module as where
+// the per-metric range belongs, so this is the second half of that decision rather than a
+// second definition of it.
+//
+// The numbers have no canonical source: neither §03 nor the architecture overview gives one.
+// The frozen prototype's `min`/`max` (mobile/src/features/body/data.ts) are not it — read at
+// their call site they are the travel of a stepper in the add sheet, cut for the one seeded
+// patient that screen draws, and its weight range of 80–140 would refuse a patient of 70. So
+// these are chosen here, wide enough that no living patient is refused and narrow enough that
+// a slipped decimal point is. Sleep's are the scale its own unit names.
+func Bounds(m Metric) (Bound, bool) {
+	switch m {
+	case MetricWeight:
+		return Bound{Low: 20, High: 400}, true
+	case MetricHRV:
+		return Bound{Low: 1, High: 400}, true
+	case MetricRHR:
+		return Bound{Low: 20, High: 250}, true
+	case MetricSleep:
+		return Bound{Low: 0, High: 100}, true
+	case MetricBodyFat:
+		return Bound{Low: 1, High: 75}, true
+	case MetricWaist:
+		return Bound{Low: 30, High: 250}, true
+	case MetricHip:
+		return Bound{Low: 30, High: 250}, true
+	case MetricChest:
+		return Bound{Low: 30, High: 250}, true
+	}
+
+	return Bound{}, false
+}

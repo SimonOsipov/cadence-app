@@ -1,6 +1,7 @@
 package measurements
 
 import (
+	"math"
 	"slices"
 	"testing"
 )
@@ -103,5 +104,69 @@ func TestEachMetricPointsTheWayItsSourceDoes(t *testing.T) {
 		if meta, _ := Meta(metric); meta.Direction != want {
 			t.Errorf("%q points %q, not %q", metric, meta.Direction, want)
 		}
+	}
+}
+
+// The eight intervals written out, and the set of metrics carrying one reconciled against
+// Metrics(): a metric absent from the table below would otherwise be written unbounded, and a
+// bound for a metric off the set is a row nothing reads. Where the numbers come from — and,
+// more to the point, where they deliberately do not — is recorded beside them in meta.go.
+func TestEveryMetricCarriesThePlausibleBoundsItWasGiven(t *testing.T) {
+	want := map[Metric]Bound{
+		MetricWeight:  {Low: 20, High: 400},
+		MetricHRV:     {Low: 1, High: 400},
+		MetricRHR:     {Low: 20, High: 250},
+		MetricSleep:   {Low: 0, High: 100},
+		MetricBodyFat: {Low: 1, High: 75},
+		MetricWaist:   {Low: 30, High: 250},
+		MetricHip:     {Low: 30, High: 250},
+		MetricChest:   {Low: 30, High: 250},
+	}
+
+	for _, metric := range Metrics() {
+		bound, ok := Bounds(metric)
+		if !ok {
+			t.Errorf("Bounds(%q) has no row", metric)
+
+			continue
+		}
+		if bound != want[metric] {
+			t.Errorf("Bounds(%q) is %+v, want %+v", metric, bound, want[metric])
+		}
+		delete(want, metric)
+	}
+	for metric := range want {
+		t.Errorf("%q carries bounds and is not a metric", metric)
+	}
+
+	if _, ok := Bounds("thigh"); ok {
+		t.Error("Bounds answered for a metric off the set")
+	}
+}
+
+// Both edges are inside, and NaN is not: a comparison rewritten with `>` and `<` refuses a
+// reading the clinic calls ordinary, and one written as `!(value < Low || value > High)` admits
+// what no column will store.
+func TestABoundIsClosedAtBothEndsAndRefusesWhatIsNotANumber(t *testing.T) {
+	bound := Bound{Low: 20, High: 400}
+
+	for _, c := range []struct {
+		name  string
+		value float64
+		want  bool
+	}{
+		{"the lower edge", 20, true},
+		{"the upper edge", 400, true},
+		{"inside", 110.4, true},
+		{"a hair under", 19.9, false},
+		{"a hair over", 400.1, false},
+		{"a slipped decimal point", 1104, false},
+		{"not a number", math.NaN(), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := bound.Contains(c.value); got != c.want {
+				t.Errorf("Contains(%v) is %v", c.value, got)
+			}
+		})
 	}
 }

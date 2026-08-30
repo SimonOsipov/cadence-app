@@ -43,6 +43,17 @@ type Threshold struct {
 	Value float64
 }
 
+// Bound is the interval a hand-typed reading has to fall inside. It refuses a typo — 1104 kg
+// for 110,4 — and not a reading the clinic would worry about, which is what Threshold is for.
+type Bound struct {
+	Low  float64
+	High float64
+}
+
+// Contains is closed at both ends, and false for a value that is not a number: NaN fails both
+// comparisons, and a NaN reaching the column would be refused by 000025 as a 500.
+func (b Bound) Contains(value float64) bool { return value >= b.Low && value <= b.High }
+
 // MetricMeta is what travels beside the points: the unit the readings are in, the way the
 // metric has to move, and the bound where the clinic has one. Label, decimal places and accent
 // are rendering and stay on the surface.
