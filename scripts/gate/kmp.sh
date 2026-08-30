@@ -141,10 +141,10 @@ count_in() {
 
 debug_apk=$(find androidApp/build/outputs/apk/debug -name '*.apk' | head -1)
 release_apk=$(find androidApp/build/outputs/apk/release -name '*.apk' | head -1)
-[ -n "$debug_apk" ] && [ -n "$release_apk" ] || {
+if [ -z "$debug_apk" ] || [ -z "$release_apk" ]; then
     echo "the artifacts to grep are not there" >&2
     exit 1
-}
+fi
 
 count_in "$debug_apk" "$marker"
 if [ "$marker_hits" -eq 0 ]; then
@@ -164,10 +164,10 @@ fi
 root_entry='android:name="app.cadence.android.DebugActivity"'
 debug_manifests=$(find androidApp/build/intermediates/merged_manifests/debug -name AndroidManifest.xml)
 release_manifests=$(find androidApp/build/intermediates/merged_manifests/release -name AndroidManifest.xml)
-[ -n "$debug_manifests" ] && [ -n "$release_manifests" ] || {
+if [ -z "$debug_manifests" ] || [ -z "$release_manifests" ]; then
     echo "the merged manifests to grep are not there" >&2
     exit 1
-}
+fi
 # shellcheck disable=SC2086  # deliberately word-split: find answered one path per line
 if ! grep -q "$root_entry" $debug_manifests; then
     echo "the debug variant has no DebugActivity — the screen is compiled and unreachable" >&2

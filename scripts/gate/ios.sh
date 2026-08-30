@@ -41,10 +41,10 @@ marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
     debugTools/src/commonMain/kotlin/app/cadence/debug/DebugScreen.kt)
 entry=$(sed -n 's/^fun \([A-Za-z]*\)().*UIViewController.*/\1/p' \
     composeApp/src/debugToolsIosMain/kotlin/app/cadence/DebugViewController.kt)
-[ -n "$marker" ] && [ -n "$entry" ] || {
+if [ -z "$marker" ] || [ -z "$entry" ]; then
     echo "the screen or its entry point could not be read from the source — this greps nothing" >&2
     exit 1
-}
+fi
 
 screen_hits() {
     local found
