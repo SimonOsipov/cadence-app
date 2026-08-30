@@ -168,9 +168,18 @@ openApiGenerate {
     )
 }
 
+@Suppress("UNCHECKED_CAST")
+val swiftRuntimeFor = rootProject.extra["swiftRuntimeFor"] as (String) -> String
+
 kotlin {
-    iosArm64()
-    iosSimulatorArm64()
+    listOf(
+        iosArm64() to "iphoneos",
+        iosSimulatorArm64() to "iphonesimulator",
+    ).forEach { (target, sdk) ->
+        target.binaries.all {
+            linkerOpts("-L${swiftRuntimeFor(sdk)}")
+        }
+    }
 
     android {
         namespace = "app.cadence.shared"
@@ -207,8 +216,17 @@ kotlin {
             api(libs.multiplatform.settings)
             api(libs.ktor.client.core)
             implementation(libs.ktor.client.auth)
+            api(libs.supabase.auth)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
+        }
+        androidMain.dependencies {
+            // The platform engines, one per target. Until now the module declared none, so a
+            // client built here failed at class initialisation rather than at a call.
+            implementation(libs.ktor.client.okhttp)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
         getByName("androidHostTest").dependencies {
             implementation(libs.robolectric)

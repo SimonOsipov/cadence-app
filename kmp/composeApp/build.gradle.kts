@@ -12,9 +12,14 @@ kotlin {
     // The iOS app links this framework; iosApp/project.yml points its search
     // paths at the output of embedAndSignAppleFrameworkForXcode.
     listOf(
-        iosArm64(),
-        iosSimulatorArm64(),
-    ).forEach { iosTarget ->
+        iosArm64() to "iphoneos",
+        iosSimulatorArm64() to "iphonesimulator",
+    ).forEach { (iosTarget, sdk) ->
+        @Suppress("UNCHECKED_CAST")
+        val swiftRuntimeFor = rootProject.extra["swiftRuntimeFor"] as (String) -> String
+        iosTarget.binaries.all {
+            linkerOpts("-L${swiftRuntimeFor(sdk)}")
+        }
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true

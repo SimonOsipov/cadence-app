@@ -35,6 +35,10 @@ robolectric = "4.16"
 # match what its build template pins, or the client and the app link two of them.
 openapi-generator = "7.24.0"
 ktor = "3.5.1"
+# The client half of an already approved choice (proposal: api-openapi-code-first). It brings a
+# third party onto the authentication path of a medical app and covers three milestones' worth
+# of work in return; substituting its plaintext session storage is the condition of taking it.
+supabase = "3.7.0"
 
 android-minSdk = "28"
 android-targetSdk = "36"
@@ -62,6 +66,7 @@ ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
 ktor-client-auth = { module = "io.ktor:ktor-client-auth", version.ref = "ktor" }
+supabase-auth = { module = "io.github.jan-tennert.supabase:auth-kt", version.ref = "supabase" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 
