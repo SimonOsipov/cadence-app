@@ -29,15 +29,10 @@ private const val GOTRUE = "http://localhost:9999"
  */
 @RunWith(RobolectricTestRunner::class)
 class CadenceAuthAndroidTest {
-    // The default nobody passes, and therefore the one nothing measured: every other test hands
-    // cadenceAuth a MapSettings, so the production path — ::secureSettings, the Keystore-backed
-    // store from step 1 — was exercised by no test on either platform. It needs a runtime, which
-    // is why it lives here.
-    //
-    // Asked through the seam and not by inspecting it: a session saved through the module's own
-    // manager has to come back out of the secure store under the session store's name. A default
-    // pointed anywhere else — the vendor's plaintext SharedPreferences among them — leaves that
-    // store empty while every other assertion in this file still passes.
+    // Every other test hands cadenceAuth a MapSettings, so ::secureSettings — the production
+    // default — was exercised by nothing on either platform. Asked through the seam rather than
+    // by inspection: a default pointed anywhere else, the vendor's plaintext SharedPreferences
+    // among them, leaves that store empty while every other assertion in this file passes.
     @Test
     fun theProductionDefaultWritesThroughTheSecureStore() =
         runTest {

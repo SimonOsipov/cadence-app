@@ -23,15 +23,12 @@ fi
 echo "==> kotlin tests on the iOS simulator target"
 ./gradlew :shared:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test
 
-# The Apple half of the debug-screen acceptance, and the half Android's cannot cover. Kotlin/
-# Native links what is reachable, so this measures reachability directly: with the property the
-# framework carries the screen and its composition root, without it neither is in the binary.
-# The equivalent Android grep measures only that the module is on the variant — a debug APK is
-# not minified and ships the module whether or not anything calls it.
+# Kotlin/Native links what is reachable, so this measures reachability itself — the Android grep
+# can only measure that the module is on the variant, a debug APK being unminified.
 #
-# Counted 2026-08-30 by running it: 41 for the screen and 5 for the entry point with the
-# property, 0 and 0 without, and the ObjC header carries the entry point only with it — which is
-# what makes the screen callable from Swift rather than merely present.
+# Counted 2026-08-30 by running it: 41 for the screen and 5 for the entry point with the property,
+# 0 and 0 without, and the ObjC header carries the entry point only with it — which is what makes
+# the screen callable from Swift rather than merely present.
 echo "==> the debug screen is in the framework only behind -Pcadence.debugTools"
 framework=composeApp/build/bin/iosSimulatorArm64/debugFramework/ComposeApp.framework
 
