@@ -56,6 +56,9 @@ check "kmp source"                      true  kmp     "kmp/shared/src/Foo.kt"
 # reach the job that runs openApiDrift — the one change class that gate exists to catch.
 check "the API's contract"              true  kmp     "api/openapi.json"
 check "other go"                        false kmp     "api/internal/identity/roster.go"
+# The trigger the macOS job's own comment now names, and the one with the highest bill: a
+# workflow edit books a ten-times-Linux runner, so it is worth a case rather than a reading.
+check "the workflow"                    true  kmp     ".github/workflows/ci.yml"
 check "a ruleset edit reaches the gate" true  scripts ".github/rulesets/main.json"
 # The gate scripts themselves, and the mutant this closes is the sharp one: drop
 # `scripts/` from that pattern and a pull request touching only scripts/ skips the

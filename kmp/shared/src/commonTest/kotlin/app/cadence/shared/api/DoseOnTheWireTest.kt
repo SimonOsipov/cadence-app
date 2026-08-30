@@ -33,7 +33,6 @@ class DoseOnTheWireTest {
     // unit importing it — measured with xcrun clang -fsyntax-only against the linked framework.
     // Warnings only; Xcode carries no -Werror. `x-enum-varnames` in the schema would buy ASCII
     // names at the same wire values, and that is the schema's decision rather than this file's.
-
     @Test
     fun theContractAdmitsExactlyTheseTwoUnits() {
         assertEquals(listOf("мг", "мкг"), DoseBody.Unit.entries.map { it.value })

@@ -60,6 +60,17 @@ fi
 echo "==> the client matches the contract"
 ./gradlew :shared:openApiDrift :shared:ktorAlignment
 
+# The address list the release refusal holds, run rather than read. It was read twice and read
+# wrong twice — a case-sensitive alternative admitted LOCALHOST, and a later one admitted
+# Docker's own bridge — and until this ran here the only evidence for it was one by-hand pass.
+# One of each direction is enough to catch the next narrowing.
+echo "==> a release refuses an address that is not the product's"
+if ./gradlew -q :shared:refuseDevAddressInRelease -Pcadence.apiBase=https://172.17.0.1:8080 >/dev/null 2>&1; then
+    echo "the release refusal admitted a private address" >&2
+    exit 1
+fi
+./gradlew -q :shared:refuseDevAddressInRelease -Pcadence.apiBase=https://api.cadence.ru
+
 echo "==> assemble"
 ./gradlew :androidApp:assembleDebug
 

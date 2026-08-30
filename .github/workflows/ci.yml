@@ -203,9 +203,10 @@ jobs:
     #
     # It starts on whatever the kmp filter in changed-stacks.sh answers true for — today
     # `kmp/`, `api/openapi.json`, three gate scripts and this file, so a comment-only edit
-    # here books a macOS runner. The contract is
-    # in that filter for the Linux half's sake: openApiDrift runs in kmp.sh and not
-    # here. The macOS job is paid on a contract change for what it does prove — that
+    # here books a macOS runner.
+    #
+    # The contract is in that filter for the Linux half's sake: openApiDrift runs in
+    # kmp.sh and not here. The macOS job is paid on a contract change for what it does prove — that
     # the regenerated client still compiles and links for the iOS target, which the
     # Linux half never builds — and one shared filter is cheaper to keep right than
     # two that must agree.
