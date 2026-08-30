@@ -46,6 +46,15 @@ kotlin {
         commonMain.dependencies {
             // api rather than implementation: export above requires it.
             api(project(":shared"))
+            // The iOS half of what :androidApp does with debugImplementation. Apple has no
+            // variants here, so the switch is a build property: absent, the module is not on
+            // the compile path at all and the framework cannot carry the screen. Android's
+            // half is enforced by grepping the artifact; this half is enforced by the same
+            // grep the day an iOS release artifact exists — which is the deploy block's work,
+            // and is named as owed rather than claimed.
+            if (providers.gradleProperty("cadence.debugTools").isPresent) {
+                implementation(project(":debugTools"))
+            }
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
