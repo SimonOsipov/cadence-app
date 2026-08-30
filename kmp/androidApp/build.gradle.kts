@@ -12,6 +12,11 @@ dependencies {
     // Android in the diff.
     implementation(project(":shared"))
     implementation(project(":composeApp"))
+    // debugImplementation and not implementation: this is where the variants are real, and it
+    // is the only reason :debugTools is a module rather than a source set in composeApp, which
+    // has none — a `debugMain` directory there is ignored silently, so the screen would have
+    // ended up nowhere while its acceptance passed vacuously. The gate greps both artifacts.
+    debugImplementation(project(":debugTools"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.runtime)
 }

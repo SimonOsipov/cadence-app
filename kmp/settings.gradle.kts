@@ -39,3 +39,9 @@ rootProject.name = "cadence"
 include(":shared")
 include(":composeApp")
 include(":androidApp")
+
+// The debug screen, and a module rather than a source set because composeApp has neither
+// buildTypes nor variants — a `debugMain` directory there is ignored silently, so the screen
+// would have ended up nowhere while its acceptance passed vacuously. Android wires it in with
+// debugImplementation from :androidApp, where variants are real.
+include(":debugTools")

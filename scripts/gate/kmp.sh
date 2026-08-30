@@ -74,6 +74,46 @@ fi
 echo "==> assemble"
 ./gradlew :androidApp:assembleDebug
 
+# The debug screen is in the debug artifact and not in the release one, checked by grepping the
+# artifacts themselves. The spec calls this the only check that holds regardless of the
+# mechanism, and it is the one that would have caught a `debugMain` directory Gradle ignored
+# silently — the reason :debugTools is a module at all.
+#
+# The release build is paid for here rather than assumed: measured, the marker is in
+# classes12.dex of the debug APK nineteen times and in none of the release APK's three. An
+# address is passed because a release against the dev one is refused, which is another gate.
+echo "==> the debug screen ships in debug and not in release"
+./gradlew :androidApp:assembleRelease -Pcadence.apiBase=https://api.cadence.example
+
+marker=CadenceDebugScreen
+hits_in() {
+    local apk=$1 total=0
+    local work
+    work=$(mktemp -d)
+    unzip -q -o "$apk" 'classes*.dex' -d "$work"
+    for dex in "$work"/*.dex; do
+        total=$((total + $(strings "$dex" | grep -c "$marker")))
+    done
+    rm -rf "$work"
+    echo "$total"
+}
+
+debug_apk=$(find androidApp/build/outputs/apk/debug -name '*.apk' | head -1)
+release_apk=$(find androidApp/build/outputs/apk/release -name '*.apk' | head -1)
+[ -n "$debug_apk" ] && [ -n "$release_apk" ] || {
+    echo "the artifacts to grep are not there" >&2
+    exit 1
+}
+
+if [ "$(hits_in "$debug_apk")" -eq 0 ]; then
+    echo "$marker is absent from the debug artifact — the module is wired to nothing" >&2
+    exit 1
+fi
+if [ "$(hits_in "$release_apk")" -ne 0 ]; then
+    echo "$marker is in the release artifact" >&2
+    exit 1
+fi
+
 echo
 echo "kmp gate: green — :shared only. composeApp's Compose UI tests did NOT run;"
 echo "                 they need ios.sh and a macOS host with Xcode."
