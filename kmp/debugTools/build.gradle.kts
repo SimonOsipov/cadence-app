@@ -8,7 +8,7 @@ plugins {
 }
 
 @Suppress("UNCHECKED_CAST")
-val swiftRuntimeFor = rootProject.extra["swiftRuntimeFor"] as (String) -> String
+val swiftRuntimeFor = rootProject.extra["swiftRuntimeFor"] as (String) -> List<String>
 
 kotlin {
     listOf(
@@ -16,7 +16,7 @@ kotlin {
         iosSimulatorArm64() to "iphonesimulator",
     ).forEach { (target, sdk) ->
         target.binaries.all {
-            linkerOpts("-L${swiftRuntimeFor(sdk)}")
+            linkerOpts(swiftRuntimeFor(sdk))
         }
     }
 

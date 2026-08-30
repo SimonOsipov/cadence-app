@@ -18,24 +18,36 @@ val ktlintPluginId = libs.plugins.ktlint.get().pluginId
 val detektPluginId = libs.plugins.detekt.get().pluginId
 val detektConfig = file("config/detekt.yml")
 
-// Where this machine's Swift runtime actually is.
+// Where this machine's Swift runtime is, and nothing at all where there is no such machine.
 //
 // supabase-kt's PKCE hashing reaches CryptoKit through a Swift-interop cinterop library, and
 // linking it wants libswiftCompatibility*.a. Kotlin/Native emits a search path of
 // `/Applications/Xcode.app/…`, which is a default rather than an answer: on a host whose Xcode
 // is installed under any other name the libraries are there and the linker cannot see them —
 // measured here, where Xcode is `Xcode-26.6.0.app` and the link failed on
-// `__swift_FORCE_LOAD_$_swiftCompatibility56`. Derived from xcode-select so it is right on
-// every host rather than on this one.
-val swiftRuntimeFor: (String) -> String = { sdk ->
-    val developer =
-        providers
-            .exec { commandLine("xcode-select", "-p") }
-            .standardOutput
-            .asText
-            .get()
-            .trim()
-    "$developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$sdk"
+// `__swift_FORCE_LOAD_$_swiftCompatibility56`. Derived from xcode-select so it is right on every
+// Apple host rather than on this one.
+//
+// Guarded on the host, and that guard was measured too: the Apple targets are declared
+// unconditionally, so `binaries.all {}` configures them everywhere — and asking a Linux runner
+// for `xcode-select` failed the configuration of `:shared:compileAndroidMain`, which is to say
+// it would have taken the whole Linux half of the gate down while this machine stayed green.
+// Apple targets cannot be linked off an Apple host anyway, so there is nothing to point at.
+val onAnAppleHost = System.getProperty("os.name").orEmpty().startsWith("Mac")
+
+val swiftRuntimeFor: (String) -> List<String> = { sdk ->
+    if (!onAnAppleHost) {
+        emptyList()
+    } else {
+        val developer =
+            providers
+                .exec { commandLine("xcode-select", "-p") }
+                .standardOutput
+                .asText
+                .get()
+                .trim()
+        listOf("-L$developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$sdk")
+    }
 }
 extra["swiftRuntimeFor"] = swiftRuntimeFor
 

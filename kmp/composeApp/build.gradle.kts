@@ -16,9 +16,9 @@ kotlin {
         iosSimulatorArm64() to "iphonesimulator",
     ).forEach { (iosTarget, sdk) ->
         @Suppress("UNCHECKED_CAST")
-        val swiftRuntimeFor = rootProject.extra["swiftRuntimeFor"] as (String) -> String
+        val swiftRuntimeFor = rootProject.extra["swiftRuntimeFor"] as (String) -> List<String>
         iosTarget.binaries.all {
-            linkerOpts("-L${swiftRuntimeFor(sdk)}")
+            linkerOpts(swiftRuntimeFor(sdk))
         }
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
