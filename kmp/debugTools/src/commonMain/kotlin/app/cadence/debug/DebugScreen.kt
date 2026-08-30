@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -43,12 +44,12 @@ const val DEBUG_SCREEN_MARKER: String = "CadenceDebugScreen"
 fun CadenceDebugScreen(
     probe: suspend () -> ProbeState,
     health: suspend () -> Boolean,
-    signIn: suspend (String, String) -> String?,
+    signIn: suspend (String, String) -> SignIn,
     modifier: Modifier = Modifier,
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var refusal by remember { mutableStateOf<String?>(null) }
+    var attempt by remember { mutableStateOf<SignIn>(SignIn.Untried) }
     var state by remember { mutableStateOf<ProbeState?>(null) }
     var up by remember { mutableStateOf<Boolean?>(null) }
     val scope = rememberCoroutineScope()
@@ -59,7 +60,7 @@ fun CadenceDebugScreen(
 
         Row {
             Button("sign in") {
-                scope.launch { refusal = signIn(email, password) }
+                scope.launch { attempt = signIn(email, password) }
             }
             Button("ask") {
                 scope.launch {
@@ -69,7 +70,14 @@ fun CadenceDebugScreen(
             }
         }
 
-        BasicText("sign-in: " + (refusal ?: "—"))
+        BasicText(
+            "sign-in: " +
+                when (val outcome = attempt) {
+                    SignIn.Untried -> "not tried"
+                    SignIn.Accepted -> "accepted"
+                    is SignIn.Refused -> "refused — ${outcome.why}"
+                },
+        )
         BasicText("healthz: " + (up?.let { if (it) "up" else "no answer" } ?: "…"))
         BasicText(
             "GET /v1/me: " +
@@ -95,13 +103,11 @@ private fun Field(
         BasicTextField(
             value = value,
             onValueChange = onChange,
-            visualTransformation = if (secret) PasswordVisualTransformation() else VisualNone,
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             modifier = Modifier.fillMaxWidth().background(Color(0x11000000)),
         )
     }
 }
-
-private val VisualNone = androidx.compose.ui.text.input.VisualTransformation.None
 
 @Composable
 private fun Button(

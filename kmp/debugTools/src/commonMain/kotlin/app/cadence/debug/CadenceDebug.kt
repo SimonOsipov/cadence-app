@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
  * to un-attach the `Auth` plugin for one call. The engine is shared because neither client owns
  * it — `HttpClient(engine)` does not close an engine it was handed.
  */
+
 class CadenceDebug(
     private val api: String = API_BASE,
     gotrue: String = AUTH_BASE,
@@ -35,22 +36,25 @@ class CadenceDebug(
     private val identity = IdentityApi(api, cadenceHttpClient(engine, supabase.sessionTokens()))
     private val raw = HttpClient(engine)
 
-    /** Null where the sign-in went through; otherwise what to put on the screen. */
     @Suppress("TooGenericExceptionCaught")
     suspend fun signIn(
         email: String,
         password: String,
-    ): String? =
+    ): SignIn =
         try {
             supabase.auth.signInWith(Email) {
                 this.email = email
                 this.password = password
             }
-            null
+            SignIn.Accepted
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (refused: Exception) {
-            refused.message ?: "the identity server refused the sign-in"
+            // The exception's class and not its message. kotlinx.serialization appends the input
+            // it could not decode, and on this path that input is GoTrue's token response — so
+            // the one arbitrary string on the screen is the one that could print a token. Session
+            // redacts its own fields for the same reason.
+            SignIn.Refused(refused::class.simpleName ?: "the identity server refused the sign-in")
         }
 
     suspend fun me(): ProbeState = probeMe(identity)

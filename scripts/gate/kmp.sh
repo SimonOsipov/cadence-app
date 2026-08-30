@@ -9,7 +9,12 @@ set -euo pipefail
 cd "$(dirname "$0")/../../kmp"
 
 echo "==> ktlint"
-./gradlew ktlintCheck
+# The property is passed so ktlint sees the Apple composition root at all. Its source directory
+# is registered only with the module it calls — registering it unconditionally would compile a
+# file whose imports are not on the path — so without this flag `DebugViewController.kt` is in no
+# ktlint task: measured, four violations planted in it were reported 0 times without and 4 with.
+# detekt needs no flag; it takes its own path list, which now names both roots.
+./gradlew ktlintCheck -Pcadence.debugTools
 
 echo "==> detekt"
 ./gradlew detekt
@@ -18,7 +23,7 @@ echo "==> detekt"
 # `:debugTools` both declare `withHostTestBuilder {}`, so the unqualified task resolves to both.
 # composeApp declares none, so its tests are not here — they need ios.sh.
 #
-# Counted 2026-08-30 by running it rather than by arithmetic: 382 in `:shared` and 8 in
+# Counted 2026-08-30 by running it rather than by arithmetic: 383 in `:shared` and 8 in
 # `:debugTools`. Two figures elsewhere: 356 of `:shared` again on the iOS simulator target, and
 # composeApp's 494 Compose UI tests, which run under ios.sh on a macOS host and nowhere else.
 #

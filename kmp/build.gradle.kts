@@ -92,6 +92,12 @@ allprojects {
             "src/commonTest/kotlin",
             "src/androidHostTest/kotlin",
             "src/iosTest/kotlin",
+            // The two composition roots for the debug screen. Unlisted, they were unanalysed:
+            // measured, :androidApp's report said «2 number of kt files» while src held three.
+            // detekt ignores a listed path that does not exist, so naming them costs nothing in
+            // the modules that have neither.
+            "src/debug/kotlin",
+            "src/debugToolsIosMain/kotlin",
         )
     }
 }

@@ -36,9 +36,19 @@ framework=composeApp/build/bin/iosSimulatorArm64/debugFramework/ComposeApp.frame
 # exits at the first match, `strings` takes SIGPIPE, and under `set -o pipefail` the pipeline that
 # FOUND the marker reports failure — so the check read «present» as «absent» and could never pass.
 # Measured on the framework this file greps: the marker is there 41 times and `grep -q` answered no.
+# Read from the Kotlin constant rather than spelled here — kmp.sh does the same, and a second
+# spelling is a check that goes quiet the day the class is renamed. Resolved at top level and not
+# inside $( … ): an exit there ends the subshell and the caller reads the empty output as data.
+marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
+    debugTools/src/commonMain/kotlin/app/cadence/debug/DebugScreen.kt)
+[ -n "$marker" ] || {
+    echo "DEBUG_SCREEN_MARKER could not be read from the source — this check greps for nothing" >&2
+    exit 1
+}
+
 screen_hits() {
     local found
-    found=$(strings -a "$framework/ComposeApp" | grep -c CadenceDebugScreen || true)
+    found=$(strings -a "$framework/ComposeApp" | grep -c "$marker" || true)
     echo "$found"
 }
 
@@ -53,7 +63,16 @@ if [ "$(screen_hits)" -eq 0 ]; then
     echo "the debug screen is missing from a framework built with -Pcadence.debugTools" >&2
     exit 1
 fi
-if [ "$(grep -c debugViewController "$framework/Headers/ComposeApp.h" || true)" -eq 0 ]; then
+# Counted the way screen_hits is, and for the same reason: `grep -c` on a missing file prints
+# nothing, and `[ "" -eq 0 ]` is a usage error the `if` reads as false — the check would walk past
+# an absent header. The header's existence is asserted first.
+header=$framework/Headers/ComposeApp.h
+[ -f "$header" ] || {
+    echo "the framework header is not there — nothing was grepped" >&2
+    exit 1
+}
+entry_hits=$(grep -c debugViewController "$header" || true)
+if [ "${entry_hits:-0}" -eq 0 ]; then
     echo "debugViewController is not in the framework header — Swift cannot reach the screen" >&2
     exit 1
 fi

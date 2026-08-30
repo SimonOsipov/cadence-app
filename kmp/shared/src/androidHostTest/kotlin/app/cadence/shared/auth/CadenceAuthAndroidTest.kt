@@ -34,7 +34,7 @@ class CadenceAuthAndroidTest {
     // by inspection: a default pointed anywhere else, the vendor's plaintext SharedPreferences
     // among them, leaves that store empty while every other assertion in this file passes.
     @Test
-    fun theProductionDefaultWritesThroughTheSecureStore() =
+    fun theProductionDefaultIsTheSecureStore() =
         runTest {
             installSecureStorage(RuntimeEnvironment.getApplication())
             val manager = assertNotNull(cadenceAuth(url = GOTRUE).auth.config.sessionManager)
@@ -48,9 +48,15 @@ class CadenceAuthAndroidTest {
                 ),
             )
 
+            // Read back through secureSettings, which is the claim: the manager and the store
+            // under the session's name are one. What this does **not** show is the bytes
+            // crossing the vault — measured, Robolectric has no AndroidKeyStore, so the real
+            // key fails, AndroidVault answers Unavailable and VaultSettings holds the write in
+            // memory. Asserting a file here fails on a correct implementation. The crossing is
+            // AndroidVaultTest's, which supplies its own key through the vault's seam.
             assertTrue(
                 secureSettings(SESSION_STORE).keys.isNotEmpty(),
-                "the session went somewhere other than the secure store",
+                "the manager and the session store are not the same store",
             )
             assertNotNull(manager.loadSession())
         }
