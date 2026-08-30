@@ -58,6 +58,7 @@ var (
 		"occurrence.go",
 		"titration.go",
 		"bands.go",
+		"course.go",
 		"row.go",
 		// The generator's vocabulary hardened at its edge: parse.go turns a string
 		// into a value of a closed set and shape.go refuses a course, and neither

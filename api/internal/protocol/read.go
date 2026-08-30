@@ -22,15 +22,11 @@ import (
 func ActivePlanFor(ctx context.Context, tx pgx.Tx, patient civil.UserID) (Plan, bool, error) {
 	var plan Plan
 
-	err := tx.QueryRow(ctx, `
-		SELECT id::text, patient_id::text, start_date, duration_weeks, status,
-		       created_by::text, notes
+	err := scanCourse(tx.QueryRow(ctx, `
+		SELECT `+courseColumns+`
 		FROM app.protocols
 		WHERE patient_id = $1 AND status = 'active'
-	`, string(patient)).Scan(
-		&plan.Protocol.ID, &plan.Protocol.PatientID, &protocolDate{&plan.Protocol.StartDate},
-		&plan.Protocol.Weeks, &plan.Protocol.Status, &plan.Protocol.CreatedBy, &plan.Protocol.Notes,
-	)
+	`, string(patient)).Scan, &plan.Protocol)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Plan{}, false, nil
 	}
@@ -43,6 +39,63 @@ func ActivePlanFor(ctx context.Context, tx pgx.Tx, patient civil.UserID) (Plan, 
 	}
 
 	return plan, true, nil
+}
+
+// LastPlanFor reads the patient's last course with its items and their phases — the running
+// one if there is one, else the latest by latestCourse's key.
+//
+// Beside ActivePlanFor rather than instead of it: the day's screen is about what is
+// prescribed now and a closed course prescribes nothing, while a trend window is a stretch of
+// calendar and stays on the screen after the course ends. Neither read is the other's filter.
+//
+// Every course of the patient comes back and the key is applied here rather than in an ORDER
+// BY: a patient carries a handful of courses, and a key written in Go is one a test can walk
+// rung by rung without a database. Whole or not at all, for the reason ActivePlanFor is.
+func LastPlanFor(ctx context.Context, tx pgx.Tx, patient civil.UserID) (Plan, bool, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT `+courseColumns+`
+		FROM app.protocols
+		WHERE patient_id = $1
+	`, string(patient))
+	if err != nil {
+		return Plan{}, false, fmt.Errorf("reading the courses of %s: %w", patient, err)
+	}
+	defer rows.Close()
+
+	var courses []Protocol
+	for rows.Next() {
+		var course Protocol
+		if err := scanCourse(rows.Scan, &course); err != nil {
+			return Plan{}, false, fmt.Errorf("reading the courses of %s: %w", patient, err)
+		}
+		courses = append(courses, course)
+	}
+	if err := rows.Err(); err != nil {
+		return Plan{}, false, fmt.Errorf("reading the courses of %s: %w", patient, err)
+	}
+
+	last, ok := latestCourse(courses)
+	if !ok {
+		return Plan{}, false, nil
+	}
+
+	plan := Plan{Protocol: last}
+	if err := readItems(ctx, tx, &plan); err != nil {
+		return Plan{}, false, fmt.Errorf("reading the course of %s: %w", patient, err)
+	}
+
+	return plan, true, nil
+}
+
+// One column list and one scan for both reads: a column added to one of them and forgotten in
+// the other is a field that is zero on one path and set on the other, which is the shape of a
+// key rung that silently stops deciding.
+const courseColumns = `id::text, patient_id::text, start_date, duration_weeks,
+		status, created_by::text, notes, created_at`
+
+func scanCourse(scan func(...any) error, into *Protocol) error {
+	return scan(&into.ID, &into.PatientID, &protocolDate{&into.StartDate},
+		&into.Weeks, &into.Status, &into.CreatedBy, &into.Notes, &into.CreatedAt)
 }
 
 // readItems fills the items and their phases.

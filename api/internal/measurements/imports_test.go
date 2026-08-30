@@ -76,10 +76,10 @@ func TestMeasurementsImportsNoContextButProtocol(t *testing.T) {
 // listed, for the reason protocol's own guard gives: a list is a thing new files are absent
 // from, and absence there means exemption.
 var (
-	// The half that is a function of its arguments: today the closed sets, the parser and
-	// the table of units, directions and thresholds; from step 3 the windows, the series and
-	// the overlay's choice of position. No clock, no query, no request.
-	arithmetic = []string{"types.go", "parse.go", "meta.go"}
+	// The half that is a function of its arguments: the closed sets, the parser, the table
+	// of units, directions and thresholds, and the windows; from step 4 the series and the
+	// overlay's choice of position. No clock, no query, no request.
+	arithmetic = []string{"types.go", "parse.go", "meta.go", "window.go"}
 	// Everything that is deliberately not it. Named for what it is rather than «transport»,
 	// which the reads and the write of step 6 will not be either.
 	notTheArithmetic = []string{"routes.go", "doc.go"}

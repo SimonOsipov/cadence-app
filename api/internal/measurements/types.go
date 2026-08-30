@@ -51,3 +51,19 @@ type MetricMeta struct {
 	Direction Direction
 	Threshold *Threshold
 }
+
+// Window is one of the four spans the trends screen offers. Three are lengths; the fourth is
+// the geometry of a course, so the same calendar day gives it different edges for different
+// patients.
+//
+// The codes are the frozen prototype's: `mobile/src/features/trends/data.ts` keys its series
+// by them and both trends screens name them in their pickers. KMP's TrendWindow is an enum
+// with no wire form of its own, so this is where the string is decided.
+type Window string
+
+const (
+	WindowWeek        Window = "7d"
+	WindowFourWeeks   Window = "4w"
+	WindowThreeMonths Window = "3m"
+	WindowCycle       Window = "cycle"
+)

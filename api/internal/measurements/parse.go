@@ -2,8 +2,10 @@ package measurements
 
 import "slices"
 
-// The two closed sets, each declared once and read by the parser, the meta table and the tests
-// that reconcile them against the schema and against the KMP enum.
+// The three closed sets, each declared once and read by the parser and by the tests. The
+// metrics and the sources are reconciled there against the schema's CHECKs and the KMP enums;
+// the windows are pinned by written-out literals instead, because the codes exist in one place
+// only — the frozen prototype — and this is where they become the server's.
 //
 // The metrics are in enumeration order and deliberately not sorted, which is where they differ
 // from protocol's sets and journal's: the overview of step 4 answers in it, so it is data.
@@ -19,12 +21,20 @@ func Sources() []Source {
 	return []Source{SourceManual, SourceHealthKit, SourceHealthConnect}
 }
 
-// ParseMetric and ParseSource are the seam where a string becomes a member of a set: the
-// transport of steps 7 and 8, and the seed. `(T, bool)` and not an error — the caller knows
-// which field it was reading, and the field's name is the whole of the message.
+// In the order the picker draws them, shortest first, which is the order the prototype's two
+// trends screens list and the order TrendWindow declares.
+func Windows() []Window {
+	return []Window{WindowWeek, WindowFourWeeks, WindowThreeMonths, WindowCycle}
+}
+
+// The seam where a string becomes a member of a set: the transport of steps 7 and 8, and the
+// seed. `(T, bool)` and not an error — the caller knows which field it was reading, and the
+// field's name is the whole of the message.
 func ParseMetric(s string) (Metric, bool) { return parse(s, Metrics()) }
 
 func ParseSource(s string) (Source, bool) { return parse(s, Sources()) }
+
+func ParseWindow(s string) (Window, bool) { return parse(s, Windows()) }
 
 func parse[T ~string](s string, set []T) (T, bool) {
 	if i := slices.Index(set, T(s)); i >= 0 {
