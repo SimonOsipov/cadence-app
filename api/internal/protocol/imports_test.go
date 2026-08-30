@@ -14,6 +14,11 @@ import (
 // is why OccurrencesFor takes a LoggedSlot instead of a dose event, and a cycle here would be
 // a redesign wearing an import statement.
 func TestProtocolDoesNotImportItsCallers(t *testing.T) {
+	// The default build context, and so the //go:build integration files are not read —
+	// unlike the guards measurements and dosing carry. Measured: with the tag, protocol's own
+	// reads_integration_test.go imports dosing and inventory, both on the list below. Whether
+	// an external test package may import a caller is undecided, and deciding it is not the
+	// work of the step that added the entry below.
 	pkg, err := build.ImportDir(".", 0)
 	if err != nil {
 		t.Fatalf("reading the package: %v", err)
@@ -23,6 +28,11 @@ func TestProtocolDoesNotImportItsCallers(t *testing.T) {
 		"github.com/SimonOsipov/cadence-app/api/internal/dosing",
 		"github.com/SimonOsipov/cadence-app/api/internal/inventory",
 		"github.com/SimonOsipov/cadence-app/api/internal/journal",
+		// measurements reads the last course for the cycle window and its titrating
+		// position for the overlay. The counter-need exists and is parked: Today's
+		// WeightKG and WeightSeries are stubbed, and when M6 opens them protocol
+		// declares a fourth consumer-side interface rather than turning this around.
+		"github.com/SimonOsipov/cadence-app/api/internal/measurements",
 	}
 	// XTestImports too: an external test file is part of this package's dependency graph,
 	// and leaving it out would exempt every future one from the check.
