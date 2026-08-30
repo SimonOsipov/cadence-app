@@ -126,6 +126,16 @@ func grantRegistry() map[string][]string {
 		"dose_events/cadence_admin":   crud,
 		"dose_events/cadence_service": {"INSERT", "SELECT"},
 		"dose_events/cadence_owner":   everything,
+
+		// The readings, and the one place a patient holds DELETE. It is at table
+		// level because a verb has no column list; what bounds it is the policy's
+		// predicate, and what makes that predicate meaningful is `source` being
+		// absent from the INSERT list below.
+		"measurements/cadence_patient": {"DELETE", "SELECT"},
+		"measurements/cadence_doctor":  {"SELECT"},
+		"measurements/cadence_admin":   crud,
+		"measurements/cadence_service": {"INSERT", "SELECT"},
+		"measurements/cadence_owner":   everything,
 	}
 
 	// Everybody else holds nothing, stated rather than left out: an absent key
@@ -227,6 +237,13 @@ func columnGrantRegistry() map[string][]string {
 			"mood", "note", "patient_id", "photo_path", "protocol_id", "protocol_item_id",
 			"scheduled_for_date", "scheduled_for_time", "side_effects", "site_code", "vial_id",
 		},
+		// Four columns withheld and each for its own reason: id and created_at are
+		// the row's provenance, external_id belongs to an importer that does not
+		// exist, and source is what the delete policy filters on — with the grant,
+		// a patient could mark their own hand-typed row as imported.
+		"INSERT/measurements/cadence_patient": {
+			"measured_at", "metric", "note", "patient_id", "unit", "value",
+		},
 		"UPDATE/vials/cadence_patient": {
 			"amount_unit", "compound_id", "concentration_label", "disposed_at", "expires_on",
 			"held_back_at", "label_photo_path", "location_ru", "lot", "opened_at", "patient_id",
@@ -308,11 +325,20 @@ func TestTheColumnGrantsAreTheOnesDeclared(t *testing.T) {
 // policyPredicates declares what each policy actually says, so that a policy
 // widened to USING (true) fails here rather than two steps later.
 //
-// Six shapes, and the repetition is the point: a predicate that does not match
-// one of them is either a seventh shape nobody decided on, or one of the six
+// Seven shapes, and the repetition is the point: a predicate that does not match
+// one of them is either an eighth shape nobody decided on, or one of the seven
 // written wrong. Deparsed by Postgres, so the text is canonical rather than the
 // text anybody typed — which is why it is dumped from the catalogue once and
 // then read as a declaration.
+//
+// The seventh arrived with 000026: the first that filters on ownership and on a
+// second column of the row at once — their own row, and one they typed in. It
+// carries a cast the migration does not write, because the deparsed form is what
+// this registry pins.
+//
+// The count is of predicate shapes and not of policy shapes, which data-layer.md
+// numbers separately and where the seventh is compounds' — reusing `true` as its
+// predicate, so it is not a seventh here.
 //
 // The behaviour these predicates produce is proven by the regression suite two
 // steps from here. What this closes is the gap in between: until then, "the
@@ -475,6 +501,19 @@ func policyPredicates() map[string]string {
 			"WHERE ((care_team_assignments.patient_id = dose_events.patient_id) AND " +
 			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
 
+		// The readings. Select and insert are the diary's shape; the delete is the
+		// seventh form — ownership and one more thing.
+		"measurements_admin":      anythingRW,
+		"measurements_own_select": "(patient_id = app.jwt_subject()) | -",
+		"measurements_own_insert": "- | (patient_id = app.jwt_subject())",
+		"measurements_own_manual_delete": "((patient_id = app.jwt_subject()) AND " +
+			"(source = 'manual'::text)) | -",
+		"measurements_service_insert": anyWrite,
+		"measurements_service_read":   anything,
+		"measurements_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
+			"WHERE ((care_team_assignments.patient_id = measurements.patient_id) AND " +
+			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
+
 		"vials_of_my_patients": "(EXISTS ( SELECT FROM app.care_team_assignments " +
 			"WHERE ((care_team_assignments.patient_id = vials.patient_id) AND " +
 			"(care_team_assignments.provider_id = app.jwt_subject())))) | -",
@@ -623,6 +662,13 @@ func policyRegistry() []string {
 		"journal_entries journal_entries_own_update UPDATE {cadence_patient}",
 		"journal_entries journal_entries_service_insert INSERT {cadence_service}",
 		"journal_entries journal_entries_service_read SELECT {cadence_service}",
+		"measurements measurements_admin ALL {cadence_admin}",
+		"measurements measurements_of_my_patients SELECT {cadence_doctor}",
+		"measurements measurements_own_insert INSERT {cadence_patient}",
+		"measurements measurements_own_manual_delete DELETE {cadence_patient}",
+		"measurements measurements_own_select SELECT {cadence_patient}",
+		"measurements measurements_service_insert INSERT {cadence_service}",
+		"measurements measurements_service_read SELECT {cadence_service}",
 		"patient_profiles patient_profiles_admin ALL {cadence_admin}",
 		"patient_profiles patient_profiles_of_my_patients SELECT {cadence_doctor}",
 		"patient_profiles patient_profiles_own_select SELECT {cadence_patient}",

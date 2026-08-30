@@ -62,11 +62,16 @@ func dosingTables() []string {
 	return []string{"dose_events"}
 }
 
+// Biomarkers, body and weight, added by 000025. One table for all eight metrics.
+func measurementsTables() []string {
+	return []string{"measurements"}
+}
+
 // Every table the chain creates, sorted the way the catalogue returns them.
 func appTables() []string {
-	all := append(append(append(append(append([]string{},
+	all := append(append(append(append(append(append([]string{},
 		identityTables()...), protocolTables()...), inventoryTables()...), journalTables()...),
-		dosingTables()...)
+		dosingTables()...), measurementsTables()...)
 	slices.Sort(all)
 	return all
 }
@@ -790,6 +795,20 @@ func identityColumns() map[string][]string {
 			"note text NULL",
 			"photo_path text NULL",
 			"client_request_id text NOT NULL",
+			"created_at timestamp with time zone NOT NULL DEFAULT now()",
+		},
+		// Eight metrics in one table, and the unit is not free of the metric: the
+		// pair is constrained together rather than as two closed sets.
+		"measurements": {
+			"id uuid NOT NULL DEFAULT gen_random_uuid()",
+			"patient_id uuid NOT NULL",
+			"metric text NOT NULL",
+			"value numeric NOT NULL",
+			"unit text NOT NULL",
+			"measured_at timestamp with time zone NOT NULL",
+			"source text NOT NULL DEFAULT 'manual'::text",
+			"external_id text NULL",
+			"note text NULL",
 			"created_at timestamp with time zone NOT NULL DEFAULT now()",
 		},
 		"audit_log": {
