@@ -43,18 +43,27 @@ kotlin {
     }
 
     sourceSets {
+        // The Apple half of what :androidApp does with debugImplementation. Apple has no
+        // variants here, so the switch is a build property: absent, neither the module nor its
+        // call site is on the compile path and the framework cannot carry the screen.
+        //
+        // Hung off iosMain and not commonMain, which is the whole point. A Gradle property is
+        // global to the invocation, so on commonMain `-Pcadence.debugTools` put the screen —
+        // and the sign-in wiring and the dev addresses behind it — into a **release** Android
+        // APK: measured at five occurrences in the dex before this moved. Android's switch is
+        // the variant, and this one now cannot reach it.
+        //
+        // The call site is the acceptance rather than a convenience: Kotlin/Native links what is
+        // reachable, so a screen nothing calls is a screen no `strings` on the binary can find.
+        if (providers.gradleProperty("cadence.debugTools").isPresent) {
+            iosMain.get().kotlin.srcDir("src/debugToolsIosMain/kotlin")
+            iosMain.dependencies {
+                implementation(project(":debugTools"))
+            }
+        }
         commonMain.dependencies {
             // api rather than implementation: export above requires it.
             api(project(":shared"))
-            // The iOS half of what :androidApp does with debugImplementation. Apple has no
-            // variants here, so the switch is a build property: absent, the module is not on
-            // the compile path at all and the framework cannot carry the screen. Android's
-            // half is enforced by grepping the artifact; this half is enforced by the same
-            // grep the day an iOS release artifact exists — which is the deploy block's work,
-            // and is named as owed rather than claimed.
-            if (providers.gradleProperty("cadence.debugTools").isPresent) {
-                implementation(project(":debugTools"))
-            }
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)

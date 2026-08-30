@@ -76,11 +76,18 @@ val openApiDrift by tasks.registering {
 val devApiBase = "http://localhost:8080"
 val apiBase = providers.gradleProperty("cadence.apiBase").orElse(devApiBase)
 
+// GoTrue answers on its own root and on its own port — it is a second service, not a path under
+// the API, which is why it is a second address rather than a suffix of the first.
+val devAuthBase = "http://localhost:9999"
+val authBase = providers.gradleProperty("cadence.authBase").orElse(devAuthBase)
+
 val generateApiConfig by tasks.registering {
     val into = layout.buildDirectory.dir("generated-config")
     val base = apiBase
+    val auth = authBase
     outputs.dir(into)
     inputs.property("base", base)
+    inputs.property("auth", auth)
     doLast {
         val file = into.get().file("app/cadence/shared/net/ApiConfig.kt").asFile
         file.parentFile.mkdirs()
@@ -90,6 +97,9 @@ val generateApiConfig by tasks.registering {
 
             /** Written by the build. Set with `-Pcadence.apiBase=…`; the default is the dev contour. */
             const val API_BASE: String = "${base.get()}"
+
+            /** Written by the build. Set with `-Pcadence.authBase=…`; the default is the dev contour. */
+            const val AUTH_BASE: String = "${auth.get()}"
 
             """.trimIndent(),
         )
@@ -104,6 +114,7 @@ val generateApiConfig by tasks.registering {
  */
 val refuseDevAddressInRelease by tasks.registering {
     val base = apiBase
+    val auth = authBase
     doLast {
         // The shape and not the literal: an exact comparison against one URL is defeated by a
         // trailing slash. What is refused is https missing, and a host naming this machine, a
@@ -114,7 +125,6 @@ val refuseDevAddressInRelease by tasks.registering {
         // the second omitted 172.16/12 — Docker's own bridge — along with host.docker.internal
         // and api.localhost. 10.0.2.2 is in it because that is how an Android emulator reaches
         // its host.
-        val address = base.get()
         val notTheProducts =
             Regex(
                 """//([^@/]*@)?(""" +
@@ -125,8 +135,13 @@ val refuseDevAddressInRelease by tasks.registering {
                     """)(:|/|$)""",
                 RegexOption.IGNORE_CASE,
             )
-        check(address.startsWith("https://") && !notTheProducts.containsMatchIn(address)) {
-            "a release cannot be built against $address — pass -Pcadence.apiBase=https://…"
+        // Both addresses, and by the same rule. GoTrue is where the password goes; a release
+        // pointed at a dev identity server is the worse of the two leaks, and checking only the
+        // API would have let it through.
+        listOf("cadence.apiBase" to base.get(), "cadence.authBase" to auth.get()).forEach { (flag, address) ->
+            check(address.startsWith("https://") && !notTheProducts.containsMatchIn(address)) {
+                "a release cannot be built against $address — pass -P$flag=https://…"
+            }
         }
     }
 }

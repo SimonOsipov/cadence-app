@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Merged into the debug variant only. exported=false: this screen signs a real account
+         into the dev contour, and an exported activity is reachable by any app on the device. -->
+    <application>
+        <activity
+            android:name=".DebugActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode" />
+    </application>
+
+</manifest>

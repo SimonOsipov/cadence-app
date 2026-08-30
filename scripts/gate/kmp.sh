@@ -14,23 +14,19 @@ echo "==> ktlint"
 echo "==> detekt"
 ./gradlew detekt
 
-# `:shared` only, and not by choice of this line. composeApp declares no
-# `withHostTestBuilder {}` in its build file, so `testAndroidHostTest` resolves
-# to `:shared:testAndroidHostTest` and nothing else.
+# Two modules and not one, which this line got wrong until it was measured: `:shared` and
+# `:debugTools` both declare `withHostTestBuilder {}`, so the unqualified task resolves to both.
+# composeApp declares none, so its tests are not here — they need ios.sh.
 #
-# Counted 2026-08-29, every figure by running it rather than by arithmetic: 369
-# here, 356 of `:shared` again on the iOS simulator target, and composeApp's 494
-# Compose UI tests, which run under ios.sh on a macOS host and nowhere else. The
-# figures that stood here said 244 and 293 and had been overtaken by the ported
-# screens; recounting one number of several is how a comment ends up part true,
-# which is what happened to the fourth one on the first attempt at this paragraph.
+# Counted 2026-08-30 by running it rather than by arithmetic: 382 in `:shared` and 8 in
+# `:debugTools`. Two figures elsewhere: 356 of `:shared` again on the iOS simulator target, and
+# composeApp's 494 Compose UI tests, which run under ios.sh on a macOS host and nowhere else.
 #
-# Fourteen of the 369 run under a Robolectric runtime, which is what secure storage
-# needed to be checkable at all — the fifteenth test in androidHostTest is the
-# platform seam's, and it needs no runtime. The Keychain half is not here either: it needs an
-# app bundle, so it is an XCTest target under ios.sh.
+# Four files in `:shared` run under a Robolectric runtime, which is what secure storage needed to
+# be checkable at all. The Keychain half is not here either: it needs an app bundle, so it is an
+# XCTest target under ios.sh.
 
-echo "==> unit tests (:shared only — composeApp needs ios.sh)"
+echo "==> unit tests (:shared and :debugTools — composeApp needs ios.sh)"
 ./gradlew testAndroidHostTest
 
 # The generator brings its own credential helpers — every *Api extends ApiClient, which holds a
@@ -64,12 +60,23 @@ echo "==> the client matches the contract"
 # wrong twice — a case-sensitive alternative admitted LOCALHOST, and a later one admitted
 # Docker's own bridge — and until this ran here the only evidence for it was one by-hand pass.
 # One of each direction is enough to catch the next narrowing.
+# Both addresses, each refused on its own. GoTrue is a second service on a second port, and it
+# is where the password goes — a release pointed at a dev identity server is the worse of the
+# two leaks. Checking only the API would pass a build that ships one.
 echo "==> a release refuses an address that is not the product's"
-if ./gradlew -q :shared:refuseDevAddressInRelease -Pcadence.apiBase=https://172.17.0.1:8080 >/dev/null 2>&1; then
-    echo "the release refusal admitted a private address" >&2
+good_api=https://api.cadence.ru
+good_auth=https://auth.cadence.ru
+if ./gradlew -q :shared:refuseDevAddressInRelease \
+    -Pcadence.apiBase=https://172.17.0.1:8080 -Pcadence.authBase="$good_auth" >/dev/null 2>&1; then
+    echo "the release refusal admitted a private API address" >&2
     exit 1
 fi
-./gradlew -q :shared:refuseDevAddressInRelease -Pcadence.apiBase=https://api.cadence.ru
+if ./gradlew -q :shared:refuseDevAddressInRelease \
+    -Pcadence.apiBase="$good_api" -Pcadence.authBase=http://localhost:9999 >/dev/null 2>&1; then
+    echo "the release refusal admitted a dev identity server" >&2
+    exit 1
+fi
+./gradlew -q :shared:refuseDevAddressInRelease -Pcadence.apiBase="$good_api" -Pcadence.authBase="$good_auth"
 
 echo "==> assemble"
 ./gradlew :androidApp:assembleDebug
@@ -79,23 +86,51 @@ echo "==> assemble"
 # mechanism, and it is the one that would have caught a `debugMain` directory Gradle ignored
 # silently — the reason :debugTools is a module at all.
 #
-# The release build is paid for here rather than assumed: measured, the marker is in
-# classes12.dex of the debug APK nineteen times and in none of the release APK's three. An
-# address is passed because a release against the dev one is refused, which is another gate.
-echo "==> the debug screen ships in debug and not in release"
-./gradlew :androidApp:assembleRelease -Pcadence.apiBase=https://api.cadence.example
+# Three builds and not two. The third passes `-Pcadence.debugTools` at a **release** build: that
+# property is the Apple switch, Gradle properties are global to the invocation, and while the
+# module was declared on composeApp's commonMain it put the screen — with its sign-in wiring and
+# the dev addresses behind it — into the release APK. Measured at five occurrences in the dex
+# before the dependency moved to iosMain. Nothing in a variant catches that, so it is checked.
+#
+# The marker is read out of the Kotlin constant rather than repeated here: two spellings of one
+# string is a check that goes quiet the day somebody renames the class.
+echo "==> the debug screen ships in debug, and in no release"
+./gradlew :androidApp:assembleRelease -Pcadence.debugTools \
+    -Pcadence.apiBase=https://api.cadence.example -Pcadence.authBase=https://auth.cadence.example
+release_with_property=$(find androidApp/build/outputs/apk/release -name '*.apk' | head -1)
+cp "$release_with_property" "${TMPDIR:-/tmp}/cadence-release-with-property.apk"
+./gradlew :androidApp:assembleRelease -Pcadence.apiBase=https://api.cadence.example \
+    -Pcadence.authBase=https://auth.cadence.example
 
-marker=CadenceDebugScreen
-hits_in() {
-    local apk=$1 total=0
-    local work
+marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
+    debugTools/src/commonMain/kotlin/app/cadence/debug/DebugScreen.kt)
+[ -n "$marker" ] || {
+    echo "DEBUG_SCREEN_MARKER could not be read from the source — this check greps for nothing" >&2
+    exit 1
+}
+
+# Sets $marker_hits rather than answering on stdout. Inside $( … ) an `exit 1` ends the
+# subshell and the caller reads the empty output as a number, so a guard against a silent
+# failure would fail silently — this project has spent that lesson once already.
+marker_hits=0
+count_marker() {
+    local apk=$1 work dex found=0
+    marker_hits=0
     work=$(mktemp -d)
-    unzip -q -o "$apk" 'classes*.dex' -d "$work"
+    unzip -q -o "$apk" 'classes*.dex' -d "$work" || {
+        echo "$apk could not be unpacked" >&2
+        exit 1
+    }
     for dex in "$work"/*.dex; do
-        total=$((total + $(strings "$dex" | grep -c "$marker")))
+        [ -e "$dex" ] || continue
+        found=1
+        marker_hits=$((marker_hits + $(grep -ac "$marker" "$dex" || true)))
     done
     rm -rf "$work"
-    echo "$total"
+    [ "$found" -eq 1 ] || {
+        echo "$apk holds no classes*.dex — nothing was grepped" >&2
+        exit 1
+    }
 }
 
 debug_apk=$(find androidApp/build/outputs/apk/debug -name '*.apk' | head -1)
@@ -105,15 +140,22 @@ release_apk=$(find androidApp/build/outputs/apk/release -name '*.apk' | head -1)
     exit 1
 }
 
-if [ "$(hits_in "$debug_apk")" -eq 0 ]; then
+count_marker "$debug_apk"
+if [ "$marker_hits" -eq 0 ]; then
     echo "$marker is absent from the debug artifact — the module is wired to nothing" >&2
     exit 1
 fi
-if [ "$(hits_in "$release_apk")" -ne 0 ]; then
+count_marker "$release_apk"
+if [ "$marker_hits" -ne 0 ]; then
     echo "$marker is in the release artifact" >&2
+    exit 1
+fi
+count_marker "${TMPDIR:-/tmp}/cadence-release-with-property.apk"
+if [ "$marker_hits" -ne 0 ]; then
+    echo "$marker reached a release artifact through -Pcadence.debugTools" >&2
     exit 1
 fi
 
 echo
-echo "kmp gate: green — :shared only. composeApp's Compose UI tests did NOT run;"
+echo "kmp gate: green — :shared and :debugTools. composeApp's Compose UI tests did NOT run;"
 echo "                 they need ios.sh and a macOS host with Xcode."

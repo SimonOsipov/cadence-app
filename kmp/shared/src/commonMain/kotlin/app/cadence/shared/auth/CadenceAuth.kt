@@ -69,8 +69,12 @@ fun SupabaseClient.sessionTokens(): SessionTokens =
          * A refusal and a network blip arrive alike, and clearing on both would sign a patient
          * out because their train went into a tunnel — the same rule the vault keeps: do not
          * erase on a failure you cannot name. What clears a session is signing out.
+         *
+         * The swallow is the contract and not an oversight: what the caller is owed is «could
+         * not be renewed», and carrying the exception further would put a refresh token's
+         * failure into whatever the transport logs.
          */
-        @Suppress("TooGenericExceptionCaught")
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
         override suspend fun refreshed(): Session? =
             try {
                 auth.refreshCurrentSession()

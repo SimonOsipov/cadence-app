@@ -29,7 +29,11 @@ kotlin {
             jvmTarget = JvmTarget.JVM_17
         }
 
-        withHostTestBuilder {}.configure {}
+        withHostTestBuilder {}.configure {
+            // Robolectric needs the merged manifest and resources; without this it fails at
+            // startup rather than at the first Android call, which reads as a broken harness.
+            isIncludeAndroidResources = true
+        }
     }
 
     sourceSets {
@@ -38,6 +42,15 @@ kotlin {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
+        }
+        androidMain.dependencies {
+            implementation(libs.ktor.client.okhttp)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
+        }
+        getByName("androidHostTest").dependencies {
+            implementation(libs.robolectric)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
