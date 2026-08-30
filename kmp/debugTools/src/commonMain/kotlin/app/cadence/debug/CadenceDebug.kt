@@ -15,16 +15,13 @@ import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CancellationException
 
 /**
- * The whole stack assembled once, which is the only place in the tree where it is.
- *
  * The debug screen exists to answer whether the parts fit together, and a screen handed ready
  * answers would prove nothing. Every seam is a default rather than a fixed value so the assembly
  * itself is measurable off a device — the engine, both addresses, and the secure stores.
  *
- * Two clients and not one: [health] must go out with no credential attached, and there is no way
- * to un-attach the `Auth` plugin for one call. The engine is shared by all three — the auth
- * module included, which is what makes the address it uses observable — because none of them owns
- * it: `HttpClient(engine)` does not close an engine it was handed.
+ * The engine is shared by all three — the auth module included, which is what makes the address
+ * it uses observable — because none of them owns it: `HttpClient(engine)` does not close an
+ * engine it was handed.
  */
 class CadenceDebug(
     private val api: String = API_BASE,

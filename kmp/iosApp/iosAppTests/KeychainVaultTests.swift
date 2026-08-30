@@ -1,12 +1,9 @@
 import ComposeApp
 import XCTest
 
-/// The Keychain suite, hosted by the app rather than run from `iosSimulatorArm64Test`.
-///
-/// Measured 2026-08-29: `SecItemAdd` from a Kotlin/Native test binary answers -25291,
-/// `errSecNotAvailable` — that binary is not an app bundle and has no keychain to write to.
-/// `KeychainReachabilityTest` in `shared/src/iosTest` pins that refusal; these are the
-/// assertions it displaced, running where an app identity exists.
+/// Hosted by the app because a keychain needs an app identity — `KeychainReachabilityTest` in
+/// `shared/src/iosTest` pins the refusal that put them here. These are the assertions it
+/// displaced, running where that identity exists.
 final class KeychainVaultTests: XCTestCase {
     private let service = "app.cadence.test-vault"
     private lazy var vault = KeychainVault(service: service)

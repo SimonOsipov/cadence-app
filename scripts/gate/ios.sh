@@ -32,13 +32,11 @@ echo "==> kotlin tests on the iOS simulator target"
 echo "==> the debug screen is in the framework only behind -Pcadence.debugTools"
 framework=composeApp/build/bin/iosSimulatorArm64/debugFramework/ComposeApp.framework
 
-# Counted into a variable rather than asked with `grep -q`, and the reason is not style. `grep -q`
-# exits at the first match, `strings` takes SIGPIPE, and under `set -o pipefail` the pipeline that
-# FOUND the marker reports failure — so the check read «present» as «absent» and could never pass.
-# Measured on the framework this file greps: the marker is there 41 times and `grep -q` answered no.
+# Counted, never `grep -q` under pipefail — the trap is recorded in changed-stacks.sh. Measured on
+# the framework this file greps: the marker is there 41 times and `grep -q` answered no.
 # Read from the Kotlin constant rather than spelled here — kmp.sh does the same, and a second
-# spelling is a check that goes quiet the day the class is renamed. Resolved at top level and not
-# inside $( … ): an exit there ends the subshell and the caller reads the empty output as data.
+# spelling is a check that goes quiet the day the class is renamed. Resolved at top level, not
+# inside $( … ) — see changed-stacks.sh.
 marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
     debugTools/src/commonMain/kotlin/app/cadence/debug/DebugScreen.kt)
 entry=$(sed -n 's/^fun \([A-Za-z]*\)().*UIViewController.*/\1/p' \
@@ -65,9 +63,8 @@ if [ "$(screen_hits)" -eq 0 ]; then
     echo "the debug screen is missing from a framework built with -Pcadence.debugTools" >&2
     exit 1
 fi
-# Counted the way screen_hits is, and for the same reason: `grep -c` on a missing file prints
-# nothing, and `[ "" -eq 0 ]` is a usage error the `if` reads as false — the check would walk past
-# an absent header. The header's existence is asserted first.
+# `grep -c` on a missing file prints nothing, and `[ "" -eq 0 ]` is a usage error the `if` reads
+# as false, so the header's existence is asserted first.
 header=$framework/Headers/ComposeApp.h
 [ -f "$header" ] || {
     echo "the framework header is not there — nothing was grepped" >&2
@@ -120,9 +117,9 @@ xcodebuild \
     ARCHS=arm64 \
     build
 
-# The XCTest bundle. It exists because a keychain needs an app identity. Measured 2026-08-29: SecItemAdd from
-# a Kotlin/Native test binary answers -25291, errSecNotAvailable, so the Keychain suite
-# cannot live in shared/src/iosTest at all — only the refusal does.
+# The XCTest bundle exists because a keychain needs an app identity; KeychainReachabilityTest
+# pins the refusal that proves it.
+#
 # A named device with OS=latest, because a test run boots a simulator and the generic
 # destination above names none to boot. This default is the only place the device is written:
 # CI takes it as it stands and overrides the variable on the day the runner image stops

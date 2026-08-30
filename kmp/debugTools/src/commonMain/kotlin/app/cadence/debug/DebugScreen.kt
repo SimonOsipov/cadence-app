@@ -26,8 +26,6 @@ import kotlinx.coroutines.launch
 const val DEBUG_SCREEN_MARKER: String = "CadenceDebugScreen"
 
 /**
- * The live answers from the dev contour, and the only thing in this module a person sees.
- *
  * Sign-in is on the screen rather than in a build property because the three states are reached
  * by moving between them: a developer signs in, sees the token work, and is the one who decides
  * which account to try. A credential compiled into the module would be a credential in the

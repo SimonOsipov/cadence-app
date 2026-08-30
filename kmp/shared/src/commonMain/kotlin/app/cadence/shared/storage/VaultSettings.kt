@@ -5,21 +5,16 @@ import com.russhwolf.settings.Settings
 private const val LENGTH_END = ':'
 
 /**
- * A [Settings] whose whole store is one blob in a [Vault], so the platform protects a single
- * object rather than a key at a time.
- *
- * A store that could not be read is empty here and **not writable**: see [isWritable]. That
- * asymmetry is the point of the class. «Unreadable storage is no session» is a statement
- * about reading, and without the second half it becomes one about erasing — the blob is
- * written back whole, so one write after one failed read replaces a live session with
- * nothing.
+ * The whole store is one blob in a [Vault], so the platform protects a single object rather
+ * than a key at a time — and a store that could not be read is empty here and **not
+ * writable**, which is the asymmetry [Stored] exists to carry.
  *
  * Framing is length-prefixed rather than separated, because a separator is a character some
  * token is eventually allowed to contain — and the token that contains it would empty the
  * store rather than be stored.
  *
- * The function count detekt objects to is the [Settings] interface's, not a design here: six
- * types, four accessors each.
+ * The function count detekt objects to is the [Settings] interface's: six types, four
+ * accessors each.
  */
 @Suppress("TooManyFunctions")
 class VaultSettings(
@@ -49,8 +44,6 @@ class VaultSettings(
             }
 
             is Stored.Present -> {
-                // Bytes we wrote and cannot parse are our own corruption, and writing over
-                // them is right: keeping them would leave the store unusable for good.
                 entries = decode(stored.bytes)
                 writable = true
             }

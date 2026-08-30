@@ -21,10 +21,7 @@ private class RecordingStores {
 }
 
 class CadenceAuthTest {
-    // The condition of taking supabase-kt at all: its stock managers keep the session and the
-    // PKCE verifier in plaintext on both platforms — SharedPreferences and NSUserDefaults — so
-    // both are handed the secure store instead. Substituting them is what the choice was made
-    // conditional on, and nothing else in the tree would notice if they were left as they came.
+    // Nothing else in the tree would notice if the stock managers were left as they came.
     @Test
     fun bothStoresAreSubstituted() {
         val stores = RecordingStores()
@@ -35,9 +32,6 @@ class CadenceAuthTest {
         assertIs<SettingsCodeVerifierCache>(auth.config.codeVerifierCache)
     }
 
-    // Two stores and not one: the blob is written whole, so a shared store would have the
-    // session's next write drop the verifier out of it — silently, in the middle of accepting
-    // an invite, which is the one moment both are in use at once.
     @Test
     fun theSessionAndTheVerifierAreHeldApart() {
         val stores = RecordingStores()
@@ -48,9 +42,7 @@ class CadenceAuthTest {
         assertTrue(stores.handed[SESSION_STORE] !== stores.handed[PKCE_STORE])
     }
 
-    // The address is ours, not Supabase's. Measured in the 3.7.0 artifact: MainPlugin.resolveUrl
-    // appends `auth/v1` only where customUrl is null, and our GoTrue answers on its own root —
-    // 404 on every /auth/v1 path, measured against the local contour.
+    // The address is ours, not Supabase's — see cadenceAuth for the measurement.
     @Test
     fun theAuthModuleTalksToOurGoTrueRoot() {
         val auth = cadenceAuth(url = GOTRUE, stores = RecordingStores()::named).auth

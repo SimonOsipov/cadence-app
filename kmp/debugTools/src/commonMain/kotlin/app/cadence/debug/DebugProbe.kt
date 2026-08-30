@@ -8,9 +8,8 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 
 /**
- * `GET /v1/me` through the generated client, which is the whole pipeline in one call:
- * generation, the `Authorization` header the transport attaches, deserialisation into the
- * contract's own type, and the error shape.
+ * The whole pipeline in one call: generation, the `Authorization` header the transport attaches,
+ * deserialisation into the contract's own type, and the error shape.
  *
  * One endpoint is enough and that is a recorded decision — a second says something about the
  * endpoint rather than about the pipeline.
@@ -50,14 +49,9 @@ suspend fun probeMe(identity: IdentityApi): ProbeState =
     }
 
 /**
- * `/healthz`, on a client with no auth plugin.
- *
- * It is outside the OpenAPI contract deliberately, so it is absent from the generated client and
- * there is nothing to attach a Bearer to. Asked without a credential, which is what separates
- * «the API is up» from «my token works» — the two questions the screen exists to tell apart.
- *
- * The exception is dropped rather than carried because the answer is a boolean: what went wrong
- * belongs to the line above, which runs against the same host.
+ * Outside the OpenAPI contract deliberately, so it is absent from the generated client and there
+ * is nothing to attach a Bearer to. Asked without a credential, which is what separates «the API
+ * is up» from «my token works» — the two questions the screen exists to tell apart.
  */
 @Suppress("TooGenericExceptionCaught", "SwallowedException")
 suspend fun probeHealth(

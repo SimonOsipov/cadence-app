@@ -78,9 +78,8 @@ class CadenceDebugTest {
             assertEquals(listOf("$API/v1/me", "$API/healthz"), hosts.drop(1))
         }
 
-    // The step's own acceptance, checked on the client CadenceDebug builds rather than on one a
-    // test builds: /healthz is outside the contract so there is nothing to attach a Bearer to,
-    // and giving `raw` the auth plugin left every other assertion here green.
+    // Checked on the client CadenceDebug builds, not one a test builds: giving `raw` the auth
+    // plugin left every other assertion here green.
     @Test
     fun healthCarriesNoCredentialAndTheApiCallDoes() =
         runTest {

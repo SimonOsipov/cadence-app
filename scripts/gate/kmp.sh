@@ -116,9 +116,8 @@ marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
     exit 1
 }
 
-# Sets $marker_hits rather than answering on stdout. Inside $( … ) an `exit 1` ends the
-# subshell and the caller reads the empty output as a number, so a guard against a silent
-# failure would fail silently — this project has spent that lesson once already.
+# Sets $marker_hits rather than answering on stdout: an `exit 1` inside $( … ) ends only the
+# subshell — the trap is recorded in changed-stacks.sh.
 marker_hits=0
 count_in() {
     local apk=$1 needle=$2 work dex found=0

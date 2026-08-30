@@ -16,18 +16,13 @@ import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CancellationException
 
 /**
- * The Auth module, pointed at our own GoTrue and holding its secrets where we put them.
- *
  * `customUrl` is what makes the vendor's client talk to a self-hosted server: measured in the
  * 3.7.0 artifact, `MainPlugin.resolveUrl` appends `auth/v1` only where it is null, and ours
  * answers on its own root — every `/auth/v1` path is a 404 there, measured against the local
  * contour. ADR-008 took the vendor away and left the mechanism.
  *
- * Both storage seams are substituted, and that is the condition the library was taken on rather
- * than a refinement: `SettingsSessionManager` and `SettingsCodeVerifierCache` default to
- * plaintext on both platforms — `SharedPreferences` and `NSUserDefaults`. They are handed two
- * different secure stores, because the store is written whole and one shared between them would
- * lose the verifier to the session's next write, in the middle of accepting an invite.
+ * Both storage seams are substituted, which is the condition the library was taken on rather
+ * than a refinement — see [secureSettings] for why they are two stores and not one.
  *
  * [stores] is a parameter so the seam can be measured without a device; production passes
  * [secureSettings]. [engine] is one for the same reason and a sharper one: the module builds its
@@ -48,13 +43,7 @@ fun cadenceAuth(
         }
     }
 
-/**
- * The transport's view of this session, and the whole of the coupling between them.
- *
- * Refresh belongs to the Auth module and the transport does not do it — `refreshCurrentSession`
- * is the owner, and Ktor's plugin is what serialises the callers. Two mechanisms rotating one
- * refresh token is a revoked session.
- */
+/** The whole of the coupling between the Auth module and the transport. */
 fun SupabaseClient.sessionTokens(): SessionTokens =
     object : SessionTokens {
         override suspend fun current(): Session? = auth.currentSessionOrNull()?.asSession()

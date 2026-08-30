@@ -17,7 +17,6 @@ import kotlin.test.assertTrue
 private const val STALE = "stale-access-token"
 private const val FRESH = "fresh-access-token"
 
-/** Answers 401 to anything carrying the stale token and 200 to anything carrying the fresh one. */
 private var engineCalls = 0
 
 private fun oneExpiryThenFresh(): MockEngine =

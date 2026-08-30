@@ -7,7 +7,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** A vault holding bytes in memory, standing in for Keychain and Keystore alike. */
 class VaultSettingsTest {
     @Test
     fun aValueSurvivesANewInstanceOverTheSameVault() {

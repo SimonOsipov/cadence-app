@@ -25,8 +25,6 @@ class Session(
 }
 
 /**
- * Where the transport gets a token and where it asks for a new one.
- *
  * Consumer-owned, and both halves are somebody else's work: the session lives in secure storage
  * and the refresh belongs to the auth module. Nothing here refreshes — see [cadenceHttpClient].
  */
@@ -38,8 +36,6 @@ interface SessionTokens {
 }
 
 /**
- * The client every call goes through.
- *
  * **There is one owner of token refresh and it is not this.** Ktor's `Auth` plugin serialises
  * `refreshTokens` on its own — several requests meeting a 401 at once wake one refresh and all
  * of them retry with what it produced. That is named here rather than reimplemented, because a

@@ -75,19 +75,12 @@ class DebugProbeTest {
             assertEquals("Bearer a", offered)
         }
 
-    // `full_name` is optional in the contract. An account GoTrue holds and the clinic has no
-    // profile for is signed in — reporting it as unavailable would send a developer to debug
-    // the server over a state the server is describing correctly.
     @Test
     fun anAccountWithNoProfileIsSignedInRatherThanUnavailable() =
         runTest {
             assertIs<ProbeState.SignedIn>(probeMe(answering(HttpStatusCode.OK, me(null))))
         }
 
-    // The one distinction the screen must not draw. The API answers an expired token and a
-    // token that was never valid with the same status and an indistinguishable body, on
-    // purpose — a screen claiming to tell them apart would be inventing the difference, and
-    // the patient-facing app would inherit the invention.
     @Test
     fun anExpiredTokenAndAnUnauthenticatedCallAreOneState() =
         runTest {
@@ -98,9 +91,6 @@ class DebugProbeTest {
             assertEquals(ProbeState.SignedOut, never)
         }
 
-    // A server that answered badly and a server that did not answer are one state too, and it
-    // is not «signed out»: telling a developer their session died when the API is down sends
-    // them to re-authenticate against something that cannot authenticate them.
     @Test
     fun aServerThatCannotAnswerIsUnavailableRatherThanSignedOut() =
         runTest {
@@ -116,9 +106,6 @@ class DebugProbeTest {
             assertIs<ProbeState.Unavailable>(probeMe(answering(HttpStatusCode.OK, """{"sub":42}""")))
         }
 
-    // /healthz is outside the contract deliberately, so it is absent from the generated client
-    // and there is nothing to attach a Bearer to. Asked on a client with no auth plugin, which
-    // is what makes «the API is up» separable from «my token works».
     @Test
     fun healthIsAskedWithoutACredential() =
         runTest {

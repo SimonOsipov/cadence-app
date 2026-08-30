@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Lints the shell this repository runs unattended: the gates and the Ralph loop.
-#
-# A script rather than an inline block in the workflow, for the reason the stack filter is one:
-# a block in ci.yml is reachable by CI alone, and this check was invisible to `all.sh` until an
-# unquoted expansion passed every local stage and failed the build.
+# Lints the shell this repository runs unattended: the gates and the Ralph loop. A script and not
+# an inline block in ci.yml, so `all.sh` can run it — see the measurement there.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
