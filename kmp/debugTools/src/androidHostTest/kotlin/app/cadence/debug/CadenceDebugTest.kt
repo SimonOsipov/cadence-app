@@ -97,9 +97,10 @@ class CadenceDebugTest {
             assertEquals(null, health.second, "the health probe carried a credential")
         }
 
-    // What reaches the screen on a refusal is the exception's class. Its message is not safe to
-    // print: kotlinx.serialization appends the input it could not decode, and on this path that
-    // input is GoTrue's token response.
+    // What reaches the screen on a refusal is the exception's class, pinned by name rather than
+    // by shape: an earlier version asserted «contains no space», which killed the mutation only
+    // because that fixture's body happened to produce «Unknown error». The refusal GoTrue really
+    // gives — invalid_credentials — has no space either, and the mutation would have survived it.
     @Test
     fun aRefusedSignInReportsAClassAndNotAMessage() =
         runTest {
@@ -107,19 +108,26 @@ class CadenceDebugTest {
 
             val outcome = debug.signIn("someone@cadence.local", "the-wrong-password")
 
-            val refused = assertIs<SignIn.Refused>(outcome)
-            assertTrue(" " !in refused.why, "a message reached the screen: ${refused.why}")
+            assertEquals("AuthRestException", assertIs<SignIn.Refused>(outcome).why)
         }
 
-    // Two stores and not one, checked where they are actually handed out. The blob is written
-    // whole, so a shared store would drop the PKCE verifier at the session's next write.
+    // The danger itself, asked directly. kotlinx.serialization appends the input it could not
+    // decode, and on this path that input is GoTrue's token response — so a refusal carrying a
+    // session must not put one on the screen.
     @Test
-    fun theSessionAndTheVerifierGetDifferentStores() {
-        val handed = mutableMapOf<String, Settings>()
+    fun aRefusalCarryingASessionDoesNotPutItOnTheScreen() =
+        runTest {
+            val debug =
+                wiring(
+                    answer = { respond(TOKEN, HttpStatusCode.BadRequest, json) },
+                )
 
-        wiring(stores = { name -> handed.getOrPut(name) { MapSettings() } })
+            val outcome = debug.signIn("someone@cadence.local", "the-wrong-password")
 
-        assertEquals(setOf(SESSION_STORE, PKCE_STORE), handed.keys)
-        assertTrue(handed[SESSION_STORE] !== handed[PKCE_STORE])
-    }
+            val refused = assertIs<SignIn.Refused>(outcome)
+            assertTrue(
+                "an-access-token" !in refused.why && "a-refresh-token" !in refused.why,
+                "a token reached the screen: ${refused.why}",
+            )
+        }
 }
