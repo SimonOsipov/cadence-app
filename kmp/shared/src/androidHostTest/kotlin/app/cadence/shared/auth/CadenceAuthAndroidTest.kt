@@ -1,11 +1,19 @@
 package app.cadence.shared.auth
 
+import app.cadence.shared.storage.SESSION_STORE
+import app.cadence.shared.storage.installSecureStorage
+import app.cadence.shared.storage.secureSettings
 import com.russhwolf.settings.MapSettings
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.user.UserSession
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 private const val GOTRUE = "http://localhost:9999"
 
@@ -21,6 +29,37 @@ private const val GOTRUE = "http://localhost:9999"
  */
 @RunWith(RobolectricTestRunner::class)
 class CadenceAuthAndroidTest {
+    // The default nobody passes, and therefore the one nothing measured: every other test hands
+    // cadenceAuth a MapSettings, so the production path — ::secureSettings, the Keystore-backed
+    // store from step 1 — was exercised by no test on either platform. It needs a runtime, which
+    // is why it lives here.
+    //
+    // Asked through the seam and not by inspecting it: a session saved through the module's own
+    // manager has to come back out of the secure store under the session store's name. A default
+    // pointed anywhere else — the vendor's plaintext SharedPreferences among them — leaves that
+    // store empty while every other assertion in this file still passes.
+    @Test
+    fun theProductionDefaultWritesThroughTheSecureStore() =
+        runTest {
+            installSecureStorage(RuntimeEnvironment.getApplication())
+            val manager = assertNotNull(cadenceAuth(url = GOTRUE).auth.config.sessionManager)
+
+            manager.saveSession(
+                UserSession(
+                    accessToken = "an-access-token",
+                    refreshToken = "a-refresh-token",
+                    expiresIn = 3600,
+                    tokenType = "bearer",
+                ),
+            )
+
+            assertTrue(
+                secureSettings(SESSION_STORE).keys.isNotEmpty(),
+                "the session went somewhere other than the secure store",
+            )
+            assertNotNull(manager.loadSession())
+        }
+
     // The contract the transport was written against, and the one the module does not keep:
     // refreshCurrentSession throws rather than answering. Left to propagate, the first request
     // of a signed-out app throws instead of routing to sign-in, and «signed out» stops being a

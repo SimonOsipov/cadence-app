@@ -23,6 +23,47 @@ fi
 echo "==> kotlin tests on the iOS simulator target"
 ./gradlew :shared:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test
 
+# The Apple half of the debug-screen acceptance, and the half Android's cannot cover. Kotlin/
+# Native links what is reachable, so this measures reachability directly: with the property the
+# framework carries the screen and its composition root, without it neither is in the binary.
+# The equivalent Android grep measures only that the module is on the variant — a debug APK is
+# not minified and ships the module whether or not anything calls it.
+#
+# Counted 2026-08-30 by running it: 41 for the screen and 5 for the entry point with the
+# property, 0 and 0 without, and the ObjC header carries the entry point only with it — which is
+# what makes the screen callable from Swift rather than merely present.
+echo "==> the debug screen is in the framework only behind -Pcadence.debugTools"
+framework=composeApp/build/bin/iosSimulatorArm64/debugFramework/ComposeApp.framework
+
+# Counted into a variable rather than asked with `grep -q`, and the reason is not style. `grep -q`
+# exits at the first match, `strings` takes SIGPIPE, and under `set -o pipefail` the pipeline that
+# FOUND the marker reports failure — so the check read «present» as «absent» and could never pass.
+# Measured on the framework this file greps: the marker is there 41 times and `grep -q` answered no.
+screen_hits() {
+    local found
+    found=$(strings -a "$framework/ComposeApp" | grep -c CadenceDebugScreen || true)
+    echo "$found"
+}
+
+./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --rerun-tasks
+if [ "$(screen_hits)" -ne 0 ]; then
+    echo "the debug screen is in a framework built without -Pcadence.debugTools" >&2
+    exit 1
+fi
+
+./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --rerun-tasks -Pcadence.debugTools
+if [ "$(screen_hits)" -eq 0 ]; then
+    echo "the debug screen is missing from a framework built with -Pcadence.debugTools" >&2
+    exit 1
+fi
+if [ "$(grep -c debugViewController "$framework/Headers/ComposeApp.h" || true)" -eq 0 ]; then
+    echo "debugViewController is not in the framework header — Swift cannot reach the screen" >&2
+    exit 1
+fi
+
+# Left as the property found it, so the xcodebuild below measures the shipping shape.
+./gradlew :composeApp:linkDebugFrameworkIosSimulatorArm64 --rerun-tasks
+
 echo "==> xcodegen (the .xcodeproj is generated from project.yml)"
 # The drift check compares the regenerated project byte for byte, so it is only
 # meaningful with the XcodeGen version the committed project was written by:

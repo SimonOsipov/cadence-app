@@ -113,8 +113,8 @@ marker=$(sed -n 's/.*DEBUG_SCREEN_MARKER: String = "\([^"]*\)".*/\1/p' \
 # subshell and the caller reads the empty output as a number, so a guard against a silent
 # failure would fail silently — this project has spent that lesson once already.
 marker_hits=0
-count_marker() {
-    local apk=$1 work dex found=0
+count_in() {
+    local apk=$1 needle=$2 work dex found=0
     marker_hits=0
     work=$(mktemp -d)
     unzip -q -o "$apk" 'classes*.dex' -d "$work" || {
@@ -124,7 +124,7 @@ count_marker() {
     for dex in "$work"/*.dex; do
         [ -e "$dex" ] || continue
         found=1
-        marker_hits=$((marker_hits + $(grep -ac "$marker" "$dex" || true)))
+        marker_hits=$((marker_hits + $(grep -ac "$needle" "$dex" || true)))
     done
     rm -rf "$work"
     [ "$found" -eq 1 ] || {
@@ -140,7 +140,7 @@ release_apk=$(find androidApp/build/outputs/apk/release -name '*.apk' | head -1)
     exit 1
 }
 
-count_marker "$debug_apk"
+count_in "$debug_apk" "$marker"
 if [ "$marker_hits" -eq 0 ]; then
     echo "$marker is absent from the debug artifact — the module is not on the variant" >&2
     exit 1
@@ -167,17 +167,25 @@ if ! grep -q "$root_entry" $debug_manifests; then
     echo "the debug variant has no DebugActivity — the screen is compiled and unreachable" >&2
     exit 1
 fi
+# The manifest is a separate file from the class it names, and AGP does not mind one naming a
+# class that is not there — it is a crash at launch, not a build failure. So both halves are
+# asked: declared, and present. Deleting the composition root left the manifest check green.
+count_in "$debug_apk" DebugActivity
+if [ "$marker_hits" -eq 0 ]; then
+    echo "DebugActivity is declared but not in the debug artifact" >&2
+    exit 1
+fi
 # shellcheck disable=SC2086
 if grep -q "$root_entry" $release_manifests; then
     echo "DebugActivity is in the release manifest" >&2
     exit 1
 fi
-count_marker "$release_apk"
+count_in "$release_apk" "$marker"
 if [ "$marker_hits" -ne 0 ]; then
     echo "$marker is in the release artifact" >&2
     exit 1
 fi
-count_marker "${TMPDIR:-/tmp}/cadence-release-with-property.apk"
+count_in "${TMPDIR:-/tmp}/cadence-release-with-property.apk" "$marker"
 if [ "$marker_hits" -ne 0 ]; then
     echo "$marker reached a release artifact through -Pcadence.debugTools" >&2
     exit 1
