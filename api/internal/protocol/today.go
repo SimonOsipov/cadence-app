@@ -14,7 +14,7 @@ import (
 // The nutrition fields answer null explicitly rather than zero: «0 из 4 приёмов» over a
 // context that does not exist is a lie a client cannot detect, while an absent value is a fact
 // it can render as a dash. That is a divergence from the KMP type, where mealCount and the two
-// Macros are not nullable — phase 4 adapts the client, and the divergence register of step 12
+// Macros are not nullable — phase 4 adapts the client, and docs/prototype-divergences.md
 // carries it.
 type Today struct {
 	Date      civil.Date

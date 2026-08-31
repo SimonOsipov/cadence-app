@@ -5,8 +5,7 @@
 -- means nothing. The pairs are the wire units — the Russian «кг» is a render concern.
 --
 -- No range on `value`: the plausible one differs per metric, so a CHECK here would be
--- a second definition of whatever ends up owning it — the constants module of step 2
--- is where it is meant to land, and that module does not exist yet.
+-- a second definition of what `measurements.Bounds` owns.
 -- Finiteness is a different question and is answered below.
 
 SET ROLE cadence_owner;
@@ -48,8 +47,9 @@ CREATE INDEX measurements_by_patient_and_metric
 -- §03's UNIQUE(patient, metric, external_id), with the patient promoted to lead it for
 -- the reason 000019 records on the dose stream's slot key: uniqueness is checked before
 -- row security, so a key space shared across patients answers by error code whether
--- somebody else holds a sample. There is no importer and no grant on external_id yet,
--- so today this reserves the shape rather than refusing a row.
+-- somebody else holds a sample. There is no importer yet, and no patient grant reaches
+-- external_id — the service and admin roles are granted the whole row — so today this
+-- reserves the shape rather than refusing a row.
 CREATE UNIQUE INDEX measurements_one_per_external_sample
     ON app.measurements (patient_id, metric, external_id)
     WHERE external_id IS NOT NULL;

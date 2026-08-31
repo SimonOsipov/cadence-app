@@ -33,7 +33,7 @@ const (
 
 // A course with two injectables, one of them titrating, so the detail read has a strip to draw
 // and the position it draws is decided rather than assumed. The supplement carries no phases;
-// step 5's choice is measured by its own suite, and what this fixture is for is that the
+// the overlay's choice is measured by its own suite, and what this fixture is for is that the
 // choice happens at all on the read path.
 type course struct {
 	protocolID  string
@@ -372,7 +372,7 @@ func TestTheCycleWindowIsAbsentWithNoCourseAndWithOneThatHasNotStarted(t *testin
 }
 
 // The detail read: one metric's points, and the prescription drawn under them. The strip is
-// the titrating position's, which is step 5's choice — measured here only in that it is made
+// the titrating position's, which is the overlay's choice — measured here only in that it is made
 // at all and that the marks land on the days the phases open.
 func TestTheDetailCarriesOneMetricAndTheStripUnderIt(t *testing.T) {
 	c := newClinic(t)

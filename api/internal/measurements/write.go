@@ -42,14 +42,11 @@ var (
 	// they filled in themselves.
 	ErrNoteSaysNothing = errors.New("a note is either absent or says something")
 
-	// ErrNoSuchReading is a reading this patient does not hold — and one nobody holds, told
-	// apart from nothing, because a status that distinguished them would report another
-	// patient's history one bit at a time.
+	// ErrNoSuchReading covers both absences at once; Delete says why.
 	ErrNoSuchReading = errors.New("no such reading")
 
-	// ErrReadingWasImported is their own row, and visible on their screen, which is why it
-	// is not the error above: the sample is the health platform's fact and returns on the
-	// next sync, so the refusal has to say why rather than deny the row exists.
+	// ErrReadingWasImported refuses with a reason because the row is on the patient's screen
+	// and returns on the next sync — denying it exists would be a lie they can see.
 	ErrReadingWasImported = errors.New("an imported reading is not the patient's to delete")
 )
 

@@ -91,7 +91,7 @@ func TestTheRunningCourseWinsOverAClosedOneThatStartsLater(t *testing.T) {
 		t.Errorf("the course belongs to %s", plan.Protocol.PatientID)
 	}
 
-	// Whole or not at all, like ActivePlanFor: the overlay of step 5 reads the items and
+	// Whole or not at all, like ActivePlanFor: the overlay reads the items and
 	// their phases off this same plan, and a course whose items did not load draws an axis
 	// with nothing under it.
 	if len(plan.Items) != 1 {

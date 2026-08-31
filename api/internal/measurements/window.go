@@ -44,9 +44,11 @@ func endingOn(today civil.Date, days int) (civil.Range, bool) {
 }
 
 // The course's own start through today or its last prescribed day, whichever is earlier —
-// and status is not asked. A course the doctor closed yesterday still happened, and filtering
-// by status is what blanks the screen of a patient between courses; the calendar has the same
-// rule recorded for the same reason.
+// and status is not asked. A course the doctor closed yesterday still happened, and a trend
+// that filtered by status would blank the screen of a patient between courses. **The calendar
+// decides the other way**: `protocol.RowFor` draws nothing for a cancelled course. Two
+// surfaces, two rules, deliberately — one answers «what is prescribed now», this one «what
+// was measured».
 //
 // A course that has not started yet is refused by NewRange rather than by a check of its own:
 // its start is after its through, and «a window that runs backwards is not a window» is that
@@ -56,7 +58,7 @@ func cycleOn(course *protocol.Protocol, today civil.Date) (civil.Range, bool) {
 		return civil.Range{}, false
 	}
 
-	// LastPrescribedDay, not the same arithmetic written again: step 5's dose bands are
+	// LastPrescribedDay, not the same arithmetic written again: the dose bands are
 	// clipped by it too, so an axis cannot outlive the strip beneath it.
 	return civil.NewRange(course.StartDate, civil.MinDate(today, course.LastPrescribedDay()))
 }

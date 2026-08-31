@@ -7,6 +7,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
@@ -19,23 +20,35 @@ private const val FRESH = "fresh-access-token"
 
 private var engineCalls = 0
 
-private fun oneExpiryThenFresh(): MockEngine =
-    MockEngine { request ->
+// Completed once the engine has refused every request in flight. The refresh waits on it, so
+// «they all met the expiry together» is arranged rather than hoped for — see the test.
+private var allRefused = CompletableDeferred<Unit>()
+
+private fun oneExpiryThenFresh(expected: Int): MockEngine {
+    var refusals = 0
+
+    return MockEngine { request ->
         engineCalls++
         val offered = request.headers[HttpHeaders.Authorization]
         if (offered == "Bearer $FRESH") {
             respond("{}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         } else {
+            refusals++
+            if (refusals == expected) allRefused.complete(Unit)
             respond("", HttpStatusCode.Unauthorized)
         }
     }
+}
 
-private class CountingSession : SessionTokens {
+private class CountingSession(
+    private val until: CompletableDeferred<Unit>? = null,
+) : SessionTokens {
     var refreshes = 0
 
     override suspend fun current(): Session = Session(access = STALE, refresh = "r")
 
     override suspend fun refreshed(): Session? {
+        until?.await()
         refreshes++
 
         return Session(access = FRESH, refresh = "r")
@@ -51,8 +64,9 @@ class CadenceHttpClientTest {
     fun concurrentExpiriesProduceOneRefreshAndEveryRequestSucceeds() =
         runTest {
             engineCalls = 0
-            val session = CountingSession()
-            val client = cadenceHttpClient(oneExpiryThenFresh(), session)
+            allRefused = CompletableDeferred()
+            val session = CountingSession(until = allRefused)
+            val client = cadenceHttpClient(oneExpiryThenFresh(expected = 5), session)
 
             val answers =
                 (1..5)
@@ -63,12 +77,14 @@ class CadenceHttpClientTest {
             answers.forEach { assertEquals(HttpStatusCode.OK, it.status) }
 
             // The witness that the five were actually in flight together, and without it the
-            // assertion above passes for the wrong reason: runTest is single-threaded, and one
-            // refresh is also what taking turns produces. Sequentially the engine sees six —
-            // one refusal, one retry, then four already carrying the fresh token, the refresh
-            // itself never reaching it. Ten is five refusals and five retries. Both numbers
-            // measured by running each shape; the first figure written here said seven and was
-            // arithmetic rather than measurement.
+            // assertion above passes for the wrong reason: one refresh is also what taking
+            // turns produces. Ten is five refusals and five retries.
+            //
+            // The refresh waits until the engine has refused all five, so the interleaving is
+            // arranged and not observed. It was observed once — this line asserted ten because
+            // ten is what a macOS run produced — and the CI runner scheduled it differently and
+            // saw fewer. A count that depends on which coroutine wakes first is a property of
+            // the scheduler, not of the transport.
             assertEquals(10, engineCalls, "the requests did not meet the expiry together")
         }
 

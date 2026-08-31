@@ -38,7 +38,7 @@ func TestEveryDeclaredValueParsesBackToItself(t *testing.T) {
 }
 
 // Written out rather than read off the constants: an expectation derived from the thing under
-// test moves with it and pins nothing. The order is pinned with them — the overview of step 4
+// test moves with it and pins nothing. The order is pinned with them — the overview
 // answers in it, and it is the KMP enum's.
 func TestTheCodesOnTheWireAreTheWrittenOutOnes(t *testing.T) {
 	if got := Metrics(); !slices.Equal(got, []Metric{

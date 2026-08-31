@@ -529,9 +529,8 @@ func answerWrite(err error) error {
 	}
 }
 
-// answerDelete is the two answers the step exists for, and each carries its sentinel's own
-// sentence rather than the wrapped error's: the ways a reading can be absent have to be ONE
-// answer, and a sentence that named the reading would make each of them a different one.
+// Each answer carries its sentinel's own sentence and not the wrapped error's: a sentence
+// naming the reading would split one answer into two.
 func answerDelete(err error) error {
 	switch {
 	case errors.Is(err, ErrNoSuchReading):

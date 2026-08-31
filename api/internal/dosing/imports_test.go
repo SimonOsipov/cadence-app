@@ -14,14 +14,13 @@ import (
 
 const module = "github.com/SimonOsipov/cadence-app/api/internal/"
 
+// The guard is protocol/imports_test.go's pattern; its comments explain the mechanism.
+
 // The three this context reaches across for: protocol for the plan and the occurrence a dose
 // closes, journal for the diary one patient action writes alongside the dose event, and
 // inventory for the vial it comes out of. Everything else in internal/ is denied, and the
 // denial is reconciled against the directory rather than listed — a context added next month
 // is absent from a list, and absence there reads as exemption.
-//
-// platform holds the shared kernel and router is the composition root that mounts this
-// package; an import of either is not a boundary crossing.
 func TestDosingImportsNoContextButItsThreeNeighbours(t *testing.T) {
 	// The integration tag, or the guard reads none of the files likeliest to reach across a
 	// boundary: build.ImportDir's default context drops every //go:build integration file,
@@ -51,16 +50,12 @@ func TestDosingImportsNoContextButItsThreeNeighbours(t *testing.T) {
 		denied = append(denied, entry.Name())
 	}
 
-	// The set and not its size: a ReadDir that came back empty, or a skip widened by one case
-	// too many, reads exactly like a package that imports nothing.
 	if want := []string{
 		"audit", "content", "identity", "measurements", "messaging", "notifications", "nutrition",
 	}; !slices.Equal(denied, want) {
 		t.Fatalf("the denied contexts are %v, not %v", denied, want)
 	}
 
-	// XTestImports too: an external test file is part of this package's dependency graph, and
-	// leaving it out would exempt every future one from the check.
 	all := append(append(append([]string{}, pkg.Imports...), pkg.TestImports...), pkg.XTestImports...)
 	for _, imported := range all {
 		for _, name := range denied {
@@ -71,9 +66,6 @@ func TestDosingImportsNoContextButItsThreeNeighbours(t *testing.T) {
 	}
 }
 
-// The two halves of the package, reconciled against the directory below rather than merely
-// listed, for the reason protocol's own guard gives: a list is a thing new files are absent
-// from, and absence there means exemption.
 var (
 	// The rules: which zone to offer next, what set of zones there is, and what a logged
 	// dose becomes. Arithmetic over values the caller supplies, with no clock, no query and
@@ -158,8 +150,6 @@ func TestNothingInThePackageReadsTheClock(t *testing.T) {
 		checked++
 		assertNoClock(t, name)
 	}
-	// Without this the guard passes an empty package: a rename of every file, or a glob that
-	// stops matching, would read exactly like purity.
 	if checked < len(rules)+len(notTheRules) {
 		t.Fatalf("expected %d files, walked %d", len(rules)+len(notTheRules), checked)
 	}
@@ -180,8 +170,6 @@ func assertNoClock(t *testing.T, name string) {
 	t.Helper()
 	file := parse(t, name)
 
-	// The local name of the time package, not the string "time": `import clock "time"` would
-	// otherwise walk straight through.
 	local := ""
 	for _, spec := range file.Imports {
 		if strings.Trim(spec.Path.Value, `"`) != "time" {
@@ -193,8 +181,6 @@ func assertNoClock(t *testing.T, name string) {
 		}
 	}
 	if local == "." {
-		// Nothing below can see it: Now() under a dot-import is a bare identifier, not a
-		// selector. Refuse the form rather than pass a file the check cannot read.
 		t.Fatalf("%s dot-imports time; the clock check cannot see through it", name)
 	}
 	if local == "" || local == "_" {
