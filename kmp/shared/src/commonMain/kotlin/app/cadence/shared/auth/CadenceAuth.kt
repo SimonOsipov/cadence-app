@@ -82,3 +82,32 @@ fun SupabaseClient.sessionTokens(): SessionTokens =
 
 private fun io.github.jan.supabase.auth.user.UserSession.asSession() =
     Session(access = accessToken, refresh = refreshToken)
+
+// The process's one client, and the reason it is one is the invariant the transport is built
+// around. Every SupabaseClient loads the stored session and starts its own auto-refresh on a
+// scope of its own, which nothing outside the client cancels — so two of them are two owners
+// rotating one refresh token, and under rotation the loser spends a token already spent. The
+// patient is then signed out by their own app having been recreated.
+//
+// A named gap, not a solved one: `getOrPut` is not atomic, so two callers racing on different
+// threads can both build a client and one is discarded — with its auto-refresh already
+// started, which is the very thing this exists to prevent. Reachable only if a second entry
+// point appears; today both platform roots call it from the main thread at launch. The same
+// gap is named on `secureSettings`, and it is the same fix when either needs one.
+private val theClient = mutableMapOf<String, SupabaseClient>()
+
+/**
+ * The auth client for [url], built once **among the app's roots**.
+ *
+ * Platform roots call this instead of [cadenceAuth]: an Android activity is recreated for a
+ * font-scale, density or locale change — none of which `configChanges` covers — and each
+ * recreation would otherwise start a second refresh owner.
+ *
+ * Not «one per process», and the exception is named rather than closed: `:debugTools` builds its
+ * own client on the same URL and the same session store, because its engine is a seam its tests
+ * substitute. Opening the debug screen beside the app therefore does put two refresh owners in
+ * one process, and under rotation a developer can be signed out of the dev contour while
+ * debugging that very path. It never reaches a release — `debugImplementation` — so this is a
+ * cost paid by whoever opens the screen, not by a patient.
+ */
+fun cadenceAuthFor(url: String): SupabaseClient = theClient.getOrPut(url) { cadenceAuth(url) }
