@@ -133,10 +133,10 @@ func TestWhatCarriesNoDoseCarriesNone(t *testing.T) {
 		if len(item.Phases) != 0 {
 			t.Errorf("the %s is dosed: %+v", item.Kind, item.Phases)
 		}
-		// Neither is loggable: the supplement is tracked without asking, and
-		// nothing records a weight until the measurements context exists.
+		// Neither is loggable: the supplement is tracked without asking, and a
+		// weigh-in is recorded as a measurement rather than as a dose.
 		if item.Loggable {
-			t.Errorf("the %s offers to be recorded, and nothing records one", item.Kind)
+			t.Errorf("the %s offers to be logged as a dose", item.Kind)
 		}
 	}
 }

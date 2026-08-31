@@ -9,9 +9,10 @@ import { SectionHead } from './patient-bits'
  *
  * It draws what `/v1/dashboard/overview` answers and nothing else. The protocol, the cycle and the
  * weight the prototype's table carries are M6's — they belong to the dosing and measurements
- * contexts, which have no endpoint yet — and so are the status tabs above it and the card a row used
- * to open. A column filled with «—» would be a promise; a tab that filters nothing would be the dead
- * control invariant 4 forbids. They come back when the data does.
+ * contexts, which answer the patient but have no doctor-facing read yet — and so are the status
+ * tabs above it and the card a row used to open. A column filled with «—» would be a promise; a
+ * tab that filters nothing would be the dead control invariant 4 forbids. They come back when the
+ * data does.
  *
  * There is no total either, and that is keyset paging rather than an omission: the set moves under a
  * doctor as assignments change, and a count taken at one page is wrong by the next.

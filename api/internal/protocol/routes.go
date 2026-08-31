@@ -15,6 +15,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
 // The service pool alone: prescribing is a cross-actor write, and cadence_doctor holds no
@@ -409,11 +410,12 @@ func (s *Service) registerReads(api huma.API) {
 			"patient's own zone, the cycle week, the next injection still open with the " +
 			"drug it names, the week's prescription strip, whether a dose was logged " +
 			"today, the open vial's remaining doses, a reorder hint, the next titration " +
-			"step and the injection zone to suggest. Fields of contexts that are not " +
-			"built — nutrition and measurements — are null rather than zero: an absent " +
-			"value is a dash on the screen, and a zero is a sentence about a " +
-			"prescription that does not exist. A patient with no running course still " +
-			"gets the day, the part of it and the suggested zone.",
+			"step and the injection zone to suggest. Fields this endpoint does not fill " +
+			"— nutrition, whose context is not built, and the weights, which it does " +
+			"not read yet — are null rather than zero: an absent value is a dash on the " +
+			"screen, and a zero is a sentence about a prescription that does not exist. " +
+			"A patient with no running course still gets the day, the part of it and " +
+			"the suggested zone.",
 		Tags:   []string{"protocol"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable},
 	}, s.today)
@@ -453,37 +455,8 @@ func (s *Service) registerReads(api huma.API) {
 		},
 	}, s.day)
 
-	admitNull(api, "TodayBody", "meal_macros", "targets")
-	admitNull(api, "RowBody", "compound")
-}
-
-// admitNull rewrites a property that is a bare $ref into «this object or null».
-//
-// huma cannot express it: `nullable:"true"` over a $ref panics («nullable is not supported for
-// field … which is type '#/components/schemas/…'»), and without the tag a generator reads the
-// property as non-nullable — so a client types it MacrosBody and throws on the first patient
-// with no nutrition context. Scalars need none of this.
-func admitNull(api huma.API, schema string, properties ...string) {
-	registry := api.OpenAPI().Components.Schemas
-	target := registry.SchemaFromRef("#/components/schemas/" + schema)
-	if target == nil {
-		panic("admitNull: no schema named " + schema)
-	}
-	for _, name := range properties {
-		property, ok := target.Properties[name]
-		if !ok || property.Ref == "" {
-			panic("admitNull: " + schema + "." + name + " is not a $ref")
-		}
-		target.Properties[name] = &huma.Schema{
-			Description: property.Description,
-			OneOf: []*huma.Schema{
-				{Ref: property.Ref},
-				// huma names every type but this one, because it never emits it
-				// for a $ref — which is the whole reason this function exists.
-				{Type: "null"},
-			},
-		}
-	}
+	httpserver.AdmitNull(api, "TodayBody", "meal_macros", "targets")
+	httpserver.AdmitNull(api, "RowBody", "compound")
 }
 
 // TodayOutput is the hero screen.
@@ -511,9 +484,9 @@ type TodayBody struct {
 	MealCount      *int        `json:"meal_count" doc:"Null until the nutrition context is built."`
 	MealMacros     *MacrosBody `json:"meal_macros" doc:"Null until the nutrition context is built."`
 	Targets        *MacrosBody `json:"targets" doc:"Null until the nutrition context is built."`
-	WeightKG       *float64    `json:"weight_kg" doc:"Null until the measurements context is built."`
-	WeightSeries   []float64   `json:"weight_series" doc:"Null until the measurements context is built."`
-	TargetWeightKG *float64    `json:"target_weight_kg" doc:"Null until the measurements context is built."`
+	WeightKG       *float64    `json:"weight_kg" doc:"Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends."`
+	WeightSeries   []float64   `json:"weight_series" doc:"Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends."`
+	TargetWeightKG *float64    `json:"target_weight_kg" doc:"Null until this endpoint reads the patient profile: the target is set at intake and owned by the patient thereafter, and never a measurement."`
 }
 
 // MacrosBody is the wire's own, tagged: the domain struct has no tags, and using it here put

@@ -247,9 +247,9 @@ func TestANeighbourThatFailsFailsTheAnswer(t *testing.T) {
 	}
 }
 
-// Every field of a context that is not built is absent, and none of them is a zero. «0 из 4
-// приёмов» over a nutrition context that does not exist is a lie the client cannot detect.
-func TestTheFieldsOfContextsThatDoNotExistAreAbsent(t *testing.T) {
+// Nutrition is unbuilt and the weights go unread; either way the field is absent, never a zero.
+// «0 из 4 приёмов» over a nutrition context that does not exist is a lie the client cannot detect.
+func TestTheFieldsThisEndpointDoesNotFillAreAbsent(t *testing.T) {
 	n := &stubNeighbours{site: "r-glute"}
 
 	today := todayFor(t, aSchedulePlan(), true, civil.NewDate(2026, time.May, 10), civil.Slot{Hour: 7}, n)
@@ -258,7 +258,7 @@ func TestTheFieldsOfContextsThatDoNotExistAreAbsent(t *testing.T) {
 		t.Errorf("nutrition answered %+v", today)
 	}
 	if today.WeightKG != nil || today.TargetWeightKG != nil || today.WeightSeries != nil {
-		t.Errorf("measurements answered %+v", today)
+		t.Errorf("the weights answered %+v", today)
 	}
 }
 

@@ -82,6 +82,11 @@ export type DayOutputBody = {
     occurrences: Array<OccurrenceBody>;
 };
 
+export type DoseBandBody = {
+    dose: DoseBody;
+    range: TrendRangeBody;
+};
+
 export type DoseBody = {
     unit: 'мг' | 'мкг';
     value: number;
@@ -233,6 +238,30 @@ export type Me = {
     sub: string;
 };
 
+export type MetricMetaBody = {
+    /**
+     * Which way the metric has to move for the patient to be getting better, and the side of the threshold that is well.
+     */
+    direction: 'up' | 'down';
+    /**
+     * Null for the five metrics the clinic sets no bound on — absent, and not a zero every reading would clear.
+     */
+    threshold: ThresholdBody | null;
+    /**
+     * The unit every point of this metric is in; a point carries none of its own.
+     */
+    unit: string;
+};
+
+export type MetricTrendBody = {
+    meta: MetricMetaBody;
+    metric: 'weight' | 'hrv' | 'rhr' | 'sleep' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    /**
+     * Oldest first, ties broken by identifier, and empty for a metric this patient has not measured in this window.
+     */
+    points: Array<TrendPointBody>;
+};
+
 export type NewPatientBody = {
     date_of_birth?: string;
     /**
@@ -371,6 +400,47 @@ export type ProblemDetail = {
     message: string;
 };
 
+export type ProtocolMarkBody = {
+    date: string;
+    /**
+     * Null on a start mark: there is no dose to have come up from.
+     */
+    from: DoseBody | null;
+    kind: 'start' | 'titration';
+    to: DoseBody;
+};
+
+export type RecordInputBody = {
+    /**
+     * When the reading was taken, which is where it lands on the axis — not when it was entered. A reading measured after the server's own instant is refused.
+     */
+    measured_at: string;
+    /**
+     * The sleep score is absent: it is computed from imported sessions and there is nothing to type.
+     */
+    metric: 'weight' | 'hrv' | 'rhr' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    note?: string;
+    /**
+     * In the unit the metric is read in, which the reply carries back.
+     */
+    value: number;
+};
+
+export type RecordedBody = {
+    id: string;
+    measured_at: string;
+    metric: 'weight' | 'hrv' | 'rhr' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    /**
+     * Read back off the row rather than asserted. This operation writes nothing but a hand-typed reading, so it is the column's default on a column the patient holds no grant on.
+     */
+    source: 'manual' | 'healthkit' | 'health_connect';
+    /**
+     * The server's, off the metric: a point on the axis carries none of its own.
+     */
+    unit: string;
+    value: number;
+};
+
 export type ReorderBody = {
     compound_id: string;
     weeks_left: number;
@@ -473,6 +543,10 @@ export type StepBody = {
     week: number;
 };
 
+export type ThresholdBody = {
+    value: number;
+};
+
 export type TodayBody = {
     /**
      * Absent outside the course and for a cancelled one.
@@ -501,7 +575,7 @@ export type TodayBody = {
      */
     suggested_site: 'l-abdomen' | 'r-abdomen' | 'l-delt' | 'r-delt' | 'l-glute' | 'r-glute' | 'l-thigh' | 'r-thigh' | 'l-lback' | 'r-lback';
     /**
-     * Null until the measurements context is built.
+     * Null until this endpoint reads the patient profile: the target is set at intake and owned by the patient thereafter, and never a measurement.
      */
     target_weight_kg: number | null;
     /**
@@ -514,13 +588,64 @@ export type TodayBody = {
     vial_doses_left?: number;
     week_protocol: Array<RowBody>;
     /**
-     * Null until the measurements context is built.
+     * Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends.
      */
     weight_kg: number | null;
     /**
-     * Null until the measurements context is built.
+     * Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends.
      */
     weight_series: Array<number> | null;
+};
+
+export type TrendBody = {
+    /**
+     * The prescribed dose over the window. Empty when the course draws no strip.
+     */
+    bands: Array<DoseBandBody>;
+    /**
+     * The day the strip opened and each day it changed, clipped to the same window.
+     */
+    marks: Array<ProtocolMarkBody>;
+    metric: MetricTrendBody;
+    /**
+     * Null when the window covers no days at all, which only the cycle window does: the patient has no course, or the one they have has not started.
+     */
+    range: TrendRangeBody | null;
+    /**
+     * The IANA zone the range's days are the patient's own in.
+     */
+    timezone: string;
+    window: '7d' | '4w' | '3m' | 'cycle';
+};
+
+export type TrendPointBody = {
+    id: string;
+    measured_at: string;
+    value: number;
+};
+
+export type TrendRangeBody = {
+    from: string;
+    /**
+     * Inclusive: a window is a set of days, not a subtraction.
+     */
+    through: string;
+};
+
+export type TrendsBody = {
+    /**
+     * All eight, in enumeration order, unmeasured ones included.
+     */
+    metrics: Array<MetricTrendBody>;
+    /**
+     * Null when the window covers no days at all, which only the cycle window does: the patient has no course, or the one they have has not started.
+     */
+    range: TrendRangeBody | null;
+    /**
+     * The IANA zone the range's days are the patient's own in.
+     */
+    timezone: string;
+    window: '7d' | '4w' | '3m' | 'cycle';
 };
 
 export type VialAmountBody = {
@@ -791,6 +916,101 @@ export type ReadDosePhotoResponses = {
 
 export type ReadDosePhotoResponse = ReadDosePhotoResponses[keyof ReadDosePhotoResponses];
 
+export type RecordMeasurementData = {
+    body: RecordInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/measurements';
+};
+
+export type RecordMeasurementErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type RecordMeasurementError = RecordMeasurementErrors[keyof RecordMeasurementErrors];
+
+export type RecordMeasurementResponses = {
+    /**
+     * Created
+     */
+    201: RecordedBody;
+};
+
+export type RecordMeasurementResponse = RecordMeasurementResponses[keyof RecordMeasurementResponses];
+
+export type DeleteMeasurementData = {
+    body?: never;
+    path: {
+        /**
+         * The reading, as the point on the axis carries it.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v1/me/measurements/{id}';
+};
+
+export type DeleteMeasurementErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type DeleteMeasurementError = DeleteMeasurementErrors[keyof DeleteMeasurementErrors];
+
+export type DeleteMeasurementResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type DeleteMeasurementResponse = DeleteMeasurementResponses[keyof DeleteMeasurementResponses];
+
 export type GetScheduleMonthData = {
     body?: never;
     path?: never;
@@ -964,6 +1184,100 @@ export type GetTodayResponses = {
 };
 
 export type GetTodayResponse = GetTodayResponses[keyof GetTodayResponses];
+
+export type GetTrendsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.
+         */
+        window?: '7d' | '4w' | '3m' | 'cycle';
+    };
+    url: '/v1/me/trends';
+};
+
+export type GetTrendsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetTrendsError = GetTrendsErrors[keyof GetTrendsErrors];
+
+export type GetTrendsResponses = {
+    /**
+     * OK
+     */
+    200: TrendsBody;
+};
+
+export type GetTrendsResponse = GetTrendsResponses[keyof GetTrendsResponses];
+
+export type GetMetricTrendData = {
+    body?: never;
+    path: {
+        metric: 'weight' | 'hrv' | 'rhr' | 'sleep' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    };
+    query?: {
+        /**
+         * The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.
+         */
+        window?: '7d' | '4w' | '3m' | 'cycle';
+    };
+    url: '/v1/me/trends/{metric}';
+};
+
+export type GetMetricTrendErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetMetricTrendError = GetMetricTrendErrors[keyof GetMetricTrendErrors];
+
+export type GetMetricTrendResponses = {
+    /**
+     * OK
+     */
+    200: TrendBody;
+};
+
+export type GetMetricTrendResponse = GetMetricTrendResponses[keyof GetMetricTrendResponses];
 
 export type ReadCabinetData = {
     body?: never;

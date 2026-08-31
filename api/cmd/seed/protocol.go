@@ -100,10 +100,8 @@ func theCourse(patient civil.UserID, today civil.Date) protocol.Draft {
 				Loggable: false,
 			},
 			{
-				// Not loggable, and that is a limit rather than a choice: nothing
-				// records a weight yet — measurements is an unbuilt context — so a
-				// row offering «записать» would be a screen promising what no
-				// endpoint accepts.
+				// Loggable is the dose log's gate, and a weigh-in is not a
+				// dose: it is recorded through POST /v1/me/measurements.
 				Kind:       protocol.KindWeighIn,
 				Cadence:    protocol.CadenceWeekly,
 				DaysOfWeek: []time.Weekday{time.Sunday},

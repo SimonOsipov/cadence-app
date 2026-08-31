@@ -163,7 +163,7 @@ open class ProtocolApi : ApiClient {
 
     /**
      * The patient&#39;s day
-     * Everything the hero screen draws: the day and the part of it in the patient&#39;s own zone, the cycle week, the next injection still open with the drug it names, the week&#39;s prescription strip, whether a dose was logged today, the open vial&#39;s remaining doses, a reorder hint, the next titration step and the injection zone to suggest. Fields of contexts that are not built — nutrition and measurements — are null rather than zero: an absent value is a dash on the screen, and a zero is a sentence about a prescription that does not exist. A patient with no running course still gets the day, the part of it and the suggested zone.
+     * Everything the hero screen draws: the day and the part of it in the patient&#39;s own zone, the cycle week, the next injection still open with the drug it names, the week&#39;s prescription strip, whether a dose was logged today, the open vial&#39;s remaining doses, a reorder hint, the next titration step and the injection zone to suggest. Fields this endpoint does not fill — nutrition, whose context is not built, and the weights, which it does not read yet — are null rather than zero: an absent value is a dash on the screen, and a zero is a sentence about a prescription that does not exist. A patient with no running course still gets the day, the part of it and the suggested zone.
      * @return TodayBody
      */
     @Suppress("UNCHECKED_CAST")

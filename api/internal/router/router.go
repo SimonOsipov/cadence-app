@@ -91,7 +91,9 @@ func contexts(opts Options) []boundedContext {
 			Bucket:      opts.VialsBucket,
 		}).Register},
 		{"journal", journal.Register},
-		{"measurements", measurements.Register},
+		{"measurements", measurements.NewService(time.Now, measurements.Deps{
+			RequestPool: opts.Pool,
+		}).Register},
 		{"messaging", messaging.Register},
 		{"notifications", notifications.Register},
 		{"nutrition", nutrition.Register},

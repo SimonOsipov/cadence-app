@@ -79,6 +79,9 @@ type Protocol struct {
 	Status    ProtocolStatus
 	CreatedBy *civil.UserID
 	Notes     *string
+	// The instant the row was written, and a rung of the last-course key rather than
+	// anything a screen shows: two courses may share a start date, and this separates them.
+	CreatedAt time.Time
 }
 
 // WeekStart is the one place this arithmetic lives: three copies of «(N − 1) × 7» were
