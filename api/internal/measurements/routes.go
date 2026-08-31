@@ -18,8 +18,9 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/protocol"
 )
 
-// The request pool alone: both reads are the patient asking about their own rows, so they run
-// under the patient's identity and RLS is the boundary. Nothing here reaches the service seam.
+// The request pool alone: every operation here is the patient acting on their own rows, so
+// they run under the patient's identity and RLS is the boundary. Nothing reaches the service
+// seam.
 type Service struct {
 	requests *pgxpool.Pool
 
@@ -84,6 +85,8 @@ func (s *Service) Register(api huma.API) {
 			http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 		},
 	}, s.detail)
+
+	s.registerWrites(api)
 
 	httpserver.AdmitNull(api, "TrendsBody", "range")
 	httpserver.AdmitNull(api, "TrendBody", "range")
@@ -228,9 +231,9 @@ func (s *Service) detail(ctx context.Context, in *TrendInput) (*TrendOutput, err
 	if err != nil {
 		return nil, err
 	}
-	metric, ok := ParseMetric(in.Metric)
-	if !ok {
-		return nil, huma.Error422UnprocessableEntity("metric is not one this API knows: " + in.Metric)
+	metric, err := askedMetric(in.Metric)
+	if err != nil {
+		return nil, err
 	}
 
 	var trend Trend
@@ -282,6 +285,18 @@ func askedWindow(asked string) (Window, error) {
 	}
 
 	return window, nil
+}
+
+// askedMetric is askedWindow's twin, below the enum keyword of a path and of a body alike, and
+// it holds all eight: whether a metric can be typed is Record's answer, and a second copy of
+// that set here would leave one of the two unmeasurable.
+func askedMetric(asked string) (Metric, error) {
+	metric, ok := ParseMetric(asked)
+	if !ok {
+		return "", huma.Error422UnprocessableEntity("metric is not one this API knows: " + asked)
+	}
+
+	return metric, nil
 }
 
 // patient is the caller, refused unless they are one. Every neighbouring /v1/me surface
@@ -351,6 +366,138 @@ func renderDose(dose protocol.Dose) protocol.DoseBody {
 	return protocol.DoseBody{Value: dose.Value, Unit: string(dose.Unit)}
 }
 
+func (s *Service) registerWrites(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "record-measurement",
+		Method:        http.MethodPost,
+		Path:          "/v1/me/measurements",
+		DefaultStatus: http.StatusCreated,
+		Summary:       "Write one reading the patient typed",
+		Description: "Records one hand-typed reading and answers the row that was written. " +
+			"The unit is the server's — it is a function of the metric, so a request cannot " +
+			"carry one — and so is the source, which is why the reply reads it back off the " +
+			"row rather than asserting it: a hand-typed reading cannot claim to have come " +
+			"off a watch. Seven metrics can be written where both reads answer eight: the " +
+			"sleep score is computed from imported sessions, and there is no number for a " +
+			"patient to type. Answers 422 for a reading measured after it was recorded, for " +
+			"a value outside what the metric can plausibly read — a slipped decimal point, " +
+			"not a reading the clinic would worry about, which is what the threshold is for " +
+			"— and for a note of nothing but whitespace.",
+		Tags: []string{"measurements"},
+		Errors: []int{
+			http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
+		},
+	}, s.record)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-measurement",
+		Method:        http.MethodDelete,
+		Path:          "/v1/me/measurements/{id}",
+		DefaultStatus: http.StatusNoContent,
+		Summary:       "Remove one reading the patient typed",
+		Description: "Removes one of the patient's own hand-typed readings — a typo is " +
+			"corrected by deleting the point and entering it again, because a reading is a " +
+			"clinical fact and rewriting one would leave no trace that it had been. A " +
+			"reading this patient does not hold answers 404, and so does an identifier " +
+			"nobody holds: the two cannot differ, or the status alone would report whether " +
+			"another patient's reading exists. Their own imported reading answers 409 and " +
+			"says why — that row IS on their screen, so calling it absent would be a lie, " +
+			"and the sample returns on the next sync anyway.",
+		Tags: []string{"measurements"},
+		Errors: []int{
+			http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound,
+			http.StatusConflict, http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
+		},
+	}, s.remove)
+}
+
+// RecordInput is the add sheet's payload. No unit and no source: both are the server's, for
+// the reason Draft records, and a field for either would be a value the request could lie in.
+//
+// The metric set is the write's own seven, written out because a struct tag cannot call
+// WritableMetrics(); the two spellings are reconciled by the test that reads this back off the
+// registered document. The note's bounds are 000025's `length(note) BETWEEN 1 AND 2000` — the
+// column also refuses one that is all whitespace, which no keyword spells and Record names.
+type RecordInput struct {
+	Body struct {
+		Metric     string    `json:"metric" enum:"weight,hrv,rhr,bodyfat,waist,hip,chest" doc:"The sleep score is absent: it is computed from imported sessions and there is nothing to type."`
+		Value      float64   `json:"value" doc:"In the unit the metric is read in, which the reply carries back."`
+		MeasuredAt time.Time `json:"measured_at" doc:"When the reading was taken, which is where it lands on the axis — not when it was entered. A reading measured after the server's own instant is refused."`
+		Note       *string   `json:"note,omitempty" minLength:"1" maxLength:"2000"`
+	}
+}
+
+type RecordOutput struct {
+	Body RecordedBody
+}
+
+// RecordedBody is the row as it was written, and the identifier is the point the patient will
+// be looking at when they ask for it to be deleted.
+type RecordedBody struct {
+	ID         string    `json:"id" format:"uuid"`
+	Metric     string    `json:"metric" enum:"weight,hrv,rhr,bodyfat,waist,hip,chest"`
+	Value      float64   `json:"value"`
+	Unit       string    `json:"unit" doc:"The server's, off the metric: a point on the axis carries none of its own."`
+	MeasuredAt time.Time `json:"measured_at"`
+	Source     string    `json:"source" enum:"manual,healthkit,health_connect" doc:"Read back off the row rather than asserted. This operation writes nothing but a hand-typed reading, so it is the column's default on a column the patient holds no grant on."`
+}
+
+type DeleteInput struct {
+	ID string `path:"id" format:"uuid" doc:"The reading, as the point on the axis carries it."`
+}
+
+type DeleteOutput struct{}
+
+func (s *Service) record(ctx context.Context, in *RecordInput) (*RecordOutput, error) {
+	patient, caller, err := s.patient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	metric, err := askedMetric(in.Body.Metric)
+	if err != nil {
+		return nil, err
+	}
+
+	var recorded Recorded
+	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
+		recorded, err = Record(ctx, tx, patient, s.now(), Draft{
+			Metric:     metric,
+			Value:      in.Body.Value,
+			MeasuredAt: in.Body.MeasuredAt,
+			Note:       in.Body.Note,
+		})
+
+		return err
+	}); err != nil {
+		return nil, answerWrite(err)
+	}
+
+	return &RecordOutput{Body: RecordedBody{
+		ID:         string(recorded.ID),
+		Metric:     string(recorded.Metric),
+		Value:      recorded.Value,
+		Unit:       recorded.Unit,
+		MeasuredAt: recorded.MeasuredAt,
+		Source:     string(recorded.Source),
+	}}, nil
+}
+
+func (s *Service) remove(ctx context.Context, in *DeleteInput) (*DeleteOutput, error) {
+	patient, caller, err := s.patient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := database.WithCaller(ctx, s.requests, caller, func(ctx context.Context, tx pgx.Tx) error {
+		return Delete(ctx, tx, patient, ReadingID(in.ID))
+	}); err != nil {
+		return nil, answerDelete(err)
+	}
+
+	return &DeleteOutput{}, nil
+}
+
 // answer maps a refusal to a status. Only what a read can produce is here; the write and the
 // delete of step 8 bring their own. ErrUnknownMetric is deliberately absent: on a read it can
 // only mean Meta and ParseMetric disagree about the eight, which is a fault of this process
@@ -365,5 +512,33 @@ func answer(doing string, err error) error {
 		return huma.Error503ServiceUnavailable("the database could not serve the request", err)
 	default:
 		return huma.Error500InternalServerError(doing, err)
+	}
+}
+
+// answerWrite maps the write's own refusals, which the reads cannot produce. Separate from
+// answer rather than folded into it: ErrUnknownMetric means the same thing on both paths —
+// Meta and ParseMetric disagreeing about the eight — and it falls through to the 500 there,
+// while every refusal below is one the patient can act on by editing the sheet.
+func answerWrite(err error) error {
+	switch {
+	case errors.Is(err, ErrMetricNotWritable), errors.Is(err, ErrMeasuredInTheFuture),
+		errors.Is(err, ErrValueImplausible), errors.Is(err, ErrNoteSaysNothing):
+		return huma.Error422UnprocessableEntity(err.Error())
+	default:
+		return answer("recording the reading", err)
+	}
+}
+
+// answerDelete is the two answers the step exists for, and each carries its sentinel's own
+// sentence rather than the wrapped error's: the ways a reading can be absent have to be ONE
+// answer, and a sentence that named the reading would make each of them a different one.
+func answerDelete(err error) error {
+	switch {
+	case errors.Is(err, ErrNoSuchReading):
+		return huma.Error404NotFound(ErrNoSuchReading.Error())
+	case errors.Is(err, ErrReadingWasImported):
+		return huma.Error409Conflict(ErrReadingWasImported.Error())
+	default:
+		return answer("deleting the reading", err)
 	}
 }

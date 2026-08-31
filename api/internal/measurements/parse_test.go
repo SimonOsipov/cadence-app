@@ -49,4 +49,36 @@ func TestTheCodesOnTheWireAreTheWrittenOutOnes(t *testing.T) {
 	if got := Sources(); !slices.Equal(got, []Source{"manual", "healthkit", "health_connect"}) {
 		t.Errorf("the sources are %v", got)
 	}
+	if got := WritableMetrics(); !slices.Equal(got, []Metric{
+		"weight", "hrv", "rhr", "bodyfat", "waist", "hip", "chest",
+	}) {
+		t.Errorf("the writable metrics are %v", got)
+	}
+}
+
+// The two metric sets against each other, and the exclusion named rather than counted: a
+// seven that dropped the chest instead of the sleep is exactly as long as the right one, and
+// a writable metric the parser refuses is a value nobody can send.
+func TestTheOneMetricNoPatientTypesIsTheSleepScore(t *testing.T) {
+	var withheld []Metric
+	for _, metric := range Metrics() {
+		if !slices.Contains(WritableMetrics(), metric) {
+			withheld = append(withheld, metric)
+		}
+	}
+	if !slices.Equal(withheld, []Metric{MetricSleep}) {
+		t.Errorf("the metrics no patient can type are %v", withheld)
+	}
+
+	for _, metric := range WritableMetrics() {
+		if _, ok := ParseMetric(string(metric)); !ok {
+			t.Errorf("%q can be written and cannot be parsed", metric)
+		}
+		if !writable(metric) {
+			t.Errorf("%q is in the set and the guard refuses it", metric)
+		}
+	}
+	if writable(MetricSleep) {
+		t.Error("the guard admits the sleep score")
+	}
 }

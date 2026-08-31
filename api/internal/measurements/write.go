@@ -19,6 +19,12 @@ var (
 	// refusal the caller can be told about by field name.
 	ErrUnknownMetric = errors.New("no such metric")
 
+	// ErrMetricNotWritable is a metric this API records and no patient types. Only the sleep
+	// score is one: it is computed from imported sessions, so there is nothing to read off a
+	// watch face — and it is refused here as well as by the schema, because a caller reaching
+	// this package without a document would otherwise write a number nobody can produce.
+	ErrMetricNotWritable = errors.New("this metric is not one a patient records by hand")
+
 	// ErrMeasuredInTheFuture is a reading taken after the instant it was recorded. It is a
 	// wrong clock or a mistyped date, and admitting it would put a point past the right
 	// edge of every window the patient can ask for.
@@ -81,6 +87,9 @@ func Record(
 	// otherwise be written with nothing checking its value at all.
 	if !known || !bounded {
 		return Recorded{}, fmt.Errorf("%q: %w", draft.Metric, ErrUnknownMetric)
+	}
+	if !writable(draft.Metric) {
+		return Recorded{}, fmt.Errorf("%q: %w", draft.Metric, ErrMetricNotWritable)
 	}
 	if draft.MeasuredAt.After(now) {
 		return Recorded{}, fmt.Errorf("%s: %w", draft.MeasuredAt, ErrMeasuredInTheFuture)

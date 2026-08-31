@@ -410,6 +410,37 @@ export type ProtocolMarkBody = {
     to: DoseBody;
 };
 
+export type RecordInputBody = {
+    /**
+     * When the reading was taken, which is where it lands on the axis — not when it was entered. A reading measured after the server's own instant is refused.
+     */
+    measured_at: string;
+    /**
+     * The sleep score is absent: it is computed from imported sessions and there is nothing to type.
+     */
+    metric: 'weight' | 'hrv' | 'rhr' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    note?: string;
+    /**
+     * In the unit the metric is read in, which the reply carries back.
+     */
+    value: number;
+};
+
+export type RecordedBody = {
+    id: string;
+    measured_at: string;
+    metric: 'weight' | 'hrv' | 'rhr' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    /**
+     * Read back off the row rather than asserted. This operation writes nothing but a hand-typed reading, so it is the column's default on a column the patient holds no grant on.
+     */
+    source: 'manual' | 'healthkit' | 'health_connect';
+    /**
+     * The server's, off the metric: a point on the axis carries none of its own.
+     */
+    unit: string;
+    value: number;
+};
+
 export type ReorderBody = {
     compound_id: string;
     weeks_left: number;
@@ -884,6 +915,101 @@ export type ReadDosePhotoResponses = {
 };
 
 export type ReadDosePhotoResponse = ReadDosePhotoResponses[keyof ReadDosePhotoResponses];
+
+export type RecordMeasurementData = {
+    body: RecordInputBody;
+    path?: never;
+    query?: never;
+    url: '/v1/me/measurements';
+};
+
+export type RecordMeasurementErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type RecordMeasurementError = RecordMeasurementErrors[keyof RecordMeasurementErrors];
+
+export type RecordMeasurementResponses = {
+    /**
+     * Created
+     */
+    201: RecordedBody;
+};
+
+export type RecordMeasurementResponse = RecordMeasurementResponses[keyof RecordMeasurementResponses];
+
+export type DeleteMeasurementData = {
+    body?: never;
+    path: {
+        /**
+         * The reading, as the point on the axis carries it.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/v1/me/measurements/{id}';
+};
+
+export type DeleteMeasurementErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type DeleteMeasurementError = DeleteMeasurementErrors[keyof DeleteMeasurementErrors];
+
+export type DeleteMeasurementResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type DeleteMeasurementResponse = DeleteMeasurementResponses[keyof DeleteMeasurementResponses];
 
 export type GetScheduleMonthData = {
     body?: never;

@@ -24,6 +24,8 @@
 package app.cadence.shared.api.apis
 
 import app.cadence.shared.api.models.Problem
+import app.cadence.shared.api.models.RecordInputBody
+import app.cadence.shared.api.models.RecordedBody
 import app.cadence.shared.api.models.TrendBody
 import app.cadence.shared.api.models.TrendsBody
 
@@ -55,6 +57,38 @@ open class MeasurementsApi : ApiClient {
         baseUrl: String,
         httpClient: HttpClient
     ): super(baseUrl = baseUrl, httpClient = httpClient)
+
+    /**
+     * Remove one reading the patient typed
+     * Removes one of the patient&#39;s own hand-typed readings — a typo is corrected by deleting the point and entering it again, because a reading is a clinical fact and rewriting one would leave no trace that it had been. A reading this patient does not hold answers 404, and so does an identifier nobody holds: the two cannot differ, or the status alone would report whether another patient&#39;s reading exists. Their own imported reading answers 409 and says why — that row IS on their screen, so calling it absent would be a lie, and the sample returns on the next sync anyway.
+     * @param id The reading, as the point on the axis carries it.
+     * @return void
+     */
+    open suspend fun deleteMeasurement(id: kotlin.String): HttpResponse<Unit> {
+
+        val localVariableAuthNames = listOf<String>("bearer")
+
+        val localVariableBody = 
+            io.ktor.client.utils.EmptyContent
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.DELETE,
+            "/v1/me/measurements/{id}".replace("{" + "id" + "}", "$id"),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+        )
+
+        return request(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
 
 
     /**
@@ -198,6 +232,39 @@ open class MeasurementsApi : ApiClient {
             localVariableAuthNames
         ).wrap()
     }
+
+
+    /**
+     * Write one reading the patient typed
+     * Records one hand-typed reading and answers the row that was written. The unit is the server&#39;s — it is a function of the metric, so a request cannot carry one — and so is the source, which is why the reply reads it back off the row rather than asserting it: a hand-typed reading cannot claim to have come off a watch. Seven metrics can be written where both reads answer eight: the sleep score is computed from imported sessions, and there is no number for a patient to type. Answers 422 for a reading measured after it was recorded, for a value outside what the metric can plausibly read — a slipped decimal point, not a reading the clinic would worry about, which is what the threshold is for — and for a note of nothing but whitespace.
+     * @param recordInputBody 
+     * @return RecordedBody
+     */
+    @Suppress("UNCHECKED_CAST")
+    open suspend fun recordMeasurement(recordInputBody: RecordInputBody): HttpResponse<RecordedBody> {
+
+        val localVariableAuthNames = listOf<String>("bearer")
+
+        val localVariableBody = recordInputBody
+
+        val localVariableQuery = mutableMapOf<String, List<String>>()
+        val localVariableHeaders = mutableMapOf<String, String>()
+
+        val localVariableConfig = RequestConfig<kotlin.Any?>(
+            RequestMethod.POST,
+            "/v1/me/measurements",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+        )
+
+        return jsonRequest(
+            localVariableConfig,
+            localVariableBody,
+            localVariableAuthNames
+        ).wrap()
+    }
+
 
 
 }

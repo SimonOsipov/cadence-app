@@ -45,3 +45,21 @@ func parse[T ~string](s string, set []T) (T, bool) {
 
 	return none, false
 }
+
+// WritableMetrics is what a patient can type in: the eight less `sleep`, which the API derives
+// from imported sessions — «a derived score computed by the API … (v1: duration-based formula,
+// constants module)», source/architecture-overview-v1.1.md:182, so the formula lands in this
+// module when the importer does. There is no number on a watch face to read off and enter.
+//
+// Deliberately not the frozen prototype's five. `mobile/src/features/body/data.ts` marks
+// weight, bodyfat, waist, hip and chest `editable`, and that is the Body screen's add sheet
+// rather than this API's set: an HRV and a resting pulse are numbers a watch displays.
+func WritableMetrics() []Metric {
+	return []Metric{
+		MetricWeight, MetricHRV, MetricRHR,
+		MetricBodyFat, MetricWaist, MetricHip, MetricChest,
+	}
+}
+
+// writable is the guard below the schema's enum, for a caller that reaches Record without one.
+func writable(m Metric) bool { return slices.Contains(WritableMetrics(), m) }

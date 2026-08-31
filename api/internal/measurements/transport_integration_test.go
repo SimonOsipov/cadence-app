@@ -4,8 +4,10 @@ package measurements_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +26,12 @@ import (
 func get(t *testing.T, c clinic, subject, path string) (int, string) {
 	t.Helper()
 
+	return send(t, c, http.MethodGet, subject, path, "")
+}
+
+func send(t *testing.T, c clinic, method, subject, path, body string) (int, string) {
+	t.Helper()
+
 	mux := chi.NewRouter()
 	mux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,8 +44,13 @@ func get(t *testing.T, c clinic, subject, path string) (int, string) {
 		func() time.Time { return theMorning }, measurements.Deps{RequestPool: c.request},
 	).Register(httpserver.NewAPI(mux))
 
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	mux.ServeHTTP(rec, req)
 
 	return rec.Code, rec.Body.String()
 }
@@ -375,5 +388,239 @@ func TestAPatientWithNoZoneIsARefusalAndNotAnAxisInTheServersZone(t *testing.T) 
 	// The message names the fault and not the patient: the reply reaches a phone.
 	if strings.Contains(body, patientA) {
 		t.Errorf("the reply carries the patient's identifier: %s", body)
+	}
+}
+
+// The reading as the add sheet sends it, and the instant is a quarter of an hour before the
+// clock the handler was built with: the row's own measured_at is read back below, and a draft
+// measured at `now` could not tell a write that stored the recording instant from a right one.
+const aTypedReading = `{"metric":"waist","value":93,"measured_at":"2026-08-05T03:45:00Z","note":"утром"}`
+
+type wireRecorded struct {
+	ID         string  `json:"id"`
+	Metric     string  `json:"metric"`
+	Value      float64 `json:"value"`
+	Unit       string  `json:"unit"`
+	MeasuredAt string  `json:"measured_at"`
+	Source     string  `json:"source"`
+}
+
+// The happy path, and not only the refusals: an operation nothing sends a valid body to can
+// answer 422 to everything and look exactly like a correct one.
+func TestThePatientRecordsAReadingThroughTheTransport(t *testing.T) {
+	c := newClinic(t)
+
+	status, body := send(t, c, http.MethodPost, patientA, "/v1/me/measurements", aTypedReading)
+	if status != http.StatusCreated {
+		t.Fatalf("answered %d, want 201: %s", status, body)
+	}
+	answered := read[wireRecorded](t, body)
+
+	// The unit is the server's: the request carries no field for one, so a reply that
+	// echoed the request could not have said `cm` at all.
+	if answered.Metric != "waist" || answered.Value != 93 || answered.Unit != "cm" {
+		t.Errorf("the reply is %+v", answered)
+	}
+	// Read back off the row rather than asserted, and the column is one the patient holds
+	// no grant on — a hand-typed reading cannot claim to have come off a watch.
+	if answered.Source != "manual" {
+		t.Errorf("the reading was written as %q", answered.Source)
+	}
+	if answered.ID == "" {
+		t.Fatal("the reply carries no identifier, so the patient cannot ask for it back")
+	}
+	// The reply's own instant and not the row's: it is where the client draws the point it
+	// has just added, and s.now() in its place leaves every assertion below green.
+	if answered.MeasuredAt != "2026-08-05T03:45:00Z" {
+		t.Errorf("the reply dates the reading %q", answered.MeasuredAt)
+	}
+
+	// The row as the privileged role reads it: the reply is what the handler rendered, and
+	// a write that landed on nobody's patient renders exactly the same bytes.
+	stored := c.row(t, measurements.ReadingID(answered.ID))
+	if stored.patient != patientA || stored.metric != "waist" || stored.value != 93 ||
+		stored.unit != "cm" || stored.source != "manual" {
+		t.Errorf("the row reads %+v", stored)
+	}
+	if !stored.measuredAt.Equal(time.Date(2026, time.August, 5, 3, 45, 0, 0, time.UTC)) {
+		t.Errorf("the row is measured at %v", stored.measuredAt)
+	}
+	if stored.note == nil || *stored.note != "утром" {
+		t.Errorf("the row's note is %v", stored.note)
+	}
+
+	// And the point is on the axis the patient will look at, which is the whole reason the
+	// write exists: the two halves of this context meet at the row and nowhere else.
+	status, body = get(t, c, patientA, "/v1/me/trends/waist?window=7d")
+	if status != http.StatusOK {
+		t.Fatalf("the detail answered %d: %s", status, body)
+	}
+	drawn := read[wireDetail](t, body)
+	if len(drawn.Metric.Points) != 1 || drawn.Metric.Points[0].ID != answered.ID ||
+		drawn.Metric.Points[0].Value != 93 {
+		t.Errorf("the waist axis carries %+v", drawn.Metric.Points)
+	}
+}
+
+// The two bounds count alike: the schema measures the note in runes and the column in
+// characters, so a note of two thousand Cyrillic ones — four thousand bytes — is admitted by
+// both. A schema counting bytes would refuse it here, and a column counting them would refuse
+// it one layer down as a 23514 the patient cannot read.
+func TestANoteOfTwoThousandCyrillicCharactersIsAdmitted(t *testing.T) {
+	c := newClinic(t)
+
+	note := strings.Repeat("я", 2000)
+	status, body := send(t, c, http.MethodPost, patientA, "/v1/me/measurements",
+		`{"metric":"weight","value":81.2,"measured_at":"2026-08-05T03:00:00Z","note":"`+note+`"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("answered %d, want 201: %s", status, body)
+	}
+
+	stored := c.row(t, measurements.ReadingID(read[wireRecorded](t, body).ID))
+	if stored.note == nil || *stored.note != note {
+		t.Errorf("the row kept a note of %d characters", len([]rune(*stored.note)))
+	}
+}
+
+// The refusals the server makes for itself, through the transport rather than at the service
+// level: the schema can hold none of the three — two are comparisons against values it does not
+// carry, and the third is the column's own CHECK.
+//
+// What is NOT asserted here is that nothing was written. WithCaller commits only when the
+// closure returns nil, so a count taken after a refused request reads the seeded two however
+// late in Record the check sat, and the assertion could not fail. The first two rows have
+// their witness in write_integration_test.go, which takes the count INSIDE the transaction;
+// the third is the column's own 23514, and the abort it causes is its witness, for the reason
+// TestANoteOfNothingIsRefusedByTheTableAndSaidInWords records beside it.
+func TestAReadingTheServerCannotBelieveIsRefusedThroughTheTransport(t *testing.T) {
+	for _, refused := range []struct{ name, body string }{
+		{"measured after it was recorded", `{"metric":"weight","value":81.2,"measured_at":"2026-08-05T04:00:01Z"}`},
+		{"a weight with a slipped decimal point", `{"metric":"weight","value":812,"measured_at":"2026-08-05T03:00:00Z"}`},
+		{"a note of nothing but whitespace", `{"metric":"weight","value":81.2,"measured_at":"2026-08-05T03:00:00Z","note":"   "}`},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			c := newClinic(t)
+
+			status, body := send(t, c, http.MethodPost, patientA, "/v1/me/measurements", refused.body)
+			if status != http.StatusUnprocessableEntity {
+				t.Errorf("answered %d, want 422: %s", status, body)
+			}
+		})
+	}
+}
+
+// The reading a patient typed by mistake, removed the way the screen removes it. A 204 and a
+// re-read as the privileged role: a DELETE the policy filtered away answers success too.
+func TestThePatientRemovesTheirOwnReadingThroughTheTransport(t *testing.T) {
+	c := newClinic(t)
+
+	mine := c.manual[patientA]
+	status, body := send(t, c, http.MethodDelete, patientA, "/v1/me/measurements/"+mine, "")
+	if status != http.StatusNoContent {
+		t.Fatalf("answered %d, want 204: %s", status, body)
+	}
+	if body != "" {
+		t.Errorf("a 204 carries %q", body)
+	}
+	if c.survives(t, mine) {
+		t.Error("the row is still there")
+	}
+	// The neighbour's row of the same shape, so the delete was bounded and not merely
+	// successful.
+	if !c.survives(t, c.manual[patientB]) {
+		t.Error("the other patient's row went with it")
+	}
+}
+
+// The two absences answer alike, which is the whole of the design: an answer that told them
+// apart would report another patient's history one reading at a time. Compared to each other
+// rather than each to a constant — a status and a sentence that both drifted together would
+// satisfy two separate assertions and still be two distinguishable answers.
+//
+// The whole reply less its `instance`, which is the request line and carries whatever
+// identifier the caller themselves sent.
+func TestAReadingTheyDoNotHoldAndOneNobodyHoldsAnswerAlike(t *testing.T) {
+	c := newClinic(t)
+
+	said := map[string]string{}
+	for _, absent := range []struct{ name, id string }{
+		{"another patient's reading", c.manual[patientB]},
+		// The row whose kind the 409 branch would report if the source were read before
+		// the ownership: invisible, so it is an absence like any other.
+		{"another patient's imported reading", c.imported[patientB]},
+		{"an identifier nobody holds", "7c4d1a90-0000-4000-8000-00000000dead"},
+	} {
+		t.Run(absent.name, func(t *testing.T) {
+			status, body := send(t, c, http.MethodDelete, patientA, "/v1/me/measurements/"+absent.id, "")
+			if status != http.StatusNotFound {
+				t.Errorf("answered %d, want 404: %s", status, body)
+			}
+
+			problem := read[map[string]any](t, body)
+			delete(problem, "instance")
+			if detail, _ := problem["detail"].(string); strings.Contains(detail, absent.id) {
+				t.Errorf("the refusal names the reading: %s", detail)
+			}
+			said[absent.name] = fmt.Sprintf("%d %v", status, problem)
+		})
+	}
+
+	var answers []string
+	for _, answer := range said {
+		answers = append(answers, answer)
+	}
+	if len(answers) != 3 || answers[0] != answers[1] || answers[1] != answers[2] {
+		t.Errorf("the three absences answer %v", said)
+	}
+	if !c.survives(t, c.manual[patientB]) || !c.survives(t, c.imported[patientB]) {
+		t.Error("the other patient's rows were deleted")
+	}
+}
+
+// Their own imported reading is the one refusal that is not an absence: the row IS on their
+// screen, so 404 would be a lie, and the sample returns on the next sync anyway. Told apart
+// from the case above by a read before the delete — the statement answers zero rows and nil
+// for both.
+func TestTheirOwnImportedReadingAnswersAConflictAndSaysWhy(t *testing.T) {
+	c := newClinic(t)
+
+	imported := c.imported[patientA]
+	status, body := send(t, c, http.MethodDelete, patientA, "/v1/me/measurements/"+imported, "")
+	if status != http.StatusConflict {
+		t.Fatalf("answered %d, want 409: %s", status, body)
+	}
+	if !strings.Contains(body, "imported") {
+		t.Errorf("the refusal does not say why: %s", body)
+	}
+	if !c.survives(t, imported) {
+		t.Error("the imported row was deleted")
+	}
+}
+
+// No unique key is reachable from a hand-typed reading, and this is what says so: besides the
+// primary key, whose value the row is given, the table's only unique index is partial on
+// `external_id`, which this path never sets and the patient holds no grant on. Were it reachable it would answer before RLS — the shape 000019
+// records on the dose stream, and the reason the index leads with the patient rather than
+// relying on the order.
+func TestTwoIdenticalReadingsBothLandAndCrossNoTenant(t *testing.T) {
+	c := newClinic(t)
+
+	var written []string
+	for _, patient := range []string{patientA, patientA, patientB} {
+		status, body := send(t, c, http.MethodPost, patient, "/v1/me/measurements", aTypedReading)
+		if status != http.StatusCreated {
+			t.Fatalf("%s answered %d, want 201: %s", patient, status, body)
+		}
+		written = append(written, read[wireRecorded](t, body).ID)
+	}
+
+	// Every pair, and not the neighbouring ones: a check that never compared the first
+	// against the third is satisfied by two writes that answered the same row.
+	distinct := slices.Compact(slices.Sorted(slices.Values(written)))
+	if len(written) != 3 || len(distinct) != 3 {
+		t.Errorf("three writes produced the identifiers %v", written)
+	}
+	if held := c.held(t, patientA); held != seededReadings+2 {
+		t.Errorf("the patient holds %d readings, not the %d they wrote", held, seededReadings+2)
 	}
 }

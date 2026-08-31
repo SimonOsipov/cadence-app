@@ -1029,6 +1029,96 @@
         ],
         "type": "object"
       },
+      "RecordInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "measured_at": {
+            "description": "When the reading was taken, which is where it lands on the axis — not when it was entered. A reading measured after the server's own instant is refused.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "metric": {
+            "description": "The sleep score is absent: it is computed from imported sessions and there is nothing to type.",
+            "enum": [
+              "weight",
+              "hrv",
+              "rhr",
+              "bodyfat",
+              "waist",
+              "hip",
+              "chest"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {
+            "description": "In the unit the metric is read in, which the reply carries back.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "value",
+          "measured_at"
+        ],
+        "type": "object"
+      },
+      "RecordedBody": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "measured_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "metric": {
+            "enum": [
+              "weight",
+              "hrv",
+              "rhr",
+              "bodyfat",
+              "waist",
+              "hip",
+              "chest"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "description": "Read back off the row rather than asserted. This operation writes nothing but a hand-typed reading, so it is the column's default on a column the patient holds no grant on.",
+            "enum": [
+              "manual",
+              "healthkit",
+              "health_connect"
+            ],
+            "type": "string"
+          },
+          "unit": {
+            "description": "The server's, off the metric: a point on the axis carries none of its own.",
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "metric",
+          "value",
+          "unit",
+          "measured_at",
+          "source"
+        ],
+        "type": "object"
+      },
       "ReorderBody": {
         "additionalProperties": false,
         "properties": {
@@ -2169,6 +2259,186 @@
         "summary": "A link to the photograph of a recorded dose",
         "tags": [
           "dosing"
+        ]
+      }
+    },
+    "/v1/me/measurements": {
+      "post": {
+        "description": "Records one hand-typed reading and answers the row that was written. The unit is the server's — it is a function of the metric, so a request cannot carry one — and so is the source, which is why the reply reads it back off the row rather than asserting it: a hand-typed reading cannot claim to have come off a watch. Seven metrics can be written where both reads answer eight: the sleep score is computed from imported sessions, and there is no number for a patient to type. Answers 422 for a reading measured after it was recorded, for a value outside what the metric can plausibly read — a slipped decimal point, not a reading the clinic would worry about, which is what the threshold is for — and for a note of nothing but whitespace.",
+        "operationId": "record-measurement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordedBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Write one reading the patient typed",
+        "tags": [
+          "measurements"
+        ]
+      }
+    },
+    "/v1/me/measurements/{id}": {
+      "delete": {
+        "description": "Removes one of the patient's own hand-typed readings — a typo is corrected by deleting the point and entering it again, because a reading is a clinical fact and rewriting one would leave no trace that it had been. A reading this patient does not hold answers 404, and so does an identifier nobody holds: the two cannot differ, or the status alone would report whether another patient's reading exists. Their own imported reading answers 409 and says why — that row IS on their screen, so calling it absent would be a lie, and the sample returns on the next sync anyway.",
+        "operationId": "delete-measurement",
+        "parameters": [
+          {
+            "description": "The reading, as the point on the axis carries it.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "The reading, as the point on the axis carries it.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Remove one reading the patient typed",
+        "tags": [
+          "measurements"
         ]
       }
     },

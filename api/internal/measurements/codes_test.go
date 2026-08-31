@@ -2,10 +2,12 @@ package measurements
 
 import (
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -158,4 +160,30 @@ func codes[T ~string](set []T) []string {
 	}
 
 	return out
+}
+
+// The note's published bounds against the CHECK that holds them, read out of the migration
+// rather than repeated here. Apart they fail in both directions: a contract shorter than the
+// column refuses a note the server would take, and one longer sends the patient's own sentence
+// to a 23514 they cannot see. The two count alike — huma measures a string in runes
+// (validate.go:531, v2.39.0) and pg_catalog.length in characters — which is why the integration
+// suite writes a note of two thousand Cyrillic ones.
+func TestTheNoteIsPublishedWithTheBoundsTheColumnHolds(t *testing.T) {
+	migration := read(t, filepath.Join("..", "..", "migrations", "000025_measurements_tables.up.sql"))
+
+	found := regexp.MustCompile(`pg_catalog\.length\(note\) BETWEEN (\d+) AND (\d+)`).
+		FindStringSubmatch(migration)
+	if found == nil {
+		t.Fatal("000025 no longer bounds the note the way this test reads it")
+	}
+	low, high := found[1], found[2]
+
+	api := registered(t)
+	note := propertyOf(t, requestBody(t, api, operation(t, api, http.MethodPost, recordPath)), "note")
+	if note.MinLength == nil || strconv.Itoa(*note.MinLength) != low {
+		t.Errorf("the note is published from %v, and the column from %s", note.MinLength, low)
+	}
+	if note.MaxLength == nil || strconv.Itoa(*note.MaxLength) != high {
+		t.Errorf("the note is published to %v, and the column to %s", note.MaxLength, high)
+	}
 }

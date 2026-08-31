@@ -75,6 +75,21 @@ func (c clinic) row(t *testing.T, id measurements.ReadingID) row {
 	return stored
 }
 
+// held is every row the patient holds, counted as the privileged role: what a request answered
+// is not a witness for what a request wrote.
+func (c clinic) held(t *testing.T, patient string) int {
+	t.Helper()
+
+	var held int
+	if err := c.superuser.QueryRow(t.Context(), `
+		SELECT count(*) FROM app.measurements WHERE patient_id = $1
+	`, patient).Scan(&held); err != nil {
+		t.Fatalf("counting %s's readings: %v", patient, err)
+	}
+
+	return held
+}
+
 func draft(edit func(*measurements.Draft)) measurements.Draft {
 	d := measurements.Draft{
 		Metric:     measurements.MetricWeight,
