@@ -25,7 +25,7 @@ var ErrNoTimezone = errors.New("the patient's timezone is not recorded")
 // Range is absent rather than empty in the two cases the cycle window has none — no course at
 // all, and a course that has not started. It is the absence KMP's own `TrendWindow.rangeOn`
 // answers with, its constructor refusing a range that runs backwards; the field it lands in,
-// `TrendsOverview.range`, does not admit it yet, and step 10 records that as a divergence.
+// `TrendsOverview.range`, does not admit it — recorded in docs/prototype-divergences.md.
 type Span struct {
 	Window   Window
 	Range    *civil.Range

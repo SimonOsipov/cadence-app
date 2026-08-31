@@ -575,7 +575,7 @@ export type TodayBody = {
      */
     suggested_site: 'l-abdomen' | 'r-abdomen' | 'l-delt' | 'r-delt' | 'l-glute' | 'r-glute' | 'l-thigh' | 'r-thigh' | 'l-lback' | 'r-lback';
     /**
-     * Null until the measurements context is built.
+     * Null until this endpoint reads the patient profile: the target is set at intake and owned by the patient thereafter, and never a measurement.
      */
     target_weight_kg: number | null;
     /**
@@ -588,11 +588,11 @@ export type TodayBody = {
     vial_doses_left?: number;
     week_protocol: Array<RowBody>;
     /**
-     * Null until the measurements context is built.
+     * Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends.
      */
     weight_kg: number | null;
     /**
-     * Null until the measurements context is built.
+     * Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends.
      */
     weight_series: Array<number> | null;
 };

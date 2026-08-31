@@ -86,10 +86,10 @@ func TestTheThresholdsAreTheCanonicalNumbers(t *testing.T) {
 }
 
 // Direction is a clinical fact, and every one of the eight is «lower is better» except HRV and
-// sleep. Six carry it in the frozen trends prototype; hip and chest are absent from that module
-// and the body screen that does draw them has no direction field, so theirs is inferred from
-// waist — as MetricMeta.kt does, corroborating chest against that screen's seeded 112 → 105.
-// Step 10 records the inference as a deviation.
+// sleep. Six carry it as a field in the frozen trends prototype; hip and chest are absent from
+// that module, and the body screen that draws them carries direction as one rule over every
+// row it shows — `delta()`'s «for these metrics down = progress» — not as a field per metric.
+// Recorded in docs/prototype-divergences.md.
 func TestEachMetricPointsTheWayItsSourceDoes(t *testing.T) {
 	for metric, want := range map[Metric]Direction{
 		MetricWeight:  DirectionDown,

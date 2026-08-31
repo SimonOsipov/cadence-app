@@ -43,11 +43,11 @@ import kotlinx.serialization.encoding.*
  * @param mealMacros Null until the nutrition context is built.
  * @param partOfDay 
  * @param suggestedSite Computed from what was logged, not frozen.
- * @param targetWeightKg Null until the measurements context is built.
+ * @param targetWeightKg Null until this endpoint reads the patient profile: the target is set at intake and owned by the patient thereafter, and never a measurement.
  * @param targets Null until the nutrition context is built.
  * @param weekProtocol 
- * @param weightKg Null until the measurements context is built.
- * @param weightSeries Null until the measurements context is built.
+ * @param weightKg Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends.
+ * @param weightSeries Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends.
  * @param cycleWeek Absent outside the course and for a cancelled one.
  * @param nextDose 
  * @param nextDoseCompound 
@@ -74,7 +74,7 @@ data class TodayBody (
     /* Computed from what was logged, not frozen. */
     @SerialName(value = "suggested_site") @Required val suggestedSite: TodayBody.SuggestedSite,
 
-    /* Null until the measurements context is built. */
+    /* Null until this endpoint reads the patient profile: the target is set at intake and owned by the patient thereafter, and never a measurement. */
     @SerialName(value = "target_weight_kg") @Required val targetWeightKg: kotlin.Double?,
 
     /* Null until the nutrition context is built. */
@@ -82,10 +82,10 @@ data class TodayBody (
 
     @SerialName(value = "week_protocol") @Required val weekProtocol: kotlin.collections.List<RowBody>,
 
-    /* Null until the measurements context is built. */
+    /* Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends. */
     @SerialName(value = "weight_kg") @Required val weightKg: kotlin.Double?,
 
-    /* Null until the measurements context is built. */
+    /* Null until this endpoint reads the measurements context, which exists: the readings themselves are answered by /v1/me/trends. */
     @SerialName(value = "weight_series") @Required val weightSeries: kotlin.collections.List<kotlin.Double>?,
 
     /* Absent outside the course and for a cancelled one. */

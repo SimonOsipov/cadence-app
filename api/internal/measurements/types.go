@@ -1,8 +1,8 @@
 package measurements
 
 // Metric is one of §03's eight measured quantities. The string is what `measurements.metric`
-// stores, what the read handlers carry and what KMP's `Metric.fromCode` parses back
-// — `hip`, and not the «hips» the component note's prose still spells, which step 10 corrects.
+// stores, what the read handlers carry and what KMP's `Metric.fromCode` parses back — `hip`,
+// and not «hips».
 type Metric string
 
 const (

@@ -337,7 +337,7 @@ func TestAWindowAndAMetricOffTheSetAreRefusedByTheSchema(t *testing.T) {
 	for _, refused := range []struct{ name, path string }{
 		{"a window nobody offers", overviewPath + "?window=1y"},
 		{"a metric the prototype has and §03 does not", "/v1/me/trends/thigh"},
-		{"a metric spelled as the component note spells it", "/v1/me/trends/hips"},
+		{"the plural spelling the wire does not carry", "/v1/me/trends/hips"},
 	} {
 		t.Run(refused.name, func(t *testing.T) {
 			status, body := asked(t, refused.path, "8a1f3b7c-0000-4000-8000-000000000001", "patient")
@@ -585,7 +585,7 @@ func TestTheSleepScoreIsRefusedToAClientThatIgnoresTheContract(t *testing.T) {
 func TestABodyTheContractDoesNotAdmitIsRefused(t *testing.T) {
 	for _, refused := range []struct{ name, body string }{
 		{"a metric §03 does not have", `{"metric":"thigh","value":81.2,"measured_at":"2026-08-05T03:00:00Z"}`},
-		{"a metric spelled as the component note spells it", `{"metric":"hips","value":81.2,"measured_at":"2026-08-05T03:00:00Z"}`},
+		{"the plural spelling the wire does not carry", `{"metric":"hips","value":81.2,"measured_at":"2026-08-05T03:00:00Z"}`},
 		{"no metric at all", `{"value":81.2,"measured_at":"2026-08-05T03:00:00Z"}`},
 		{"no instant at all", `{"metric":"weight","value":81.2}`},
 		{"an instant that is a date", `{"metric":"weight","value":81.2,"measured_at":"2026-08-05"}`},
