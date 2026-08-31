@@ -1,12 +1,13 @@
 ---
 type: spec
 project: cadence
-status: approved
+status: done
 priority: p2
 created: 2026-08-26
 todoist_parent: "6hMj5PWfrqc2qmCq"
 components: [measurements, protocol, api, data-layer]
 proposal: "20-Projects/cadence/architecture/proposals/measurements-and-trends.md"
+adr: "[[20-Projects/cadence/adr/ADR-015-measurements-reads-protocol-and-keeps-its-own-facts|adr/ADR-015-measurements-reads-protocol-and-keeps-its-own-facts]]"
 ---
 
 <!-- SNAPSHOT (read-only copy). Master: 20-Projects/cadence/specs/measurements-and-trends.md in vault prll-vault. Edit the vault note, then re-export — never edit here. -->
@@ -392,6 +393,12 @@ todoist: "6hMj5VC96F5FWfMH"
 контракта `today.go`, где `TargetWeightKG` подписан как ждущий замеров, хотя приходит из
 профиля пациента. Поправить ноту компонента:
 «hips» → «hip», статус `planned` → `partial`.
+
+> [!deviation] 2026-08-31 — снято больше трёх комментариев: правило «факт, записанный дважды, чинится один раз»
+> Spec said: снять **два** комментария в сиде и **третий** в doc-строке `today.go`. Actually done: эти три плюс ещё пять мест. Why: критерии приёмки шага в `prd.json` — «a fact written twice is fixed once — after removing them, grep for surviving copies» и «a fix can falsify a comment that cited it» — прямо велят пройти дальше названных трёх, и прогон нашёл: опубликованное описание операции `get-today` (`protocol/routes.go`), которое говорило «nutrition and measurements are not built» ровно ту фразу, что шаг снял с трёх полей семьюдесятью строками ниже, — с перегенерацией `openapi.json` и трёх клиентов; имя и комментарий теста `today_test.go` (утверждения не тронуты); «no endpoint yet» про dosing и measurements в `web/src/features/overview/roster.tsx`; два имени подтестов в `measurements/routes_test.go`, цитировавших написание «hips» из ноты компонента, которое этот же шаг из ноты и убрал. Три отдельных раунда ревью нашли эти места по одному — первые два раунда сочли предыдущие правки полными.
+>
+> Внутри самого реестра исправлены два собственных утверждения: пункт про пороги говорил, что нулевую границу «прошло бы всякое показание», хотя все пять беспороговых метрик смотрят «вниз» и её не прошло бы ни одно; пункт про направление бёдер и груди теперь ссылается на `MetricMeta.kt:74-76` и `:175-176` номерами строк — ревьюер первого раунда объявил это утверждение ложным, прочитав только блок `HIP_META` и не заметив общий комментарий выше. Утверждение было верным, находка отклонена с цитатой, но ссылка добавлена: заявка, которую ревьюер не может найти, переспрашивается каждый раунд.
+
 todoist: "6hMj5VM7x9F9vwMH"
 
 ## Открытые вопросы
