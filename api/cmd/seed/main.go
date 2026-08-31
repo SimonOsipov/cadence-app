@@ -85,6 +85,18 @@ func todayIn(zone string, at time.Time) civil.Date {
 	return civil.NewDate(at.Year(), at.Month(), at.Day())
 }
 
+// seededPlace is the same zone as a place, which is what stamping a reading with a local hour
+// needs. It carries todayIn's tolerance and lands it in the same fallback: the instant that
+// function is given is time.Now(), whose own location is the host's.
+func seededPlace() *time.Location {
+	loaded, err := time.LoadLocation(seededZone)
+	if err != nil {
+		return time.Local
+	}
+
+	return loaded
+}
+
 // seeder is the seam the environment refusal is tested through: everything below
 // it needs a database and a provisioner.
 type seeder func(ctx context.Context, cfg *config.SeedConfig) error
@@ -184,7 +196,7 @@ func seed(ctx context.Context, of clinic, on deps) error {
 		staff[member.slug] = userID
 	}
 
-	courses, cabinets := 0, 0
+	courses, cabinets, histories := 0, 0, 0
 	for _, person := range of.patients {
 		// As the patient's own primary specialist, which is who creates a patient
 		// in the product: a doctor may put themselves on a care team and nobody else.
@@ -226,10 +238,21 @@ func seed(ctx context.Context, of clinic, on deps) error {
 		if filled {
 			cabinets++
 		}
+
+		// Behind the course for the same reason as the cabinet, and a different one: the
+		// cycle window is that course's own geometry, so a patient carrying readings and no
+		// course has one of the four windows answering nothing at all.
+		measured, err := recordTheReadings(ctx, on.writes, civil.UserID(userID), on.today)
+		if err != nil {
+			return fmt.Errorf("recording the history of %s: %w", person.fullName, err)
+		}
+		if measured {
+			histories++
+		}
 	}
 
-	fmt.Printf("seed: %d members of staff, %d patients, %d courses, %d cabinets\n",
-		len(of.staff), len(of.patients), courses, cabinets)
+	fmt.Printf("seed: %d members of staff, %d patients, %d courses, %d cabinets, %d histories\n",
+		len(of.staff), len(of.patients), courses, cabinets, histories)
 
 	return nil
 }
