@@ -21,8 +21,10 @@ var (
 
 	// ErrMetricNotWritable is a metric this API records and no patient types. Only the sleep
 	// score is one: it is computed from imported sessions, so there is nothing to read off a
-	// watch face — and it is refused here as well as by the schema, because a caller reaching
-	// this package without a document would otherwise write a number nobody can produce.
+	// watch face — and it is refused here as well as by the request schema, because a caller
+	// reaching this package without a document would otherwise write a number nobody can
+	// produce. Not by the table: 000025 admits all eight metrics, and has to, because the
+	// import path writes the sleep score on the service role.
 	ErrMetricNotWritable = errors.New("this metric is not one a patient records by hand")
 
 	// ErrMeasuredInTheFuture is a reading taken after the instant it was recorded. It is a
