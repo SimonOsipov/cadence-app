@@ -82,6 +82,11 @@ export type DayOutputBody = {
     occurrences: Array<OccurrenceBody>;
 };
 
+export type DoseBandBody = {
+    dose: DoseBody;
+    range: TrendRangeBody;
+};
+
 export type DoseBody = {
     unit: 'мг' | 'мкг';
     value: number;
@@ -233,6 +238,30 @@ export type Me = {
     sub: string;
 };
 
+export type MetricMetaBody = {
+    /**
+     * Which way the metric has to move for the patient to be getting better, and the side of the threshold that is well.
+     */
+    direction: 'up' | 'down';
+    /**
+     * Null for the five metrics the clinic sets no bound on — absent, and not a zero every reading would clear.
+     */
+    threshold: ThresholdBody | null;
+    /**
+     * The unit every point of this metric is in; a point carries none of its own.
+     */
+    unit: string;
+};
+
+export type MetricTrendBody = {
+    meta: MetricMetaBody;
+    metric: 'weight' | 'hrv' | 'rhr' | 'sleep' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    /**
+     * Oldest first, ties broken by identifier, and empty for a metric this patient has not measured in this window.
+     */
+    points: Array<TrendPointBody>;
+};
+
 export type NewPatientBody = {
     date_of_birth?: string;
     /**
@@ -371,6 +400,16 @@ export type ProblemDetail = {
     message: string;
 };
 
+export type ProtocolMarkBody = {
+    date: string;
+    /**
+     * Null on a start mark: there is no dose to have come up from.
+     */
+    from: DoseBody | null;
+    kind: 'start' | 'titration';
+    to: DoseBody;
+};
+
 export type ReorderBody = {
     compound_id: string;
     weeks_left: number;
@@ -473,6 +512,10 @@ export type StepBody = {
     week: number;
 };
 
+export type ThresholdBody = {
+    value: number;
+};
+
 export type TodayBody = {
     /**
      * Absent outside the course and for a cancelled one.
@@ -521,6 +564,57 @@ export type TodayBody = {
      * Null until the measurements context is built.
      */
     weight_series: Array<number> | null;
+};
+
+export type TrendBody = {
+    /**
+     * The prescribed dose over the window. Empty when the course draws no strip.
+     */
+    bands: Array<DoseBandBody>;
+    /**
+     * The day the strip opened and each day it changed, clipped to the same window.
+     */
+    marks: Array<ProtocolMarkBody>;
+    metric: MetricTrendBody;
+    /**
+     * Null when the window covers no days at all, which only the cycle window does: the patient has no course, or the one they have has not started.
+     */
+    range: TrendRangeBody | null;
+    /**
+     * The IANA zone the range's days are the patient's own in.
+     */
+    timezone: string;
+    window: '7d' | '4w' | '3m' | 'cycle';
+};
+
+export type TrendPointBody = {
+    id: string;
+    measured_at: string;
+    value: number;
+};
+
+export type TrendRangeBody = {
+    from: string;
+    /**
+     * Inclusive: a window is a set of days, not a subtraction.
+     */
+    through: string;
+};
+
+export type TrendsBody = {
+    /**
+     * All eight, in enumeration order, unmeasured ones included.
+     */
+    metrics: Array<MetricTrendBody>;
+    /**
+     * Null when the window covers no days at all, which only the cycle window does: the patient has no course, or the one they have has not started.
+     */
+    range: TrendRangeBody | null;
+    /**
+     * The IANA zone the range's days are the patient's own in.
+     */
+    timezone: string;
+    window: '7d' | '4w' | '3m' | 'cycle';
 };
 
 export type VialAmountBody = {
@@ -964,6 +1058,100 @@ export type GetTodayResponses = {
 };
 
 export type GetTodayResponse = GetTodayResponses[keyof GetTodayResponses];
+
+export type GetTrendsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.
+         */
+        window?: '7d' | '4w' | '3m' | 'cycle';
+    };
+    url: '/v1/me/trends';
+};
+
+export type GetTrendsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetTrendsError = GetTrendsErrors[keyof GetTrendsErrors];
+
+export type GetTrendsResponses = {
+    /**
+     * OK
+     */
+    200: TrendsBody;
+};
+
+export type GetTrendsResponse = GetTrendsResponses[keyof GetTrendsResponses];
+
+export type GetMetricTrendData = {
+    body?: never;
+    path: {
+        metric: 'weight' | 'hrv' | 'rhr' | 'sleep' | 'bodyfat' | 'waist' | 'hip' | 'chest';
+    };
+    query?: {
+        /**
+         * The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.
+         */
+        window?: '7d' | '4w' | '3m' | 'cycle';
+    };
+    url: '/v1/me/trends/{metric}';
+};
+
+export type GetMetricTrendErrors = {
+    /**
+     * Unauthorized
+     */
+    401: Problem;
+    /**
+     * Forbidden
+     */
+    403: Problem;
+    /**
+     * Unprocessable Entity
+     */
+    422: Problem;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+    /**
+     * Service Unavailable
+     */
+    503: Problem;
+};
+
+export type GetMetricTrendError = GetMetricTrendErrors[keyof GetMetricTrendErrors];
+
+export type GetMetricTrendResponses = {
+    /**
+     * OK
+     */
+    200: TrendBody;
+};
+
+export type GetMetricTrendResponse = GetMetricTrendResponses[keyof GetMetricTrendResponses];
 
 export type ReadCabinetData = {
     body?: never;

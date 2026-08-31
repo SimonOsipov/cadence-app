@@ -15,6 +15,7 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/auth"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/civil"
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/database"
+	"github.com/SimonOsipov/cadence-app/api/internal/platform/httpserver"
 )
 
 // The service pool alone: prescribing is a cross-actor write, and cadence_doctor holds no
@@ -453,37 +454,8 @@ func (s *Service) registerReads(api huma.API) {
 		},
 	}, s.day)
 
-	admitNull(api, "TodayBody", "meal_macros", "targets")
-	admitNull(api, "RowBody", "compound")
-}
-
-// admitNull rewrites a property that is a bare $ref into «this object or null».
-//
-// huma cannot express it: `nullable:"true"` over a $ref panics («nullable is not supported for
-// field … which is type '#/components/schemas/…'»), and without the tag a generator reads the
-// property as non-nullable — so a client types it MacrosBody and throws on the first patient
-// with no nutrition context. Scalars need none of this.
-func admitNull(api huma.API, schema string, properties ...string) {
-	registry := api.OpenAPI().Components.Schemas
-	target := registry.SchemaFromRef("#/components/schemas/" + schema)
-	if target == nil {
-		panic("admitNull: no schema named " + schema)
-	}
-	for _, name := range properties {
-		property, ok := target.Properties[name]
-		if !ok || property.Ref == "" {
-			panic("admitNull: " + schema + "." + name + " is not a $ref")
-		}
-		target.Properties[name] = &huma.Schema{
-			Description: property.Description,
-			OneOf: []*huma.Schema{
-				{Ref: property.Ref},
-				// huma names every type but this one, because it never emits it
-				// for a $ref — which is the whole reason this function exists.
-				{Type: "null"},
-			},
-		}
-	}
+	httpserver.AdmitNull(api, "TodayBody", "meal_macros", "targets")
+	httpserver.AdmitNull(api, "RowBody", "compound")
 }
 
 // TodayOutput is the hero screen.

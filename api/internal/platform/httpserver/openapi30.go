@@ -16,7 +16,7 @@ import (
 //
 // huma's downgrade rewrites a `type` *array* into `nullable: true` and misses a
 // scalar `"type": "null"`, which is the only spelling 3.1 has for «this $ref or
-// null» — so the three properties admitNull publishes reach a 3.0.3 document
+// null» — so every property AdmitNull publishes reaches a 3.0.3 document
 // carrying a type that 3.0 has no such value for. There is no spelling that is
 // correct in both versions: 3.0 wants allOf + nullable, 3.1 wants oneOf + null.
 //

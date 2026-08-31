@@ -143,8 +143,8 @@ func (c clinic) reading(t *testing.T, patient, metric string, value float64, at,
 	return id
 }
 
-// reads runs fn as the patient, through the request pool, which is the seam the handlers of
-// steps 7 and 8 will use: RLS answers, and nothing here is privileged.
+// reads runs fn as the patient, through the request pool, which is the seam the read handlers
+// use: RLS answers, and nothing here is privileged.
 func (c clinic) reads(t *testing.T, patient string, fn func(context.Context, pgx.Tx) error) {
 	t.Helper()
 

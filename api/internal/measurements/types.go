@@ -1,7 +1,7 @@
 package measurements
 
 // Metric is one of §03's eight measured quantities. The string is what `measurements.metric`
-// stores, what the handlers of step 7 will carry and what KMP's `Metric.fromCode` parses back
+// stores, what the read handlers carry and what KMP's `Metric.fromCode` parses back
 // — `hip`, and not the «hips» the component note's prose still spells, which step 10 corrects.
 type Metric string
 
@@ -37,7 +37,7 @@ const (
 )
 
 // Threshold is the clinical bound a reading is read against. A struct rather than a bare
-// number because it is optional on the wire step 7 builds, where absent and zero are different
+// number because it is optional on the wire, where absent and zero are different
 // answers — a zero HRV bound would read as «any reading clears it».
 type Threshold struct {
 	Value float64

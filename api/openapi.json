@@ -204,6 +204,22 @@
         ],
         "type": "object"
       },
+      "DoseBandBody": {
+        "additionalProperties": false,
+        "properties": {
+          "dose": {
+            "$ref": "#/components/schemas/DoseBody"
+          },
+          "range": {
+            "$ref": "#/components/schemas/TrendRangeBody"
+          }
+        },
+        "required": [
+          "dose",
+          "range"
+        ],
+        "type": "object"
+      },
       "DoseBody": {
         "additionalProperties": false,
         "properties": {
@@ -583,6 +599,74 @@
         ],
         "type": "object"
       },
+      "MetricMetaBody": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "description": "Which way the metric has to move for the patient to be getting better, and the side of the threshold that is well.",
+            "enum": [
+              "up",
+              "down"
+            ],
+            "type": "string"
+          },
+          "threshold": {
+            "description": "Null for the five metrics the clinic sets no bound on — absent, and not a zero every reading would clear.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ThresholdBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unit": {
+            "description": "The unit every point of this metric is in; a point carries none of its own.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit",
+          "direction",
+          "threshold"
+        ],
+        "type": "object"
+      },
+      "MetricTrendBody": {
+        "additionalProperties": false,
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/MetricMetaBody"
+          },
+          "metric": {
+            "enum": [
+              "weight",
+              "hrv",
+              "rhr",
+              "sleep",
+              "bodyfat",
+              "waist",
+              "hip",
+              "chest"
+            ],
+            "type": "string"
+          },
+          "points": {
+            "description": "Oldest first, ties broken by identifier, and empty for a metric this patient has not measured in this window.",
+            "items": {
+              "$ref": "#/components/schemas/TrendPointBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "metric",
+          "meta",
+          "points"
+        ],
+        "type": "object"
+      },
       "NewPatientBody": {
         "additionalProperties": false,
         "properties": {
@@ -908,6 +992,43 @@
         ],
         "type": "object"
       },
+      "ProtocolMarkBody": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "from": {
+            "description": "Null on a start mark: there is no dose to have come up from.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DoseBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "enum": [
+              "start",
+              "titration"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "$ref": "#/components/schemas/DoseBody"
+          }
+        },
+        "required": [
+          "kind",
+          "date",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
       "ReorderBody": {
         "additionalProperties": false,
         "properties": {
@@ -1177,6 +1298,19 @@
         ],
         "type": "object"
       },
+      "ThresholdBody": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
       "TodayBody": {
         "additionalProperties": false,
         "properties": {
@@ -1311,6 +1445,146 @@
           "weight_kg",
           "weight_series",
           "target_weight_kg"
+        ],
+        "type": "object"
+      },
+      "TrendBody": {
+        "additionalProperties": false,
+        "properties": {
+          "bands": {
+            "description": "The prescribed dose over the window. Empty when the course draws no strip.",
+            "items": {
+              "$ref": "#/components/schemas/DoseBandBody"
+            },
+            "type": "array"
+          },
+          "marks": {
+            "description": "The day the strip opened and each day it changed, clipped to the same window.",
+            "items": {
+              "$ref": "#/components/schemas/ProtocolMarkBody"
+            },
+            "type": "array"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/MetricTrendBody"
+          },
+          "range": {
+            "description": "Null when the window covers no days at all, which only the cycle window does: the patient has no course, or the one they have has not started.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TrendRangeBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "description": "The IANA zone the range's days are the patient's own in.",
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "7d",
+              "4w",
+              "3m",
+              "cycle"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "bands",
+          "marks",
+          "window",
+          "range",
+          "timezone"
+        ],
+        "type": "object"
+      },
+      "TrendPointBody": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "measured_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "value",
+          "measured_at"
+        ],
+        "type": "object"
+      },
+      "TrendRangeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "format": "date",
+            "type": "string"
+          },
+          "through": {
+            "description": "Inclusive: a window is a set of days, not a subtraction.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "through"
+        ],
+        "type": "object"
+      },
+      "TrendsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "metrics": {
+            "description": "All eight, in enumeration order, unmeasured ones included.",
+            "items": {
+              "$ref": "#/components/schemas/MetricTrendBody"
+            },
+            "type": "array"
+          },
+          "range": {
+            "description": "Null when the window covers no days at all, which only the cycle window does: the patient has no course, or the one they have has not started.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TrendRangeBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "description": "The IANA zone the range's days are the patient's own in.",
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "7d",
+              "4w",
+              "3m",
+              "cycle"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "metrics",
+          "window",
+          "range",
+          "timezone"
         ],
         "type": "object"
       },
@@ -2212,6 +2486,206 @@
         "summary": "The patient's day",
         "tags": [
           "protocol"
+        ]
+      }
+    },
+    "/v1/me/trends": {
+      "get": {
+        "description": "The trends list: one window, all eight metrics in the order they are enumerated, the ones never measured included — a patient has to be able to find out that a metric is unmeasured, and a dropped entry says nothing. Each carries the unit it is read in, the way it has to move, and the clinical bound where there is one; three of the eight have one and the rest carry null rather than a zero that would read as «any reading clears it». The answer is dated in the patient's own zone, and carries it: without it a client bins the points into its own days and a reading admitted at the window's edge is drawn beyond it. `cycle` is the geometry of the patient's last course — its start through today or its last prescribed day, whichever is earlier — and its range is null for a patient with no course and for one whose course has not started. Nothing derived travels: the base, the latest, the delta, the average, the extremes and the movement are arithmetic over the points, and a second definition of them here is a second truth free to disagree.",
+        "operationId": "get-trends",
+        "parameters": [
+          {
+            "description": "The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.",
+            "explode": false,
+            "in": "query",
+            "name": "window",
+            "schema": {
+              "default": "3m",
+              "description": "The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.",
+              "enum": [
+                "7d",
+                "4w",
+                "3m",
+                "cycle"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendsBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Every metric over one window",
+        "tags": [
+          "measurements"
+        ]
+      }
+    },
+    "/v1/me/trends/{metric}": {
+      "get": {
+        "description": "The detail screen: one metric's points over the window, and the strip of prescription drawn beneath them — the dose bands of the patient's last course and the days it started or was titrated, both clipped to the window. The strip follows the titrating position of the course, falling back to the first injectable one, whose flat band is the prescribed dose; a course with no injections draws no strip, and neither does a cancelled one, whose days still make the window. A metric that was never measured answers an empty list of points rather than a 404 — that it is unmeasured is the answer.",
+        "operationId": "get-metric-trend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "metric",
+            "required": true,
+            "schema": {
+              "enum": [
+                "weight",
+                "hrv",
+                "rhr",
+                "sleep",
+                "bodyfat",
+                "waist",
+                "hip",
+                "chest"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.",
+            "explode": false,
+            "in": "query",
+            "name": "window",
+            "schema": {
+              "default": "3m",
+              "description": "The span to draw. The cycle window is the last course's geometry, so its width depends on the course rather than on the calendar.",
+              "enum": [
+                "7d",
+                "4w",
+                "3m",
+                "cycle"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "One metric with the prescription under it",
+        "tags": [
+          "measurements"
         ]
       }
     },

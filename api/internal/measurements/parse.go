@@ -27,9 +27,9 @@ func Windows() []Window {
 	return []Window{WindowWeek, WindowFourWeeks, WindowThreeMonths, WindowCycle}
 }
 
-// The seam where a string becomes a member of a set: the transport of steps 7 and 8, and the
-// seed. `(T, bool)` and not an error — the caller knows which field it was reading, and the
-// field's name is the whole of the message.
+// The seam where a string becomes a member of a set: the transport, the row scan and the write.
+// `(T, bool)` and not an error — the caller knows which field it was reading, and the field's
+// name is the whole of the message.
 func ParseMetric(s string) (Metric, bool) { return parse(s, Metrics()) }
 
 func ParseSource(s string) (Source, bool) { return parse(s, Sources()) }
