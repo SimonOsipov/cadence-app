@@ -7,8 +7,10 @@ package identity_test
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"regexp"
@@ -251,4 +253,73 @@ func readMessage(reader *bufio.Reader, into *strings.Builder) {
 // it, and every `=` in it — the one before the token included — arrives as `=3D`.
 func decodeQuotedPrintable(message string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(message, "=\r\n", ""), "=3D", "=")
+}
+
+// The other way an invitation ends, and the one the app's mapping now rests on: a link that was
+// never spent, refused because the clinic banned the patient. Told «already used», they would ask
+// for another and be refused the same way; told «try again», they would ask for ever. Neither
+// sentence is writable without knowing this answer, and it was an unpinned measurement until here.
+func TestABannedPatientIsRefusedForADifferentReasonThanASpentLink(t *testing.T) {
+	mail := catchMail(t)
+	provider, admin := providerSending(t, mail)
+
+	status, said := askOf(t, provider, "/admin/generate_link", admin,
+		map[string]string{"type": "invite", "email": "banned@clinic.example"})
+	if status != http.StatusOK {
+		t.Fatalf("generate_link answered %d: %s", status, said)
+	}
+
+	var generated struct {
+		ID     string `json:"id"`
+		Hashed string `json:"hashed_token"`
+	}
+
+	if err := json.Unmarshal([]byte(said), &generated); err != nil {
+		t.Fatalf("reading the generated link: %v", err)
+	}
+
+	banUntilTheClinicSaysOtherwise(t, provider, admin, generated.ID)
+
+	status, said = askOf(t, provider, "/verify", "",
+		map[string]string{"type": "invite", "token_hash": generated.Hashed})
+
+	if status != http.StatusForbidden {
+		t.Errorf("an unspent link held by a banned patient answered %d, not 403: %s", status, said)
+	}
+
+	// The code and not merely the status: `otp_expired` is what a spent link answers, and the two
+	// need different sentences. A refusal that named neither would leave the screen with nothing.
+	if !strings.Contains(said, "user_banned") {
+		t.Errorf("the refusal does not say user_banned, so it is indistinguishable from a "+
+			"spent link: %s", said)
+	}
+}
+
+func banUntilTheClinicSaysOtherwise(t *testing.T, provider *testsupport.GoTrue, admin, id string) {
+	t.Helper()
+
+	encoded, err := json.Marshal(map[string]string{"ban_duration": "876000h"})
+	if err != nil {
+		t.Fatalf("encoding the ban: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		provider.URL+"/admin/users/"+id, bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("building the ban: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+admin)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("banning: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("banning answered %d: %s", resp.StatusCode, body)
+	}
 }

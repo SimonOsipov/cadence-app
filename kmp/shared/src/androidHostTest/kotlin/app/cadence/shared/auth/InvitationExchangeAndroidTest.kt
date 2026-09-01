@@ -127,6 +127,7 @@ class InvitationExchangeAndroidTest {
                     "a restarting server" to jsonError(HttpStatusCode.InternalServerError, "unexpected_failure"),
                     "a gateway with nothing behind it" to jsonError(HttpStatusCode.BadGateway),
                     "a timeout" to jsonError(HttpStatusCode.RequestTimeout),
+                    "early data refused" to jsonError(HttpStatusCode.TooEarly),
                 )
 
             for ((what, engine) in later) {
@@ -139,24 +140,26 @@ class InvitationExchangeAndroidTest {
     // The mistake in the other direction, and it has a live path: a banned patient asking again
     // for ever. The reason travels so step 3 can write two sentences rather than one.
     //
-    // The last two rows are the arm the `as?` exists for: measured in the artifact, a JSON refusal
-    // naming no code is not an AuthRestException at all, and an unsafe cast would throw straight
-    // past both catch clauses and into the screen.
+    // The last two rows are the two unnameable shapes, and they arrive by different roads —
+    // measured, and the comment here was wrong about it once. A JSON refusal naming no code is not
+    // an AuthRestException at all, which is the arm the `as?` exists for; a body that will not
+    // decode **is** one, carrying the vendor's literal «Unknown error», which maps to no code.
+    // Named rather than keyed on the expectation, so a regression in one is not read as the other.
     @Test
     fun aRefusalCarriesTheReasonItGave() =
         runTest {
             val refusals =
                 listOf(
-                    jsonError(HttpStatusCode.Forbidden, "user_banned") to AuthErrorCode.UserBanned,
-                    jsonError(HttpStatusCode.Forbidden, "otp_expired") to AuthErrorCode.OtpExpired,
-                    jsonError(HttpStatusCode.BadRequest) to null,
-                    MockEngine { respondError(HttpStatusCode.Forbidden) } to null,
+                    Triple("banned", jsonError(HttpStatusCode.Forbidden, "user_banned"), AuthErrorCode.UserBanned),
+                    Triple("spent", jsonError(HttpStatusCode.Forbidden, "otp_expired"), AuthErrorCode.OtpExpired),
+                    Triple("naming no code", jsonError(HttpStatusCode.BadRequest), null),
+                    Triple("not decodable", MockEngine { respondError(HttpStatusCode.Forbidden) }, null),
                 )
 
-            for ((engine, code) in refusals) {
+            for ((what, engine, code) in refusals) {
                 val client = clientAnswering(engine)
 
-                assertEquals(Acceptance.Refused(code), client.acceptInvitation(TOKEN), "on $code")
+                assertEquals(Acceptance.Refused(code), client.acceptInvitation(TOKEN), "on $what")
             }
         }
 

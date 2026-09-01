@@ -243,52 +243,93 @@ counted() {
 }
 
 manifest=androidApp/src/main/AndroidManifest.xml
-# Within the one filter and not anywhere in the file: measured, the five strings survive inside an
-# XML comment, so grepping the whole manifest passes over a deep link that was commented out.
+# All five inside **one** <intent-filter>, which is the whole of what the check is worth: a filter
+# carrying the scheme and host while another carries the action and categories resolves to nothing,
+# and the previous version — greps over the concatenation of every block holding the host — passed
+# exactly that. Measured on a manifest mid-scheme-migration.
 #
-# awk and not a sed range, because the block has to be collected before it is known to be the
-# right one — the host sits at the end of it, after the three categories a range starting there
-# would drop. Measured: that range passed the real manifest for VIEW.
-filter=$(awk -v host="android:host=\"$host\"" '
-    # Commented-out first: the tags survive inside <!-- -->, so a deep link somebody parked in a
-    # comment satisfies every string below. Measured — it did.
-    /<!--/ { commented = 1 }
-    commented { if (/-->/) commented = 0; next }
-    /<intent-filter>/ { inside = 1; block = ""; wanted = 0 }
-    inside { block = block $0 "\n" }
-    inside && index($0, host) { wanted = 1 }
-    /<\/intent-filter>/ { if (inside && wanted) printf "%s", block; inside = 0 }
-' "$manifest")
-
-# All five, and the three beyond scheme and host are not decoration: without VIEW the filter does
-# not match what a mail client sends, without DEFAULT an implicit intent resolves to nothing, and
-# without BROWSABLE the mail client hands the link over to nobody. Each on its own leaves the
-# scheme correctly declared and the invitation opening nothing.
+# Comment spans are cut out of each line first, because the tags survive inside <!-- -->: a deep
+# link parked in a comment satisfied all five. Cut rather than the line dropped, so an ordinary
+# trailing comment beside a live declaration does not take the declaration with it.
 #
-# -F because these are fixed strings: unescaped, the dots in the category names are wildcards.
-for declaration in "android:scheme=\"$scheme\"" "android:host=\"$host\"" \
-    "android.intent.action.VIEW" "android.intent.category.DEFAULT" \
-    "android.intent.category.BROWSABLE"; do
-    found=$(counted "$declaration in $manifest" \
-        "$(printf '%s' "$filter" | grep -cF "$declaration" || true)")
-    if [ "$found" -eq 0 ]; then
-        echo "$manifest has no intent-filter carrying $declaration — an invitation opens" \
-            "nothing on Android" >&2
-        exit 1
-    fi
-done
+# The three beyond scheme and host are not decoration: without VIEW the filter does not match what
+# a mail client sends, without DEFAULT an implicit intent resolves to nothing, and without
+# BROWSABLE the mail client hands the link to nobody.
+if ! awk -v scheme="android:scheme=\"$scheme\"" -v host="android:host=\"$host\"" '
+    BEGIN {
+        need[1] = "android.intent.action.VIEW"
+        need[2] = "android.intent.category.DEFAULT"
+        need[3] = "android.intent.category.BROWSABLE"
+        wanted = 5
+    }
+    {
+        need[4] = scheme
+        need[5] = host
 
-# Both keys, nested, because either alone is half the check: measured, moving the schemes array to
-# the top level satisfies a CFBundleURLSchemes range, and misspelling that key satisfies a
-# CFBundleURLTypes one — and iOS registers nothing in either state, reading the list only through
-# CFBundleURLTypes.
-url_types=$(sed -n '/<key>CFBundleURLTypes<\/key>/,/^\t<\/array>/p' iosApp/iosApp/Info.plist)
-url_schemes=$(printf '%s' "$url_types" | sed -n '/<key>CFBundleURLSchemes<\/key>/,/<\/array>/p')
-plist_scheme=$(counted "$scheme in CFBundleURLSchemes" \
-    "$(printf '%s' "$url_schemes" | grep -cF "<string>$scheme</string>" || true)")
-if [ "$plist_scheme" -eq 0 ]; then
-    echo "Info.plist declares no $scheme:// under CFBundleURLSchemes — an invitation opens" \
-        "nothing on iOS" >&2
+        line = ""
+        rest = $0
+        while (rest != "") {
+            if (commented) {
+                at = index(rest, "-->")
+                if (at == 0) { rest = ""; break }
+                rest = substr(rest, at + 3)
+                commented = 0
+            } else {
+                at = index(rest, "<!--")
+                if (at == 0) { line = line rest; break }
+                line = line substr(rest, 1, at - 1)
+                rest = substr(rest, at + 4)
+                commented = 1
+            }
+        }
+    }
+    line ~ /<intent-filter/ { inside = 1; for (i = 1; i <= wanted; i++) seen[i] = 0 }
+    inside {
+        for (i = 1; i <= wanted; i++) if (index(line, need[i])) seen[i] = 1
+    }
+    line ~ /<\/intent-filter>/ {
+        if (inside) {
+            whole = 1
+            for (i = 1; i <= wanted; i++) if (!seen[i]) whole = 0
+            if (whole) found = 1
+        }
+        inside = 0
+    }
+    END { exit found ? 0 : 1 }
+' "$manifest"; then
+    echo "$manifest has no single intent-filter carrying $scheme, $host, VIEW, DEFAULT and" \
+        "BROWSABLE together — an invitation opens nothing on Android" >&2
+    exit 1
+fi
+
+# Both keys, nested, and nested structurally: either alone is half the check — moving the schemes
+# array to the top level satisfies a CFBundleURLSchemes range, misspelling that key satisfies a
+# CFBundleURLTypes one, and iOS registers nothing in either state, reading the list only through
+# CFBundleURLTypes. Array depth and not indentation, because the first version of this anchored the
+# outer range on a leading tab: measured, re-indenting the file to spaces returned the guard to its
+# earlier strength with no signal.
+if ! awk -v scheme="<string>$scheme</string>" '
+    /<key>CFBundleURLTypes<\/key>/ { types = 1; depth = 0; next }
+    types {
+        if (/<array>/) depth++
+        if (/<\/array>/) {
+            depth--
+            if (depth <= 0) { types = 0; schemes = 0; next }
+        }
+        if (/<key>CFBundleURLSchemes<\/key>/) { schemes = 1; inner = 0; next }
+        if (schemes) {
+            if (/<array>/) inner++
+            if (/<\/array>/) {
+                inner--
+                if (inner <= 0) { schemes = 0; next }
+            }
+            if (index($0, scheme)) found = 1
+        }
+    }
+    END { exit found ? 0 : 1 }
+' iosApp/iosApp/Info.plist; then
+    echo "Info.plist declares no $scheme:// in a CFBundleURLSchemes array inside" \
+        "CFBundleURLTypes — an invitation opens nothing on iOS" >&2
     exit 1
 fi
 
