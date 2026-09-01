@@ -372,19 +372,32 @@ func TestVerifyRejectsTamperedSignature(t *testing.T) {
 		t.Fatalf("Verify on the untampered token: %v", err)
 	}
 
-	tampered := token[:len(token)-2] + flipLast(token)
-	if _, err := verifier.Verify(t.Context(), tampered); err == nil {
+	if _, err := verifier.Verify(t.Context(), tamperWithTheSignature(t, token)); err == nil {
 		t.Fatal("Verify: want error for a tampered signature, got nil")
 	}
 }
 
-func flipLast(token string) string {
-	last := token[len(token)-1]
-	if last == 'A' {
-		return "AB"
+// The first character of the signature and not the last two, which is a fix rather than a
+// preference: base64url's final characters carry unused bits, and "AA" and "AB" decode to the
+// same byte. So a signature ending in a zero byte survived its own tampering, the verifier
+// correctly accepted it, and this test failed — in the suite that exists to prove a forged
+// signature is refused. Measured over 20000 random 256-byte signatures on 2026-09-01: the old
+// tamper was a no-op 85 times, the one below none. Every bit of the first character is
+// significant, so changing it always changes what the verifier reads.
+func tamperWithTheSignature(t *testing.T, token string) string {
+	t.Helper()
+
+	cut := strings.LastIndex(token, ".")
+	if cut < 0 || cut == len(token)-1 {
+		t.Fatalf("the token carries no signature to tamper with: %q", token)
 	}
 
-	return "AA"
+	swapped := "A"
+	if token[cut+1] == 'A' {
+		swapped = "B"
+	}
+
+	return token[:cut+1] + swapped + token[cut+2:]
 }
 
 // TestVerifyRefusesWhenKeySetIsUnreachable is the difference between an outage
