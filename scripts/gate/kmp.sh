@@ -225,6 +225,10 @@ esac
 # status, and `[ "" -eq 0 ]` is then an error bash reads as false — so the check passes having
 # read nothing. Measured under bash, which is what runs this. Every count below goes through
 # here, and the shape is changed-stacks.sh's `emit`, for the same reason it has one.
+# The `exit 1` below ends the command substitution its caller wraps it in, not this script — the
+# trap changed-stacks.sh records. What carries it out is `set -e` on the assignment, whose status
+# is the substitution's: measured, the script stops before the next line. Drop `set -e` and this
+# guard goes back to being one that cannot fail.
 counted() {
     local what=$1 count=$2
 
