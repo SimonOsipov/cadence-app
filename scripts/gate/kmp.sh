@@ -203,10 +203,18 @@ fi
 # without Xcode still measures it — the file is text either way.
 accept=$(sed -n 's/.*ACCEPT_LINK: String = "\([^:]*\):.*/\1/p' \
     shared/src/commonMain/kotlin/app/cadence/shared/auth/Invitation.kt)
-if [ -z "$accept" ]; then
-    echo "the invitation scheme could not be read from Invitation.kt — this greps nothing" >&2
-    exit 1
-fi
+# Shape, not merely non-empty: measured by turning the constant into "$SCHEME://accept", which
+# sed reads as the literal `$SCHEME` — a non-empty answer that then fails both greps below for
+# the wrong reason. An empty one would be worse still: `grep -c ""` matches every line and both
+# checks would pass having measured nothing.
+case $accept in
+    *[!a-z0-9.+-]* | "")
+        # Braced deliberately: bash reads the first byte of a following multibyte character as
+        # part of the name, and `$accept»` is then an unbound variable rather than the message.
+        echo "'${accept}' is not a scheme — ACCEPT_LINK could not be read from Invitation.kt" >&2
+        exit 1
+        ;;
+esac
 
 manifest_scheme=$(grep -c "android:scheme=\"$accept\"" androidApp/src/main/AndroidManifest.xml || true)
 if [ "$manifest_scheme" -eq 0 ]; then
