@@ -115,6 +115,43 @@ class InvitationTest {
             onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
         }
 
+    // The driver's own guard, asked directly rather than through the screen — measured, removing
+    // it leaves every test green because the button is disabled while busy, so the screen was
+    // holding this on its own and the guard beneath it was covered rather than measured.
+    //
+    // Both are kept: the disabled button is what a patient sees, and the guard is what answers a
+    // caller that is not this screen.
+    @Test
+    fun theDriverItselfRefusesASecondAskWhileTheFirstIsInFlight() =
+        runComposeUiTest {
+            val answer = CompletableDeferred<PasswordSet>()
+            var asked = 0
+            var invitation: Invitation? = null
+
+            setContent {
+                invitation =
+                    rememberInvitation(
+                        token = TOKEN,
+                        accept = { Acceptance.Accepted },
+                        choose = {
+                            asked += 1
+                            answer.await()
+                        },
+                    )
+            }
+
+            waitForIdle()
+            requireNotNull(invitation).onPasswordChosen(A_PASSWORD)
+            waitForIdle()
+            requireNotNull(invitation).onPasswordChosen(A_PASSWORD)
+            waitForIdle()
+
+            assertEquals(1, asked, "the driver asked twice while the first ask was in flight")
+
+            answer.complete(PasswordSet.Done)
+            waitForIdle()
+        }
+
     // A second tap while the first is in flight sets the password twice and leaves the patient
     // watching a form that looks stuck.
     @Test
