@@ -59,15 +59,16 @@ sealed interface Acceptance {
 
 private const val REQUEST_TIMEOUT = 408
 
+// Not a timeout: a refusal to process replayable early data, where retrying is the point.
 private const val TOO_EARLY = 425
 
 private const val TOO_MANY_REQUESTS = 429
 
 private const val FIRST_SERVER_ERROR = 500
 
-// Read off the status because no code separates them from a refusal: the rate limiter and the two
-// timeouts will answer differently later, and so will GoTrue once it has restarted. Anything else
-// that refuses is about this invitation and will refuse again.
+// Read off the status because no code separates them from a refusal: each of these answers
+// differently when asked again, and so does GoTrue once it has restarted. Anything else that
+// refuses is about this invitation and will refuse the same way.
 private val RETRYABLE = setOf(REQUEST_TIMEOUT, TOO_EARLY, TOO_MANY_REQUESTS)
 
 /**
@@ -82,9 +83,11 @@ private val RETRYABLE = setOf(REQUEST_TIMEOUT, TOO_EARLY, TOO_MANY_REQUESTS)
  * decodes the body into a `GoTrueErrorResponse` — whose `error` is read from the `error_code` key
  * alone, and falls back to the literal `"Unknown error"` when the body will not decode at all —
  * and hands it to `checkErrorCodes`, which answers an [AuthRestException] when that error is
- * non-null and **null** when it is not. So a refusal naming a code arrives as [AuthRestException]
- * with the code parsed; a JSON refusal naming none falls through to an `Unauthorized`,
- * `BadRequest` or `UnknownRestException`. Both are refusals, and only the first can be named.
+ * non-null and **null** when it is not. Three shapes come out of that, not two: a refusal naming a
+ * code arrives as [AuthRestException] with the code parsed; a JSON refusal naming none falls
+ * through to an `Unauthorized`, `BadRequest` or `UnknownRestException`; and a body that will not
+ * decode at all is an [AuthRestException] carrying the literal `"Unknown error"`, which maps to no
+ * code. All three are refusals, and only the first can be named.
  *
  * So the retryable answers are picked out by status, everything else is a refusal, and it carries
  * whatever reason the vendor gave rather than a sentence guessed here.
