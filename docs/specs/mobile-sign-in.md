@@ -222,18 +222,23 @@ todoist: "6h9MFwg28gg442WH"
 > **«Нечитаемое хранилище — это «нет сессии»» держится двумя звеньями, стык не измерен, и это
 > сознательно.** `VaultSettingsTest.unreadableStorageIsNoSessionRatherThanACrash` держит первое
 > звено (хранилище → пусто), `SessionStateTest.noSessionIsSignedOut` — второе
-> (`NotAuthenticated` → `SignedOut`). Между ними вендор, и в артефакте 3.7.0 измерено, что
-> выход из `Deciding` устроен по-разному на разных путях. `AuthImpl.init` сперва зовёт
-> `loadFromStorage`; прочитанная сессия кончает состояние прямо там — `loadFromStorage` идёт в
-> `importSession`, а тот ставит `Authenticated`. Когда читать **нечего**, статус не пишется
-> вовсе, и пустой и нечитаемый пути ждут `UtilsKt.initDone` — единственное, кроме
-> `AuthImpl.clearSession`, место, где строится `NotAuthenticated`. На Apple `setupPlatform`
-> зовёт `initDone` сам; на Android — только когда `enableLifecycleCallbacks` выключен, иначе из
-> колбэка ON_START у `ProcessLifecycleOwner`, приезжающего из
-> `androidx.lifecycle:lifecycle-process`, который объявляет `supabase-kt-android` версией
-> 2.10.0. Сквозной тест не написан намеренно: он мерил бы вендорскую обвязку под Robolectric, а
-> не наше отображение. Цена записана здесь: если `Deciding` не кончится, экран у пациента без
-> сессии останется пустым навсегда, и ни один тест этого не увидит.
+> (`NotAuthenticated` → `SignedOut`). Между ними вендор, и в артефакте 3.7.0 измерено, что из
+> `Deciding` ведут **три** пути, и названия не называют ни одного. `AuthImpl.init` зовёт
+> `loadFromStorage` до `setupPlatform`, и прочитанная из хранилища сессия уходит через
+> `importSession` — который ставит `Authenticated` сразу лишь пока до истечения больше
+> `SESSION_REFRESH_THRESHOLD` (0.2 от `expiresIn`, то есть 720 с при токене GoTrue в 3600 с).
+> Под порогом — а под ним **любой** холодный старт позже 48 минут после выдачи токена —
+> `importSession` вместо этого ждёт обновления, и статус ставит исход сетевого обмена. Когда
+> читать **нечего**, статус не пишется вовсе, и этот путь ждёт `UtilsKt.initDone` —
+> единственное, кроме `AuthImpl.clearSession`, место, где строится `NotAuthenticated`. На Apple
+> `setupPlatform` зовёт `initDone` сам; на Android — только когда `enableLifecycleCallbacks`
+> выключен, иначе из колбэка ON_START у `ProcessLifecycleOwner`, который и сам выходит сразу,
+> если автообновление уже идёт или выключен `alwaysAutoRefresh` (оба — умолчания, и ни одно
+> здесь не меняется), приезжающего из `androidx.lifecycle:lifecycle-process`, объявленного
+> `supabase-kt-android` версией 2.10.0. Сквозной тест не написан намеренно: он мерил бы
+> вендорскую обвязку под Robolectric, а не наше отображение. Цена записана здесь: пустой экран
+> видит и пациент **с** сессией — на время сетевого обмена при обычном холодном старте, — а
+> если `Deciding` не кончится, он останется пустым навсегда, и ни один тест этого не увидит.
 
 
 
@@ -274,6 +279,12 @@ from here on. The rule on tokens and Russian strings. The KMP gate green.
 todoist: "6h9MFxMVRgXxWHXH"
 
 ## Open questions
+
+> [!question] Обычный холодный старт показывает пустой экран на время сетевого обновления
+> токена: измерено в артефакте 3.7.0 — сессия под порогом обновления (позже 48 минут после
+> выдачи) кончает `Deciding` только исходом обмена с GoTrue. Сегодня это пустой `Box` — шаг 1
+> не рисует ничего, чтобы не мигать экраном входа. Шагам 3–5, которые рисуют область до входа,
+> нужно решение: оставить пустоту или дать заставку. Решать до того, как экраны нарисованы.
 
 > [!question] Requiring a password lengthens invite acceptance by one screen. For
 > a pilot with dozens of patients that is acceptable, but it is worth checking
