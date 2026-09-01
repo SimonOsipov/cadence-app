@@ -2,6 +2,7 @@ package app.cadence.shared.auth
 
 import com.russhwolf.settings.MapSettings
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.exception.AuthErrorCode
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
@@ -24,13 +25,24 @@ private const val TOKEN = "e75b4d4f54a86c915c0afdfc5db3b5cb6eea78ba43c1ccf6bd24c
 
 // Refusals in the shape GoTrue actually sends them, because the shape is the measurement: a body
 // that will not decode falls back to «Unknown error» inside the vendor and carries no code at all,
-// so a fixture built from `respondError` alone certifies an answer the server never gives.
-private fun aRefusal(code: String) = """{"code":403,"error_code":"$code","msg":"a refusal"}"""
+// so a fixture built from `respondError` alone certifies an answer the server never gives. The
+// body's own `code` mirrors the status on the live server, so it is derived rather than spelled —
+// a fixture pairing 403 with a 429 is another shape nobody sends.
+private fun aRefusal(
+    status: HttpStatusCode,
+    code: String?,
+) = if (code == null) {
+    """{"code":${status.value},"msg":"a refusal"}"""
+} else {
+    """{"code":${status.value},"error_code":"$code","msg":"a refusal"}"""
+}
 
 private fun jsonError(
     status: HttpStatusCode,
-    code: String,
-) = MockEngine { respond(aRefusal(code), status, headersOf("Content-Type", "application/json")) }
+    code: String? = null,
+) = MockEngine {
+    respond(aRefusal(status, code), status, headersOf("Content-Type", "application/json"))
+}
 
 // Cut to what the vendor reads out of GoTrue's answer.
 private const val A_SESSION = """
@@ -101,28 +113,50 @@ class InvitationExchangeAndroidTest {
         runTest {
             val client = clientAnswering(jsonError(HttpStatusCode.Forbidden, "otp_expired"))
 
-            assertEquals(Acceptance.Spent, client.acceptInvitation(TOKEN))
+            assertEquals(Acceptance.Refused(AuthErrorCode.OtpExpired), client.acceptInvitation(TOKEN))
         }
 
-    // The other direction, and the expensive one: measured in the 3.7.0 artifact, every refusal
-    // arrives as one exception type, so reading the type told a patient holding a live invitation
-    // that it was used up and sent them back to the clinic for one they did not need. A refusal
-    // with no code at all is in the list because it is what an undecodable body becomes.
+    // What the patient is offered another try at, and nothing else: the expensive mistake in this
+    // direction is telling somebody holding a live invitation that it is used up.
     @Test
-    fun onlyASpentLinkReadsAsSpent() =
+    fun aServerThatWillAnswerLaterIsWorthAnotherTry() =
         runTest {
-            val others =
+            val later =
                 mapOf(
                     "a rate limit" to jsonError(HttpStatusCode.TooManyRequests, "over_request_rate_limit"),
                     "a restarting server" to jsonError(HttpStatusCode.InternalServerError, "unexpected_failure"),
-                    "another refusal" to jsonError(HttpStatusCode.Forbidden, "user_banned"),
-                    "a body that will not decode" to MockEngine { respondError(HttpStatusCode.Forbidden) },
+                    "a gateway with nothing behind it" to jsonError(HttpStatusCode.BadGateway),
+                    "a timeout" to jsonError(HttpStatusCode.RequestTimeout),
                 )
 
-            for ((what, engine) in others) {
+            for ((what, engine) in later) {
                 val client = clientAnswering(engine)
 
                 assertEquals(Acceptance.Unreachable, client.acceptInvitation(TOKEN), "on $what")
+            }
+        }
+
+    // The mistake in the other direction, and it has a live path: a banned patient asking again
+    // for ever. The reason travels so step 3 can write two sentences rather than one.
+    //
+    // The last two rows are the arm the `as?` exists for: measured in the artifact, a JSON refusal
+    // naming no code is not an AuthRestException at all, and an unsafe cast would throw straight
+    // past both catch clauses and into the screen.
+    @Test
+    fun aRefusalCarriesTheReasonItGave() =
+        runTest {
+            val refusals =
+                listOf(
+                    jsonError(HttpStatusCode.Forbidden, "user_banned") to AuthErrorCode.UserBanned,
+                    jsonError(HttpStatusCode.Forbidden, "otp_expired") to AuthErrorCode.OtpExpired,
+                    jsonError(HttpStatusCode.BadRequest) to null,
+                    MockEngine { respondError(HttpStatusCode.Forbidden) } to null,
+                )
+
+            for ((engine, code) in refusals) {
+                val client = clientAnswering(engine)
+
+                assertEquals(Acceptance.Refused(code), client.acceptInvitation(TOKEN), "on $code")
             }
         }
 

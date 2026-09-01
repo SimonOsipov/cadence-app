@@ -243,7 +243,24 @@ counted() {
 }
 
 manifest=androidApp/src/main/AndroidManifest.xml
-# All four, and the two beyond scheme and host are not decoration: without VIEW the filter does
+# Within the one filter and not anywhere in the file: measured, the five strings survive inside an
+# XML comment, so grepping the whole manifest passes over a deep link that was commented out.
+#
+# awk and not a sed range, because the block has to be collected before it is known to be the
+# right one — the host sits at the end of it, after the three categories a range starting there
+# would drop. Measured: that range passed the real manifest for VIEW.
+filter=$(awk -v host="android:host=\"$host\"" '
+    # Commented-out first: the tags survive inside <!-- -->, so a deep link somebody parked in a
+    # comment satisfies every string below. Measured — it did.
+    /<!--/ { commented = 1 }
+    commented { if (/-->/) commented = 0; next }
+    /<intent-filter>/ { inside = 1; block = ""; wanted = 0 }
+    inside { block = block $0 "\n" }
+    inside && index($0, host) { wanted = 1 }
+    /<\/intent-filter>/ { if (inside && wanted) printf "%s", block; inside = 0 }
+' "$manifest")
+
+# All five, and the three beyond scheme and host are not decoration: without VIEW the filter does
 # not match what a mail client sends, without DEFAULT an implicit intent resolves to nothing, and
 # without BROWSABLE the mail client hands the link over to nobody. Each on its own leaves the
 # scheme correctly declared and the invitation opening nothing.
@@ -252,17 +269,21 @@ manifest=androidApp/src/main/AndroidManifest.xml
 for declaration in "android:scheme=\"$scheme\"" "android:host=\"$host\"" \
     "android.intent.action.VIEW" "android.intent.category.DEFAULT" \
     "android.intent.category.BROWSABLE"; do
-    found=$(counted "$declaration in $manifest" "$(grep -cF "$declaration" "$manifest" || true)")
+    found=$(counted "$declaration in $manifest" \
+        "$(printf '%s' "$filter" | grep -cF "$declaration" || true)")
     if [ "$found" -eq 0 ]; then
-        echo "$manifest carries no $declaration — an invitation opens nothing on Android" >&2
+        echo "$manifest has no intent-filter carrying $declaration — an invitation opens" \
+            "nothing on Android" >&2
         exit 1
     fi
 done
 
-# Inside CFBundleURLSchemes and not merely somewhere in the file: a scheme spelled into any other
-# array — or under a misspelled key, measured to leave iOS registering nothing — is a string the
-# system never reads.
-url_schemes=$(sed -n '/<key>CFBundleURLSchemes<\/key>/,/<\/array>/p' iosApp/iosApp/Info.plist)
+# Both keys, nested, because either alone is half the check: measured, moving the schemes array to
+# the top level satisfies a CFBundleURLSchemes range, and misspelling that key satisfies a
+# CFBundleURLTypes one — and iOS registers nothing in either state, reading the list only through
+# CFBundleURLTypes.
+url_types=$(sed -n '/<key>CFBundleURLTypes<\/key>/,/^\t<\/array>/p' iosApp/iosApp/Info.plist)
+url_schemes=$(printf '%s' "$url_types" | sed -n '/<key>CFBundleURLSchemes<\/key>/,/<\/array>/p')
 plist_scheme=$(counted "$scheme in CFBundleURLSchemes" \
     "$(printf '%s' "$url_schemes" | grep -cF "<string>$scheme</string>" || true)")
 if [ "$plist_scheme" -eq 0 ]; then

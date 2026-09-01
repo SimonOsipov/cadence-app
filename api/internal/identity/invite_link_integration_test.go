@@ -73,9 +73,9 @@ func TestTheInvitationCarriesATokenTheAppCanSpend(t *testing.T) {
 	}
 
 	// The ordinary case — the mail opened on a second device — and the answer the acceptance
-	// screen explains rather than retries. Pinned by code and by shape, because both are load
-	// bearing: `acceptInvitation` reads the status to tell a spent link from a server that
-	// answered badly, and step 3's Russian copy is written against `otp_expired`.
+	// screen explains rather than retries. Pinned by status and by code, and both are load
+	// bearing: `acceptInvitation` reads the status to decide whether another try is worth
+	// offering, and carries the code onward for step 3 to write its Russian from.
 	status, said = askOf(t, provider, "/verify", "", spend)
 	if status != http.StatusForbidden {
 		t.Errorf("spending the same token twice answered %d, not 403: %s", status, said)
