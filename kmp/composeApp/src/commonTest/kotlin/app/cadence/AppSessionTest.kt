@@ -99,6 +99,9 @@ class AppSessionTest {
                 onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
                 "the sign-in area flashed before anything was decided",
             )
+            // And it is not blank either: this is what a patient with a session looks at for a
+            // network round trip on an ordinary launch.
+            onNodeWithText(SPLASH_MARKER).assertIsDisplayed()
         }
 
     // The value the roots see before the stream speaks, which is the one literal in this design

@@ -37,9 +37,10 @@ fun App(
 ) {
     CadenceTheme {
         when (session) {
-            // Neither area. Rendering the sign-in screen here flashes it on every launch of a
-            // signed-in app, which reads as having been signed out.
-            SessionState.Deciding -> Box(modifier.fillMaxSize())
+            // Neither area, and not nothing: rendering the sign-in screen here flashes it on
+            // every launch of a signed-in app, and rendering an empty box leaves a patient
+            // looking at a blank one for a whole round trip.
+            SessionState.Deciding -> CadenceSplash(modifier)
 
             SessionState.SignedOut -> Box(modifier.fillMaxSize()) { CadenceTitle(SIGN_IN_MARKER) }
 
