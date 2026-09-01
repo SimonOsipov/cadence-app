@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.shared.auth.SessionState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -92,17 +93,21 @@ class AppSessionTest {
 
             assertTrue(
                 onAllNodesWithContentDescription(TODAY_TAB).fetchSemanticsNodes().isEmpty(),
-                "the inside was composed before the store answered",
+                "the inside was composed before anything was decided",
             )
             assertTrue(
                 onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
-                "the sign-in area flashed before the store answered",
+                "the sign-in area flashed before anything was decided",
             )
         }
 
     // The value the roots see before the stream speaks, which is the one literal in this design
     // nothing else can measure: written SignedOut it flashes the sign-in screen on every launch
     // of a signed-in app, and both roots stay green because neither is composed by any test.
+    //
+    // Driven from an empty flow and not a StateFlow, which is the whole of why it measures
+    // anything: a StateFlow hands over its held value as soon as collection starts, so the
+    // literal is overwritten before the first assertion and the mutation survives.
     @Test
     fun beforeTheStreamSpeaksNeitherAreaIsShown() =
         runComposeUiTest {
@@ -116,6 +121,21 @@ class AppSessionTest {
                 onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
                 "the sign-in area flashed before the stream said anything",
             )
+        }
+
+    // The other half of the same function, and the half the test above cannot see: that what the
+    // stream says afterwards arrives at all. Stubbed to answer Deciding for ever — a screen blank
+    // for the whole life of the app — every other test here stays green.
+    @Test
+    fun whatTheStreamSaysAfterwardsIsWhatIsShown() =
+        runComposeUiTest {
+            val sessions = MutableStateFlow<SessionState>(SessionState.Deciding)
+            setContent { App(sessions.collectAsSessionState()) }
+
+            sessions.value = SessionState.SignedIn
+            waitForIdle()
+
+            onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 
     // The pre-sign-in area exists and is what a patient without a session reaches. Steps 3-5

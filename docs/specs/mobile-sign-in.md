@@ -222,17 +222,18 @@ todoist: "6h9MFwg28gg442WH"
 > **«Нечитаемое хранилище — это «нет сессии»» держится двумя звеньями, стык не измерен, и это
 > сознательно.** `VaultSettingsTest.unreadableStorageIsNoSessionRatherThanACrash` держит первое
 > звено (хранилище → пусто), `SessionStateTest.noSessionIsSignedOut` — второе
-> (`NotAuthenticated` → `SignedOut`). Между ними вендор, и в артефакте 3.7.0 измерено, что стык
-> устроен не так, как читается его название: `loadFromStorage` не трогает `sessionStatus` вовсе,
-> а `NotAuthenticated` строится ровно в двух местах — `AuthImpl.clearSession` и
-> `UtilsKt.initDone`. На Apple `setupPlatform` зовёт `initDone` сам; на Android — только когда
-> `enableLifecycleCallbacks` выключен, иначе из колбэка ON_START у `ProcessLifecycleOwner`. То
-> есть из `Deciding` приложение выводит событие жизненного цикла процесса, приезжающее из
-> `androidx.lifecycle:lifecycle-process` (2.10.0 в runtime-classpath, транзитивно:
-> `auth-kt-android` не объявляет никакой зависимости от lifecycle). Сквозной тест не написан
-> намеренно: он мерил бы вендорскую обвязку под Robolectric, а не наше отображение. Цена
-> записана здесь: если `Deciding` не кончится, экран останется пустым навсегда, и ни один тест
-> этого не увидит.
+> (`NotAuthenticated` → `SignedOut`). Между ними вендор, и в артефакте 3.7.0 измерено, что
+> выход из `Deciding` устроен по-разному на разных путях. `AuthImpl.init` сперва зовёт
+> `loadFromStorage`; прочитанная сессия кончает состояние прямо там — `loadFromStorage` идёт в
+> `importSession`, а тот ставит `Authenticated`. Когда читать **нечего**, статус не пишется
+> вовсе, и пустой и нечитаемый пути ждут `UtilsKt.initDone` — единственное, кроме
+> `AuthImpl.clearSession`, место, где строится `NotAuthenticated`. На Apple `setupPlatform`
+> зовёт `initDone` сам; на Android — только когда `enableLifecycleCallbacks` выключен, иначе из
+> колбэка ON_START у `ProcessLifecycleOwner`, приезжающего из
+> `androidx.lifecycle:lifecycle-process`, который объявляет `supabase-kt-android` версией
+> 2.10.0. Сквозной тест не написан намеренно: он мерил бы вендорскую обвязку под Robolectric, а
+> не наше отображение. Цена записана здесь: если `Deciding` не кончится, экран у пациента без
+> сессии останется пустым навсегда, и ни один тест этого не увидит.
 
 
 

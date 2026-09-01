@@ -97,7 +97,7 @@ private fun io.github.jan.supabase.auth.user.UserSession.asSession() =
 private val theClient = mutableMapOf<String, SupabaseClient>()
 
 /**
- * The auth client for [url], built once among the app's roots — see [theClient] for why one.
+ * The auth client for [url], built once among the app's roots — see `theClient` for why one.
  *
  * Not «one per process», and the exception is named rather than closed: `:debugTools` builds its
  * own client on the same URL and the same session store, so opening the debug screen beside the
