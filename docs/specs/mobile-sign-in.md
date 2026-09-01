@@ -58,7 +58,7 @@ waiting for an email
 
 ## Scope / Non-scope
 
-**In scope.** Scheme registration and the PKCE flow. Protected navigation. The
+**In scope.** Scheme registration and the token exchange. Protected navigation. The
 sign-in, invite-acceptance-with-mandatory-password, and recovery screens. Signing
 out. Calling `POST /v1/me/session` on sign-in and on launch. Compose UI tests.
 
@@ -280,10 +280,16 @@ todoist: "6h9MFwpfXW69VQQH"
 
 ### step-3: The acceptance screen with a mandatory password
 
-Acceptance from the session step 2 obtained, mandatory password entry, a Russian
-explanation when the token was already spent. Tests: acceptance from a fresh link
-only completes with a password; a repeat of the same link is explained rather than
-failing with a generic refusal.
+**Owns the cold start**: the platform roots read the incoming link, hand its token
+to `invitationToken` — written by step 2 and called by nothing until here — and the
+app opens on the acceptance screen rather than on the home screen or on sign-in.
+Then acceptance from the session the exchange returned, mandatory password entry,
+and a Russian explanation when the token was already spent (`403 otp_expired`,
+measured).
+
+Tests: a cold start from the link lands on the acceptance screen; acceptance from
+a fresh link only completes with a password; a repeat of the same link is explained
+rather than failing with a generic refusal.
 todoist: "6h9MFx2QHfxwMPmH"
 
 ### step-4: The sign-in screen and signing out

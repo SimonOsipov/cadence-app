@@ -21,8 +21,9 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// The deep link the app is registered for. Spelled here rather than imported from kmp/, which is
-// the point: the two are separate declarations and this test is what makes them agree.
+// The deep link this template is expected to send patients to. That it is also the address the app
+// registers for is not measured here and cannot be — kmp/ is another stack. `scripts/gate/kmp.sh`
+// is what holds the two together, reading both from ACCEPT_LINK.
 const acceptLink = "cadence://accept?token_hash="
 
 // The token as the template renders it: GoTrue's own hashed token, which is hex.
@@ -72,9 +73,16 @@ func TestTheInvitationCarriesATokenTheAppCanSpend(t *testing.T) {
 	}
 
 	// The ordinary case — the mail opened on a second device — and the answer the acceptance
-	// screen explains rather than retries. A second 200 would make a single-use link reusable.
-	if status, said = askOf(t, provider, "/verify", "", spend); status == http.StatusOK {
-		t.Errorf("spending the same token twice answered 200: %s", said)
+	// screen explains rather than retries. Pinned by code and by shape, because both are load
+	// bearing: `acceptInvitation` reads the status to tell a spent link from a server that
+	// answered badly, and step 3's Russian copy is written against `otp_expired`.
+	status, said = askOf(t, provider, "/verify", "", spend)
+	if status != http.StatusForbidden {
+		t.Errorf("spending the same token twice answered %d, not 403: %s", status, said)
+	}
+
+	if !strings.Contains(said, "otp_expired") {
+		t.Errorf("the refusal does not say otp_expired, which is what the screen explains: %s", said)
 	}
 }
 

@@ -33,7 +33,9 @@ fun invitationToken(link: String): String? {
  * What the invitation screen has to tell apart.
  *
  * [Spent] and [Unreachable] are one answer to the transport and two to a patient: a link opened
- * twice is ordinary and is explained, a train in a tunnel is offered another try.
+ * twice is ordinary and is explained, a train in a tunnel is offered another try. Telling them
+ * apart wrongly costs a patient their invitation — «already used» over a live link sends them
+ * back to the clinic for a new one.
  */
 sealed interface Acceptance {
     data object Accepted : Acceptance
@@ -43,15 +45,25 @@ sealed interface Acceptance {
     data object Unreachable : Acceptance
 }
 
+// The statuses that are about the server rather than about the token, and the reason the arm below
+// reads a number rather than an exception type. Measured in the 3.7.0 artifact: every non-2xx
+// answer is built by `parseErrorResponse` into a `RestException` — Unauthorized, BadRequest or
+// Unknown — so 500 while GoTrue restarts and 429 from the rate limiter arrive in exactly the shape
+// a spent link does. Catching the type alone told a patient their live invitation was used up.
+private const val TOO_MANY_REQUESTS = 429
+
+private const val FIRST_SERVER_ERROR = 500
+
 /**
  * Exchanges the invitation's token for a session, which the vendor then stores.
  *
  * Measured against v2.194.0 on 2026-09-01: `POST /verify` with an unspent `token_hash` answers the
- * whole session in its body, so nothing is caught out of a URL fragment and no browser is opened.
- * PKCE is not the alternative — the admin route accepts a `code_challenge` and ignores it.
+ * whole session in its body, so nothing is caught out of a URL fragment and no browser is opened;
+ * spending it twice answers `403 otp_expired`. PKCE is not the alternative — the admin route
+ * accepts a `code_challenge` and ignores it.
  *
- * The swallow is the answer, as it is at `SessionTokens.refreshed()`: which exception arrived is
- * the whole of what the screen needs, and carrying it further would log a token's failure.
+ * The swallow is the answer, as it is at `SessionTokens.refreshed()`: which failure arrived is the
+ * whole of what the screen needs, and carrying it further would log a token's failure.
  */
 @Suppress("SwallowedException")
 suspend fun SupabaseClient.acceptInvitation(tokenHash: String): Acceptance =
@@ -62,7 +74,11 @@ suspend fun SupabaseClient.acceptInvitation(tokenHash: String): Acceptance =
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (refused: RestException) {
-        Acceptance.Spent
+        if (refused.statusCode == TOO_MANY_REQUESTS || refused.statusCode >= FIRST_SERVER_ERROR) {
+            Acceptance.Unreachable
+        } else {
+            Acceptance.Spent
+        }
     } catch (unreachable: IOException) {
         Acceptance.Unreachable
     }

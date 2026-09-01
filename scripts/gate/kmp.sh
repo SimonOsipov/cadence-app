@@ -197,34 +197,59 @@ if [ "$marker_hits" -ne 0 ]; then
     exit 1
 fi
 
-# Where an invitation lands, on both platforms, and read from the Kotlin constant rather than
-# spelled here: a scheme renamed in one place and not the other is a mail that opens nothing, and
-# nothing else in the tree would notice. The plist is checked here and not in ios.sh so a machine
-# without Xcode still measures it — the file is text either way.
-accept=$(sed -n 's/.*ACCEPT_LINK: String = "\([^:]*\):.*/\1/p' \
+# Where an invitation lands, and it is four declarations that have to agree: the Kotlin constant,
+# the Android manifest, Info.plist, and the mail template that sends patients there. All read from
+# ACCEPT_LINK rather than spelled here — measured, a host renamed in the manifest alone leaves the
+# scheme in place, every Kotlin and Go test green, and an invitation that opens nothing.
+#
+# The plist is checked here and not in ios.sh so a machine without Xcode still measures it.
+accept=$(sed -n 's/.*ACCEPT_LINK: String = "\([^"]*\)".*/\1/p' \
     shared/src/commonMain/kotlin/app/cadence/shared/auth/Invitation.kt)
-# Shape, not merely non-empty: measured by turning the constant into "$SCHEME://accept", which
-# sed reads as the literal `$SCHEME` — a non-empty answer that then fails both greps below for
-# the wrong reason. An empty one would be worse still: `grep -c ""` matches every line and both
-# checks would pass having measured nothing.
-case $accept in
+scheme=${accept%%://*}
+host=${accept#*://}
+
+# Shape, not merely non-empty: measured by turning the constant into "$SCHEME://accept", which sed
+# reads as the literal `$SCHEME` — a non-empty answer that then fails every grep below for the
+# wrong reason. An empty one would be worse still: `grep -c ""` matches every line and the checks
+# would pass having measured nothing.
+case $scheme$host in
     *[!a-z0-9.+-]* | "")
         # Braced deliberately: bash reads the first byte of a following multibyte character as
         # part of the name, and `$accept»` is then an unbound variable rather than the message.
-        echo "'${accept}' is not a scheme — ACCEPT_LINK could not be read from Invitation.kt" >&2
+        echo "'${accept}' is not a deep link — ACCEPT_LINK could not be read from Invitation.kt" >&2
         exit 1
         ;;
 esac
 
-manifest_scheme=$(grep -c "android:scheme=\"$accept\"" androidApp/src/main/AndroidManifest.xml || true)
-if [ "$manifest_scheme" -eq 0 ]; then
-    echo "the Android manifest declares no $accept:// scheme — an invitation opens nothing" >&2
+manifest=androidApp/src/main/AndroidManifest.xml
+for declaration in "android:scheme=\"$scheme\"" "android:host=\"$host\"" \
+    "android.intent.category.BROWSABLE"; do
+    # BROWSABLE is not decoration: without it a mail client hands the link to nobody, and the
+    # scheme being declared is no consolation.
+    found=$(grep -c "$declaration" "$manifest" || true)
+    if [ "$found" -eq 0 ]; then
+        echo "$manifest carries no $declaration — an invitation opens nothing on Android" >&2
+        exit 1
+    fi
+done
+
+# In the URL types block and not merely somewhere in the file: a scheme declared outside it is a
+# string the system never reads.
+url_types=$(sed -n '/<key>CFBundleURLTypes<\/key>/,/<\/array>/p' iosApp/iosApp/Info.plist)
+plist_scheme=$(printf '%s' "$url_types" | grep -c "<string>$scheme</string>" || true)
+if [ "$plist_scheme" -eq 0 ]; then
+    echo "Info.plist declares no $scheme:// under CFBundleURLTypes — an invitation opens" \
+        "nothing on iOS" >&2
     exit 1
 fi
 
-plist_scheme=$(grep -c "<string>$accept</string>" iosApp/iosApp/Info.plist || true)
-if [ "$plist_scheme" -eq 0 ]; then
-    echo "Info.plist declares no $accept:// scheme — an invitation opens nothing" >&2
+# The other end of the same agreement, and the one nothing else in either stack would notice: the
+# app can be registered for an address no invitation ever names.
+template=../api/mail-templates/invite.html
+template_link=$(grep -c "$accept?token_hash=" "$template" || true)
+if [ "$template_link" -eq 0 ]; then
+    echo "$template does not send patients to $accept — the app is registered for an address" \
+        "no invitation names" >&2
     exit 1
 fi
 
