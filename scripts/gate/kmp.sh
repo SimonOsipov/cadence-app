@@ -221,24 +221,48 @@ case $scheme$host in
         ;;
 esac
 
+# `grep -c` on a file that is not there prints nothing and answers 2; `|| true` swallows the
+# status, and `[ "" -eq 0 ]` is then an error bash reads as false — so the check passes having
+# read nothing. Measured under bash, which is what runs this. Every count below goes through
+# here, and the shape is changed-stacks.sh's `emit`, for the same reason it has one.
+counted() {
+    local what=$1 count=$2
+
+    case $count in
+        '' | *[!0-9]*)
+            echo "counting $what produced '$count', so nothing was measured" >&2
+            exit 1
+            ;;
+    esac
+
+    echo "$count"
+}
+
 manifest=androidApp/src/main/AndroidManifest.xml
+# All four, and the two beyond scheme and host are not decoration: without VIEW the filter does
+# not match what a mail client sends, without DEFAULT an implicit intent resolves to nothing, and
+# without BROWSABLE the mail client hands the link over to nobody. Each on its own leaves the
+# scheme correctly declared and the invitation opening nothing.
+#
+# -F because these are fixed strings: unescaped, the dots in the category names are wildcards.
 for declaration in "android:scheme=\"$scheme\"" "android:host=\"$host\"" \
+    "android.intent.action.VIEW" "android.intent.category.DEFAULT" \
     "android.intent.category.BROWSABLE"; do
-    # BROWSABLE is not decoration: without it a mail client hands the link to nobody, and the
-    # scheme being declared is no consolation.
-    found=$(grep -c "$declaration" "$manifest" || true)
+    found=$(counted "$declaration in $manifest" "$(grep -cF "$declaration" "$manifest" || true)")
     if [ "$found" -eq 0 ]; then
         echo "$manifest carries no $declaration — an invitation opens nothing on Android" >&2
         exit 1
     fi
 done
 
-# In the URL types block and not merely somewhere in the file: a scheme declared outside it is a
-# string the system never reads.
-url_types=$(sed -n '/<key>CFBundleURLTypes<\/key>/,/<\/array>/p' iosApp/iosApp/Info.plist)
-plist_scheme=$(printf '%s' "$url_types" | grep -c "<string>$scheme</string>" || true)
+# Inside CFBundleURLSchemes and not merely somewhere in the file: a scheme spelled into any other
+# array — or under a misspelled key, measured to leave iOS registering nothing — is a string the
+# system never reads.
+url_schemes=$(sed -n '/<key>CFBundleURLSchemes<\/key>/,/<\/array>/p' iosApp/iosApp/Info.plist)
+plist_scheme=$(counted "$scheme in CFBundleURLSchemes" \
+    "$(printf '%s' "$url_schemes" | grep -cF "<string>$scheme</string>" || true)")
 if [ "$plist_scheme" -eq 0 ]; then
-    echo "Info.plist declares no $scheme:// under CFBundleURLTypes — an invitation opens" \
+    echo "Info.plist declares no $scheme:// under CFBundleURLSchemes — an invitation opens" \
         "nothing on iOS" >&2
     exit 1
 fi
@@ -246,7 +270,7 @@ fi
 # The other end of the same agreement, and the one nothing else in either stack would notice: the
 # app can be registered for an address no invitation ever names.
 template=../api/mail-templates/invite.html
-template_link=$(grep -c "$accept?token_hash=" "$template" || true)
+template_link=$(counted "$accept in $template" "$(grep -cF "$accept?token_hash=" "$template" || true)")
 if [ "$template_link" -eq 0 ]; then
     echo "$template does not send patients to $accept — the app is registered for an address" \
         "no invitation names" >&2

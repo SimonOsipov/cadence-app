@@ -3,6 +3,8 @@ package app.cadence.shared.auth
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.exception.AuthErrorCode
+import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.exceptions.RestException
 import io.ktor.http.Url
 import io.ktor.utils.io.errors.IOException
@@ -45,22 +47,23 @@ sealed interface Acceptance {
     data object Unreachable : Acceptance
 }
 
-// The statuses that are about the server rather than about the token, and the reason the arm below
-// reads a number rather than an exception type. Measured in the 3.7.0 artifact: every non-2xx
-// answer is built by `parseErrorResponse` into a `RestException` — Unauthorized, BadRequest or
-// Unknown — so 500 while GoTrue restarts and 429 from the rate limiter arrive in exactly the shape
-// a spent link does. Catching the type alone told a patient their live invitation was used up.
-private const val TOO_MANY_REQUESTS = 429
-
-private const val FIRST_SERVER_ERROR = 500
-
 /**
  * Exchanges the invitation's token for a session, which the vendor then stores.
  *
  * Measured against v2.194.0 on 2026-09-01: `POST /verify` with an unspent `token_hash` answers the
  * whole session in its body, so nothing is caught out of a URL fragment and no browser is opened;
- * spending it twice answers `403 otp_expired`. PKCE is not the alternative — the admin route
- * accepts a `code_challenge` and ignores it.
+ * spending it twice answers `403 otp_expired`, and so does a token that never existed. PKCE is not
+ * the alternative — the admin route accepts a `code_challenge` and ignores it.
+ *
+ * **The exception type carries no answer at all**, measured in the 3.7.0 artifact:
+ * `parseErrorResponse` builds a `GoTrueErrorResponse` — falling back to the literal
+ * `"Unknown error"` when the body will not decode — and hands it to `checkErrorCodes`, which
+ * returns an [AuthRestException] whenever that error is non-null. So a spent link, a rate limit
+ * and GoTrue restarting all arrive as one type, and only the code inside separates them.
+ *
+ * [Acceptance.Spent] is therefore given on that code alone and nothing else is guessed into it:
+ * being told an invitation is used up sends a patient back to the clinic for one they already
+ * have, while «try again» costs them a tap. An unrecognised refusal takes the cheaper mistake.
  *
  * The swallow is the answer, as it is at `SessionTokens.refreshed()`: which failure arrived is the
  * whole of what the screen needs, and carrying it further would log a token's failure.
@@ -74,10 +77,10 @@ suspend fun SupabaseClient.acceptInvitation(tokenHash: String): Acceptance =
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (refused: RestException) {
-        if (refused.statusCode == TOO_MANY_REQUESTS || refused.statusCode >= FIRST_SERVER_ERROR) {
-            Acceptance.Unreachable
-        } else {
+        if ((refused as? AuthRestException)?.errorCode == AuthErrorCode.OtpExpired) {
             Acceptance.Spent
+        } else {
+            Acceptance.Unreachable
         }
     } catch (unreachable: IOException) {
         Acceptance.Unreachable

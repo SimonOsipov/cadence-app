@@ -55,6 +55,9 @@ check "kmp source"                      true  kmp     "kmp/shared/src/Foo.kt"
 # The client is generated from the contract and committed, so a contract-only change has to
 # reach the job that runs openApiDrift — the one change class that gate exists to catch.
 check "the API's contract"              true  kmp     "api/openapi.json"
+# The invitation's address lives in ACCEPT_LINK and in this template, and the KMP gate is the
+# only thing holding the two together — so a template-only change has to reach it.
+check "the invitation template"         true  kmp     "api/mail-templates/invite.html"
 check "other go"                        false kmp     "api/internal/identity/roster.go"
 # The trigger the macOS job's own comment now names, and the one with the highest bill: a
 # workflow edit books a ten-times-Linux runner, so it is worth a case rather than a reading.

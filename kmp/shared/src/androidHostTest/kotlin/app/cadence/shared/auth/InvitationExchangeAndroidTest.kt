@@ -22,6 +22,16 @@ private const val GOTRUE = "http://localhost:9999"
 
 private const val TOKEN = "e75b4d4f54a86c915c0afdfc5db3b5cb6eea78ba43c1ccf6bd24c5cb"
 
+// Refusals in the shape GoTrue actually sends them, because the shape is the measurement: a body
+// that will not decode falls back to «Unknown error» inside the vendor and carries no code at all,
+// so a fixture built from `respondError` alone certifies an answer the server never gives.
+private fun aRefusal(code: String) = """{"code":403,"error_code":"$code","msg":"a refusal"}"""
+
+private fun jsonError(
+    status: HttpStatusCode,
+    code: String,
+) = MockEngine { respond(aRefusal(code), status, headersOf("Content-Type", "application/json")) }
+
 // Cut to what the vendor reads out of GoTrue's answer.
 private const val A_SESSION = """
     {"access_token":"an-access-token","token_type":"bearer","expires_in":3600,
@@ -60,9 +70,12 @@ class InvitationExchangeAndroidTest {
 
             val asked = engine.requestHistory.single()
 
+            // Field and value together: the neighbouring overload puts the token in `token` and
+            // adds an `email`, which leaves the path, the word «invite» and the token itself all
+            // where a looser assertion would still find them — and a live GoTrue refusing.
             assertEquals("/verify", asked.url.encodedPath)
-            assertContains(asked.sentBody(), TOKEN)
-            assertContains(asked.sentBody(), "invite")
+            assertContains(asked.sentBody(), """"token_hash":"$TOKEN"""")
+            assertContains(asked.sentBody(), """"type":"invite"""")
         }
 
     // «Which the vendor then stores» is what step 3 builds on, and an exchange that answered
@@ -86,24 +99,30 @@ class InvitationExchangeAndroidTest {
     @Test
     fun aSpentTokenIsRefusedRatherThanRetried() =
         runTest {
-            val client = clientAnswering(MockEngine { respondError(HttpStatusCode.Forbidden) })
+            val client = clientAnswering(jsonError(HttpStatusCode.Forbidden, "otp_expired"))
 
             assertEquals(Acceptance.Spent, client.acceptInvitation(TOKEN))
         }
 
-    // The other direction, and the expensive one: measured in the 3.7.0 artifact, a 500 and a 429
-    // are built into the same `RestException` a refusal is, so catching the type told a patient
-    // holding a live invitation that it was used up — and sent them back to the clinic for one
-    // they did not need.
+    // The other direction, and the expensive one: measured in the 3.7.0 artifact, every refusal
+    // arrives as one exception type, so reading the type told a patient holding a live invitation
+    // that it was used up and sent them back to the clinic for one they did not need. A refusal
+    // with no code at all is in the list because it is what an undecodable body becomes.
     @Test
-    fun aServerThatAnsweredBadlyIsNotASpentLink() =
+    fun onlyASpentLinkReadsAsSpent() =
         runTest {
-            val hiccups = listOf(HttpStatusCode.InternalServerError, HttpStatusCode.TooManyRequests)
+            val others =
+                mapOf(
+                    "a rate limit" to jsonError(HttpStatusCode.TooManyRequests, "over_request_rate_limit"),
+                    "a restarting server" to jsonError(HttpStatusCode.InternalServerError, "unexpected_failure"),
+                    "another refusal" to jsonError(HttpStatusCode.Forbidden, "user_banned"),
+                    "a body that will not decode" to MockEngine { respondError(HttpStatusCode.Forbidden) },
+                )
 
-            for (hiccup in hiccups) {
-                val client = clientAnswering(MockEngine { respondError(hiccup) })
+            for ((what, engine) in others) {
+                val client = clientAnswering(engine)
 
-                assertEquals(Acceptance.Unreachable, client.acceptInvitation(TOKEN), "on $hiccup")
+                assertEquals(Acceptance.Unreachable, client.acceptInvitation(TOKEN), "on $what")
             }
         }
 
