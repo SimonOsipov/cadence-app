@@ -283,13 +283,20 @@ todoist: "6h9MFwpfXW69VQQH"
 **Owns the cold start**: the platform roots read the incoming link, hand its token
 to `invitationToken` — written by step 2 and called by nothing until here — and the
 app opens on the acceptance screen rather than on the home screen or on sign-in.
-Then acceptance from the session the exchange returned, mandatory password entry,
-and a Russian explanation when the token was already spent (`403 otp_expired`,
-measured).
+Then acceptance from the session the exchange returned, and mandatory password entry.
+
+**Owns the copy for a refusal**, and there is more than one: step 2 hands over the
+code GoTrue gave rather than a verdict. `otp_expired` — a link already opened, or one
+that never existed — is explained and offers to ask the clinic for another. But a
+patient the clinic has banned answers `user_banned` on a link that was never spent,
+measured on the live provider, and telling them the link is used up would send them
+to ask for one that will refuse the same way. A refusal naming no code at all is
+possible too and needs a sentence that promises nothing.
 
 Tests: a cold start from the link lands on the acceptance screen; acceptance from
 a fresh link only completes with a password; a repeat of the same link is explained
-rather than failing with a generic refusal.
+rather than failing with a generic refusal; `user_banned` and an unnamed refusal each
+say something other than «already used».
 todoist: "6h9MFx2QHfxwMPmH"
 
 ### step-4: The sign-in screen and signing out
