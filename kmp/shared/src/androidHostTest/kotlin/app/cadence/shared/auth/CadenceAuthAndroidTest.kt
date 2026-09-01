@@ -64,7 +64,7 @@ class CadenceAuthAndroidTest {
             assertNotNull(manager.loadSession())
         }
 
-    // A fresh client has read nothing yet, so the shell is told «not yet» rather than «signed
+    // Nothing is decided at construction, so the shell is told «not yet» rather than «signed
     // out» — the launch of a signed-in app must not pass through the sign-in screen.
     @Test
     fun aFreshClientDoesNotClaimTheyAreSignedOut() =
@@ -76,11 +76,7 @@ class CadenceAuthAndroidTest {
             assertEquals(SessionState.Deciding, first)
         }
 
-    // One client per process, and the reason is the invariant the transport is arranged around:
-    // each SupabaseClient loads the stored session and starts its own auto-refresh on its own
-    // scope, so two of them are two owners rotating one refresh token — the loser spends a token
-    // already spent and the patient is signed out by their own app. An Activity recreated for a
-    // font-scale or locale change builds a second one, and `configChanges` does not cover those.
+    // Two clients are two owners of one refresh token — see `theClient` for what that costs.
     @Test
     fun theProcessHasOneAuthClientAndNotOnePerCaller() {
         installSecureStorage(RuntimeEnvironment.getApplication())

@@ -31,18 +31,17 @@ private fun aSession() =
 // AuthImpl constructs it exactly when the status is in NETWORK_ERROR_CODES, and 401/403/404 take
 // clearSession() instead. A fixture built from a 401 certifies a value that never occurs — which
 // is what the first version of this file did, and what let an inverted mapping pass the gate.
-private suspend fun aRetryableFiveHundred(): UnknownRestException {
-    val answer = HttpClient(MockEngine { respond("", HttpStatusCode.BadGateway) }).get("http://gotrue.test/token")
-
-    return UnknownRestException("bad gateway", answer)
-}
+private suspend fun aRetryableFiveHundred(): UnknownRestException =
+    HttpClient(MockEngine { respond("", HttpStatusCode.BadGateway) }).use { client ->
+        UnknownRestException("bad gateway", client.get("http://gotrue.test/token"))
+    }
 
 class SessionStateTest {
-    // Launching with a session must open the app inside. While the store is still being read
-    // the answer is «not yet» — mapped to SignedOut it would flash the sign-in screen, which
-    // reads to a patient as having been signed out.
+    // Launching with a session must open the app inside. Until the vendor decides, the answer
+    // is «not yet» — mapped to SignedOut it would flash the sign-in screen, which reads to a
+    // patient as having been signed out.
     @Test
-    fun beforeTheStoreHasAnsweredNobodyIsSignedOut() {
+    fun beforeAnythingIsDecidedNobodyIsSignedOut() {
         assertEquals(SessionState.Deciding, SessionStatus.Initializing.asSessionState())
     }
 

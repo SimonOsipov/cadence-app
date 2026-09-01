@@ -97,17 +97,12 @@ private fun io.github.jan.supabase.auth.user.UserSession.asSession() =
 private val theClient = mutableMapOf<String, SupabaseClient>()
 
 /**
- * The auth client for [url], built once **among the app's roots**.
- *
- * Platform roots call this instead of [cadenceAuth]: an Android activity is recreated for a
- * font-scale, density or locale change — none of which `configChanges` covers — and each
- * recreation would otherwise start a second refresh owner.
+ * The auth client for [url], built once among the app's roots — see [theClient] for why one.
  *
  * Not «one per process», and the exception is named rather than closed: `:debugTools` builds its
- * own client on the same URL and the same session store, because its engine is a seam its tests
- * substitute. Opening the debug screen beside the app therefore does put two refresh owners in
- * one process, and under rotation a developer can be signed out of the dev contour while
- * debugging that very path. It never reaches a release — `debugImplementation` — so this is a
- * cost paid by whoever opens the screen, not by a patient.
+ * own client on the same URL and the same session store, so opening the debug screen beside the
+ * app does put two refresh owners in one process and can sign a developer out of the dev contour.
+ * It is absent from both release builds — `debugImplementation` on Android, a source directory
+ * added only under `-Pcadence.debugTools` on iOS — so the cost is the developer's, not a patient's.
  */
 fun cadenceAuthFor(url: String): SupabaseClient = theClient.getOrPut(url) { cadenceAuth(url) }

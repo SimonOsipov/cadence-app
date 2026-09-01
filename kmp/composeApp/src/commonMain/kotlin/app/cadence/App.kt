@@ -3,11 +3,14 @@ package app.cadence
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import app.cadence.design.CadenceTheme
 import app.cadence.design.CadenceTitle
 import app.cadence.shared.auth.SessionState
 import app.cadence.shell.CadenceApp
+import kotlinx.coroutines.flow.Flow
 
 /** What the pre-sign-in area shows until steps 3–5 give it its screens. */
 const val SIGN_IN_MARKER: String = "Вход в Cadence"
@@ -43,4 +46,16 @@ fun App(
             SessionState.SignedIn -> CadenceApp(modifier = modifier)
         }
     }
+}
+
+/**
+ * [SessionState.Deciding] until the stream speaks, and chosen here rather than at each root:
+ * the value before the first emission is what decides whether a signed-in launch flashes the
+ * sign-in screen, and a literal written once per root is a literal nothing measures.
+ */
+@Composable
+fun Flow<SessionState>.collectAsSessionState(): SessionState {
+    val session by collectAsState(SessionState.Deciding)
+
+    return session
 }

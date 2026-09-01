@@ -8,11 +8,20 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
-/** Which of the app's two areas the patient belongs in, and «not yet» while the store answers. */
+/** Which of the app's two areas the patient belongs in, and «not yet» before the vendor decides. */
 sealed interface SessionState {
     /**
-     * The store has not answered. Rendered as neither area: mapped to [SignedOut] the sign-in
+     * Nothing has been decided yet. Rendered as neither area: mapped to [SignedOut] the sign-in
      * screen flashes on every launch, which reads to a patient as having been signed out.
+     *
+     * What ends it is **not** the store answering, measured in the 3.7.0 artifact:
+     * `loadFromStorage` never touches `sessionStatus`, and [SessionStatus.NotAuthenticated] is
+     * constructed in exactly two places — `AuthImpl.clearSession` and `UtilsKt.initDone`. On
+     * Apple `setupPlatform` calls `initDone` itself; on Android it calls it only when
+     * `enableLifecycleCallbacks` is off, and otherwise from a `ProcessLifecycleOwner` ON_START
+     * callback — so an empty or unreadable store leaves this state on a lifecycle event, out of
+     * `androidx.lifecycle:lifecycle-process` (2.10.0 on the runtime classpath, reached
+     * transitively; `auth-kt-android` declares no lifecycle dependency of its own).
      */
     data object Deciding : SessionState
 

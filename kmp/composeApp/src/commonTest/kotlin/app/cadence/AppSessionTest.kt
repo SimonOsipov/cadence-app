@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.shared.auth.SessionState
+import kotlinx.coroutines.flow.emptyFlow
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -59,9 +60,9 @@ class AppSessionTest {
             onNodeWithContentDescription("Расписание").performClick()
             waitForIdle()
 
-            // The probe has to be a node this destination draws. Keyed on the tab bar it would
-            // be blind: Schedule and Journal deliberately draw none (PlaceholderScreen), so an
-            // «no tab bar» assertion is already true before the session goes and cannot fail.
+            // The probe has to be a node this destination draws — ScheduleScreen's own band.
+            // Keyed on the tab bar it would be blind: this destination deliberately draws none,
+            // so a «no tab bar» assertion is true before the session goes and cannot fail.
             onNodeWithText("ТЕКУЩИЙ КУРС").assertIsDisplayed()
 
             session = SessionState.SignedOut
@@ -81,10 +82,11 @@ class AppSessionTest {
             )
         }
 
-    // Neither area while the store is still answering. Rendered as signed out this flashes the
-    // sign-in screen on every launch of a signed-in app.
+    // Neither area while nothing is decided yet — and it is not the store that decides, see
+    // SessionState.Deciding. Rendered as signed out this flashes the sign-in screen on every
+    // launch of a signed-in app.
     @Test
-    fun whileTheStoreAnswersNeitherAreaIsShown() =
+    fun whileNothingIsDecidedNeitherAreaIsShown() =
         runComposeUiTest {
             setContent { App(SessionState.Deciding) }
 
@@ -95,6 +97,24 @@ class AppSessionTest {
             assertTrue(
                 onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
                 "the sign-in area flashed before the store answered",
+            )
+        }
+
+    // The value the roots see before the stream speaks, which is the one literal in this design
+    // nothing else can measure: written SignedOut it flashes the sign-in screen on every launch
+    // of a signed-in app, and both roots stay green because neither is composed by any test.
+    @Test
+    fun beforeTheStreamSpeaksNeitherAreaIsShown() =
+        runComposeUiTest {
+            setContent { App(emptyFlow<SessionState>().collectAsSessionState()) }
+
+            assertTrue(
+                onAllNodesWithContentDescription(TODAY_TAB).fetchSemanticsNodes().isEmpty(),
+                "the inside was composed before the stream said anything",
+            )
+            assertTrue(
+                onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
+                "the sign-in area flashed before the stream said anything",
             )
         }
 
