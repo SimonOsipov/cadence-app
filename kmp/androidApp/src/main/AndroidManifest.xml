@@ -19,6 +19,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Where an invitation lands. BROWSABLE is what lets a mail client hand the
+                 link over; without it the message opens nothing. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cadence" android:host="accept" />
+            </intent-filter>
         </activity>
     </application>
 

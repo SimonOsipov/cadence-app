@@ -24,6 +24,12 @@ import kotlinx.coroutines.CancellationException
  * Both storage seams are substituted, which is the condition the library was taken on rather
  * than a refinement — see [secureSettings] for why they are two stores and not one.
  *
+ * The verifier cache is groundwork and has no consumer today: accepting an invitation was to be a
+ * PKCE flow until it was measured not to be one — GoTrue v2.194.0 accepts a `code_challenge` on
+ * the admin route and ignores it — and the invitation now leads into the app with a token the app
+ * exchanges itself. It stays because a provider sign-in would want it back, and an empty store
+ * costs nothing; the reasoning is in the proposal «Приём приглашения: PKCE недостижим».
+ *
  * [stores] is a parameter so the seam can be measured without a device; production passes
  * [secureSettings]. [engine] is one for the same reason and a sharper one: the module builds its
  * own client, so left to itself nothing outside this file can observe which address it talks to —

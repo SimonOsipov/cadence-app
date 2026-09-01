@@ -197,6 +197,29 @@ if [ "$marker_hits" -ne 0 ]; then
     exit 1
 fi
 
+# Where an invitation lands, on both platforms, and read from the Kotlin constant rather than
+# spelled here: a scheme renamed in one place and not the other is a mail that opens nothing, and
+# nothing else in the tree would notice. The plist is checked here and not in ios.sh so a machine
+# without Xcode still measures it — the file is text either way.
+accept=$(sed -n 's/.*ACCEPT_LINK: String = "\([^:]*\):.*/\1/p' \
+    shared/src/commonMain/kotlin/app/cadence/shared/auth/Invitation.kt)
+if [ -z "$accept" ]; then
+    echo "the invitation scheme could not be read from Invitation.kt — this greps nothing" >&2
+    exit 1
+fi
+
+manifest_scheme=$(grep -c "android:scheme=\"$accept\"" androidApp/src/main/AndroidManifest.xml || true)
+if [ "$manifest_scheme" -eq 0 ]; then
+    echo "the Android manifest declares no $accept:// scheme — an invitation opens nothing" >&2
+    exit 1
+fi
+
+plist_scheme=$(grep -c "<string>$accept</string>" iosApp/iosApp/Info.plist || true)
+if [ "$plist_scheme" -eq 0 ]; then
+    echo "Info.plist declares no $accept:// scheme — an invitation opens nothing" >&2
+    exit 1
+fi
+
 echo
 echo "kmp gate: green — :shared and :debugTools. composeApp's Compose UI tests did NOT run;"
 echo "                 they need ios.sh and a macOS host with Xcode."
