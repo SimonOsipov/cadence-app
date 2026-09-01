@@ -44,6 +44,9 @@ private fun jsonError(
     respond(aRefusal(status, code), status, headersOf("Content-Type", "application/json"))
 }
 
+// What PUT /user answers with, cut to what the vendor reads.
+private const val A_USER = """{"id":"a-user","aud":"authenticated","email":"patient@clinic.example"}"""
+
 // Cut to what the vendor reads out of GoTrue's answer.
 private const val A_SESSION = """
     {"access_token":"an-access-token","token_type":"bearer","expires_in":3600,
@@ -169,5 +172,66 @@ class InvitationExchangeAndroidTest {
             val client = clientAnswering(MockEngine { throw IOException("no route") })
 
             assertEquals(Acceptance.Unreachable, client.acceptInvitation(TOKEN))
+        }
+}
+
+/**
+ * Setting the password, through the same whole client and for the same reason.
+ *
+ * The arms are shared with the exchange, so this is where the second call site is measured: a
+ * mapper tested once and used twice leaves one of the two unmeasured, which is the trade this
+ * file has refused before.
+ */
+@RunWith(RobolectricTestRunner::class)
+class PasswordSetAndroidTest {
+    @Test
+    fun aPasswordTheProviderTakesIsSet() =
+        runTest {
+            val client =
+                clientAnswering(
+                    MockEngine {
+                        respond(A_USER, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+                    },
+                )
+
+            assertEquals(PasswordSet.Done, client.setInvitationPassword("a-long-enough-password"))
+        }
+
+    // The refusal the screen's own bound normally prevents, and the one that arrives anyway when
+    // the provider's floor is raised without the app being rebuilt. It names something the patient
+    // can act on, so it must not read as «try again».
+    @Test
+    fun aPasswordTheProviderFindsWeakIsRefusedWithItsReason() =
+        runTest {
+            val client =
+                clientAnswering(
+                    jsonError(HttpStatusCode.UnprocessableEntity, "weak_password"),
+                )
+
+            assertEquals(
+                PasswordSet.Refused(AuthErrorCode.WeakPassword),
+                client.setInvitationPassword("short"),
+            )
+        }
+
+    @Test
+    fun aServerThatWillAnswerLaterIsWorthAnotherTry() =
+        runTest {
+            val later =
+                mapOf(
+                    "a restarting server" to jsonError(HttpStatusCode.InternalServerError, "unexpected_failure"),
+                    "a rate limit" to jsonError(HttpStatusCode.TooManyRequests, "over_request_rate_limit"),
+                    "no route" to MockEngine { throw IOException("no route") },
+                )
+
+            for ((what, engine) in later) {
+                val client = clientAnswering(engine)
+
+                assertEquals(
+                    PasswordSet.Unreachable,
+                    client.setInvitationPassword("a-long-enough-password"),
+                    "on $what",
+                )
+            }
         }
 }

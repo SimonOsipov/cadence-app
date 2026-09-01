@@ -104,7 +104,7 @@ suspend fun SupabaseClient.acceptInvitation(tokenHash: String): Acceptance =
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (refused: RestException) {
-        if (refused.statusCode in RETRYABLE || refused.statusCode >= FIRST_SERVER_ERROR) {
+        if (refused.isWorthAnotherTry()) {
             Acceptance.Unreachable
         } else {
             Acceptance.Refused((refused as? AuthRestException)?.errorCode)
@@ -112,3 +112,52 @@ suspend fun SupabaseClient.acceptInvitation(tokenHash: String): Acceptance =
     } catch (unreachable: IOException) {
         Acceptance.Unreachable
     }
+
+/**
+ * The answer to setting the password that completes an invitation.
+ *
+ * The same three a write on this path can have, and the same reason they are three: [Refused]
+ * names something the patient can act on — a password the provider found too weak — and
+ * [Unreachable] is worth another tap. Separate from [Acceptance] because the screens differ:
+ * a refusal here leaves the form on screen with the password still typed.
+ */
+sealed interface PasswordSet {
+    data object Done : PasswordSet
+
+    data class Refused(
+        val code: AuthErrorCode?,
+    ) : PasswordSet
+
+    data object Unreachable : PasswordSet
+}
+
+/**
+ * Sets the password an invitation requires, on the session the exchange just stored.
+ *
+ * Measured against the deployment on 2026-09-01: below `GOTRUE_PASSWORD_MIN_LENGTH` this answers
+ * `422 weak_password` with reasons `["length"]`, and at it `200`. The screen holds the same bound
+ * so the refusal normally arrives before the typing — this is what answers when it does not, and
+ * a provider raising its floor without the app being rebuilt is exactly that case.
+ */
+@Suppress("SwallowedException")
+suspend fun SupabaseClient.setInvitationPassword(password: String): PasswordSet =
+    try {
+        auth.updateUser { this.password = password }
+
+        PasswordSet.Done
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (refused: RestException) {
+        if (refused.isWorthAnotherTry()) {
+            PasswordSet.Unreachable
+        } else {
+            PasswordSet.Refused((refused as? AuthRestException)?.errorCode)
+        }
+    } catch (unreachable: IOException) {
+        PasswordSet.Unreachable
+    }
+
+// Shared by both writes on this path, and it is the status rather than the type for the reason
+// [acceptInvitation] records: every refusal arrives as one exception family, and only the number
+// separates a server that will answer later from one that has answered.
+private fun RestException.isWorthAnotherTry() = statusCode in RETRYABLE || statusCode >= FIRST_SERVER_ERROR

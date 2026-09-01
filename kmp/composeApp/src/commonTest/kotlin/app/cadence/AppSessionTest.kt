@@ -150,7 +150,7 @@ class AppSessionTest {
             val sessions = listOf(SessionState.SignedIn, SessionState.SignedOut, SessionState.Deciding)
 
             for (session in sessions) {
-                setContent { App(session, invitation = Invitation.InFlight) }
+                setContent { App(session, invitation = Invitation(outcome = null)) }
 
                 onNodeWithText(AcceptanceCopy.CHECKING).assertIsDisplayed()
 

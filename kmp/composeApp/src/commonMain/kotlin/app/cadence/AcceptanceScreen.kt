@@ -19,6 +19,7 @@ import app.cadence.design.CadenceButton
 import app.cadence.design.CadenceTextField
 import app.cadence.design.CadenceTitle
 import app.cadence.shared.auth.Acceptance
+import app.cadence.shared.auth.PasswordSet
 import io.github.jan.supabase.auth.exception.AuthErrorCode
 
 /**
@@ -33,6 +34,8 @@ fun AcceptanceScreen(
     outcome: Acceptance?,
     onPasswordChosen: (String) -> Unit,
     onRetry: () -> Unit,
+    problem: PasswordSet? = null,
+    busy: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -46,7 +49,7 @@ fun AcceptanceScreen(
             }
 
             Acceptance.Accepted -> {
-                PasswordForm(onPasswordChosen)
+                PasswordForm(onPasswordChosen, problem, busy)
             }
 
             Acceptance.Unreachable -> {
@@ -63,6 +66,23 @@ fun AcceptanceScreen(
     }
 }
 
+// The provider's own floor, not ours, and the sentence says so: this arrives when the deployment
+// raised its minimum without the app being rebuilt, so repeating our number would be wrong.
+private fun problemText(problem: PasswordSet) =
+    when {
+        problem is PasswordSet.Refused && problem.code == AuthErrorCode.WeakPassword -> {
+            AcceptanceCopy.TOO_WEAK
+        }
+
+        problem is PasswordSet.Unreachable -> {
+            AcceptanceCopy.OFFLINE_HINT
+        }
+
+        else -> {
+            AcceptanceCopy.UNNAMED
+        }
+    }
+
 private fun titleFor(code: AuthErrorCode?) =
     when (code) {
         AuthErrorCode.OtpExpired -> AcceptanceCopy.SPENT
@@ -78,7 +98,11 @@ private fun hintFor(code: AuthErrorCode?) =
     }
 
 @Composable
-private fun PasswordForm(onChosen: (String) -> Unit) {
+private fun PasswordForm(
+    onChosen: (String) -> Unit,
+    problem: PasswordSet?,
+    busy: Boolean,
+) {
     var password by remember { mutableStateOf("") }
 
     CadenceTitle(AcceptanceCopy.CHOOSE_PASSWORD)
@@ -96,9 +120,11 @@ private fun PasswordForm(onChosen: (String) -> Unit) {
     // on email every time the session is lost, which is the whole reason the spec was reversed.
     // Held to the length the server holds it to, so the refusal arrives before the typing rather
     // than after — measured, GoTrue answers 422 weak_password with reasons ["length"].
+    if (problem != null) CadenceBody(problemText(problem))
+
     CadenceButton(
         label = AcceptanceCopy.ENTER,
         onClick = { onChosen(password) },
-        enabled = password.length >= AcceptanceCopy.PASSWORD_MIN_LENGTH,
+        enabled = password.length >= AcceptanceCopy.PASSWORD_MIN_LENGTH && !busy,
     )
 }

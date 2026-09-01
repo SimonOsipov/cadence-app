@@ -36,6 +36,8 @@ internal object AcceptanceCopy {
     const val UNNAMED = "Не удалось принять приглашение"
     const val UNNAMED_HINT = "Обратитесь в клинику"
 
+    const val TOO_WEAK = "Этот пароль слишком простой — выберите длиннее"
+
     const val OFFLINE = "Нет связи с сервером"
     const val OFFLINE_HINT = "Проверьте подключение"
     const val RETRY = "Попробовать ещё раз"
