@@ -141,6 +141,40 @@ class AppSessionTest {
             onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 
+    // An invitation outranks whatever the session says, in both directions: a patient with a live
+    // session who followed a link is answering the link, and one without a session must not be
+    // shown a sign-in screen for an account the link is about to create.
+    @Test
+    fun anInvitationIsAnsweredWhateverTheSessionSays() =
+        runComposeUiTest {
+            val sessions = listOf(SessionState.SignedIn, SessionState.SignedOut, SessionState.Deciding)
+
+            for (session in sessions) {
+                setContent { App(session, invitation = Invitation.InFlight) }
+
+                onNodeWithText(AcceptanceCopy.CHECKING).assertIsDisplayed()
+
+                assertTrue(
+                    onAllNodesWithContentDescription(TODAY_TAB).fetchSemanticsNodes().isEmpty(),
+                    "the area after sign-in was composed over an invitation, on $session",
+                )
+                assertTrue(
+                    onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
+                    "the sign-in area was composed over an invitation, on $session",
+                )
+            }
+        }
+
+    // Absence is what returns the app to its two areas: an invitation that stayed on screen after
+    // it was answered would strand a patient who has just set a password.
+    @Test
+    fun withoutAnInvitationTheAreasAreWhatTheSessionSays() =
+        runComposeUiTest {
+            setContent { App(SessionState.SignedIn, invitation = null) }
+
+            onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
+        }
+
     // The pre-sign-in area exists and is what a patient without a session reaches. Steps 3-5
     // fill it; step 1 owns only that it is the one composed.
     @Test

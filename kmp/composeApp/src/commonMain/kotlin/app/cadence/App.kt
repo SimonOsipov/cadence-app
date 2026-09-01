@@ -8,12 +8,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import app.cadence.design.CadenceTheme
 import app.cadence.design.CadenceTitle
+import app.cadence.shared.auth.Acceptance
 import app.cadence.shared.auth.SessionState
 import app.cadence.shell.CadenceApp
 import kotlinx.coroutines.flow.Flow
 
 /** What the pre-sign-in area shows until steps 3–5 give it its screens. */
 const val SIGN_IN_MARKER: String = "Вход в Cadence"
+
+/**
+ * An invitation being accepted, and the reason it is one value rather than two parameters: there
+ * is no state where the app is «accepting» and has no answer to show, and a boolean beside a
+ * nullable outcome would let one be written.
+ */
+sealed interface Invitation {
+    data object InFlight : Invitation
+
+    data class Answered(
+        val outcome: Acceptance,
+    ) : Invitation
+}
 
 /**
  * The two areas, and the whole of the transition between them.
@@ -33,9 +47,26 @@ const val SIGN_IN_MARKER: String = "Вход в Cadence"
 @Composable
 fun App(
     session: SessionState,
+    invitation: Invitation? = null,
+    onPasswordChosen: (String) -> Unit = {},
+    onRetry: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     CadenceTheme {
+        // An invitation outranks the session, and deliberately: a patient who followed a link is
+        // answering it, and dropping them into whichever area their session names would leave the
+        // link unexplained — including the case where it is the reason they have no session.
+        if (invitation != null) {
+            AcceptanceScreen(
+                outcome = (invitation as? Invitation.Answered)?.outcome,
+                onPasswordChosen = onPasswordChosen,
+                onRetry = onRetry,
+                modifier = modifier,
+            )
+
+            return@CadenceTheme
+        }
+
         when (session) {
             // Neither area, and not nothing: rendering the sign-in screen here flashes it on
             // every launch of a signed-in app, and rendering an empty box leaves a patient
