@@ -343,6 +343,22 @@ if [ "$template_link" -eq 0 ]; then
     exit 1
 fi
 
+# The password floor the screen states, against the one the provider enforces. Two numbers in two
+# stacks and nothing else compares them: a screen promising ten where the server takes six lets a
+# patient set a password weaker than the product chose, and promising twelve where it takes ten
+# refuses one the server would have accepted — after they typed it.
+stated=$(counted "PASSWORD_MIN_LENGTH in AcceptanceCopy.kt" \
+    "$(sed -n 's/.*PASSWORD_MIN_LENGTH = \([0-9][0-9]*\).*/\1/p' \
+        composeApp/src/commonMain/kotlin/app/cadence/AcceptanceCopy.kt || true)")
+enforced=$(counted "GOTRUE_PASSWORD_MIN_LENGTH in docker-compose.yml" \
+    "$(sed -n 's/.*GOTRUE_PASSWORD_MIN_LENGTH: *"\([0-9][0-9]*\)".*/\1/p' \
+        ../api/docker-compose.yml || true)")
+if [ "$stated" -ne "$enforced" ]; then
+    echo "the app states a $stated-character password and the deployment enforces $enforced —" \
+        "one of them refuses a patient the other invited" >&2
+    exit 1
+fi
+
 echo
 echo "kmp gate: green — :shared and :debugTools. composeApp's Compose UI tests did NOT run;"
 echo "                 they need ios.sh and a macOS host with Xcode."

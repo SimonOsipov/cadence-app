@@ -130,3 +130,28 @@ func moduleRoot(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// The provider's own default is six, measured against the pinned image on 2026-09-01: below the
+// bound `PUT /user` answers 422 `weak_password` with reasons ["length"], at it 200. Six characters
+// stand between a stranger and somebody's hormone protocol, so the number is the product's to
+// choose — and a deployment left on the default is a gap nothing else here can see.
+//
+// The bound itself is pinned against the running provider by
+// TestThePasswordBoundIsWhereTheDeploymentPutIt; this is only that the deployment names one.
+func TestTheDeploymentRaisesThePasswordFloor(t *testing.T) {
+	set := deploymentSetting(t, testsupport.PasswordMinLengthVariable)
+
+	floor, err := strconv.Atoi(set)
+	if err != nil {
+		t.Fatalf("%s is %q, which is not a length", testsupport.PasswordMinLengthVariable, set)
+	}
+
+	if floor <= providerPasswordFloor {
+		t.Errorf("%s is %d, which is not above the provider's own %d — the deployment is "+
+			"running on the default under another name",
+			testsupport.PasswordMinLengthVariable, floor, providerPasswordFloor)
+	}
+}
+
+// What GoTrue enforces when nobody says otherwise. Measured, not read from documentation.
+const providerPasswordFloor = 6

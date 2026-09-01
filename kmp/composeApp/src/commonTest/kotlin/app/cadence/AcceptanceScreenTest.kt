@@ -86,6 +86,57 @@ class AcceptanceScreenTest {
 
     // Mandatory, and drawn as such rather than accepted and refused later: without a password a
     // lost session means waiting for email, which is what the spec was rewritten to close.
+    // The bound the server keeps, kept here first: one character short is what a patient actually
+    // types, and letting it through spends a round trip to be told no.
+    @Test
+    fun aPasswordOneCharacterShortCannotBeSubmitted() =
+        runComposeUiTest {
+            var chosen: String? = null
+
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        Acceptance.Accepted,
+                        onPasswordChosen = { chosen = it },
+                        onRetry = {},
+                    )
+                }
+            }
+
+            val short = "a".repeat(AcceptanceCopy.PASSWORD_MIN_LENGTH - 1)
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput(short)
+            onNodeWithText(AcceptanceCopy.ENTER).assertIsNotEnabled()
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+
+            assertNull(chosen, "a password the server would refuse was submitted anyway")
+        }
+
+    // And exactly at the bound it goes: a screen one character stricter than the server locks a
+    // patient out of a password the provider would have taken.
+    @Test
+    fun aPasswordExactlyAtTheBoundIsAccepted() =
+        runComposeUiTest {
+            var chosen: String? = null
+
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        Acceptance.Accepted,
+                        onPasswordChosen = { chosen = it },
+                        onRetry = {},
+                    )
+                }
+            }
+
+            val exact = "a".repeat(AcceptanceCopy.PASSWORD_MIN_LENGTH)
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput(exact)
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+
+            assertEquals(exact, chosen)
+        }
+
     @Test
     fun anEmptyPasswordCannotBeSubmitted() =
         runComposeUiTest {

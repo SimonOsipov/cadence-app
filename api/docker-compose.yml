@@ -254,6 +254,14 @@ services:
       # this line for.
       GOTRUE_SMTP_MAX_FREQUENCY: 1m
 
+      # The shortest password a patient may set, and it is the product's choice rather than the
+      # provider's: left unset GoTrue enforces six, measured against this image on 2026-09-01 —
+      # `PUT /user` answers 422 `weak_password` with reasons ["length"] below the bound and 200 at
+      # it. Six characters guard a record of somebody's hormone protocol, so the number is raised
+      # here and read back by testsupport.PasswordMinLengthVariable; the app states it before the
+      # server has to refuse, and scripts/gate/kmp.sh holds the two together.
+      GOTRUE_PASSWORD_MIN_LENGTH: "10"
+
       # Emails per hour for the whole instance, and the only limit that reaches
       # /invite: the measurement is on testsupport.EmailsPerHourVariable.
       #

@@ -94,9 +94,11 @@ private fun PasswordForm(onChosen: (String) -> Unit) {
     )
     // Required, not requested: an invitation completed without one leaves the patient depending
     // on email every time the session is lost, which is the whole reason the spec was reversed.
+    // Held to the length the server holds it to, so the refusal arrives before the typing rather
+    // than after — measured, GoTrue answers 422 weak_password with reasons ["length"].
     CadenceButton(
         label = AcceptanceCopy.ENTER,
         onClick = { onChosen(password) },
-        enabled = password.isNotBlank(),
+        enabled = password.length >= AcceptanceCopy.PASSWORD_MIN_LENGTH,
     )
 }

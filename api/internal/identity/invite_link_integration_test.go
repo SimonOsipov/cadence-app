@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -108,6 +109,9 @@ func providerSending(t *testing.T, sink *mailSink) (*testsupport.GoTrue, string)
 			"GOTRUE_SMTP_SENDER_NAME":              "Cadence",
 			testsupport.MailerMaxFrequencyVariable: "1ns",
 			testsupport.EmailsPerHourVariable:      "1000",
+			// Read from the deployment rather than spelled: a harness running the provider's own
+			// floor would measure a bound the product does not have.
+			testsupport.PasswordMinLengthVariable: deploymentSetting(t, testsupport.PasswordMinLengthVariable),
 		})
 
 	admin := key.Sign(t, jwt.MapClaims{
@@ -322,4 +326,108 @@ func banUntilTheClinicSaysOtherwise(t *testing.T, provider *testsupport.GoTrue, 
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("banning answered %d: %s", resp.StatusCode, body)
 	}
+}
+
+// Where the password floor actually is, against the provider that enforces it. The screen states
+// the rule before the server has to refuse, so the number it states has to be this one — and the
+// refusal it explains has to be this shape.
+func TestThePasswordBoundIsWhereTheDeploymentPutIt(t *testing.T) {
+	floor, err := strconv.Atoi(deploymentSetting(t, testsupport.PasswordMinLengthVariable))
+	if err != nil {
+		t.Fatalf("the deployment names no password floor: %v", err)
+	}
+
+	mail := catchMail(t)
+	provider, admin := providerSending(t, mail)
+
+	token := aSessionFromAnInvitation(t, provider, admin, "floor@clinic.example")
+
+	// The pair is the measurement: one row alone passes on a provider that refuses everything, or
+	// on one that refuses nothing.
+	short := strings.Repeat("a", floor-1)
+
+	status, said := setPassword(t, provider.URL, token, short)
+	if status != http.StatusUnprocessableEntity {
+		t.Errorf("a password of %d characters answered %d, not 422: %s", len(short), status, said)
+	}
+
+	// The code and the reason, because the screen writes its Russian from them rather than from
+	// the provider's English sentence.
+	for _, names := range []string{"weak_password", "length"} {
+		if !strings.Contains(said, names) {
+			t.Errorf("the refusal does not name %q, so the screen cannot explain it: %s", names, said)
+		}
+	}
+
+	long := strings.Repeat("a", floor)
+
+	if status, said = setPassword(t, provider.URL, token, long); status != http.StatusOK {
+		t.Errorf("a password of exactly %d characters answered %d: %s", floor, status, said)
+	}
+}
+
+// aSessionFromAnInvitation walks the flow far enough to hold an access token.
+func aSessionFromAnInvitation(t *testing.T, provider *testsupport.GoTrue, admin, address string) string {
+	t.Helper()
+
+	status, said := askOf(t, provider, "/admin/generate_link", admin,
+		map[string]string{"type": "invite", "email": address})
+	if status != http.StatusOK {
+		t.Fatalf("generate_link answered %d: %s", status, said)
+	}
+
+	var generated struct {
+		Hashed string `json:"hashed_token"`
+	}
+
+	if err := json.Unmarshal([]byte(said), &generated); err != nil {
+		t.Fatalf("reading the generated link: %v", err)
+	}
+
+	status, said = askOf(t, provider, "/verify", "",
+		map[string]string{"type": "invite", "token_hash": generated.Hashed})
+	if status != http.StatusOK {
+		t.Fatalf("spending the token answered %d: %s", status, said)
+	}
+
+	var session struct {
+		Access string `json:"access_token"`
+	}
+
+	if err := json.Unmarshal([]byte(said), &session); err != nil {
+		t.Fatalf("reading the session: %v", err)
+	}
+
+	return session.Access
+}
+
+func setPassword(t *testing.T, base, token, password string) (int, string) {
+	t.Helper()
+
+	encoded, err := json.Marshal(map[string]string{"password": password})
+	if err != nil {
+		t.Fatalf("encoding the password: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		base+"/user", bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("building the request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("calling PUT /user: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the answer: %v", err)
+	}
+
+	return resp.StatusCode, string(body)
 }
