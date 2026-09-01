@@ -37,9 +37,10 @@ waiting for an email
 ## Acceptance Criteria
 
 - [ ] The `cadence://` scheme is registered on both platforms — an intent-filter in the Android manifest and `CFBundleURLTypes` on iOS; without it the invitation opens nothing
-- [ ] The invitation **leads into the app, not into a browser**: the Russian template links to `cadence://accept?token_hash={{ .TokenHash }}`, and the app exchanges that token itself with `POST /verify`, taking the session out of the response body. Neither token ever rides in a URL fragment, and the redirect allow-list does not govern this path at all
+- [ ] The invitation **ends in the app, and says so when it cannot**: the Russian template links to an `https` page on the dashboard carrying the token in its **fragment**, which is not sent to any server; the page hands the token to `cadence://accept?token_hash=…`, and where no app answers it explains that in Russian rather than doing nothing. The app exchanges the token itself with `POST /verify`, taking the session out of the response body — neither the access nor the refresh token ever rides in a URL, and the redirect allow-list does not govern this path
 - [ ] PKCE is **not** the acceptance flow, and that is measured rather than chosen: GoTrue v2.194.0 accepts a `code_challenge` on the admin route and ignores it. See [[20-Projects/cadence/architecture/proposals/invite-acceptance-without-pkce|the proposal]]. The verifier cache stays installed as groundwork for a future provider sign-in, with the reason recorded beside it
 - [ ] A cold start from the link lands on the acceptance screen, not on the home screen and not on sign-in
+- [ ] **No state is blank or mute.** While nothing is decided the app shows a splash rather than an empty area — measured, a patient holding a session sits there for a network round trip on any ordinary cold start — and each of the three refusals says a different thing in Russian
 - [ ] The acceptance screen **requires** setting a password: `PUT /user` from the link's session allows it, which makes this our choice. Without a password, losing the session would leave the patient dependent on email and on the rate limit
 - [ ] The link is single-use: following it again yields `otp_expired`, and the screen explains that in Russian — GoTrue's own strings are English, so the copy is ours to write
 - [ ] Navigation splits into a pre-sign-in and a post-sign-in area; without a valid session the second is unreachable by direct navigation, by the system back button, or by deep link
@@ -321,10 +322,33 @@ Consolidating the block's paths into a suite that grows with every ported screen
 from here on. The rule on tokens and Russian strings. The KMP gate green.
 todoist: "6h9MFxMVRgXxWHXH"
 
+### step-7: The acceptance interstitial in the dashboard
+
+Scope added on 2026-09-01, by decision: a patient without the app installed taps
+`cadence://` and sees nothing, and the only surface that can show them anything at
+that moment is a browser.
+
+The invitation stops linking to the scheme and links to an `https` page on the
+dashboard, carrying the token in the **fragment** — which is never sent to a
+server, so it stays out of access logs and out of `Referer`. The page reads it on
+the client, hands it to `cadence://accept?token_hash=…`, and where nothing answers
+explains in Russian that the app has to be installed first.
+
+The mail template moves with the page: apart, they leave an invitation pointing at
+nothing. The guard in `scripts/gate/kmp.sh` that holds `ACCEPT_LINK` against the
+template is re-aimed at the page.
+
+Universal Links replace this and stay in "Deploy" — when they land the interstitial
+becomes unnecessary rather than broken.
+
+Tests: the page hands the fragment's token to the scheme and never puts it in a
+request; with no app answering, what is shown is Russian and names the next step.
+todoist: "6hQ6JjFQG7rrF9vq"
+
 ## Open questions
 
-> [!question] Обычный холодный старт показывает пустой экран на время сетевого обновления
-> токена: измерено в артефакте 3.7.0 — сессия под порогом обновления (позже 48 минут после
+> [!decision] 01.09.2026 — заставка, а не пустота. Обычный холодный старт показывает её на
+> время сетевого обновления токена: измерено в артефакте 3.7.0 — сессия под порогом обновления (позже 48 минут после
 > выдачи, то есть 80% срока нынешнего часового токена) кончает `Deciding` только исходом обмена
 > с GoTrue. Сегодня это пустой `Box` — шаг 1
 > не рисует ничего, чтобы не мигать экраном входа. Шагам 3–5, которые рисуют область до входа,
