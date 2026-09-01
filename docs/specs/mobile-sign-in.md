@@ -36,8 +36,9 @@ waiting for an email
 
 ## Acceptance Criteria
 
-- [ ] The `cadence://` scheme is registered on both platforms — an intent-filter in the Android manifest and `CFBundleURLTypes` on iOS — and added to the GoTrue redirect allow-list; without the allow-list entry the link opens the web dashboard, not the app
-- [ ] The acceptance flow is **PKCE**: "KMP Wiring" is already building the storage for it, and leaving that storage without a consumer would mean keeping storage for a mechanism nobody uses
+- [ ] The `cadence://` scheme is registered on both platforms — an intent-filter in the Android manifest and `CFBundleURLTypes` on iOS; without it the invitation opens nothing
+- [ ] The invitation **leads into the app, not into a browser**: the Russian template links to `cadence://accept?token_hash={{ .TokenHash }}`, and the app exchanges that token itself with `POST /verify`, taking the session out of the response body. Neither token ever rides in a URL fragment, and the redirect allow-list does not govern this path at all
+- [ ] PKCE is **not** the acceptance flow, and that is measured rather than chosen: GoTrue v2.194.0 accepts a `code_challenge` on the admin route and ignores it. See [[20-Projects/cadence/architecture/proposals/invite-acceptance-without-pkce|the proposal]]. The verifier cache stays installed as groundwork for a future provider sign-in, with the reason recorded beside it
 - [ ] A cold start from the link lands on the acceptance screen, not on the home screen and not on sign-in
 - [ ] The acceptance screen **requires** setting a password: `PUT /user` from the link's session allows it, which makes this our choice. Without a password, losing the session would leave the patient dependent on email and on the rate limit
 - [ ] The link is single-use: following it again yields `otp_expired`, and the screen explains that in Russian — GoTrue's own strings are English, so the copy is ours to write
@@ -92,18 +93,35 @@ same session **does** set one, after which password sign-in works; the link is
 single-use, and a repeat yields `otp_expired`; `POST /recover` is public and
 rate-limited per user.
 
+**Measured again on 2026-09-01, against the digest-pinned v2.194.0:**
+`POST /admin/generate_link` answers with `action_link`, `hashed_token` and
+`email_otp` and needs no SMTP at all; following that link redirects to
+`cadence://accept#access_token=…&refresh_token=…`, and sending a `code_challenge`
+with the request changes nothing — it is accepted and ignored, so **PKCE is
+unreachable for an admin-issued invitation**. `POST /verify` with an unspent
+`token_hash` answers `200` with the whole session in the body. `{{ .TokenHash }}`
+renders in the mail template. Incidentally: GoTrue will not hand `SMTP_USER` and
+`SMTP_PASS` to a server that offers no STARTTLS — it answers `QUIT` and `/invite`
+fails with `500`.
+
 ## Technical detail
 
 ### Scheme and flow
 
 `cadence://` is registered by an intent-filter in the Android manifest and by
-`CFBundleURLTypes` on iOS, and **goes into the GoTrue redirect allow-list**:
-without that entry `redirect_to` is not honoured and the link goes to `SITE_URL`,
-that is, to the web dashboard.
+`CFBundleURLTypes` on iOS. The redirect allow-list does not enter into it: the
+invitation does not travel through GoTrue's redirect at all.
 
-The flow is PKCE. "KMP Wiring" builds the `codeVerifier` cache precisely for it,
-and leaving that storage without a consumer would mean keeping a mechanism nobody
-uses.
+**The invitation links straight into the app.** The Russian template renders
+`cadence://accept?token_hash={{ .TokenHash }}`; the app takes that token and calls
+`POST /verify` with type `invite`, receiving the session in the response body.
+Against catching an implicit fragment this buys two things: the session never sits
+in an address — which on Android any application declaring the same scheme can
+read — and there is no browser hop in the middle.
+
+PKCE was the approved flow and is not reachable: the admin route accepts a
+`code_challenge` and ignores it, measured above. The `codeVerifier` cache stays
+where "KMP Wiring" put it, as groundwork for a provider sign-in, and says so.
 
 ### The acceptance screen
 
@@ -165,7 +183,7 @@ poor choice. The analysis is in the
 
 ### kmp-app.md
 - ADDED: to "Shape" — navigation splits into a pre-sign-in and a post-sign-in area; the transition is determined by session validity and verified against direct navigation, the system back button, and a deep link
-- ADDED: to "Shape" — the `cadence://` scheme is registered on both platforms and entered into the GoTrue redirect allow-list; the acceptance flow is PKCE
+- ADDED: to "Shape" — the `cadence://` scheme is registered on both platforms, and the invitation links into the app rather than through GoTrue's redirect: the app exchanges a `token_hash` for the session and neither token rides in a URL fragment
 - ADDED: invariant — launching with a valid session opens the app straight inside: an intermediate sign-in screen reads as having been signed out
 - ADDED: invariant — accepting an invite **requires** setting a password: the link sign-in is single-use, and without a password losing the session means depending on email
 - MODIFIED: invariant 5 — the timezone is sent by calling `POST /v1/me/session` on sign-in and on every launch
@@ -246,18 +264,26 @@ todoist: "6h9MFwg28gg442WH"
 
 
 
-### step-2: The `cadence://` scheme and the PKCE flow
+### step-2: The `cadence://` scheme and the token exchange
 
-Registering the intent-filter and `CFBundleURLTypes`, the redirect allow-list
-entry, choosing PKCE, and wiring in the `codeVerifier` cache from "KMP Wiring".
-Test: a cold start from the link lands on the acceptance screen.
+Registering the intent-filter and `CFBundleURLTypes`, pointing the invite template
+at `cadence://accept?token_hash={{ .TokenHash }}`, and the exchange itself: the app
+calls `POST /verify` with the token it was handed and takes the session from the
+body. The `codeVerifier` cache keeps its place and gains the note saying why it has
+no consumer.
+
+Tests: a link opens the app rather than a browser on both platforms; an unspent
+token yields a session; a spent one is refused and the refusal is distinguishable
+from a network failure. The exchange is measured against the live GoTrue in the
+**api** harness — what runs in `kmp/` is a copy.
 todoist: "6h9MFwpfXW69VQQH"
 
 ### step-3: The acceptance screen with a mandatory password
 
-Acceptance via the link, mandatory password entry, a Russian explanation on
-`otp_expired`. Tests: acceptance from a fresh link only completes with a password;
-a repeat of the same link is explained rather than failing with a generic refusal.
+Acceptance from the session step 2 obtained, mandatory password entry, a Russian
+explanation when the token was already spent. Tests: acceptance from a fresh link
+only completes with a password; a repeat of the same link is explained rather than
+failing with a generic refusal.
 todoist: "6h9MFx2QHfxwMPmH"
 
 ### step-4: The sign-in screen and signing out
