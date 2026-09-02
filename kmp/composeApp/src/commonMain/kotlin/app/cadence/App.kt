@@ -1,19 +1,13 @@
 package app.cadence
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import app.cadence.design.CadenceTheme
-import app.cadence.design.CadenceTitle
 import app.cadence.shared.auth.SessionState
 import app.cadence.shell.CadenceApp
 import kotlinx.coroutines.flow.Flow
-
-/** What the pre-sign-in area shows until steps 3–5 give it its screens. */
-const val SIGN_IN_MARKER: String = "Вход в Cadence"
 
 /**
  * The two areas, and the whole of the transition between them.
@@ -34,6 +28,8 @@ const val SIGN_IN_MARKER: String = "Вход в Cadence"
 fun App(
     session: SessionState,
     invitation: Invitation? = null,
+    signIn: SignInPrompt = SignInPrompt(),
+    onSignOut: () -> Unit = { },
     modifier: Modifier = Modifier,
 ) {
     CadenceTheme {
@@ -57,11 +53,22 @@ fun App(
             // Neither area, and not nothing: rendering the sign-in screen here flashes it on
             // every launch of a signed-in app, and rendering an empty box leaves a patient
             // looking at a blank one for a whole round trip.
-            SessionState.Deciding -> CadenceSplash(modifier)
+            SessionState.Deciding -> {
+                CadenceSplash(modifier)
+            }
 
-            SessionState.SignedOut -> Box(modifier.fillMaxSize()) { CadenceTitle(SIGN_IN_MARKER) }
+            SessionState.SignedOut -> {
+                SignInScreen(
+                    onSignIn = signIn.onSignIn,
+                    problem = signIn.problem,
+                    busy = signIn.busy,
+                    modifier = modifier,
+                )
+            }
 
-            SessionState.SignedIn -> CadenceApp(modifier = modifier)
+            SessionState.SignedIn -> {
+                CadenceApp(modifier = modifier, onSignOut = onSignOut)
+            }
         }
     }
 }

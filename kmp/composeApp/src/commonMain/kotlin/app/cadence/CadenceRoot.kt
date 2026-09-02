@@ -6,19 +6,24 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.cadence.shared.auth.Acceptance
 import app.cadence.shared.auth.PasswordSet
 import app.cadence.shared.auth.SessionState
+import app.cadence.shared.auth.SignIn
 import app.cadence.shared.auth.acceptInvitation
 import app.cadence.shared.auth.cadenceAuthFor
 import app.cadence.shared.auth.invitationToken
 import app.cadence.shared.auth.sessionStates
 import app.cadence.shared.auth.setInvitationPassword
+import app.cadence.shared.auth.signIn
+import app.cadence.shared.auth.signOut
 import app.cadence.shared.net.AUTH_BASE
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 
 /** Everything a platform root has to hand over: the links it is opened with, and nothing else. */
 @Composable
@@ -34,6 +39,8 @@ fun CadenceRoot(
         links = links,
         accept = { client.acceptInvitation(it) },
         choose = { client.setInvitationPassword(it) },
+        signIn = { address, password -> client.signIn(address, password) },
+        signOut = { client.signOut() },
         modifier = modifier,
     )
 }
@@ -51,9 +58,12 @@ fun CadenceRoot(
     links: Flow<String?>,
     accept: suspend (String) -> Acceptance,
     choose: suspend (String) -> PasswordSet,
+    signIn: suspend (String, String) -> SignIn = { _, _ -> SignIn.Unreachable },
+    signOut: suspend () -> Unit = { },
     modifier: Modifier = Modifier,
 ) {
     val link by links.collectAsState(null)
+    val scope = rememberCoroutineScope()
     // The token is the reset input of everything the invitation saves, and the flow leaves it null
     // for frame one: the restore lands, then the token arrives and resets it. Measured — held in a
     // plain remember, the exchange ran a second time.
@@ -66,6 +76,8 @@ fun CadenceRoot(
     App(
         session = session,
         invitation = rememberInvitation(token, accept, choose),
+        signIn = rememberSignIn(signIn),
+        onSignOut = { scope.launch { signOut() } },
         modifier = modifier,
     )
 }

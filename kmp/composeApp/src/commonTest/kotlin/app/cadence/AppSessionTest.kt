@@ -78,7 +78,7 @@ class AppSessionTest {
                 "the area after sign-in survived the expiry",
             )
             assertTrue(
-                onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isNotEmpty(),
+                onAllNodesWithContentDescription(SignInCopy.ADDRESS_FIELD).fetchSemanticsNodes().isNotEmpty(),
                 "the expiry led nowhere",
             )
         }
@@ -96,7 +96,7 @@ class AppSessionTest {
                 "the inside was composed before anything was decided",
             )
             assertTrue(
-                onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
+                onAllNodesWithContentDescription(SignInCopy.ADDRESS_FIELD).fetchSemanticsNodes().isEmpty(),
                 "the sign-in area flashed before anything was decided",
             )
             // And it is not blank either: this is what a patient with a session looks at for a
@@ -121,7 +121,7 @@ class AppSessionTest {
                 "the inside was composed before the stream said anything",
             )
             assertTrue(
-                onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
+                onAllNodesWithContentDescription(SignInCopy.ADDRESS_FIELD).fetchSemanticsNodes().isEmpty(),
                 "the sign-in area flashed before the stream said anything",
             )
         }
@@ -159,7 +159,7 @@ class AppSessionTest {
                     "the area after sign-in was composed over an invitation, on $session",
                 )
                 assertTrue(
-                    onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isEmpty(),
+                    onAllNodesWithContentDescription(SignInCopy.ADDRESS_FIELD).fetchSemanticsNodes().isEmpty(),
                     "the sign-in area was composed over an invitation, on $session",
                 )
             }
@@ -183,7 +183,7 @@ class AppSessionTest {
             setContent { App(SessionState.SignedOut) }
 
             assertTrue(
-                onAllNodesWithText(SIGN_IN_MARKER).fetchSemanticsNodes().isNotEmpty(),
+                onAllNodesWithContentDescription(SignInCopy.ADDRESS_FIELD).fetchSemanticsNodes().isNotEmpty(),
                 "a patient without a session reached neither area",
             )
         }

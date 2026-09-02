@@ -12,6 +12,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.shared.auth.Acceptance
 import app.cadence.shared.auth.PasswordSet
 import app.cadence.shared.auth.SessionState
+import app.cadence.shared.auth.SignIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,6 +25,8 @@ private const val ANOTHER_TOKEN = "1a5f0c3e9d8b7a6c5e4d3f2a1b0c9d8e7f6a5b4c3d2e1
 private const val TODAY_TAB = "Сегодня"
 
 private const val A_PASSWORD = "a-long-enough-password"
+
+private const val AN_ADDRESS = "patient@clinic.example"
 
 private fun accept(token: String) = "cadence://accept?token_hash=$token"
 
@@ -89,7 +92,7 @@ class CadenceRootTest {
             waitForIdle()
 
             assertEquals(0, asked, "a link that is not an invitation was sent to the exchange")
-            onNodeWithText(SIGN_IN_MARKER).assertIsDisplayed()
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).assertIsDisplayed()
         }
 
     // What `onNewIntent` on Android and `onOpenURL` on Apple exist for: the tree is composed once
@@ -170,6 +173,59 @@ class CadenceRootTest {
             waitForIdle()
 
             assertEquals(1, spent, "one token was spent twice")
+        }
+
+    // The form's two fields reach the client as they were typed. Wired to one seam and not the
+    // other — address and password swapped — every screen test on this page stays green.
+    @Test
+    fun theFormReachesTheClientWithWhatWasTyped() =
+        runComposeUiTest {
+            var given: Pair<String, String>? = null
+
+            setContent {
+                CadenceRoot(
+                    session = SessionState.SignedOut,
+                    links = MutableStateFlow(null),
+                    accept = { Acceptance.Accepted },
+                    choose = { PasswordSet.Done },
+                    signIn = { address, password ->
+                        given = address to password
+                        SignIn.Accepted
+                    },
+                )
+            }
+
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput(AN_ADDRESS)
+            onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
+            onNodeWithText(SignInCopy.ENTER).performClick()
+            waitForIdle()
+
+            assertEquals(AN_ADDRESS to A_PASSWORD, given, "the form's fields did not reach the client")
+        }
+
+    // Signing out is a suspend call behind a button, and the button is two composables away from
+    // the client: the screen calls the shell's action, the shell calls what the root gave it.
+    @Test
+    fun signingOutReachesTheClient() =
+        runComposeUiTest {
+            var signedOut = false
+
+            setContent {
+                CadenceRoot(
+                    session = SessionState.SignedIn,
+                    links = MutableStateFlow(null),
+                    accept = { Acceptance.Accepted },
+                    choose = { PasswordSet.Done },
+                    signOut = { signedOut = true },
+                )
+            }
+
+            onNodeWithContentDescription("Профиль").performClick()
+            waitForIdle()
+            onNodeWithText(SignInCopy.SIGN_OUT).performClick()
+            waitForIdle()
+
+            assertTrue(signedOut, "the sign-out button never reached the client")
         }
 
     // The recreation InvitationTest cannot reach: it hands `rememberInvitation` a token from the
