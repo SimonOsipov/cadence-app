@@ -52,6 +52,16 @@ class CadenceMaskedFieldTest {
 
             assertNotEquals(A_SECRET, drawnIn(FIELD), "the password was drawn in clear text")
             assertNotNull(declaredAPassword(FIELD), "the field does not tell the platform it is a password")
+            // The keyboard half, and it needs its own assertion: masking is a visual transform, so
+            // every property above survives dropping the keyboard type — measured, that mutation
+            // lived through the whole suite until this line.
+            assertNotNull(
+                onNodeWithContentDescription(FIELD)
+                    .fetchSemanticsNode()
+                    .config
+                    .getOrNull(SemanticsProperties.ContentType),
+                "the platform IME was not told this is a password, so it learns what is typed",
+            )
         }
 
     // The half that makes the one above mean anything: unmasked, the same field does draw what was
@@ -67,6 +77,12 @@ class CadenceMaskedFieldTest {
 
             assertEquals(A_SECRET, drawnIn(FIELD))
             assertNull(declaredAPassword(FIELD))
+            assertNull(
+                onNodeWithContentDescription(FIELD)
+                    .fetchSemanticsNode()
+                    .config
+                    .getOrNull(SemanticsProperties.ContentType),
+            )
         }
 }
 
