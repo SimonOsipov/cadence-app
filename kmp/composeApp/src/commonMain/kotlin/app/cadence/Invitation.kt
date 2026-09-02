@@ -37,9 +37,9 @@ data class Invitation(
  * `composeApp` has no Android host-test builder, so anything decided here runs on the iOS target
  * only, and a driver that needed a live GoTrue would run nowhere.
  *
- * The exchange is re-run on a retry and on nothing else — not on recomposition, and not on the
- * screen being recreated. A second spend of the same token answers `otp_expired`, so a patient
- * mid-acceptance would be told the link they are holding is used up.
+ * The exchange is run once per token, and again only on a retry — not on recomposition and not on
+ * the screen being recreated, mid-flight included. A second spend of one token answers
+ * `otp_expired`, so a patient mid-acceptance would be told the link they are holding is used up.
  */
 @Composable
 fun rememberInvitation(
@@ -48,6 +48,7 @@ fun rememberInvitation(
     choose: suspend (String) -> PasswordSet,
 ): Invitation? {
     var outcome by rememberSaveable(token, stateSaver = ANSWER_SAVER) { mutableStateOf<Acceptance?>(null) }
+    var asked by rememberSaveable(token) { mutableStateOf(false) }
     var problem by remember(token) { mutableStateOf<PasswordSet?>(null) }
     var busy by remember(token) { mutableStateOf(false) }
     var attempt by remember(token) { mutableIntStateOf(0) }
@@ -56,12 +57,21 @@ fun rememberInvitation(
     var finished by rememberSaveable(token) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // An answer already given is not asked for again: Android recreates the activity for a
-    // font-scale or locale change, and asking twice answers otp_expired over the very session this
-    // link created. Only a retry clears it, and that is offered only where nothing was spent.
+    // Neither an answer already given nor an ask already made is repeated: Android recreates the
+    // activity for a font-scale or locale change, and a second spend answers otp_expired over the
+    // very session the first one created. Only a retry asks again.
     LaunchedEffect(token, attempt) {
         if (token == null || outcome != null) return@LaunchedEffect
 
+        if (asked) {
+            // Started by a composition that is gone, and whether it reached the server cannot be
+            // known here. Unreachable is the honest shape of that: the one answer whose screen
+            // offers another try, which is the patient's to make rather than this line's.
+            outcome = Acceptance.Unreachable
+            return@LaunchedEffect
+        }
+
+        asked = true
         outcome = accept(token)
     }
 
@@ -89,6 +99,7 @@ fun rememberInvitation(
         },
         onRetry = {
             outcome = null
+            asked = false
             attempt += 1
         },
     )
@@ -103,8 +114,8 @@ private const val REFUSED = "refused:"
 /**
  * The exchange's answer as something a recreated screen can be handed back.
  *
- * The refusal's code travels with it: dropped, a spent link comes back as the sentence that
- * promises nothing, which is the one refusal a patient can do nothing about.
+ * The refusal's code travels with it: dropped, a spent link comes back as the refusal that names
+ * no reason, and only the named one can say that a new invitation would work.
  */
 private val ANSWER_SAVER: Saver<Acceptance?, String> =
     Saver(
@@ -126,5 +137,5 @@ private val ANSWER_SAVER: Saver<Acceptance?, String> =
         },
     )
 
-// An empty name is a refusal that named none, and so is one the vendor has since renamed.
+// An empty name is a refusal that named none — what [Acceptance.Refused] carries for one.
 private fun refusalNamed(code: String) = Acceptance.Refused(AuthErrorCode.entries.firstOrNull { it.name == code })

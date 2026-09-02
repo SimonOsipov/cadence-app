@@ -367,6 +367,31 @@ fi
 #
 # A textual check and named as one: it holds that the calls are there, not that they carry a
 # token through. That half is a by-hand pass on both platforms.
+# XML with every <!-- --> span cut out. Its own copy of what the intent-filter check does inline:
+# that one is a state machine over lines and cannot be handed a pre-stripped file without being
+# rewritten, which is a change to a guard that has already been measured.
+uncommented() {
+    awk '{
+        line = ""
+        rest = $0
+        while (rest != "") {
+            if (commented) {
+                at = index(rest, "-->")
+                if (at == 0) { rest = ""; break }
+                rest = substr(rest, at + 3)
+                commented = 0
+            } else {
+                at = index(rest, "<!--")
+                if (at == 0) { line = line rest; break }
+                line = line substr(rest, 1, at - 1)
+                rest = substr(rest, at + 4)
+                commented = 1
+            }
+        }
+        print line
+    }' "$1"
+}
+
 activity=androidApp/src/main/kotlin/app/cadence/android/MainActivity.kt
 swift_host=iosApp/iosApp/ContentView.swift
 opener=$(sed -n 's/^fun \([A-Za-z]*\)(link: String).*/\1/p' \
@@ -381,13 +406,22 @@ launch_link=$(counted "the launch link in $activity" \
     "$(grep -cF 'intent?.dataString' "$activity" || true)")
 later_links=$(counted "onNewIntent in $activity" \
     "$(grep -cF 'override fun onNewIntent' "$activity" || true)")
-# singleTop is not decoration: with the default launch mode the system stacks a second copy of the
-# activity on a repeated link and onNewIntent above is never called.
+# The link has to survive a recreation with the answer to it, which is held beside it: without
+# these two the four Compose tests on recreation stay green — they hand the link to CadenceRoot
+# directly — while on Android it is gone by the time the composition comes back.
+kept_link=$(counted "onSaveInstanceState in $activity" \
+    "$(grep -cF 'override fun onSaveInstanceState' "$activity" || true)")
+restored_link=$(counted "the kept link read back in $activity" \
+    "$(grep -cF 'savedInstanceState?.getString' "$activity" || true)")
+# Through the comment stripper, because the tags survive inside <!-- -->: the intent-filter check
+# above pays for exactly this, measured on a manifest with a deep link parked in a comment.
 single_top=$(counted "launchMode in $manifest" \
-    "$(grep -cF 'android:launchMode="singleTop"' "$manifest" || true)")
-if [ "$launch_link" -eq 0 ] || [ "$later_links" -eq 0 ] || [ "$single_top" -eq 0 ]; then
-    echo "$activity does not read the link it was opened with, or $manifest does not make it" \
-        "singleTop — an invitation reaches Android and stops there" >&2
+    "$(uncommented "$manifest" | grep -cF 'android:launchMode="singleTop"' || true)")
+if [ "$launch_link" -eq 0 ] || [ "$later_links" -eq 0 ] || [ "$single_top" -eq 0 ] ||
+    [ "$kept_link" -eq 0 ] || [ "$restored_link" -eq 0 ]; then
+    echo "$activity does not read the link it was opened with, does not keep it across a" \
+        "recreation, or $manifest does not make the activity singleTop — an invitation reaches" \
+        "Android and stops there" >&2
     exit 1
 fi
 

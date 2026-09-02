@@ -11,8 +11,8 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
-        <!-- singleTop is what makes onNewIntent fire: with the default the system stacks a second
-             copy of this activity on a repeated link, and the running one never hears it. -->
+        <!-- singleTop is what lets the running activity hear a repeated link: with the default
+             the system stacks a second copy of it and the live one is never told. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

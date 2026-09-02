@@ -1,9 +1,12 @@
 package app.cadence
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.cadence.shared.auth.Acceptance
 import app.cadence.shared.auth.PasswordSet
@@ -16,13 +19,7 @@ import app.cadence.shared.auth.setInvitationPassword
 import app.cadence.shared.net.AUTH_BASE
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Everything a platform root needs to hand over: the links it is opened with, and nothing else.
- *
- * Written once for both roots rather than in each, because nothing measures this half — composeApp
- * has no Android host-test builder, and a live client belongs to no test on either platform. What
- * it assembles is measured; this is the assembly.
- */
+/** Everything a platform root has to hand over: the links it is opened with, and nothing else. */
 @Composable
 fun CadenceRoot(
     links: Flow<String?>,
@@ -30,11 +27,10 @@ fun CadenceRoot(
 ) {
     val client = remember { cadenceAuthFor(AUTH_BASE) }
     val sessions = remember(client) { client.sessionStates() }
-    val link by links.collectAsState(null)
 
     CadenceRoot(
         session = sessions.collectAsSessionState(),
-        link = link,
+        links = links,
         accept = { client.acceptInvitation(it) },
         choose = { client.setInvitationPassword(it) },
         modifier = modifier,
@@ -42,24 +38,30 @@ fun CadenceRoot(
 }
 
 /**
- * The same, with the link already caught and the two writes as seams.
+ * The same with the client's two writes as seams — the whole of what a test can reach here.
  *
- * A link that is not an invitation is not a refusal to show: the launcher opens the app with none
- * at all, and every other address the system may hand over is somebody else's. The token is what
- * the invitation is keyed on rather than the link — two links carry two tokens, and answering the
- * second with the first tells a patient their live invitation is used up.
+ * A link that is not an invitation does not replace the one being answered. The roots are handed
+ * every address the system opens the app with, and dropping the screen for one of them strands a
+ * patient who has spent their token and not yet chosen a password.
  */
 @Composable
 fun CadenceRoot(
     session: SessionState,
-    link: String?,
+    links: Flow<String?>,
     accept: suspend (String) -> Acceptance,
     choose: suspend (String) -> PasswordSet,
     modifier: Modifier = Modifier,
 ) {
+    val link by links.collectAsState(null)
+    var token by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(link) {
+        link?.let(::invitationToken)?.let { token = it }
+    }
+
     App(
         session = session,
-        invitation = rememberInvitation(link?.let(::invitationToken), accept, choose),
+        invitation = rememberInvitation(token, accept, choose),
         modifier = modifier,
     )
 }
