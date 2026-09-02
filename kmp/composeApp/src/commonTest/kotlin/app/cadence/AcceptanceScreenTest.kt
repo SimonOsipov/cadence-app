@@ -1,5 +1,7 @@
 package app.cadence
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -14,6 +16,7 @@ import app.cadence.shared.auth.Acceptance
 import io.github.jan.supabase.auth.exception.AuthErrorCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -178,5 +181,24 @@ class AcceptanceScreenTest {
             onNodeWithText(AcceptanceCopy.ENTER).performClick()
 
             assertEquals("a-chosen-password", chosen)
+        }
+
+    // Step 3's field, masked in step 4 with the sign-in one: the same password, typed in the same
+    // room, and the two screens had the same gap.
+    @Test
+    fun thePasswordFieldIsMasked() =
+        runComposeUiTest {
+            setContent { CadenceTheme { AcceptanceScreen(Acceptance.Accepted, onPasswordChosen = {}, onRetry = {}) } }
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput("a-long-enough-password")
+            waitForIdle()
+
+            val field = onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).fetchSemanticsNode()
+
+            assertNotEquals(
+                "a-long-enough-password",
+                field.config.getOrNull(SemanticsProperties.EditableText)?.text,
+                "the password was drawn in clear text",
+            )
         }
 }

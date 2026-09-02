@@ -89,11 +89,16 @@ fun rememberInvitation(
                 scope.launch {
                     problem = null
 
-                    val answer = choose(password)
+                    // See rememberSignIn: the seam can throw past both catches, and a busy left
+                    // set is a dead button with nothing written under it.
+                    try {
+                        val answer = choose(password)
 
-                    problem = answer.takeIf { it != PasswordSet.Done }
-                    finished = answer == PasswordSet.Done
-                    busy = false
+                        problem = answer.takeIf { it != PasswordSet.Done }
+                        finished = answer == PasswordSet.Done
+                    } finally {
+                        busy = false
+                    }
                 }
             }
         },

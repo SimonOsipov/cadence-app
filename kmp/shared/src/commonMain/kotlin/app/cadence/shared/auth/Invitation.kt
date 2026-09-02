@@ -157,7 +157,7 @@ suspend fun SupabaseClient.setInvitationPassword(password: String): PasswordSet 
         PasswordSet.Unreachable
     }
 
-// Shared by every write on this path, and it is the status rather than the type for the reason
-// [acceptInvitation] records: every refusal arrives as one exception family, and only the number
-// separates a server that will answer later from one that has answered.
+// Shared by every call that can be worth repeating, and it is the status rather than the type for
+// the reason [acceptInvitation] records: every refusal arrives as one exception family, and only
+// the number separates a server that will answer later from one that has answered.
 internal fun RestException.isWorthAnotherTry() = statusCode in RETRYABLE || statusCode >= FIRST_SERVER_ERROR

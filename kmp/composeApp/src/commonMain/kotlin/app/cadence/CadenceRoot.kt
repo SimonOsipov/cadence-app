@@ -46,7 +46,7 @@ fun CadenceRoot(
 }
 
 /**
- * The same with the client's two writes as seams — the whole of what a test can reach here.
+ * The same with the client's calls as seams — the whole of what a test can reach here.
  *
  * A link that is not an invitation does not replace the one being answered: the roots hear every
  * address the patient opened the app with, and dropping the screen for one of them strands someone

@@ -56,6 +56,7 @@ fun SignInScreen(
             placeholder = SignInCopy.PASSWORD_FIELD,
             fieldModifier = Modifier.semantics { contentDescription = SignInCopy.PASSWORD_FIELD },
             singleLine = true,
+            masked = true,
         )
 
         if (problem != null) {
@@ -73,14 +74,17 @@ fun SignInScreen(
     }
 }
 
+// Exhaustive rather than `else`: a fourth answer added later would otherwise compile straight into
+// the refusal copy, which is the direction this screen calls the expensive mistake. Accepted never
+// reaches here — the driver stores only what is not it — and the type is what still permits it.
 private fun titleFor(problem: SignIn) =
     when (problem) {
         SignIn.Unreachable -> SignInCopy.OFFLINE
-        else -> SignInCopy.REFUSED
+        SignIn.Refused, SignIn.Accepted -> SignInCopy.REFUSED
     }
 
 private fun hintFor(problem: SignIn) =
     when (problem) {
         SignIn.Unreachable -> SignInCopy.OFFLINE_HINT
-        else -> SignInCopy.REFUSED_HINT
+        SignIn.Refused, SignIn.Accepted -> SignInCopy.REFUSED_HINT
     }

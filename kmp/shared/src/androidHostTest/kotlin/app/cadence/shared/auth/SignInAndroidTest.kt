@@ -9,6 +9,7 @@ import io.ktor.content.TextContent
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.utils.io.errors.IOException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -84,6 +85,9 @@ class SignInAndroidTest {
 
             assertEquals(SignIn.Accepted, client.signIn(AN_ADDRESS, A_PASSWORD))
             assertNotNull(client.auth.currentSessionOrNull(), "nothing was stored to be signed in with")
+            // The store and the stream are two observables, and the app navigates on the second:
+            // asserting only the first would pass over a sign-in the shell never notices.
+            assertEquals(SessionState.SignedIn, client.sessionStates().first())
         }
 
     // The form must not answer «no such address» to one and «wrong password» to the other: told
@@ -131,6 +135,7 @@ class SignInAndroidTest {
             client.signOut()
 
             assertNull(client.auth.currentSessionOrNull(), "the session survived signing out")
+            assertEquals(SessionState.SignedOut, client.sessionStates().first())
         }
 
     // Signing out is the patient's decision, and a server that cannot be reached does not get to
@@ -155,5 +160,37 @@ class SignInAndroidTest {
             client.signOut()
 
             assertNull(client.auth.currentSessionOrNull(), "an unreachable server kept the patient signed in")
+            // The one the store alone cannot answer: `clearSession` is a different entry point
+            // from `signOut`, and a wiped store behind a stream still saying «inside» would leave
+            // the patient in the protected area with this test green.
+            assertEquals(SessionState.SignedOut, client.sessionStates().first())
+        }
+
+    // The ordinary refusal on this route, not an exotic one: a refresh token already expired or
+    // revoked answers with a status, not a dropped connection. Nothing else feeds that arm, and
+    // without it signOut throws out of the coroutine the button launched.
+    @Test
+    fun aRefusedSignOutIsStillASignOut() =
+        runTest {
+            var answered = 0
+            val client =
+                clientAnswering(
+                    MockEngine { request ->
+                        if (answered++ == 0) {
+                            respond(A_SESSION, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+                        } else {
+                            respond(
+                                aRefusal(HttpStatusCode.Unauthorized, "session_not_found"),
+                                HttpStatusCode.Unauthorized,
+                                headersOf("Content-Type", "application/json"),
+                            )
+                        }
+                    },
+                )
+            client.signIn(AN_ADDRESS, A_PASSWORD)
+
+            client.signOut()
+
+            assertEquals(SessionState.SignedOut, client.sessionStates().first())
         }
 }

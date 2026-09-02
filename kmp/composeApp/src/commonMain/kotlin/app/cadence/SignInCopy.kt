@@ -1,7 +1,8 @@
 package app.cadence
 
 /**
- * What the sign-in screen says.
+ * What the sign-in screen says, and the one word the way out of the app says — [SIGN_OUT] is
+ * drawn by the profile route, and moves with that screen when it is ported.
  *
  * The refusal is one sentence for every cause the server can have, which is the screen's whole
  * security property: told apart, «no such address» and «wrong password» turn the form into a way
@@ -17,8 +18,11 @@ internal object SignInCopy {
     const val REFUSED = "Не удалось войти"
     const val REFUSED_HINT = "Проверьте почту и пароль"
 
-    const val OFFLINE = "Нет связи с сервером"
-    const val OFFLINE_HINT = "Проверьте подключение и попробуйте ещё раз"
+    // Not «check your connection»: this answer also covers a rate limit and a restarting server,
+    // and telling a patient on a working network to reconnect and retry immediately is how the
+    // rate-limit window gets extended.
+    const val OFFLINE = "Сервер сейчас не отвечает"
+    const val OFFLINE_HINT = "Попробуйте ещё раз через минуту"
 
     const val SIGN_OUT = "Выйти из аккаунта"
 }

@@ -39,10 +39,17 @@ fun rememberSignIn(signIn: suspend (String, String) -> SignIn): SignInPrompt {
                 scope.launch {
                     problem = null
 
-                    val answer = signIn(address, password)
+                    // In a finally, because the seam can throw past both of `signIn`'s catches —
+                    // a body the client cannot decode arrives as neither a RestException nor an
+                    // IOException — and a busy that is never cleared is a dead button with
+                    // nothing written under it.
+                    try {
+                        val answer = signIn(address, password)
 
-                    problem = answer.takeIf { it != SignIn.Accepted }
-                    busy = false
+                        problem = answer.takeIf { it != SignIn.Accepted }
+                    } finally {
+                        busy = false
+                    }
                 }
             }
         },

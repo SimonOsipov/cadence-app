@@ -115,6 +115,7 @@ private fun PasswordForm(
         // one — which a screen reader needs anyway.
         fieldModifier = Modifier.semantics { contentDescription = AcceptanceCopy.PASSWORD_FIELD },
         singleLine = true,
+        masked = true,
     )
     // Required, not requested: an invitation completed without one leaves the patient depending
     // on email every time the session is lost, which is the whole reason the spec was reversed.

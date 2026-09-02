@@ -1,12 +1,16 @@
 package app.cadence
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
@@ -14,6 +18,7 @@ import app.cadence.shared.auth.SignIn
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -78,6 +83,66 @@ class SignInScreenTest {
             onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
 
             onNodeWithText(SignInCopy.ENTER).assertIsNotEnabled()
+        }
+
+    // One field filled is the sequence a patient actually produces — type the address, tap. Sent,
+    // an empty password comes back as «проверьте почту и пароль» for a password never typed.
+    @Test
+    fun oneFieldFilledIsNotAnAttemptEither() =
+        runComposeUiTest {
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
+
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput(AN_ADDRESS)
+            onNodeWithText(SignInCopy.ENTER).assertIsNotEnabled()
+
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextClearance()
+            onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
+            onNodeWithText(SignInCopy.ENTER).assertIsNotEnabled()
+        }
+
+    // The two halves of the guard are deliberately different, and nothing else measures the
+    // difference: an address of spaces is no address, and a password of spaces is a password —
+    // ours to send and the server's to judge.
+    @Test
+    fun spacesAreAnAddressButNotAPassword() =
+        runComposeUiTest {
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
+
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput("   ")
+            onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
+            onNodeWithText(SignInCopy.ENTER).assertIsNotEnabled()
+
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextClearance()
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput(AN_ADDRESS)
+            onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextClearance()
+            onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput("   ")
+            onNodeWithText(SignInCopy.ENTER).assertIsEnabled()
+        }
+
+    // Both fields are plain `remember`, and the password deliberately so: `rememberSaveable` on it
+    // would write the patient's password in clear text into Android's saved-instance bundle. This
+    // is the guard against somebody «fixing» the address by making the pair saveable.
+    @Test
+    fun aRecreationDoesNotBringThePasswordBack() =
+        runComposeUiTest {
+            val recreation = Recreation()
+
+            setContent { recreation.around { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } } }
+
+            onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
+            waitForIdle()
+
+            recreation.happen { waitForIdle() }
+
+            assertNotEquals(
+                A_PASSWORD,
+                onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD)
+                    .fetchSemanticsNode()
+                    .config
+                    .getOrNull(SemanticsProperties.InputText)
+                    ?.text,
+                "the password came back after a recreation, which puts it in the saved-instance bundle",
+            )
         }
 
     // The driver's own guard, asked directly rather than through the screen: on screen the
@@ -165,6 +230,25 @@ class SignInScreenTest {
 
             answer.complete(SignIn.Accepted)
             waitForIdle()
+        }
+
+    // The screen's own use of it, because the component test measures the component: dropped here,
+    // the password is drawn in clear text with every test in design/ still green.
+    @Test
+    fun thePasswordFieldIsMasked() =
+        runComposeUiTest {
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
+
+            onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
+            waitForIdle()
+
+            val field = onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).fetchSemanticsNode()
+
+            assertNotEquals(
+                A_PASSWORD,
+                field.config.getOrNull(SemanticsProperties.EditableText)?.text,
+                "the password was drawn in clear text",
+            )
         }
 
     // An empty form is not a sign-in attempt: the server would refuse it, and the refusal reads to
