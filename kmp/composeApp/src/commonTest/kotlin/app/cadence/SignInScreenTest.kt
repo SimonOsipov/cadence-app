@@ -132,6 +132,41 @@ class SignInScreenTest {
             assertNull(requireNotNull(prompt).problem, "a refusal outlived the sign-in that succeeded")
         }
 
+    // The refusal goes while the next ask is in flight. Left standing under a form the patient is
+    // waiting on, it reads as the answer to the tap they have just made.
+    @Test
+    fun aRefusalIsGoneWhileTheNextAskIsInFlight() =
+        runComposeUiTest {
+            val answer = CompletableDeferred<SignIn>()
+            var first = true
+            var prompt: SignInPrompt? = null
+
+            setContent {
+                prompt =
+                    rememberSignIn { _, _ ->
+                        if (first) {
+                            first = false
+                            SignIn.Refused
+                        } else {
+                            answer.await()
+                        }
+                    }
+            }
+
+            waitForIdle()
+            requireNotNull(prompt).onSignIn(AN_ADDRESS, A_PASSWORD)
+            waitForIdle()
+            assertEquals(SignIn.Refused, requireNotNull(prompt).problem)
+
+            requireNotNull(prompt).onSignIn(AN_ADDRESS, A_PASSWORD)
+            waitForIdle()
+
+            assertNull(requireNotNull(prompt).problem, "the last refusal stood under a form mid-ask")
+
+            answer.complete(SignIn.Accepted)
+            waitForIdle()
+        }
+
     // An empty form is not a sign-in attempt: the server would refuse it, and the refusal reads to
     // a patient as «your password is wrong» when they have not typed one.
     @Test
