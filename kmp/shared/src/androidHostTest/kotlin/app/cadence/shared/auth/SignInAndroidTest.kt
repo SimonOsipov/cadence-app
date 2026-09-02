@@ -85,8 +85,10 @@ class SignInAndroidTest {
 
             assertEquals(SignIn.Accepted, client.signIn(AN_ADDRESS, A_PASSWORD))
             assertNotNull(client.auth.currentSessionOrNull(), "nothing was stored to be signed in with")
-            // The store and the stream are two observables, and the app navigates on the second:
-            // asserting only the first would pass over a sign-in the shell never notices.
+            // Not a second observable — `currentSessionOrNull()` reads the same StateFlow. What
+            // this pins is the mapping the shell branches on: Authenticated has to arrive as
+            // SignedIn. On the sign-out paths below the same assertion is strictly stronger,
+            // because an empty store is also what a refresh failure looks like.
             assertEquals(SessionState.SignedIn, client.sessionStates().first())
         }
 
@@ -160,9 +162,9 @@ class SignInAndroidTest {
             client.signOut()
 
             assertNull(client.auth.currentSessionOrNull(), "an unreachable server kept the patient signed in")
-            // The one the store alone cannot answer: `clearSession` is a different entry point
-            // from `signOut`, and a wiped store behind a stream still saying «inside» would leave
-            // the patient in the protected area with this test green.
+            // The one the store alone cannot answer: an empty store is also what a refresh
+            // failure looks like, and `clearSession` is a different vendor entry point from
+            // `signOut` — this is what says the stream the shell reads went to SignedOut.
             assertEquals(SessionState.SignedOut, client.sessionStates().first())
         }
 

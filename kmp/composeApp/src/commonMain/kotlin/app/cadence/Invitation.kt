@@ -89,8 +89,8 @@ fun rememberInvitation(
                 scope.launch {
                     problem = null
 
-                    // See rememberSignIn: the seam can throw past both catches, and a busy left
-                    // set is a dead button with nothing written under it.
+                    // See rememberSignIn: for a cancellation-shaped escape, which leaves this
+                    // coroutine finished and the composition alive with a dead button on it.
                     try {
                         val answer = choose(password)
 

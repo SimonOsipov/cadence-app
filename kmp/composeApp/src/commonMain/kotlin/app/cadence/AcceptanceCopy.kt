@@ -38,7 +38,9 @@ internal object AcceptanceCopy {
 
     const val TOO_WEAK = "Этот пароль слишком простой — выберите длиннее"
 
-    const val OFFLINE = "Нет связи с сервером"
-    const val OFFLINE_HINT = "Проверьте подключение"
+    // The same rule sends a rate limit and a restarting server here, so the sentence cannot say
+    // «check your connection» — see SignInCopy, which answers the identical condition.
+    const val OFFLINE = "Сервер сейчас не отвечает"
+    const val OFFLINE_HINT = "Попробуйте ещё раз через минуту"
     const val RETRY = "Попробовать ещё раз"
 }

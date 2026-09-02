@@ -39,10 +39,12 @@ fun rememberSignIn(signIn: suspend (String, String) -> SignIn): SignInPrompt {
                 scope.launch {
                     problem = null
 
-                    // In a finally, because the seam can throw past both of `signIn`'s catches —
-                    // a body the client cannot decode arrives as neither a RestException nor an
-                    // IOException — and a busy that is never cleared is a dead button with
-                    // nothing written under it.
+                    // In a finally for the cancellation-shaped escape only: `signIn` rethrows
+                    // CancellationException, which completes this coroutine without touching the
+                    // composition, and a busy left set is then a dead button with nothing written
+                    // under it. An ordinary throw past the client's catches is not that case — the
+                    // scope's job is a plain child of the recomposer's, so it takes the whole tree
+                    // down and there is no frame to be dead in.
                     try {
                         val answer = signIn(address, password)
 

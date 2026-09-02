@@ -1,5 +1,6 @@
 package app.cadence.design
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -86,7 +87,7 @@ class CadenceMaskedFieldTest {
         }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun AField(masked: Boolean) {
     var typed by remember { mutableStateOf("") }
 

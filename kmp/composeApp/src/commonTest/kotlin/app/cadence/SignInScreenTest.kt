@@ -15,9 +15,11 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.auth.SignIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -104,7 +106,7 @@ class SignInScreenTest {
     // difference: an address of spaces is no address, and a password of spaces is a password —
     // ours to send and the server's to judge.
     @Test
-    fun spacesAreAnAddressButNotAPassword() =
+    fun spacesAreAPasswordButNotAnAddress() =
         runComposeUiTest {
             setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
 
@@ -173,6 +175,24 @@ class SignInScreenTest {
 
             answer.complete(SignIn.Accepted)
             waitForIdle()
+        }
+
+    // The one escape the `finally` is for. A seam that gives up cancellation-shaped finishes this
+    // coroutine without touching the composition, so without the finally the form stays busy for
+    // ever: a dead button with nothing written under it. An ordinary throw is not this case — it
+    // takes the whole tree with it, and there is no frame left to be dead in.
+    @Test
+    fun anAskThatGivesUpLeavesTheFormUsableAgain() =
+        runComposeUiTest {
+            var prompt: SignInPrompt? = null
+
+            setContent { prompt = rememberSignIn { _, _ -> throw CancellationException("the seam gave up") } }
+
+            waitForIdle()
+            requireNotNull(prompt).onSignIn(AN_ADDRESS, A_PASSWORD)
+            waitForIdle()
+
+            assertFalse(requireNotNull(prompt).busy, "the form stayed busy after the ask was cancelled")
         }
 
     // An accepted sign-in leaves no refusal behind it: the session carries the patient inside, and
