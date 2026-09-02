@@ -107,8 +107,6 @@ fun rememberInvitation(
 
 private const val ACCEPTED = "accepted"
 
-private const val UNREACHABLE = "unreachable"
-
 private const val REFUSED = "refused:"
 
 /**
@@ -121,16 +119,19 @@ private val ANSWER_SAVER: Saver<Acceptance?, String> =
     Saver(
         save = { answer ->
             when (answer) {
-                null -> null
                 Acceptance.Accepted -> ACCEPTED
-                Acceptance.Unreachable -> UNREACHABLE
+
                 is Acceptance.Refused -> REFUSED + answer.code?.name.orEmpty()
+
+                // Neither is saved, and one line covers both: an answer that never arrived is not
+                // one to hand back, and a server that could not be reached is what `asked` makes
+                // of a recreation anyway — measured, saving it left the mutation with no test.
+                null, Acceptance.Unreachable -> null
             }
         },
         restore = { saved ->
             when {
                 saved == ACCEPTED -> Acceptance.Accepted
-                saved == UNREACHABLE -> Acceptance.Unreachable
                 saved.startsWith(REFUSED) -> refusalNamed(saved.removePrefix(REFUSED))
                 else -> null
             }
