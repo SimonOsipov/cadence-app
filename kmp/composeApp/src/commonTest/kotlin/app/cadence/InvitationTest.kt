@@ -228,6 +228,38 @@ class InvitationTest {
             onNodeWithText(AcceptanceCopy.SPENT).assertIsDisplayed()
         }
 
+    // A refusal that named nothing is still an answer. Restored as «nothing yet» it would be asked
+    // again, and the ask that named nothing is the one whose reason no second try can change.
+    @Test
+    fun aRefusalThatNamedNothingIsStillOneWhenTheScreenIsRecreated() =
+        runComposeUiTest {
+            var asked = 0
+            val recreation = Recreation()
+
+            setContent {
+                recreation.around {
+                    App(
+                        SessionState.SignedOut,
+                        rememberInvitation(
+                            token = TOKEN,
+                            accept = {
+                                asked += 1
+                                Acceptance.Refused(null)
+                            },
+                            choose = { PasswordSet.Done },
+                        ),
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithText(AcceptanceCopy.UNNAMED).assertIsDisplayed()
+
+            recreation.happen { waitForIdle() }
+
+            assertEquals(1, asked, "a refusal that named nothing was asked again")
+            onNodeWithText(AcceptanceCopy.UNNAMED).assertIsDisplayed()
+        }
+
     // A server that could not be reached is not asked again by a recreation. Asking again is the
     // patient's own tap, which is why the screen offers one here and nowhere else.
     @Test
@@ -377,49 +409,5 @@ class InvitationTest {
 
             assertEquals(2, asked)
             onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
-        }
-}
-
-/**
- * What the platform does to a screen it recreates.
- *
- * Driven through the registry rather than `StateRestorationTester`, which answers a
- * `NotImplementedError` outside Android — measured on Compose 1.11.1, the version this module
- * builds against, and composeApp's tests run on the iOS target only. The subtree is disposed and
- * composed again in its own place rather than under a second `setContent`: `rememberSaveable`'s
- * own deprecation of the `key` parameter calls the alternative «positional scoping», and two
- * roots do not hold one position.
- */
-private class Recreation {
-    private var registry by mutableStateOf(bundleLike(null))
-    private var alive by mutableStateOf(true)
-
-    @Composable
-    fun around(content: @Composable () -> Unit) =
-        CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
-            if (alive) content()
-        }
-
-    fun happen(settle: () -> Unit) {
-        val kept = registry.performSave()
-
-        alive = false
-        settle()
-
-        registry = bundleLike(kept)
-        alive = true
-        settle()
-    }
-
-    // Refuses exactly what this page's saver exists to convert, asked of the value inside a state
-    // wrapper because that is what `rememberSaveable { mutableStateOf(…) }` hands over. Not a model
-    // of a Bundle — the rest of the tree brings saved state of its own — but without this the saver
-    // is unmeasured: under a registry that accepts everything, dropping it leaves all four
-    // recreation tests green while Android refuses the value.
-    private fun bundleLike(kept: Map<String, List<Any?>>?) =
-        SaveableStateRegistry(kept) { saved ->
-            val value = if (saved is MutableState<*>) saved.value else saved
-
-            value !is Acceptance && value !is PasswordSet
         }
 }

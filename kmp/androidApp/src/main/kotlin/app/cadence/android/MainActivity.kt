@@ -30,9 +30,8 @@ class MainActivity : ComponentActivity() {
     /**
      * The second and every later link, which is why the activity is `singleTop` — see the manifest.
      *
-     * Only when there is one: every intent redelivered to a running activity arrives here, and a
-     * null would drop the acceptance screen out from under a patient who has spent their token and
-     * not yet chosen a password.
+     * Only when there is one: an intent carrying no data says nothing about which link the app is
+     * answering, and this is where every intent redelivered to a running activity arrives.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -40,18 +39,13 @@ class MainActivity : ComponentActivity() {
         intent.dataString?.let { links.value = it }
     }
 
-    /**
-     * The launch link, unless the system replayed it.
-     *
-     * A task the mail client started keeps that `VIEW` intent as its base intent, and restarting the
-     * task from Recents hands it over again carrying `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY` — after a
-     * reboot, with no saved state left, that is a spent token arriving as a fresh one. What comes
-     * back is `otp_expired` over a session that same link created, on a screen offering no way out.
-     */
+    // Not the link the system replayed: a task keeps its launching VIEW intent as the task's base
+    // intent, and a restart from Recents redelivers it flagged — after a reboot, with the saved
+    // state gone, that is a spent token arriving as a fresh one.
     private fun linkTheUserActedOn(): String? {
-        val replayed = intent?.flags?.and(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        val replayed = intent?.let { it.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0 }
 
-        return if (replayed) null else intent?.dataString
+        return if (replayed == false) intent?.dataString else null
     }
 
     private companion object {

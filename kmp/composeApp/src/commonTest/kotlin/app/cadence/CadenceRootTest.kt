@@ -29,10 +29,9 @@ private fun accept(token: String) = "cadence://accept?token_hash=$token"
 
 @OptIn(ExperimentalTestApi::class)
 class CadenceRootTest {
-    // The cold start this block is for, and the whole of it: what the platform hands over is a
-    // link, and until it is read `invitationToken` in :shared has no caller — every test beneath
-    // it passes a token no patient could have produced. Carried through to the password, because
-    // `choose` is otherwise an argument nothing here pins.
+    // The cold start this block is for: what the platform hands over is a link, and until it is
+    // read `invitationToken` in :shared has no caller — every test beneath it passes a token no
+    // patient could have produced. Carried to the password, which nothing else here pins.
     @Test
     fun aColdStartFromALinkOpensOnTheAcceptanceScreen() =
         runComposeUiTest {
@@ -42,7 +41,7 @@ class CadenceRootTest {
             setContent {
                 CadenceRoot(
                     // What the exchange leaves behind, and the screen outranks it until the
-                    // password is set — which is what the last assertion here is about.
+                    // password is set.
                     session = SessionState.SignedIn,
                     links = MutableStateFlow(accept(TOKEN)),
                     accept = {
@@ -172,10 +171,41 @@ class CadenceRootTest {
             assertEquals(1, spent, "one token was spent twice")
         }
 
-    // An address that is not an invitation does not take the screen away from one that is. The
-    // roots hear every link the app is opened with, and step 5 puts a second `cadence://`
-    // destination on the same activity: a patient who has spent their token and not yet set a
-    // password would be left signed in without one, which is the criterion this screen exists for.
+    // The recreation the other tests cannot reach: they hand `rememberInvitation` a token from
+    // the first frame, and the platforms never do — the link arrives through a flow, so frame one
+    // has none. Everything the invitation keeps is keyed on the token, and a key that is null on
+    // the frame the saved state is handed back is a key nothing was saved under.
+    @Test
+    fun anInvitationSurvivesARecreationOnThePathThePlatformsTake() =
+        runComposeUiTest {
+            var spent = 0
+            val recreation = Recreation()
+
+            setContent {
+                recreation.around {
+                    CadenceRoot(
+                        session = SessionState.SignedIn,
+                        links = MutableStateFlow(accept(TOKEN)),
+                        accept = {
+                            spent += 1
+                            Acceptance.Accepted
+                        },
+                        choose = { PasswordSet.Done },
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
+
+            recreation.happen { waitForIdle() }
+
+            assertEquals(1, spent, "the link was spent again when the screen was recreated")
+            onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
+        }
+
+    // An address that is not an invitation does not take the screen away from one that is: a
+    // patient who has spent their token and not yet set a password would be left signed in
+    // without one, which is the criterion this screen exists for.
     @Test
     fun anotherAddressDoesNotTakeAwayTheInvitationBeingAnswered() =
         runComposeUiTest {

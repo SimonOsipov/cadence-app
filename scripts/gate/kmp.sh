@@ -367,9 +367,8 @@ fi
 #
 # A textual check and named as one: it holds that the calls are there, not that they carry a
 # token through. That half is a by-hand pass on both platforms.
-# XML with every <!-- --> span cut out. Its own copy of what the intent-filter check does inline:
-# that one is a state machine over lines and cannot be handed a pre-stripped file without being
-# rewritten, which is a change to a guard that has already been measured.
+# XML with every <!-- --> span cut out. A second copy of what the intent-filter check does inline,
+# because deleting that one would rewrite every `line` reference in a guard already measured.
 uncommented() {
     awk '{
         line = ""
@@ -406,9 +405,9 @@ launch_link=$(counted "the launch link in $activity" \
     "$(grep -cF 'intent?.dataString' "$activity" || true)")
 later_links=$(counted "onNewIntent in $activity" \
     "$(grep -cF 'override fun onNewIntent' "$activity" || true)")
-# The link has to survive a recreation with the answer to it, which is held beside it: without
-# these two the four Compose tests on recreation stay green — they hand the link to CadenceRoot
-# directly — while on Android it is gone by the time the composition comes back.
+# No Compose test can see this half: they compose the tree themselves, and it is Android that
+# takes the activity away. Without these two the link is gone by the time the composition comes
+# back, and with it every answer the invitation keyed on its token.
 kept_link=$(counted "onSaveInstanceState in $activity" \
     "$(grep -cF 'override fun onSaveInstanceState' "$activity" || true)")
 restored_link=$(counted "the kept link read back in $activity" \

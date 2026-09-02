@@ -59,7 +59,7 @@ fun rememberInvitation(
 
     // Neither an answer already given nor an ask already made is repeated: Android recreates the
     // activity for a font-scale or locale change, and a second spend answers otp_expired over the
-    // very session the first one created. Only a retry asks again.
+    // very session the first one created. Only a retry asks again for the same token.
     LaunchedEffect(token, attempt) {
         if (token == null || outcome != null) return@LaunchedEffect
 
@@ -124,8 +124,8 @@ private val ANSWER_SAVER: Saver<Acceptance?, String> =
                 is Acceptance.Refused -> REFUSED + answer.code?.name.orEmpty()
 
                 // Neither is saved, and one line covers both: an answer that never arrived is not
-                // one to hand back, and a server that could not be reached is what `asked` makes
-                // of a recreation anyway — measured, saving it left the mutation with no test.
+                // one to hand back, and `asked` answers a recreation before the saved value is
+                // read — measured, the mutation dropping an Unreachable branch here survived.
                 null, Acceptance.Unreachable -> null
             }
         },

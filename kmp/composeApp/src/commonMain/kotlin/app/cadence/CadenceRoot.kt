@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.cadence.shared.auth.Acceptance
@@ -40,9 +41,9 @@ fun CadenceRoot(
 /**
  * The same with the client's two writes as seams — the whole of what a test can reach here.
  *
- * A link that is not an invitation does not replace the one being answered. The roots are handed
- * every address the system opens the app with, and dropping the screen for one of them strands a
- * patient who has spent their token and not yet chosen a password.
+ * A link that is not an invitation does not replace the one being answered: the roots hear every
+ * address the patient opened the app with, and dropping the screen for one of them strands someone
+ * who has spent their token and not yet chosen a password.
  */
 @Composable
 fun CadenceRoot(
@@ -53,7 +54,12 @@ fun CadenceRoot(
     modifier: Modifier = Modifier,
 ) {
     val link by links.collectAsState(null)
-    var token by remember { mutableStateOf<String?>(null) }
+    // Saveable, and that is the whole of why the invitation's own saved state works: the link
+    // arrives through a flow, so the frame a recreated screen comes back on has none, and
+    // everything the invitation keeps is keyed on the token. Keyed on null for one frame, that
+    // saved state is consumed under the wrong key and gone by the time the token arrives —
+    // measured, the exchange then ran a second time.
+    var token by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(link) {
         link?.let(::invitationToken)?.let { token = it }
