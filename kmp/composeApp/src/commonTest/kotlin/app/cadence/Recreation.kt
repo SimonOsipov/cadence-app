@@ -44,10 +44,10 @@ internal class Recreation {
     }
 
     // Refuses the answer a saver has to convert, asked of the value inside a state wrapper — the
-    // wrapper is what arrives, measured in the runtime-saveable bytecode, which calls `canBeSaved`
+    // wrapper is what arrives, measured in the runtime-saveable artifact, which calls `canBeSaved`
     // on the saver's output, and for the auto-saver form that output is the state itself. Without
     // this the saver is unmeasured: accepting everything, dropping it leaves every recreation test
-    // green. PasswordSet is a forward half nothing saves yet, and no test can arm it.
+    // green. Nothing in the app saves a PasswordSet yet; this refuses it the day something does.
     private fun bundleLike(kept: Map<String, List<Any?>>?) =
         SaveableStateRegistry(kept) { saved ->
             val value = if (saved is MutableState<*>) saved.value else saved
