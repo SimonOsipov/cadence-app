@@ -15,9 +15,9 @@ import app.cadence.shared.auth.PasswordSet
  * What the platform does to a screen it recreates.
  *
  * Driven through the registry rather than `StateRestorationTester`, whose `emulateSaveAndRestore`
- * answers «NotImplementedError: Not yet implemented» in this harness — run on the iOS simulator
- * target against Compose 1.11.1, which is where composeApp's tests run and the only place they do.
- * What is unimplemented was not chased further. The subtree is disposed and
+ * reaches `platformEncodeDecode` — a `TODO()` on the skiko targets, so it throws
+ * `NotImplementedError`. Run against Compose 1.11.1 on the iOS simulator target, which is where
+ * composeApp's tests run and the only place they do. The subtree is disposed and
  * composed again in its own place rather than under a second `setContent`: `rememberSaveable`'s
  * own deprecation of the `key` parameter calls the alternative «positional scoping», and two
  * roots do not hold one position.
@@ -43,11 +43,11 @@ internal class Recreation {
         settle()
     }
 
-    // Refuses the answer a saver has to convert, asked of the value inside a state wrapper because
-    // that is what `rememberSaveable { mutableStateOf(…) }` hands over. Not a model of a Bundle;
-    // the rest of the tree brings saved state of its own. Without it the saver is unmeasured:
-    // accepting everything, dropping it leaves every recreation test green. PasswordSet is the
-    // forward half — nothing saves it yet, and this is what will refuse it the day something does.
+    // Refuses the answer a saver has to convert, asked of the value inside a state wrapper — the
+    // wrapper is what arrives, measured in the runtime-saveable bytecode, which calls `canBeSaved`
+    // on the saver's output, and for the auto-saver form that output is the state itself. Without
+    // this the saver is unmeasured: accepting everything, dropping it leaves every recreation test
+    // green. PasswordSet is a forward half nothing saves yet, and no test can arm it.
     private fun bundleLike(kept: Map<String, List<Any?>>?) =
         SaveableStateRegistry(kept) { saved ->
             val value = if (saved is MutableState<*>) saved.value else saved
