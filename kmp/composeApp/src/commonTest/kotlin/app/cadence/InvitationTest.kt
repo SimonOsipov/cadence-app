@@ -253,8 +253,8 @@ class InvitationTest {
             recreation.happen { waitForIdle() }
 
             assertEquals(1, asked, "a refusal that named nothing was asked again")
-            // The assertion that carries this test: a refusal lost in the round trip comes back as
-            // «no connection», which is a different screen with a different control on it.
+            // A refusal lost in the round trip comes back as «no connection» — a different screen
+            // with a different control, and the count above holds either way.
             onNodeWithText(AcceptanceCopy.UNNAMED).assertIsDisplayed()
         }
 

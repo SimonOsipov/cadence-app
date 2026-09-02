@@ -30,8 +30,9 @@ private fun accept(token: String) = "cadence://accept?token_hash=$token"
 @OptIn(ExperimentalTestApi::class)
 class CadenceRootTest {
     // The cold start this block is for: what the platform hands over is a link, and until it is
-    // read `invitationToken` in :shared has no caller — the tests in InvitationTest hand over a
-    // token no patient could have produced. Carried to the password, which nothing else pins.
+    // read `invitationToken` has no caller in the app — InvitationTest hands over a bare token,
+    // which is the one hand-over no patient makes. A link carried to the password is pinned here
+    // and nowhere else.
     @Test
     fun aColdStartFromALinkOpensOnTheAcceptanceScreen() =
         runComposeUiTest {
@@ -171,7 +172,7 @@ class CadenceRootTest {
             assertEquals(1, spent, "one token was spent twice")
         }
 
-    // The recreation the other tests cannot reach: they hand `rememberInvitation` a token from the
+    // The recreation InvitationTest cannot reach: it hands `rememberInvitation` a token from the
     // first frame, and the platforms never do — the link arrives through a flow, so frame one has
     // none.
     @Test
@@ -202,7 +203,6 @@ class CadenceRootTest {
             onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
         }
 
-    // The address arrives after the screen is up, which is the ordering the KDoc's rule is about.
     @Test
     fun anotherAddressDoesNotTakeAwayTheInvitationBeingAnswered() =
         runComposeUiTest {
