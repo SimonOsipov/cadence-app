@@ -54,11 +54,9 @@ fun CadenceRoot(
     modifier: Modifier = Modifier,
 ) {
     val link by links.collectAsState(null)
-    // Saveable, and that is the whole of why the invitation's own saved state works: the link
-    // arrives through a flow, so the frame a recreated screen comes back on has none, and
-    // everything the invitation keeps is keyed on the token. Keyed on null for one frame, that
-    // saved state is consumed under the wrong key and gone by the time the token arrives —
-    // measured, the exchange then ran a second time.
+    // The token is the reset input of everything the invitation saves, and the flow leaves it null
+    // for frame one: the restore lands, then the token arrives and resets it. Measured — held in a
+    // plain remember, the exchange ran a second time.
     var token by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(link) {

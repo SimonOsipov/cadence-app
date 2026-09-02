@@ -9,13 +9,15 @@ import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.runtime.setValue
 import app.cadence.shared.auth.Acceptance
+import app.cadence.shared.auth.PasswordSet
 
 /**
  * What the platform does to a screen it recreates.
  *
- * Driven through the registry rather than `StateRestorationTester`, which answers a
- * `NotImplementedError` outside Android — measured on Compose 1.11.1, the version this module
- * builds against, and composeApp's tests run on the iOS target only. The subtree is disposed and
+ * Driven through the registry rather than `StateRestorationTester`, whose `emulateSaveAndRestore`
+ * answers «NotImplementedError: Not yet implemented» in this harness — run on the iOS simulator
+ * target against Compose 1.11.1, which is where composeApp's tests run and the only place they do.
+ * What is unimplemented was not chased further. The subtree is disposed and
  * composed again in its own place rather than under a second `setContent`: `rememberSaveable`'s
  * own deprecation of the `key` parameter calls the alternative «positional scoping», and two
  * roots do not hold one position.
@@ -41,15 +43,15 @@ internal class Recreation {
         settle()
     }
 
-    // Refuses the one answer a saver has to convert, asked of the value inside a state wrapper
-    // because that is what `rememberSaveable { mutableStateOf(…) }` hands over — measured in the
-    // runtime-saveable bytecode, which calls `canBeSaved` on the wrapper. Not a model of a Bundle;
+    // Refuses the answer a saver has to convert, asked of the value inside a state wrapper because
+    // that is what `rememberSaveable { mutableStateOf(…) }` hands over. Not a model of a Bundle;
     // the rest of the tree brings saved state of its own. Without it the saver is unmeasured:
-    // under a registry that accepts everything, dropping it leaves every recreation test green.
+    // accepting everything, dropping it leaves every recreation test green. PasswordSet is the
+    // forward half — nothing saves it yet, and this is what will refuse it the day something does.
     private fun bundleLike(kept: Map<String, List<Any?>>?) =
         SaveableStateRegistry(kept) { saved ->
             val value = if (saved is MutableState<*>) saved.value else saved
 
-            value !is Acceptance
+            value !is Acceptance && value !is PasswordSet
         }
 }

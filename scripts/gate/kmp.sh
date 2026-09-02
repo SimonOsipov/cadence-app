@@ -405,9 +405,9 @@ launch_link=$(counted "the launch link in $activity" \
     "$(grep -cF 'intent?.dataString' "$activity" || true)")
 later_links=$(counted "onNewIntent in $activity" \
     "$(grep -cF 'override fun onNewIntent' "$activity" || true)")
-# No Compose test can see this half: they compose the tree themselves, and it is Android that
-# takes the activity away. Without these two the link is gone by the time the composition comes
-# back, and with it every answer the invitation keyed on its token.
+# No Compose test can see this half: they compose the tree themselves, and it is Android that takes
+# the activity away. What these two keep is the link the activity is answering, which is not
+# necessarily the intent the system hands a recreated one.
 kept_link=$(counted "onSaveInstanceState in $activity" \
     "$(grep -cF 'override fun onSaveInstanceState' "$activity" || true)")
 restored_link=$(counted "the kept link read back in $activity" \

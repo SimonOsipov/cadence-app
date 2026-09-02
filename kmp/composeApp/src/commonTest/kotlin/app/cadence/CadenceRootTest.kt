@@ -30,8 +30,8 @@ private fun accept(token: String) = "cadence://accept?token_hash=$token"
 @OptIn(ExperimentalTestApi::class)
 class CadenceRootTest {
     // The cold start this block is for: what the platform hands over is a link, and until it is
-    // read `invitationToken` in :shared has no caller — every test beneath it passes a token no
-    // patient could have produced. Carried to the password, which nothing else here pins.
+    // read `invitationToken` in :shared has no caller — the tests in InvitationTest hand over a
+    // token no patient could have produced. Carried to the password, which nothing else pins.
     @Test
     fun aColdStartFromALinkOpensOnTheAcceptanceScreen() =
         runComposeUiTest {
@@ -171,10 +171,9 @@ class CadenceRootTest {
             assertEquals(1, spent, "one token was spent twice")
         }
 
-    // The recreation the other tests cannot reach: they hand `rememberInvitation` a token from
-    // the first frame, and the platforms never do — the link arrives through a flow, so frame one
-    // has none. Everything the invitation keeps is keyed on the token, and a key that is null on
-    // the frame the saved state is handed back is a key nothing was saved under.
+    // The recreation the other tests cannot reach: they hand `rememberInvitation` a token from the
+    // first frame, and the platforms never do — the link arrives through a flow, so frame one has
+    // none.
     @Test
     fun anInvitationSurvivesARecreationOnThePathThePlatformsTake() =
         runComposeUiTest {
@@ -203,9 +202,7 @@ class CadenceRootTest {
             onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
         }
 
-    // An address that is not an invitation does not take the screen away from one that is: a
-    // patient who has spent their token and not yet set a password would be left signed in
-    // without one, which is the criterion this screen exists for.
+    // The address arrives after the screen is up, which is the ordering the KDoc's rule is about.
     @Test
     fun anotherAddressDoesNotTakeAwayTheInvitationBeingAnswered() =
         runComposeUiTest {

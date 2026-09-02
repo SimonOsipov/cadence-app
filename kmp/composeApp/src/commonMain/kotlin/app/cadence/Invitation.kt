@@ -124,8 +124,9 @@ private val ANSWER_SAVER: Saver<Acceptance?, String> =
                 is Acceptance.Refused -> REFUSED + answer.code?.name.orEmpty()
 
                 // Neither is saved, and one line covers both: an answer that never arrived is not
-                // one to hand back, and `asked` answers a recreation before the saved value is
-                // read — measured, the mutation dropping an Unreachable branch here survived.
+                // one to hand back, and a recreation with nothing restored reaches the same answer
+                // through `asked`. Measured — a saver that persists Unreachable survives its own
+                // mutation, because that path produces it either way.
                 null, Acceptance.Unreachable -> null
             }
         },

@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
      * The second and every later link, which is why the activity is `singleTop` — see the manifest.
      *
      * Only when there is one: an intent carrying no data says nothing about which link the app is
-     * answering, and this is where every intent redelivered to a running activity arrives.
+     * answering.
      */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

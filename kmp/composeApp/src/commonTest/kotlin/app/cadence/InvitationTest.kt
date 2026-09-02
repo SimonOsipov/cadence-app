@@ -1,12 +1,7 @@
 package app.cadence
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
-import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
@@ -228,8 +223,9 @@ class InvitationTest {
             onNodeWithText(AcceptanceCopy.SPENT).assertIsDisplayed()
         }
 
-    // A refusal that named nothing is still an answer. Restored as «nothing yet» it would be asked
-    // again, and the ask that named nothing is the one whose reason no second try can change.
+    // The refusal with no code, through the saver's own round trip: `orEmpty()` on the way out and
+    // `refusalNamed("")` on the way back. Lost there, the screen offers a retry for a refusal no
+    // second try can change.
     @Test
     fun aRefusalThatNamedNothingIsStillOneWhenTheScreenIsRecreated() =
         runComposeUiTest {
@@ -257,6 +253,8 @@ class InvitationTest {
             recreation.happen { waitForIdle() }
 
             assertEquals(1, asked, "a refusal that named nothing was asked again")
+            // The assertion that carries this test: a refusal lost in the round trip comes back as
+            // «no connection», which is a different screen with a different control on it.
             onNodeWithText(AcceptanceCopy.UNNAMED).assertIsDisplayed()
         }
 
