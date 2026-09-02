@@ -359,6 +359,48 @@ if [ "$stated" -ne "$enforced" ]; then
     exit 1
 fi
 
+# Registration is not reading. The checks above say the system will hand the app a link; nothing
+# else says either root does anything with it, and no test can — composeApp has no Android
+# host-test builder and the Swift host is in no Kotlin suite. So the declarations are read where
+# they live. The Apple entry point is read out of the Kotlin source rather than spelled twice: a
+# rename then fails this check instead of silencing it.
+#
+# A textual check and named as one: it holds that the calls are there, not that they carry a
+# token through. That half is a by-hand pass on both platforms.
+activity=androidApp/src/main/kotlin/app/cadence/android/MainActivity.kt
+swift_host=iosApp/iosApp/ContentView.swift
+opener=$(sed -n 's/^fun \([A-Za-z]*\)(link: String).*/\1/p' \
+    composeApp/src/iosMain/kotlin/app/cadence/MainViewController.kt)
+[ -n "$opener" ] || {
+    echo "the Apple link entry point could not be read from MainViewController.kt —" \
+        "this check greps for nothing" >&2
+    exit 1
+}
+
+launch_link=$(counted "the launch link in $activity" \
+    "$(grep -cF 'intent?.dataString' "$activity" || true)")
+later_links=$(counted "onNewIntent in $activity" \
+    "$(grep -cF 'override fun onNewIntent' "$activity" || true)")
+# singleTop is not decoration: with the default launch mode the system stacks a second copy of the
+# activity on a repeated link and onNewIntent above is never called.
+single_top=$(counted "launchMode in $manifest" \
+    "$(grep -cF 'android:launchMode="singleTop"' "$manifest" || true)")
+if [ "$launch_link" -eq 0 ] || [ "$later_links" -eq 0 ] || [ "$single_top" -eq 0 ]; then
+    echo "$activity does not read the link it was opened with, or $manifest does not make it" \
+        "singleTop — an invitation reaches Android and stops there" >&2
+    exit 1
+fi
+
+apple_links=$(counted "onOpenURL in $swift_host" \
+    "$(grep -cF '.onOpenURL' "$swift_host" || true)")
+apple_handover=$(counted "$opener in $swift_host" \
+    "$(grep -cF "$opener(" "$swift_host" || true)")
+if [ "$apple_links" -eq 0 ] || [ "$apple_handover" -eq 0 ]; then
+    echo "$swift_host does not hand what onOpenURL gives it to $opener —" \
+        "an invitation reaches iOS and stops there" >&2
+    exit 1
+fi
+
 echo
 echo "kmp gate: green — :shared and :debugTools. composeApp's Compose UI tests did NOT run;"
 echo "                 they need ios.sh and a macOS host with Xcode."

@@ -1,7 +1,11 @@
 package app.cadence
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
@@ -90,6 +94,134 @@ class InvitationTest {
             waitForIdle()
 
             assertEquals(1, spent, "the link was followed more than once")
+        }
+
+    // Android recreates the activity for a font-scale or locale change, neither of which
+    // `configChanges` names, and a patient can sit on the password form for minutes. Re-running
+    // the exchange there answers otp_expired over the session that very link created — «your link
+    // is used up» on top of a live session — so the answer is restored rather than asked again.
+    @Test
+    fun anAnsweredInvitationSurvivesTheScreenBeingRecreated() =
+        runComposeUiTest {
+            var spent = 0
+            val recreation = Recreation()
+
+            setContent {
+                recreation.around {
+                    App(
+                        SessionState.SignedIn,
+                        rememberInvitation(
+                            token = TOKEN,
+                            accept = {
+                                spent += 1
+                                Acceptance.Accepted
+                            },
+                            choose = { PasswordSet.Done },
+                        ),
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
+
+            recreation.happen { waitForIdle() }
+
+            assertEquals(1, spent, "the link was spent again when the screen was recreated")
+            onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
+        }
+
+    // The other half, and the one that outlives the invitation: recreated after the password is
+    // set, the form must not come back — a patient already inside the app would be asked to
+    // choose a password for an invitation that is over.
+    @Test
+    fun aFinishedInvitationDoesNotComeBackWhenTheScreenIsRecreated() =
+        runComposeUiTest {
+            val recreation = Recreation()
+
+            setContent {
+                recreation.around {
+                    App(
+                        SessionState.SignedIn,
+                        rememberInvitation(
+                            token = TOKEN,
+                            accept = { Acceptance.Accepted },
+                            choose = { PasswordSet.Done },
+                        ),
+                    )
+                }
+            }
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+            waitForIdle()
+
+            recreation.happen { waitForIdle() }
+
+            assertTrue(
+                onAllNodesWithText(AcceptanceCopy.CHOOSE_PASSWORD).fetchSemanticsNodes().isEmpty(),
+                "the invitation came back after the password was already set",
+            )
+        }
+
+    // The refusal's reason travels with it. Restored without the code, a spent link comes back as
+    // the sentence that names nothing — the one refusal that promises a patient nothing to do,
+    // over a link whose reason is known and actionable.
+    @Test
+    fun aRefusalKeepsItsReasonWhenTheScreenIsRecreated() =
+        runComposeUiTest {
+            val recreation = Recreation()
+
+            setContent {
+                recreation.around {
+                    App(
+                        SessionState.SignedOut,
+                        rememberInvitation(
+                            token = TOKEN,
+                            accept = { Acceptance.Refused(AuthErrorCode.OtpExpired) },
+                            choose = { PasswordSet.Done },
+                        ),
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithText(AcceptanceCopy.SPENT).assertIsDisplayed()
+
+            recreation.happen { waitForIdle() }
+
+            onNodeWithText(AcceptanceCopy.SPENT).assertIsDisplayed()
+        }
+
+    // The third answer, and the one nothing else pins: a server that could not be reached is not
+    // asked again by a recreation. Asking again is the patient's own tap, which is why the screen
+    // offers one here and nowhere else.
+    @Test
+    fun anUnreachableServerIsNotAskedAgainByARecreation() =
+        runComposeUiTest {
+            var asked = 0
+            val recreation = Recreation()
+
+            setContent {
+                recreation.around {
+                    App(
+                        SessionState.SignedOut,
+                        rememberInvitation(
+                            token = TOKEN,
+                            accept = {
+                                asked += 1
+                                Acceptance.Unreachable
+                            },
+                            choose = { PasswordSet.Done },
+                        ),
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithText(AcceptanceCopy.OFFLINE).assertIsDisplayed()
+
+            recreation.happen { waitForIdle() }
+
+            assertEquals(1, asked, "a recreation asked the server again on its own")
+            onNodeWithText(AcceptanceCopy.OFFLINE).assertIsDisplayed()
         }
 
     // A refusal the patient can act on stays under the form with what they typed still there.
@@ -210,4 +342,37 @@ class InvitationTest {
             assertEquals(2, asked)
             onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
         }
+}
+
+/**
+ * What the platform does to a screen it recreates: everything saveable written out, the
+ * composition thrown away, and a fresh one handed the saved state back.
+ *
+ * Driven through the registry rather than `StateRestorationTester`, which answers a
+ * `NotImplementedError` outside Android — measured on Compose 1.11.1, the version this module
+ * builds against, and composeApp's tests run on the iOS target only. The subtree is disposed and
+ * composed again in its own place rather than under a second `setContent`, because
+ * `rememberSaveable` keys its state by position: two roots do not agree on one, and the state
+ * would come back missing for a reason that is the harness's rather than the code's.
+ */
+private class Recreation {
+    private var registry by mutableStateOf(SaveableStateRegistry(null) { true })
+    private var alive by mutableStateOf(true)
+
+    @Composable
+    fun around(content: @Composable () -> Unit) =
+        CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
+            if (alive) content()
+        }
+
+    fun happen(settle: () -> Unit) {
+        val kept = registry.performSave()
+
+        alive = false
+        settle()
+
+        registry = SaveableStateRegistry(kept) { true }
+        alive = true
+        settle()
+    }
 }

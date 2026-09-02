@@ -16,5 +16,9 @@ struct ContentView: View {
     var body: some View {
         ComposeView()
             .ignoresSafeArea()
+            // Both the link the app was launched with and every one that arrives while it runs;
+            // SwiftUI delivers them to the same place, and the Compose tree behind this outlives
+            // all of them.
+            .onOpenURL { MainViewControllerKt.openedWith(link: $0.absoluteString) }
     }
 }

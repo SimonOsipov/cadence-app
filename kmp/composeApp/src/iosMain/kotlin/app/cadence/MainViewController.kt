@@ -1,16 +1,20 @@
 package app.cadence
 
-import androidx.compose.runtime.remember
 import androidx.compose.ui.window.ComposeUIViewController
-import app.cadence.shared.auth.cadenceAuthFor
-import app.cadence.shared.auth.sessionStates
-import app.cadence.shared.net.AUTH_BASE
+import kotlinx.coroutines.flow.MutableStateFlow
 import platform.UIKit.UIViewController
 
-/** The bridge iosApp's Swift host calls to get its root view controller. */
-fun mainViewController(): UIViewController =
-    ComposeUIViewController {
-        val sessions = remember { cadenceAuthFor(AUTH_BASE).sessionStates() }
+private val links = MutableStateFlow<String?>(null)
 
-        App(sessions.collectAsSessionState())
-    }
+/** The bridge iosApp's Swift host calls to get its root view controller. */
+fun mainViewController(): UIViewController = ComposeUIViewController { CadenceRoot(links) }
+
+/**
+ * What the Swift host's `onOpenURL` hands over, for the launch link and every later one.
+ *
+ * Outside the controller because the controller is built once and the links keep arriving: a
+ * parameter would only ever carry the first, and on a cold start there is none yet to carry.
+ */
+fun openedWith(link: String) {
+    links.value = link
+}
