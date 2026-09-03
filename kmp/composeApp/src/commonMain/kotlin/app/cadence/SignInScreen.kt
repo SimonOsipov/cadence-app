@@ -27,6 +27,7 @@ import app.cadence.shared.auth.SignIn
 @Composable
 fun SignInScreen(
     onSignIn: (String, String) -> Unit,
+    onForgot: () -> Unit = { },
     problem: SignIn? = null,
     busy: Boolean = false,
     modifier: Modifier = Modifier,
@@ -71,6 +72,7 @@ fun SignInScreen(
             // the shapes it would reject are the server's to name. Only «typed at all».
             enabled = address.isNotBlank() && password.isNotEmpty() && !busy,
         )
+        CadenceButton(label = RecoveryCopy.FORGOT, onClick = onForgot)
     }
 }
 

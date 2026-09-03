@@ -103,7 +103,9 @@ var mails = []struct {
 		template: recoveryTemplateVariable,
 		file:     "recovery.html",
 		says:     "восстановление доступа",
-		carries:  confirmationURL,
+		// The same shape as the invitation's since the interstitial went in: a page on the
+		// dashboard, the token in the fragment, and the app reached from there.
+		carries: siteURL + "/recover#token_hash=" + tokenHash,
 	},
 }
 

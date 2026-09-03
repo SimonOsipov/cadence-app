@@ -36,6 +36,7 @@ fun AcceptanceScreen(
     onRetry: () -> Unit,
     problem: PasswordSet? = null,
     busy: Boolean = false,
+    words: PasswordWords = PasswordWords.OfAnInvitation,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -49,7 +50,7 @@ fun AcceptanceScreen(
             }
 
             Acceptance.Accepted -> {
-                PasswordForm(onPasswordChosen, problem, busy)
+                PasswordForm(onPasswordChosen, problem, busy, words)
             }
 
             Acceptance.Unreachable -> {
@@ -60,7 +61,7 @@ fun AcceptanceScreen(
 
             is Acceptance.Refused -> {
                 CadenceTitle(titleFor(outcome.code))
-                CadenceBody(hintFor(outcome.code))
+                CadenceBody(hintFor(outcome.code, words))
             }
         }
     }
@@ -90,22 +91,25 @@ private fun titleFor(code: AuthErrorCode?) =
         else -> AcceptanceCopy.UNNAMED
     }
 
-private fun hintFor(code: AuthErrorCode?) =
-    when (code) {
-        AuthErrorCode.OtpExpired -> AcceptanceCopy.SPENT_HINT
-        AuthErrorCode.UserBanned -> AcceptanceCopy.BANNED_HINT
-        else -> AcceptanceCopy.UNNAMED_HINT
-    }
+private fun hintFor(
+    code: AuthErrorCode?,
+    words: PasswordWords,
+) = when (code) {
+    AuthErrorCode.OtpExpired -> words.spentHint
+    AuthErrorCode.UserBanned -> AcceptanceCopy.BANNED_HINT
+    else -> AcceptanceCopy.UNNAMED_HINT
+}
 
 @Composable
 private fun PasswordForm(
     onChosen: (String) -> Unit,
     problem: PasswordSet?,
     busy: Boolean,
+    words: PasswordWords,
 ) {
     var password by remember { mutableStateOf("") }
 
-    CadenceTitle(AcceptanceCopy.CHOOSE_PASSWORD)
+    CadenceTitle(words.choosing)
     CadenceBody(AcceptanceCopy.PASSWORD_HINT)
     CadenceTextField(
         value = password,

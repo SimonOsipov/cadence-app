@@ -209,18 +209,22 @@ fi
 # The plist is checked here and not in ios.sh so a machine without Xcode still measures it.
 accept=$(sed -n 's/.*ACCEPT_LINK: String = "\([^"]*\)".*/\1/p' \
     shared/src/commonMain/kotlin/app/cadence/shared/auth/Invitation.kt)
+recover=$(sed -n 's/.*RECOVER_LINK: String = "\([^"]*\)".*/\1/p' \
+    shared/src/commonMain/kotlin/app/cadence/shared/auth/Invitation.kt)
 scheme=${accept%%://*}
 host=${accept#*://}
+recover_host=${recover#*://}
 
 # Shape, not merely non-empty: measured by turning the constant into "$SCHEME://accept", which sed
 # reads as the literal `$SCHEME` — a non-empty answer that then fails every grep below for the
 # wrong reason. An empty one would be worse still: `grep -c ""` matches every line and the checks
 # would pass having measured nothing.
-case $scheme$host in
+case $scheme$host$recover_host in
     *[!a-z0-9.+-]* | "")
         # Braced deliberately: bash reads the first byte of a following multibyte character as
         # part of the name, and `$accept»` is then an unbound variable rather than the message.
-        echo "'${accept}' is not a deep link — ACCEPT_LINK could not be read from Invitation.kt" >&2
+        echo "'${accept}' and '${recover}' are not both deep links — one of ACCEPT_LINK and" \
+            "RECOVER_LINK could not be read from Invitation.kt" >&2
         exit 1
         ;;
 esac
@@ -259,7 +263,8 @@ manifest=androidApp/src/main/AndroidManifest.xml
 # The three beyond scheme and host are not decoration: without VIEW the filter does not match what
 # a mail client sends, without DEFAULT an implicit intent resolves to nothing, and without
 # BROWSABLE the mail client hands the link to nobody.
-if ! awk -v scheme="android:scheme=\"$scheme\"" -v host="android:host=\"$host\"" '
+registered() {
+    awk -v scheme="android:scheme=\"$scheme\"" -v host="android:host=\"$1\"" '
     BEGIN {
         need[1] = "android.intent.action.VIEW"
         need[2] = "android.intent.category.DEFAULT"
@@ -300,11 +305,19 @@ if ! awk -v scheme="android:scheme=\"$scheme\"" -v host="android:host=\"$host\""
         inside = 0
     }
     END { exit found ? 0 : 1 }
-' "$manifest"; then
-    echo "$manifest has no single intent-filter carrying $scheme, $host, VIEW, DEFAULT and" \
-        "BROWSABLE together — an invitation opens nothing on Android" >&2
-    exit 1
-fi
+' "$manifest"
+}
+
+# Both links, each asked for a filter of its own: a filter is matched whole, so a second host on
+# the first one would not register anything the first does not already cover.
+for landing in "$host" "$recover_host"; do
+    if ! registered "$landing"; then
+        echo "$manifest has no single intent-filter carrying $scheme, $landing, VIEW, DEFAULT and" \
+            "BROWSABLE together — that link opens nothing on Android" >&2
+        exit 1
+    fi
+done
+
 
 # Both keys, nested, and nested structurally: either alone is half the check — moving the schemes
 # array to the top level satisfies a CFBundleURLSchemes range, misspelling that key satisfies a
@@ -344,31 +357,37 @@ fi
 # the dashboard actually serves it. Two of the three files are outside kmp/, and this is the only
 # gate that can see the whole line.
 page=../web/src/features/auth/open-in-app-page.tsx
-page_hands_over=$(counted "$accept in $page" "$(grep -cF "'$accept'" "$page" || true)")
-if [ "$page_hands_over" -eq 0 ]; then
-    echo "$page does not hand the token to $accept — an invitation reaches the dashboard and" \
-        "stops there" >&2
-    exit 1
-fi
-
-# The page's own path is the scheme's host by construction — cadence://accept is served from
-# /accept — so one reading covers the route and the link that has to reach it.
 routes=../web/src/app.tsx
-route_served=$(counted "the /$host route in $routes" "$(grep -cF "path=\"/$host\"" "$routes" || true)")
-if [ "$route_served" -eq 0 ]; then
-    echo "$routes serves no /$host — the address every invitation names is a redirect to the" \
-        "dashboard's door" >&2
-    exit 1
-fi
 
-template=../api/mail-templates/invite.html
-template_link=$(counted "the /$host page in $template" \
-    "$(grep -cF "/$host#token_hash=" "$template" || true)")
-if [ "$template_link" -eq 0 ]; then
-    echo "$template does not send patients to /$host — the page is served for an address no" \
-        "invitation names" >&2
-    exit 1
-fi
+# Both mails travel the same three links, and the page's own path is the scheme's host by
+# construction — cadence://accept is served from /accept — so one reading covers the route and the
+# address that has to reach it.
+for landing in "$accept:../api/mail-templates/invite.html" \
+    "$recover:../api/mail-templates/recovery.html"; do
+    link=${landing%%:../*}
+    template=../${landing#*:../}
+    at=${link#*://}
+
+    hands_over=$(counted "$link in $page" "$(grep -cF "'$link'" "$page" || true)")
+    if [ "$hands_over" -eq 0 ]; then
+        echo "$page does not hand the token to $link — that mail reaches the dashboard and stops" >&2
+        exit 1
+    fi
+
+    served=$(counted "the /$at route in $routes" "$(grep -cF "path=\"/$at\"" "$routes" || true)")
+    if [ "$served" -eq 0 ]; then
+        echo "$routes serves no /$at — the address that mail names is a redirect to the" \
+            "dashboard's door" >&2
+        exit 1
+    fi
+
+    sent=$(counted "the /$at page in $template" "$(grep -cF "/$at#token_hash=" "$template" || true)")
+    if [ "$sent" -eq 0 ]; then
+        echo "$template does not send patients to /$at — the page is served for an address no" \
+            "mail names" >&2
+        exit 1
+    fi
+done
 
 # The password floor the screen states, against the one the provider enforces. Two numbers in two
 # stacks and nothing else compares them: a screen promising ten where the server takes six lets a

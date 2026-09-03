@@ -3,6 +3,9 @@ package app.cadence
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.auth.SessionState
@@ -28,7 +31,9 @@ import kotlinx.coroutines.flow.Flow
 fun App(
     session: SessionState,
     invitation: Invitation? = null,
+    recoveryReturn: Invitation? = null,
     signIn: SignInPrompt = SignInPrompt(),
+    recovery: RecoveryPrompt = RecoveryPrompt(),
     onSignOut: () -> Unit = { },
     modifier: Modifier = Modifier,
 ) {
@@ -36,13 +41,19 @@ fun App(
         // An invitation outranks the session, and deliberately: a patient who followed a link is
         // answering it, and dropping them into whichever area their session names would leave the
         // link unexplained — including the case where it is the reason they have no session.
-        if (invitation != null) {
+        // A link outranks the session either way; between the two, the invitation goes first. Both
+        // at once is a patient who followed two links, and the one that creates the account is the
+        // one they cannot get back to by asking.
+        val answering = invitation ?: recoveryReturn
+
+        if (answering != null) {
             AcceptanceScreen(
-                outcome = invitation.outcome,
-                onPasswordChosen = invitation.onPasswordChosen,
-                onRetry = invitation.onRetry,
-                problem = invitation.problem,
-                busy = invitation.busy,
+                outcome = answering.outcome,
+                onPasswordChosen = answering.onPasswordChosen,
+                onRetry = answering.onRetry,
+                problem = answering.problem,
+                busy = answering.busy,
+                words = if (invitation != null) PasswordWords.OfAnInvitation else PasswordWords.OfARecovery,
                 modifier = modifier,
             )
 
@@ -58,18 +69,46 @@ fun App(
             }
 
             SessionState.SignedOut -> {
-                SignInScreen(
-                    onSignIn = signIn.onSignIn,
-                    problem = signIn.problem,
-                    busy = signIn.busy,
-                    modifier = modifier,
-                )
+                SignedOutArea(signIn, recovery, modifier)
             }
 
             SessionState.SignedIn -> {
                 CadenceApp(modifier = modifier, onSignOut = onSignOut)
             }
         }
+    }
+}
+
+/**
+ * The two screens a patient without a session can be on, and the way between them.
+ *
+ * Which one is showing is this area's own business: neither the session nor the platform root has
+ * anything to say about it, and a patient who asked for a recovery mail has not signed out.
+ */
+@Composable
+private fun SignedOutArea(
+    signIn: SignInPrompt,
+    recovery: RecoveryPrompt,
+    modifier: Modifier,
+) {
+    var recovering by remember { mutableStateOf(false) }
+
+    if (recovering) {
+        RecoveryScreen(
+            onRecover = recovery.onRecover,
+            onBack = { recovering = false },
+            outcome = recovery.outcome,
+            busy = recovery.busy,
+            modifier = modifier,
+        )
+    } else {
+        SignInScreen(
+            onSignIn = signIn.onSignIn,
+            onForgot = { recovering = true },
+            problem = signIn.problem,
+            busy = signIn.busy,
+            modifier = modifier,
+        )
     }
 }
 

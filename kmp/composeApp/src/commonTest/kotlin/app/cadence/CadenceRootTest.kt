@@ -13,9 +13,11 @@ import app.cadence.shared.auth.Acceptance
 import app.cadence.shared.auth.PasswordSet
 import app.cadence.shared.auth.SessionState
 import app.cadence.shared.auth.SignIn
+import io.github.jan.supabase.auth.exception.AuthErrorCode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private const val TOKEN = "e75b4d4f54a86c915c0afdfc5db3b5cb6eea78ba43c1ccf6bd24c5cb"
@@ -257,6 +259,59 @@ class CadenceRootTest {
 
             assertEquals(1, spent, "the link was spent again when the screen was recreated")
             onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
+        }
+
+    // The recovery link's own landing. Sent to the invitation's exchange it would be refused, and
+    // the screen would tell a patient holding a live link that it was already used.
+    @Test
+    fun aRecoveryLinkLandsOnANewPassword() =
+        runComposeUiTest {
+            var spentAsRecovery: String? = null
+            var spentAsInvitation: String? = null
+
+            setContent {
+                CadenceRoot(
+                    session = SessionState.SignedOut,
+                    links = MutableStateFlow("cadence://recover?token_hash=$TOKEN"),
+                    accept = {
+                        spentAsInvitation = it
+                        Acceptance.Accepted
+                    },
+                    choose = { PasswordSet.Done },
+                    acceptRecovery = {
+                        spentAsRecovery = it
+                        Acceptance.Accepted
+                    },
+                )
+            }
+            waitForIdle()
+
+            assertEquals(TOKEN, spentAsRecovery, "the recovery token never reached the recovery exchange")
+            assertNull(spentAsInvitation, "the recovery token was spent as an invitation")
+            onNodeWithText(RecoveryCopy.CHOOSE_NEW_PASSWORD).assertIsDisplayed()
+        }
+
+    // The sentence a spent recovery link gets is not the invitation's: this letter is one the
+    // patient asks for themselves, and sending them to the clinic is a detour with a person on it.
+    @Test
+    fun aSpentRecoveryLinkPointsBackAtTheFormThatSendsIt() =
+        runComposeUiTest {
+            setContent {
+                CadenceRoot(
+                    session = SessionState.SignedOut,
+                    links = MutableStateFlow("cadence://recover?token_hash=$TOKEN"),
+                    accept = { Acceptance.Accepted },
+                    choose = { PasswordSet.Done },
+                    acceptRecovery = { Acceptance.Refused(AuthErrorCode.OtpExpired) },
+                )
+            }
+            waitForIdle()
+
+            onNodeWithText(RecoveryCopy.SPENT_HINT).assertIsDisplayed()
+            assertTrue(
+                onAllNodesWithText(AcceptanceCopy.SPENT_HINT).fetchSemanticsNodes().isEmpty(),
+                "a spent recovery link sent the patient to the clinic for a letter they can ask for",
+            )
         }
 
     @Test

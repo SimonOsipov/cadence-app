@@ -12,12 +12,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.cadence.shared.auth.Acceptance
 import app.cadence.shared.auth.PasswordSet
+import app.cadence.shared.auth.Recovery
 import app.cadence.shared.auth.SessionState
 import app.cadence.shared.auth.SignIn
 import app.cadence.shared.auth.acceptInvitation
+import app.cadence.shared.auth.acceptRecovery
 import app.cadence.shared.auth.cadenceAuthFor
 import app.cadence.shared.auth.choosePassword
 import app.cadence.shared.auth.invitationToken
+import app.cadence.shared.auth.recover
+import app.cadence.shared.auth.recoveryToken
 import app.cadence.shared.auth.sessionStates
 import app.cadence.shared.auth.signIn
 import app.cadence.shared.auth.signOut
@@ -41,6 +45,8 @@ fun CadenceRoot(
         choose = { client.choosePassword(it) },
         signIn = { address, password -> client.signIn(address, password) },
         signOut = { client.signOut() },
+        acceptRecovery = { client.acceptRecovery(it) },
+        recover = { client.recover(it) },
         modifier = modifier,
     )
 }
@@ -60,6 +66,8 @@ fun CadenceRoot(
     choose: suspend (String) -> PasswordSet,
     signIn: suspend (String, String) -> SignIn = { _, _ -> SignIn.Unreachable },
     signOut: suspend () -> Unit = { },
+    acceptRecovery: suspend (String) -> Acceptance = { Acceptance.Unreachable },
+    recover: suspend (String) -> Recovery = { Recovery.Unreachable },
     modifier: Modifier = Modifier,
 ) {
     val link by links.collectAsState(null)
@@ -68,15 +76,19 @@ fun CadenceRoot(
     // for frame one: the restore lands, then the token arrives and resets it. Measured — held in a
     // plain remember, the exchange ran a second time.
     var token by rememberSaveable { mutableStateOf<String?>(null) }
+    var recovering by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(link) {
         link?.let(::invitationToken)?.let { token = it }
+        link?.let(::recoveryToken)?.let { recovering = it }
     }
 
     App(
         session = session,
         invitation = rememberInvitation(token, accept, choose),
+        recoveryReturn = rememberInvitation(recovering, acceptRecovery, choose),
         signIn = rememberSignIn(signIn),
+        recovery = rememberRecovery(recover),
         onSignOut = { scope.launch { signOut() } },
         modifier = modifier,
     )

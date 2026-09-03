@@ -31,6 +31,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="cadence" android:host="accept" />
             </intent-filter>
+
+            <!-- And where a recovery link lands. Its own filter rather than a second host on the
+                 one above: the two are read as a set, and a filter is matched whole. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cadence" android:host="recover" />
+            </intent-filter>
         </activity>
     </application>
 
