@@ -120,6 +120,43 @@ class RecoveryScreenTest {
             waitForIdle()
         }
 
+    // The one case a patient must retype is the one the sentence hides: a mistyped address is
+    // answered «sent» by design, so leaving and coming back has to offer the field again.
+    @Test
+    fun comingBackToTheFormOffersTheFieldAgain() =
+        runComposeUiTest {
+            setContent { App(SessionState.SignedOut, recovery = rememberRecovery { Recovery.Sent }) }
+
+            onNodeWithText(RecoveryCopy.FORGOT).performClick()
+            waitForIdle()
+            onNodeWithContentDescription(RecoveryCopy.ADDRESS_FIELD).performTextInput(AN_ADDRESS)
+            onNodeWithText(RecoveryCopy.SEND).performClick()
+            waitForIdle()
+            onNodeWithText(RecoveryCopy.SENT).assertIsDisplayed()
+
+            onNodeWithText(RecoveryCopy.BACK).performClick()
+            waitForIdle()
+            onNodeWithText(RecoveryCopy.FORGOT).performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription(RecoveryCopy.ADDRESS_FIELD).assertIsDisplayed()
+        }
+
+    // A keyboard's trailing space is a 422, and every refusal here is answered «sent» — so an
+    // untrimmed address is a letter a patient is told was written and never was.
+    @Test
+    fun theAddressIsTrimmedOnItsWayOut() =
+        runComposeUiTest {
+            var asked: String? = null
+
+            setContent { CadenceTheme { RecoveryScreen(onRecover = { asked = it }, onBack = {}) } }
+
+            onNodeWithContentDescription(RecoveryCopy.ADDRESS_FIELD).performTextInput("  $AN_ADDRESS  ")
+            onNodeWithText(RecoveryCopy.SEND).performClick()
+
+            assertEquals(AN_ADDRESS, asked, "the address went out with what the keyboard added")
+        }
+
     // The way in, from the one screen a patient who cannot sign in is looking at. Without it the
     // recovery screen exists and nothing reaches it.
     @Test

@@ -14,6 +14,7 @@ import app.cadence.shared.auth.PasswordSet
 import app.cadence.shared.auth.SessionState
 import app.cadence.shared.auth.SignIn
 import io.github.jan.supabase.auth.exception.AuthErrorCode
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -295,6 +296,35 @@ class CadenceRootTest {
             assertEquals(TOKEN, spentAsRecovery, "the recovery token never reached the recovery exchange")
             assertNull(spentAsInvitation, "the recovery token was spent as an invitation")
             onNodeWithText(RecoveryCopy.CHOOSE_NEW_PASSWORD).assertIsDisplayed()
+        }
+
+    // What a patient reads while the recovery exchange is in flight, and it is the one sentence
+    // the first version of PasswordWords missed: «Проверяем приглашение» to somebody who tapped
+    // «Восстановить доступ», on the normal path, for the whole round trip.
+    @Test
+    fun aRecoveryInFlightDoesNotMentionAnInvitation() =
+        runComposeUiTest {
+            val answer = CompletableDeferred<Acceptance>()
+
+            setContent {
+                CadenceRoot(
+                    session = SessionState.SignedOut,
+                    links = MutableStateFlow("cadence://recover?token_hash=$TOKEN"),
+                    accept = { Acceptance.Accepted },
+                    choose = { PasswordSet.Done },
+                    acceptRecovery = { answer.await() },
+                )
+            }
+            waitForIdle()
+
+            onNodeWithText(RecoveryCopy.CHECKING).assertIsDisplayed()
+            assertTrue(
+                onAllNodesWithText(AcceptanceCopy.CHECKING).fetchSemanticsNodes().isEmpty(),
+                "a patient recovering a password was told an invitation was being checked",
+            )
+
+            answer.complete(Acceptance.Accepted)
+            waitForIdle()
         }
 
     // The recovery landing has to survive a recreation for the reason the invitation's does: its

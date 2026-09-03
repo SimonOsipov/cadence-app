@@ -179,12 +179,37 @@ describe('a patient at the door', () => {
 })
 
 describe("where a patient's mail lands", () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_URL', API)
+    vi.stubEnv('VITE_AUTH_URL', PROVIDER)
+    sessionStorage.clear()
+    window.history.pushState({}, '', '/')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
   // The pairing is the whole of it: the gate greps the scheme in the page and the path in the
   // route table as two facts, and neither notices them swapped.
   it('serves each landing at the path its own scheme names', () => {
     for (const { path, kind } of PATIENT_LANDINGS) {
       expect(path).toBe(`/${new URL(DESTINATIONS[kind]).host}`)
     }
+  })
+
+  // The magic link's own landing, and the reason it is here: SITE_URL moved to the origin in the
+  // same change, so a verified magic link now arrives at «/» rather than at the acceptance route,
+  // and the session in its fragment is dropped by the catch-all unless this line catches it.
+  it('carries a magic link to the screen that reads its fragment', async () => {
+    vi.stubGlobal('fetch', providerAnswering({ role: 'doctor' }))
+    window.history.pushState({}, '', '/#access_token=a&refresh_token=r&type=magiclink')
+
+    render(<App />)
+
+    await waitFor(() => expect(window.location.pathname).toBe('/accept-invite'))
+    expect(window.location.hash).toContain('type=magiclink')
   })
 
   it('serves one landing per destination and no more', () => {
