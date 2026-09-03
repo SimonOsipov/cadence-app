@@ -374,7 +374,7 @@ for landing in "$accept:../api/mail-templates/invite.html" \
         exit 1
     fi
 
-    served=$(counted "the /$at route in $routes" "$(grep -cF "path=\"/$at\"" "$routes" || true)")
+    served=$(counted "the /$at landing in $routes" "$(grep -cF "path: '/$at'" "$routes" || true)")
     if [ "$served" -eq 0 ]; then
         echo "$routes serves no /$at — the address that mail names is a redirect to the" \
             "dashboard's door" >&2

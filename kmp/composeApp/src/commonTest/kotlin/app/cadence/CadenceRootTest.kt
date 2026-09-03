@@ -89,11 +89,17 @@ class CadenceRootTest {
                         Acceptance.Accepted
                     },
                     choose = { PasswordSet.Done },
+                    // Both exchanges, because this address is one both parsers refuse and only one
+                    // of them was ever counted.
+                    acceptRecovery = {
+                        asked += 1
+                        Acceptance.Accepted
+                    },
                 )
             }
             waitForIdle()
 
-            assertEquals(0, asked, "a link that is not an invitation was sent to the exchange")
+            assertEquals(0, asked, "a link that is not an invitation was sent to an exchange")
             onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).assertIsDisplayed()
         }
 
@@ -291,6 +297,68 @@ class CadenceRootTest {
             onNodeWithText(RecoveryCopy.CHOOSE_NEW_PASSWORD).assertIsDisplayed()
         }
 
+    // The recovery landing has to survive a recreation for the reason the invitation's does: its
+    // token is single-use, and a rotation on the new-password screen would otherwise send the
+    // patient back to sign-in holding a link already spent.
+    @Test
+    fun aRecoveryLandingSurvivesARecreation() =
+        runComposeUiTest {
+            var spent = 0
+            val recreation = Recreation()
+
+            setContent {
+                recreation.around {
+                    CadenceRoot(
+                        session = SessionState.SignedIn,
+                        links = MutableStateFlow("cadence://recover?token_hash=$TOKEN"),
+                        accept = { Acceptance.Accepted },
+                        choose = { PasswordSet.Done },
+                        acceptRecovery = {
+                            spent += 1
+                            Acceptance.Accepted
+                        },
+                    )
+                }
+            }
+            waitForIdle()
+            onNodeWithText(RecoveryCopy.CHOOSE_NEW_PASSWORD).assertIsDisplayed()
+
+            recreation.happen { waitForIdle() }
+
+            assertEquals(1, spent, "the recovery link was spent again when the screen was recreated")
+            onNodeWithText(RecoveryCopy.CHOOSE_NEW_PASSWORD).assertIsDisplayed()
+        }
+
+    // Recovery all the way through, and from a live session: a patient who forgot their password
+    // may still be signed in on this device, and the landing has to outrank that the way the
+    // invitation's does — then end inside the app rather than on a form with nowhere to go.
+    @Test
+    fun aRecoveryEndsInsideTheApp() =
+        runComposeUiTest {
+            var setWith: String? = null
+
+            setContent {
+                CadenceRoot(
+                    session = SessionState.SignedIn,
+                    links = MutableStateFlow("cadence://recover?token_hash=$TOKEN"),
+                    accept = { Acceptance.Accepted },
+                    choose = {
+                        setWith = it
+                        PasswordSet.Done
+                    },
+                    acceptRecovery = { Acceptance.Accepted },
+                )
+            }
+            waitForIdle()
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+            waitForIdle()
+
+            assertEquals(A_PASSWORD, setWith, "the new password never reached the write behind the form")
+            onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
+        }
+
     // The sentence a spent recovery link gets is not the invitation's: this letter is one the
     // patient asks for themselves, and sending them to the clinic is a detour with a person on it.
     @Test
@@ -314,6 +382,43 @@ class CadenceRootTest {
             )
         }
 
+    // A recovery link arriving mid-acceptance does take the screen, and that is the choice: the
+    // patient tapped it just now, the invitation's token is already spent, and the new landing ends
+    // in the same place — a password. What it must not do is answer both, which is what two slots
+    // did: the one not on screen spent its single-use token with nothing ever drawn for it.
+    @Test
+    fun theLinkTappedLastIsTheOneAnswered() =
+        runComposeUiTest {
+            var invitations = 0
+            var recoveries = 0
+            val links = MutableStateFlow<String?>(accept(TOKEN))
+
+            setContent {
+                CadenceRoot(
+                    session = SessionState.SignedIn,
+                    links = links,
+                    accept = {
+                        invitations += 1
+                        Acceptance.Accepted
+                    },
+                    choose = { PasswordSet.Done },
+                    acceptRecovery = {
+                        recoveries += 1
+                        Acceptance.Accepted
+                    },
+                )
+            }
+            waitForIdle()
+            assertEquals(0, recoveries, "the recovery exchange ran for a link nobody followed")
+
+            links.value = "cadence://recover?token_hash=$ANOTHER_TOKEN"
+            waitForIdle()
+
+            assertEquals(1, invitations, "the invitation was answered more than once")
+            assertEquals(1, recoveries, "the link the patient just tapped was not answered")
+            onNodeWithText(RecoveryCopy.CHOOSE_NEW_PASSWORD).assertIsDisplayed()
+        }
+
     @Test
     fun anotherAddressDoesNotTakeAwayTheInvitationBeingAnswered() =
         runComposeUiTest {
@@ -330,7 +435,7 @@ class CadenceRootTest {
             waitForIdle()
             onNodeWithText(AcceptanceCopy.CHOOSE_PASSWORD).assertIsDisplayed()
 
-            links.value = "cadence://recover?token_hash=$ANOTHER_TOKEN"
+            links.value = "cadence://settings?token_hash=$ANOTHER_TOKEN"
             waitForIdle()
 
             assertTrue(

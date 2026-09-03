@@ -1,6 +1,7 @@
 package identity_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -45,6 +46,25 @@ func TestTheDeploymentGivesLinksTheLifetimeThisContextDerivesFrom(t *testing.T) 
 		t.Errorf("the deployment gives links %s seconds and this context derives the pending "+
 			"state from %s — an invitation reads as pending after its link stopped working",
 			set, want)
+	}
+}
+
+// The templates build their own paths on SITE_URL — «{{ .SiteURL }}/accept#token_hash=…» — so a
+// path left on this variable renders «…/accept-invite/accept#…», which the dashboard's catch-all
+// redirects, dropping the fragment and the token with it. Every gate stays green through that:
+// scripts/gate/kmp.sh greps the template for the tail, and the tail still matches.
+func TestTheDeploymentGivesTheTemplatesAnOriginToBuildOn(t *testing.T) {
+	set := deploymentSetting(t, "GOTRUE_SITE_URL")
+
+	landing, err := url.Parse(set)
+	if err != nil {
+		t.Fatalf("GOTRUE_SITE_URL is %q, which is not a URL: %v", set, err)
+	}
+
+	if landing.Path != "" {
+		t.Errorf("GOTRUE_SITE_URL is %q and carries the path %q — every link a template builds on "+
+			"it goes through that path, and the one a patient is sent lands on the dashboard's "+
+			"catch-all, which drops the fragment", set, landing.Path)
 	}
 }
 

@@ -72,24 +72,36 @@ fun CadenceRoot(
 ) {
     val link by links.collectAsState(null)
     val scope = rememberCoroutineScope()
-    // The token is the reset input of everything the invitation saves, and the flow leaves it null
-    // for frame one: the restore lands, then the token arrives and resets it. Measured — held in a
-    // plain remember, the exchange ran a second time.
-    var token by rememberSaveable { mutableStateOf<String?>(null) }
-    var recovering by rememberSaveable { mutableStateOf<String?>(null) }
+    // One slot for both links rather than one each, and it cost a review round to see why: two
+    // slots are both filled once a patient has followed both, and the driver of the one the screen
+    // does not show still spends its token — silently, single-use, with nothing ever drawn for it.
+    //
+    // Saveable, and that is the whole of why the invitation's own saved state works: the link
+    // arrives through a flow, so the frame a recreated screen comes back on has none, and the token
+    // is the reset input of everything keyed on it. Measured — held in a plain remember, the
+    // exchange ran a second time.
+    var landed by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(link) {
-        link?.let(::invitationToken)?.let { token = it }
-        link?.let(::recoveryToken)?.let { recovering = it }
+        link?.let(::invitationToken)?.let { landed = AN_INVITATION + it }
+        link?.let(::recoveryToken)?.let { landed = A_RECOVERY + it }
     }
 
     App(
         session = session,
-        invitation = rememberInvitation(token, accept, choose),
-        recoveryReturn = rememberInvitation(recovering, acceptRecovery, choose),
+        invitation = rememberInvitation(landed.tokenOf(AN_INVITATION), accept, choose),
+        recoveryReturn = rememberInvitation(landed.tokenOf(A_RECOVERY), acceptRecovery, choose),
         signIn = rememberSignIn(signIn),
         recovery = rememberRecovery(recover),
         onSignOut = { scope.launch { signOut() } },
         modifier = modifier,
     )
 }
+
+// Which link the app is answering, kept as one string because that is what survives a recreation
+// without a saver of its own. The tokens are hex, so neither tag can appear inside one.
+private const val AN_INVITATION = "invite:"
+
+private const val A_RECOVERY = "recover:"
+
+private fun String?.tokenOf(kind: String) = this?.takeIf { it.startsWith(kind) }?.removePrefix(kind)

@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { App } from './app'
+import { App, PATIENT_LANDINGS } from './app'
+import { DESTINATIONS } from './features/auth/open-in-app-page'
 import { readSession } from './auth/session'
 
 const API = 'https://api.example'
@@ -174,5 +175,19 @@ describe('a patient at the door', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('для сотрудников клиники')
     expect(readSession()).toBeNull()
+  })
+})
+
+describe("where a patient's mail lands", () => {
+  // The pairing is the whole of it: the gate greps the scheme in the page and the path in the
+  // route table as two facts, and neither notices them swapped.
+  it('serves each landing at the path its own scheme names', () => {
+    for (const { path, kind } of PATIENT_LANDINGS) {
+      expect(path).toBe(`/${new URL(DESTINATIONS[kind]).host}`)
+    }
+  })
+
+  it('serves one landing per destination and no more', () => {
+    expect(PATIENT_LANDINGS.map(({ kind }) => kind).sort()).toEqual(Object.keys(DESTINATIONS).sort())
   })
 })

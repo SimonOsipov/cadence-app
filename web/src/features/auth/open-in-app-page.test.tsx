@@ -1,16 +1,18 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import { OpenInAppPage, THE_APP_DID_NOT_ANSWER, tokenFromFragment } from './open-in-app-page'
+import { OpenInAppPage, THE_APP_DID_NOT_ANSWER, WAIT_FOR_THE_APP_MS, tokenFromFragment } from './open-in-app-page'
 
 const TOKEN = 'e75b4d4f54a86c915c0afdfc5db3b5cb6eea78ba43c1ccf6bd24c5cb'
 
 /** Runs the fallback immediately instead of after the wait a browser would take. */
-const atOnce = (fn: () => void) => fn()
+const atOnce = (fn: () => void) => {
+  fn()
 
-const never = () => {
-  /* the app answered, so nothing schedules */
+  return undefined
 }
+
+const never = () => undefined
 
 describe('the page an invitation lands on', () => {
   it('hands the fragment token to the app, verbatim', () => {
@@ -79,5 +81,38 @@ describe('reading the fragment', () => {
     for (const fragment of ['', '#', '#token_hash=', '#access_token=abc', '#other=abc', '#token_hashy=abc']) {
       expect(tokenFromFragment(fragment)).toBeNull()
     }
+  })
+})
+
+describe('the defaults the routes actually ship', () => {
+  // Every test above injects `schedule` and `stillHere`, so the configuration a patient meets has
+  // never run. Without the wait the «не установлено» sentence flashes under everyone who does have
+  // the app, in the instant before the system brings it forward.
+  it('says nothing until the wait is over, then says it', () => {
+    vi.useFakeTimers()
+
+    // `open` is still injected: jsdom refuses to redefine `window.location.assign`, so the one
+    // default that stays unexercised anywhere is the navigation itself, and the by-hand pass is
+    // what measures it. The wait and the visibility check are the shipped ones.
+    render(<OpenInAppPage kind="accept" fragment={`#token_hash=${TOKEN}`} open={() => {}} />)
+
+    act(() => void vi.advanceTimersByTime(WAIT_FOR_THE_APP_MS - 1))
+    expect(screen.queryByText(THE_APP_DID_NOT_ANSWER)).not.toBeInTheDocument()
+
+    act(() => void vi.advanceTimersByTime(1))
+    expect(screen.getByText(THE_APP_DID_NOT_ANSWER)).toBeInTheDocument()
+
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  // A token is moved across a parser boundary, and the one character that changes its meaning
+  // there is the one a fragment can legally carry.
+  it('hands over a token that would otherwise split the link', () => {
+    const opened: string[] = []
+
+    render(<OpenInAppPage kind="accept" fragment="#token_hash=aa%23bb" open={(url) => opened.push(url)} schedule={never} />)
+
+    expect(opened).toEqual(['cadence://accept?token_hash=aa%23bb'])
   })
 })

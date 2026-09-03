@@ -23,6 +23,10 @@ import app.cadence.shared.auth.Recovery
 /**
  * Asking for a recovery mail.
  *
+ * The address is trimmed on its way out: a keyboard's trailing space is refused by the provider,
+ * every refusal here is answered «sent» by design, and the form is gone by then — so the one
+ * mistake a patient cannot see is also the one they could not correct.
+ *
  * The form goes only once the letter is on its way — [Recovery.Sent] is the answer to every
  * address, including one the clinic has never seen, so leaving the form open invites a patient to
  * type it again and spend the per-address gap on a letter they already have.
@@ -59,7 +63,7 @@ fun RecoveryScreen(
             )
             CadenceButton(
                 label = RecoveryCopy.SEND,
-                onClick = { onRecover(address) },
+                onClick = { onRecover(address.trim()) },
                 enabled = address.isNotBlank() && !busy,
             )
         }
@@ -71,13 +75,11 @@ fun RecoveryScreen(
 private fun titleFor(outcome: Recovery) =
     when (outcome) {
         Recovery.Sent -> RecoveryCopy.SENT
-        Recovery.TooSoon -> RecoveryCopy.TOO_SOON
         Recovery.Unreachable -> RecoveryCopy.OFFLINE
     }
 
 private fun hintFor(outcome: Recovery) =
     when (outcome) {
         Recovery.Sent -> RecoveryCopy.SENT_HINT
-        Recovery.TooSoon -> RecoveryCopy.TOO_SOON_HINT
         Recovery.Unreachable -> RecoveryCopy.OFFLINE_HINT
     }

@@ -46,7 +46,7 @@ fun AcceptanceScreen(
     ) {
         when (outcome) {
             null -> {
-                CadenceTitle(AcceptanceCopy.CHECKING)
+                CadenceTitle(words.checking)
             }
 
             Acceptance.Accepted -> {
@@ -60,7 +60,7 @@ fun AcceptanceScreen(
             }
 
             is Acceptance.Refused -> {
-                CadenceTitle(titleFor(outcome.code))
+                CadenceTitle(titleFor(outcome.code, words))
                 CadenceBody(hintFor(outcome.code, words))
             }
         }
@@ -84,12 +84,14 @@ private fun problemText(problem: PasswordSet) =
         }
     }
 
-private fun titleFor(code: AuthErrorCode?) =
-    when (code) {
-        AuthErrorCode.OtpExpired -> AcceptanceCopy.SPENT
-        AuthErrorCode.UserBanned -> AcceptanceCopy.BANNED
-        else -> AcceptanceCopy.UNNAMED
-    }
+private fun titleFor(
+    code: AuthErrorCode?,
+    words: PasswordWords,
+) = when (code) {
+    AuthErrorCode.OtpExpired -> AcceptanceCopy.SPENT
+    AuthErrorCode.UserBanned -> AcceptanceCopy.BANNED
+    else -> words.unnamed
+}
 
 private fun hintFor(
     code: AuthErrorCode?,
@@ -97,7 +99,7 @@ private fun hintFor(
 ) = when (code) {
     AuthErrorCode.OtpExpired -> words.spentHint
     AuthErrorCode.UserBanned -> AcceptanceCopy.BANNED_HINT
-    else -> AcceptanceCopy.UNNAMED_HINT
+    else -> words.unnamedHint
 }
 
 @Composable

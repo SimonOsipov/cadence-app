@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.cadence.design.CadenceTheme
@@ -91,12 +91,15 @@ private fun SignedOutArea(
     recovery: RecoveryPrompt,
     modifier: Modifier,
 ) {
-    var recovering by remember { mutableStateOf(false) }
+    var recovering by rememberSaveable { mutableStateOf(false) }
 
     if (recovering) {
         RecoveryScreen(
             onRecover = recovery.onRecover,
-            onBack = { recovering = false },
+            onBack = {
+                recovery.onForget()
+                recovering = false
+            },
             outcome = recovery.outcome,
             busy = recovery.busy,
             modifier = modifier,
@@ -104,7 +107,10 @@ private fun SignedOutArea(
     } else {
         SignInScreen(
             onSignIn = signIn.onSignIn,
-            onForgot = { recovering = true },
+            onForgot = {
+                recovery.onForget()
+                recovering = true
+            },
             problem = signIn.problem,
             busy = signIn.busy,
             modifier = modifier,

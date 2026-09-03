@@ -30,8 +30,13 @@ import (
 // stacks; `scripts/gate/kmp.sh` holds that whole chain together, reading it from ACCEPT_LINK.
 const acceptLink = "/accept#token_hash="
 
+// The whole address, not the tail of one. SITE_URL is an origin now, and a path put back on it
+// renders «…/accept-invite/accept#token_hash=…» — which still matches the tail, still parses, and
+// lands on the dashboard's catch-all, where the redirect drops the fragment and the token with it.
+const landingOrigin = testsupport.GoTrueIssuer
+
 // The token as the template renders it: GoTrue's own hashed token, which is hex.
-var deepLinkToken = regexp.MustCompile(regexp.QuoteMeta(acceptLink) + `([0-9a-f]+)`)
+var deepLinkToken = regexp.MustCompile(regexp.QuoteMeta(landingOrigin+acceptLink) + `([0-9a-f]+)`)
 
 // End to end, because either half alone passes while a patient is stuck: a mail carrying the right
 // scheme and an empty token still arrives, still parses and still reads as Russian; and a token

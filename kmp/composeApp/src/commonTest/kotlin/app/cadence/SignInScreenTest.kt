@@ -39,6 +39,7 @@ class SignInScreenTest {
                 CadenceTheme {
                     SignInScreen(
                         onSignIn = { address, password -> given = address to password },
+                        onForgot = {},
                     )
                 }
             }
@@ -55,7 +56,15 @@ class SignInScreenTest {
     @Test
     fun aRefusalIsExplainedWithoutLosingTheForm() =
         runComposeUiTest {
-            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, problem = SignIn.Refused) } }
+            setContent {
+                CadenceTheme {
+                    SignInScreen(onSignIn = {
+                        _,
+                        _,
+                        ->
+                    }, onForgot = {}, problem = SignIn.Refused)
+                }
+            }
 
             onNodeWithText(SignInCopy.REFUSED).assertIsDisplayed()
             onNodeWithText(SignInCopy.REFUSED_HINT).assertIsDisplayed()
@@ -67,7 +76,15 @@ class SignInScreenTest {
     @Test
     fun anUnreachableServerIsNotToldAsARefusal() =
         runComposeUiTest {
-            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, problem = SignIn.Unreachable) } }
+            setContent {
+                CadenceTheme {
+                    SignInScreen(onSignIn = {
+                        _,
+                        _,
+                        ->
+                    }, onForgot = {}, problem = SignIn.Unreachable)
+                }
+            }
 
             onNodeWithText(SignInCopy.OFFLINE).assertIsDisplayed()
             assertTrue(
@@ -79,7 +96,7 @@ class SignInScreenTest {
     @Test
     fun theButtonIsOffWhileAnAskIsInFlight() =
         runComposeUiTest {
-            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, busy = true) } }
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, onForgot = {}, busy = true) } }
 
             onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput(AN_ADDRESS)
             onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
@@ -92,7 +109,7 @@ class SignInScreenTest {
     @Test
     fun oneFieldFilledIsNotAnAttemptEither() =
         runComposeUiTest {
-            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, onForgot = {}) } }
 
             onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput(AN_ADDRESS)
             onNodeWithText(SignInCopy.ENTER).assertIsNotEnabled()
@@ -108,7 +125,7 @@ class SignInScreenTest {
     @Test
     fun spacesAreAPasswordButNotAnAddress() =
         runComposeUiTest {
-            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, onForgot = {}) } }
 
             onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput("   ")
             onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
@@ -129,7 +146,7 @@ class SignInScreenTest {
         runComposeUiTest {
             val recreation = Recreation()
 
-            setContent { recreation.around { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } } }
+            setContent { recreation.around { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, onForgot = {}) } } }
 
             onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
             waitForIdle()
@@ -257,7 +274,7 @@ class SignInScreenTest {
     @Test
     fun thePasswordFieldIsMasked() =
         runComposeUiTest {
-            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, onForgot = {}) } }
 
             onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
             waitForIdle()
@@ -276,7 +293,7 @@ class SignInScreenTest {
     @Test
     fun anEmptyFormIsNotOfferedAsAnAttempt() =
         runComposeUiTest {
-            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }) } }
+            setContent { CadenceTheme { SignInScreen(onSignIn = { _, _ -> }, onForgot = {}) } }
 
             onNodeWithText(SignInCopy.ENTER).assertIsNotEnabled()
         }

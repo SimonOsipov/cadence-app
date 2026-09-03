@@ -56,18 +56,16 @@ class RecoveryScreenTest {
             )
         }
 
-    // Two refusals that ask for opposite things, and the expensive mistake is telling the second as
-    // the first: «check your connection» over a gap makes a patient retry and push it further out.
+    // The gap has no sentence of its own, and that is the point: it is enforced against a row only
+    // a real patient has, so «письмо уже отправляли» would be a sentence only a real address could
+    // provoke. It arrives here as Sent, and the hint has to be true of that ask too — hence the
+    // minute and the spam folder.
     @Test
-    fun theGapAndAnUnreachableServerAreSaidApart() =
+    fun theSentHintCoversTheAskThatWasTooSoon() =
         runComposeUiTest {
-            setContent { CadenceTheme { RecoveryScreen(onRecover = {}, onBack = {}, outcome = Recovery.TooSoon) } }
+            setContent { CadenceTheme { RecoveryScreen(onRecover = {}, onBack = {}, outcome = Recovery.Sent) } }
 
-            onNodeWithText(RecoveryCopy.TOO_SOON).assertIsDisplayed()
-            assertTrue(
-                onAllNodesWithText(RecoveryCopy.OFFLINE).fetchSemanticsNodes().isEmpty(),
-                "the per-address gap was told as a server that could not be reached",
-            )
+            onNodeWithText(RecoveryCopy.SENT_HINT).assertIsDisplayed()
         }
 
     // The other direction: the letter never left, so the form has to stay under the sentence.

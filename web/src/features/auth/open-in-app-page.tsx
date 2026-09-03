@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { tokens } from '../../tokens/tokens'
 
 /** Where each link hands off. The app registers both hosts; see `ACCEPT_LINK` in the shared module. */
-const DESTINATIONS = {
+export const DESTINATIONS = {
   accept: 'cadence://accept',
   recover: 'cadence://recover',
 } as const
@@ -20,7 +20,7 @@ const A_LINK_WITH_NOTHING_IN_IT =
 // Long enough for the system to hand the link over and put the app in front of this tab, short
 // enough that a patient without the app is not left watching nothing. Not measured against a
 // device — the by-hand pass on both platforms is what settles it.
-const WAIT_FOR_THE_APP_MS = 1500
+export const WAIT_FOR_THE_APP_MS = 1500
 
 /**
  * The token, or null when the fragment is not one.
@@ -49,10 +49,11 @@ export function OpenInAppPage({
   kind,
   fragment,
   open = (url) => {
-    window.location.href = url
+    window.location.assign(url)
   },
-  schedule = (fn) => {
-    window.setTimeout(fn, WAIT_FOR_THE_APP_MS)
+  schedule = (fn) => window.setTimeout(fn, WAIT_FOR_THE_APP_MS),
+  cancel = (timer) => {
+    if (timer !== undefined) window.clearTimeout(timer)
   },
   stillHere = () => document.visibilityState === 'visible',
 }: {
@@ -60,7 +61,8 @@ export function OpenInAppPage({
   /** The URL fragment as the mail client left it, with or without its leading '#'. */
   fragment: string
   open?: (url: string) => void
-  schedule?: (fn: () => void) => void
+  schedule?: (fn: () => void) => number | undefined
+  cancel?: (timer: number | undefined) => void
   stillHere?: () => boolean
 }) {
   const token = tokenFromFragment(fragment)
@@ -69,12 +71,19 @@ export function OpenInAppPage({
   useEffect(() => {
     if (token === null) return
 
-    open(`${DESTINATIONS[kind]}?token_hash=${token}`)
+    // Encoded on the way out because it was decoded on the way in: a `%23` in the fragment would
+    // otherwise arrive at the app as a real `#`, and Ktor's parser reads everything after it as
+    // the link's fragment rather than as the token.
+    open(`${DESTINATIONS[kind]}?token_hash=${encodeURIComponent(token)}`)
     // Nothing tells a page that a scheme found no handler. What it can see is that it is still the
     // thing in front of the patient once the system has had its chance.
-    schedule(() => {
+    const timer = schedule(() => {
       if (stillHere()) setUnanswered(true)
     })
+
+    // A second mail opened in the same tab changes the fragment in place, and without this the
+    // first link's timer outlives it and can answer for the second.
+    return () => cancel(timer)
     // Once per token: re-running it would hand the same link over again on any render around it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, kind])

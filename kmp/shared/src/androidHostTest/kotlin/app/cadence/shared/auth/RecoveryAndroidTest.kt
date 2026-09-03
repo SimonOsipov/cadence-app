@@ -87,15 +87,21 @@ class RecoveryAndroidTest {
             assertEquals(Recovery.Sent, known.recover(A_PATIENT))
         }
 
-    // The gap between two mails to one person is a minute, and the provider answers 429 inside it.
-    // Told as «sent», a patient waits for a letter that was never written; told as «no connection»,
-    // they retry immediately and push the window further out.
+    // The second half of the same property, and the one a first-ask test cannot reach: the
+    // per-address gap is enforced against a row only a real patient has, so a sentence of its own
+    // here would be one only a real patient could provoke. Two asks and sixty seconds were the
+    // oracle; folded into «sent», they are not.
     @Test
-    fun askingAgainTooSoonIsSaidAsItsOwnAnswer() =
+    fun askingAgainTooSoonIsAnsweredLikeAStrangersAddress() =
         runTest {
-            val client = clientAnswering(jsonError(HttpStatusCode.TooManyRequests, "over_email_send_rate_limit"))
+            val patient = clientAnswering(jsonError(HttpStatusCode.TooManyRequests, "over_email_send_rate_limit"))
+            val stranger = clientAnswering(jsonError(HttpStatusCode.UnprocessableEntity, "validation_failed"))
 
-            assertEquals(Recovery.TooSoon, client.recover(A_PATIENT))
+            assertEquals(
+                stranger.recover(A_STRANGER),
+                patient.recover(A_PATIENT),
+                "the second ask inside the gap tells a patient's address apart from a stranger's",
+            )
         }
 
     @Test

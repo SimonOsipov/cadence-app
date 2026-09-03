@@ -16,17 +16,22 @@ internal object RecoveryCopy {
     const val BACK = "Вернуться ко входу"
 
     const val SENT = "Если такой адрес у нас есть, письмо уже в пути"
-    const val SENT_HINT = "Откройте ссылку из письма на этом устройстве"
 
-    // Its own answer, not «нет связи»: the letter is already on its way, and a patient told to
-    // check their connection asks again and pushes the gap further out.
-    const val TOO_SOON = "Письмо уже отправляли только что"
-    const val TOO_SOON_HINT = "Подождите минуту и проверьте почту, включая «Спам»"
+    // Covers the gap too, which is why it says «минуту» and «Спам»: asking again inside the gap is
+    // answered by this same sentence, and it has to be true of that ask as well.
+    const val SENT_HINT =
+        "Откройте ссылку из письма на этом устройстве. Письмо идёт до минуты, " +
+            "проверьте и «Спам»"
 
     const val OFFLINE = "Сервер сейчас не отвечает"
     const val OFFLINE_HINT = "Попробуйте ещё раз через минуту"
 
+    const val CHECKING = "Проверяем ссылку"
+
     const val CHOOSE_NEW_PASSWORD = "Придумайте новый пароль"
+
+    const val UNNAMED = "Не удалось восстановить доступ"
+    const val UNNAMED_HINT = "Запросите новую ссылку на экране входа"
 
     // Not «попросите клинику»: unlike an invitation, this letter is one the patient asks for
     // themselves, and sending them to the clinic for it is a detour with a person on the end.

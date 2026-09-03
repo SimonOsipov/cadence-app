@@ -14,6 +14,13 @@ data class RecoveryPrompt(
     val outcome: Recovery? = null,
     val busy: Boolean = false,
     val onRecover: (String) -> Unit = { },
+    /**
+     * Forgets the last answer, so leaving the screen and coming back offers the field again.
+     *
+     * Load-bearing rather than tidiness: a mistyped address is answered «sent» **by design**, so
+     * the one case where a patient must type it again is the one the sentence hides.
+     */
+    val onForget: () -> Unit = { },
 )
 
 /** Drives one request for a recovery mail at a time — see [rememberSignIn] for the shape. */
@@ -26,6 +33,7 @@ fun rememberRecovery(recover: suspend (String) -> Recovery): RecoveryPrompt {
     return RecoveryPrompt(
         outcome = outcome,
         busy = busy,
+        onForget = { outcome = null },
         onRecover = { address ->
             // Guarded like the sign-in's: a second tap here spends the per-address gap, and the
             // patient is then told to wait a minute for a letter their own second tap delayed.

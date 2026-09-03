@@ -27,7 +27,7 @@ import app.cadence.shared.auth.SignIn
 @Composable
 fun SignInScreen(
     onSignIn: (String, String) -> Unit,
-    onForgot: () -> Unit = { },
+    onForgot: () -> Unit,
     problem: SignIn? = null,
     busy: Boolean = false,
     modifier: Modifier = Modifier,
