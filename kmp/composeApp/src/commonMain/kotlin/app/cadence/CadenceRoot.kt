@@ -16,9 +16,9 @@ import app.cadence.shared.auth.SessionState
 import app.cadence.shared.auth.SignIn
 import app.cadence.shared.auth.acceptInvitation
 import app.cadence.shared.auth.cadenceAuthFor
+import app.cadence.shared.auth.choosePassword
 import app.cadence.shared.auth.invitationToken
 import app.cadence.shared.auth.sessionStates
-import app.cadence.shared.auth.setInvitationPassword
 import app.cadence.shared.auth.signIn
 import app.cadence.shared.auth.signOut
 import app.cadence.shared.net.AUTH_BASE
@@ -38,7 +38,7 @@ fun CadenceRoot(
         session = sessions.collectAsSessionState(),
         links = links,
         accept = { client.acceptInvitation(it) },
-        choose = { client.setInvitationPassword(it) },
+        choose = { client.choosePassword(it) },
         signIn = { address, password -> client.signIn(address, password) },
         signOut = { client.signOut() },
         modifier = modifier,

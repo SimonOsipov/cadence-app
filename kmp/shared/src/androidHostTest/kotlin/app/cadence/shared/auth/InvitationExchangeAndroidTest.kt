@@ -93,6 +93,26 @@ class InvitationExchangeAndroidTest {
             assertContains(asked.sentBody(), """"type":"invite"""")
         }
 
+    // The recovery link is spent as a recovery, and the type is the whole of the difference: sent
+    // as an invite it is refused, and the screen would tell a patient holding a live link that it
+    // was already used.
+    @Test
+    fun aRecoveryTokenIsSpentAsARecoveryAtTheVerifyRoute() =
+        runTest {
+            val engine =
+                MockEngine {
+                    respond(A_SESSION, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+                }
+
+            clientAnswering(engine).acceptRecovery(TOKEN)
+
+            val asked = engine.requestHistory.single()
+
+            assertEquals("/verify", asked.url.encodedPath)
+            assertContains(asked.sentBody(), """"token_hash":"$TOKEN"""")
+            assertContains(asked.sentBody(), """"type":"recovery"""")
+        }
+
     // «Which the vendor then stores» is what step 3 builds on, and an exchange that answered
     // Accepted while storing nothing would leave the acceptance screen with no session to use.
     @Test
@@ -194,7 +214,7 @@ class PasswordSetAndroidTest {
                     },
                 )
 
-            assertEquals(PasswordSet.Done, client.setInvitationPassword("a-long-enough-password"))
+            assertEquals(PasswordSet.Done, client.choosePassword("a-long-enough-password"))
         }
 
     // The refusal the screen's own bound normally prevents, and the one that arrives anyway when
@@ -210,7 +230,7 @@ class PasswordSetAndroidTest {
 
             assertEquals(
                 PasswordSet.Refused(AuthErrorCode.WeakPassword),
-                client.setInvitationPassword("short"),
+                client.choosePassword("short"),
             )
         }
 
@@ -229,7 +249,7 @@ class PasswordSetAndroidTest {
 
                 assertEquals(
                     PasswordSet.Unreachable,
-                    client.setInvitationPassword("a-long-enough-password"),
+                    client.choosePassword("a-long-enough-password"),
                     "on $what",
                 )
             }

@@ -13,18 +13,29 @@ import kotlinx.coroutines.CancellationException
 /** Where an invitation lands, registered as an intent-filter and in `CFBundleURLTypes`. */
 const val ACCEPT_LINK: String = "cadence://accept"
 
+/** Where a recovery link lands. The scheme is one; the host is what tells the two mails apart. */
+const val RECOVER_LINK: String = "cadence://recover"
+
 private const val TOKEN_PARAMETER = "token_hash"
 
+/** The invitation's token, or null when this link is not one. */
+fun invitationToken(link: String): String? = tokenIn(link, ACCEPT_LINK)
+
+/** The recovery token, or null when this link is not one. */
+fun recoveryToken(link: String): String? = tokenIn(link, RECOVER_LINK)
+
 /**
- * The invitation's token, or null when this link is not one.
- *
  * Compared whole rather than by prefix: `cadence://accept/../recover` starts with the accept
- * address and is a different destination.
+ * address and is a different destination — and now a real one, which is what makes the difference
+ * between the two parsers worth having rather than one that reads the host loosely.
  */
-fun invitationToken(link: String): String? {
+private fun tokenIn(
+    link: String,
+    at: String,
+): String? {
     val url = runCatching { Url(link) }.getOrNull() ?: return null
 
-    if ("${url.protocol.name}://${url.host}${url.encodedPath}".trimEnd('/') != ACCEPT_LINK) {
+    if ("${url.protocol.name}://${url.host}${url.encodedPath}".trimEnd('/') != at) {
         return null
     }
 
@@ -62,7 +73,7 @@ private const val REQUEST_TIMEOUT = 408
 // Not a timeout: a refusal to process replayable early data, where retrying is the point.
 private const val TOO_EARLY = 425
 
-private const val TOO_MANY_REQUESTS = 429
+internal const val TOO_MANY_REQUESTS = 429
 
 private const val FIRST_SERVER_ERROR = 500
 
@@ -95,10 +106,21 @@ private val RETRYABLE = setOf(REQUEST_TIMEOUT, TOO_EARLY, TOO_MANY_REQUESTS)
  * The swallow is the answer, as it is at `SessionTokens.refreshed()`: which failure arrived is the
  * whole of what the screen needs, and carrying it further would log a token's failure.
  */
+suspend fun SupabaseClient.acceptInvitation(tokenHash: String): Acceptance = spend(tokenHash, OtpType.Email.INVITE)
+
+/**
+ * The same for a recovery link, and the same three answers: a link opened twice and one that never
+ * existed both answer `otp_expired`, and a banned patient answers `user_banned` on a live one.
+ */
+suspend fun SupabaseClient.acceptRecovery(tokenHash: String): Acceptance = spend(tokenHash, OtpType.Email.RECOVERY)
+
 @Suppress("SwallowedException")
-suspend fun SupabaseClient.acceptInvitation(tokenHash: String): Acceptance =
+private suspend fun SupabaseClient.spend(
+    tokenHash: String,
+    type: OtpType.Email,
+): Acceptance =
     try {
-        auth.verifyEmailOtp(type = OtpType.Email.INVITE, tokenHash = tokenHash)
+        auth.verifyEmailOtp(type = type, tokenHash = tokenHash)
 
         Acceptance.Accepted
     } catch (cancelled: CancellationException) {
@@ -140,7 +162,7 @@ sealed interface PasswordSet {
  * a provider raising its floor without the app being rebuilt is exactly that case.
  */
 @Suppress("SwallowedException")
-suspend fun SupabaseClient.setInvitationPassword(password: String): PasswordSet =
+suspend fun SupabaseClient.choosePassword(password: String): PasswordSet =
     try {
         auth.updateUser { this.password = password }
 

@@ -31,4 +31,31 @@ class InvitationLinkTest {
             assertNull(invitationToken(link), "«$link» was read as an invitation")
         }
     }
+
+    // The two mails share a scheme and are told apart by the host alone, so each parser has to
+    // refuse the other's link. Reading the host loosely would let a recovery link be spent as an
+    // invitation — `/verify` would refuse it, and the screen would say «already used» to a patient
+    // whose link is live.
+    @Test
+    fun theTwoLinksAreNotEachOther() {
+        assertEquals(TOKEN, recoveryToken("cadence://recover?token_hash=$TOKEN"))
+        assertNull(recoveryToken("cadence://accept?token_hash=$TOKEN"))
+        assertNull(invitationToken("cadence://recover?token_hash=$TOKEN"))
+    }
+
+    @Test
+    fun aRecoveryLinkCarriesNothingElse() {
+        val notRecoveries =
+            listOf(
+                "cadence://recover",
+                "cadence://recover?token_hash=",
+                "cadence://recover/../accept?token_hash=$TOKEN",
+                "https://cadence.app/recover?token_hash=$TOKEN",
+                "cadence://recover?other=$TOKEN",
+            )
+
+        for (link in notRecoveries) {
+            assertNull(recoveryToken(link), "«$link» was read as a recovery link")
+        }
+    }
 }

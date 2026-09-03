@@ -51,8 +51,12 @@ roots=(shared/src composeApp/src androidApp/src iosApp/iosApp iosApp/iosAppTests
 for root in "${roots[@]}"; do
     [ -d "$root" ] || { echo "the credential guard searches $root, which is not there" >&2; exit 1; }
 done
-callers=$(grep -rn --include='*.kt' --include='*.swift' \
-    "setBearerToken\|setAccessToken\|setApiKey\|setUsername\|setPassword" \
+# A boundary before the name, because these are substrings of ordinary identifiers: the vendor's
+# own `resetPasswordForEmail` ends in `setPasswordForEmail` and tripped this check the day a
+# recovery call was written. Matching a helper's name inside another word reports a caller that
+# does not exist, which is the shape that gets a guard switched off rather than fixed.
+callers=$(grep -rnE --include='*.kt' --include='*.swift' \
+    "(^|[^A-Za-z])(setBearerToken|setAccessToken|setApiKey|setUsername|setPassword)" \
     "${roots[@]}" | grep -v "/generated/" || true)
 if [ -n "$callers" ]; then
     echo "the transport is not the only owner of the token any more:" >&2
