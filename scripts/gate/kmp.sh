@@ -333,13 +333,36 @@ if ! awk -v scheme="<string>$scheme</string>" '
     exit 1
 fi
 
-# The other end of the same agreement, and the one nothing else in either stack would notice: the
-# app can be registered for an address no invitation ever names.
+# The rest of the chain an invitation travels, and no single stack's gate would notice a break in
+# it. Since the interstitial went in, the template no longer names the scheme at all: it names a
+# page on the dashboard, and the page names the scheme. So all three are asked — the page hands the
+# token to the address the Kotlin constant declares, the template sends patients to that page, and
+# the dashboard actually serves it. Two of the three files are outside kmp/, and this is the only
+# gate that can see the whole line.
+page=../web/src/features/auth/open-in-app-page.tsx
+page_hands_over=$(counted "$accept in $page" "$(grep -cF "'$accept'" "$page" || true)")
+if [ "$page_hands_over" -eq 0 ]; then
+    echo "$page does not hand the token to $accept — an invitation reaches the dashboard and" \
+        "stops there" >&2
+    exit 1
+fi
+
+# The page's own path is the scheme's host by construction — cadence://accept is served from
+# /accept — so one reading covers the route and the link that has to reach it.
+routes=../web/src/app.tsx
+route_served=$(counted "the /$host route in $routes" "$(grep -cF "path=\"/$host\"" "$routes" || true)")
+if [ "$route_served" -eq 0 ]; then
+    echo "$routes serves no /$host — the address every invitation names is a redirect to the" \
+        "dashboard's door" >&2
+    exit 1
+fi
+
 template=../api/mail-templates/invite.html
-template_link=$(counted "$accept in $template" "$(grep -cF "$accept?token_hash=" "$template" || true)")
+template_link=$(counted "the /$host page in $template" \
+    "$(grep -cF "/$host#token_hash=" "$template" || true)")
 if [ "$template_link" -eq 0 ]; then
-    echo "$template does not send patients to $accept — the app is registered for an address" \
-        "no invitation names" >&2
+    echo "$template does not send patients to /$host — the page is served for an address no" \
+        "invitation names" >&2
     exit 1
 fi
 

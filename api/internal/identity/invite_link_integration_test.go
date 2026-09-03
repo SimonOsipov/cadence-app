@@ -24,10 +24,11 @@ import (
 	"github.com/SimonOsipov/cadence-app/api/internal/platform/testsupport"
 )
 
-// The deep link this template is expected to send patients to. That it is also the address the app
-// registers for is not measured here and cannot be — kmp/ is another stack. `scripts/gate/kmp.sh`
-// is what holds the two together, reading both from ACCEPT_LINK.
-const acceptLink = "cadence://accept?token_hash="
+// Where this template is expected to send patients: a page on the dashboard that reads the token
+// out of the fragment — which no browser sends to a server — and hands it to the app. That the page
+// and the app agree on the scheme is not measured here and cannot be, web/ and kmp/ being other
+// stacks; `scripts/gate/kmp.sh` holds that whole chain together, reading it from ACCEPT_LINK.
+const acceptLink = "/accept#token_hash="
 
 // The token as the template renders it: GoTrue's own hashed token, which is hex.
 var deepLinkToken = regexp.MustCompile(regexp.QuoteMeta(acceptLink) + `([0-9a-f]+)`)

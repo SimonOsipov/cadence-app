@@ -192,7 +192,12 @@ services:
       # derives from AUTH_JWT_ISSUER.
       API_EXTERNAL_URL: http://localhost:9999
       GOTRUE_JWT_ISSUER: http://localhost:9999
-      GOTRUE_SITE_URL: http://localhost:5173/accept-invite
+      # The origin, not a route. The templates build their own paths on it — the patient's mail
+      # lands on the dashboard page that hands the token to the app — and a SITE_URL carrying a
+      # path would put that path inside every one of them. Consequence to carry: a link asking for
+      # no redirect of its own now falls back to the dashboard's door rather than to the staff
+      # acceptance route, so the staff invitation owes itself a `redirect_to` when it is built.
+      GOTRUE_SITE_URL: http://localhost:5173
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_EXP: "3600"
 
@@ -302,11 +307,9 @@ services:
       # settings above are. What an uncovered address costs is named at
       # TestTheAllowListDecidesWhereALinkLands.
       #
-      # The dashboard's dev server, which is where an invitation now lands: SITE_URL
-      # above names its acceptance route, so an invitation asking for no redirect
-      # of its own — which is every invitation this API sends — arrives at the
-      # screen that finishes it. The app's deep-link scheme is still not chosen,
-      # and whoever chooses it owns adding it here.
+      # The dashboard's dev server, which is where an invitation now lands — on the page that
+      # reads the token out of the fragment and hands it to the app. Nothing this API sends asks
+      # for a redirect of its own, so what this list bounds is the fallback.
       GOTRUE_URI_ALLOW_LIST: http://localhost:5173/**
       # A bare `**` would open this to any host the caller names, and the
       # session rides in the landing address's fragment. Asserted in shape,

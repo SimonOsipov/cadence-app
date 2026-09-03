@@ -58,6 +58,7 @@ const (
 const (
 	confirmationURL = "{{ .ConfirmationURL }}"
 	tokenHash       = "{{ .TokenHash }}"
+	siteURL         = "{{ .SiteURL }}"
 )
 
 // The three mails this block causes the provider to send. Confirmation and email-change are absent
@@ -74,9 +75,10 @@ var mails = []struct {
 	// sign in.
 	says string
 
-	// carries is the link this mail delivers, and the invitation's is not the others'. It leads
-	// into the app rather than through GoTrue's redirect, so the session never rides in a URL
-	// fragment — see the proposal «Приём приглашения: PKCE недостижим».
+	// carries is the link this mail delivers, and the invitation's is not the others'. It leads to
+	// a page on the dashboard rather than through GoTrue's redirect: the token rides in the
+	// fragment, which no browser sends to a server, and the page hands it to the app — see the
+	// proposal «Приём приглашения: PKCE недостижим».
 	carries string
 }{
 	{
@@ -85,7 +87,7 @@ var mails = []struct {
 		template: inviteTemplateVariable,
 		file:     "invite.html",
 		says:     "завела для вас личный кабинет",
-		carries:  "cadence://accept?token_hash=" + tokenHash,
+		carries:  siteURL + "/accept#token_hash=" + tokenHash,
 	},
 	{
 		name:     "the sign-in link",

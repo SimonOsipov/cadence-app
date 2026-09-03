@@ -6,6 +6,7 @@ import { AuthProvider, NOT_FOR_PATIENTS, NOT_IN_THE_CLINIC_YET, STAFF, useAuth, 
 import { endpoints } from './config'
 import { DataProvider, defaultClient } from './data/queries'
 import { AcceptInvitePage } from './features/auth/accept-invite-page'
+import { OpenInAppPage, type OpenInAppKind } from './features/auth/open-in-app-page'
 import { SignInPage } from './features/auth/sign-in-page'
 import { OverviewPage } from './features/overview/overview-page'
 import { tokens } from './tokens/tokens'
@@ -24,6 +25,10 @@ export function App() {
           <Routes>
             <Route path="/sign-in" element={<SignInRoute />} />
             <Route path="/accept-invite" element={<AcceptInviteRoute providerUrl={providerUrl} />} />
+            {/* Where a patient's mail lands. Not /accept-invite: that one is the dashboard's own
+                door and expects a session, while these two carry a token the app spends. */}
+            <Route path="/accept" element={<OpenInAppRoute kind="accept" />} />
+            <Route path="/recover" element={<OpenInAppRoute kind="recover" />} />
             <Route path="/" element={<DashboardRoute />} />
             {/* Anything else is the dashboard's door rather than a page saying nothing. */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -41,6 +46,12 @@ function SignInRoute() {
   if (auth.session !== null) return <Navigate to="/" replace />
 
   return <SignInPage onSignedIn={() => void navigate('/', { replace: true })} />
+}
+
+function OpenInAppRoute({ kind }: { kind: OpenInAppKind }) {
+  const { hash } = useLocation()
+
+  return <OpenInAppPage kind={kind} fragment={hash} />
 }
 
 function AcceptInviteRoute({ providerUrl }: { providerUrl: string }) {
