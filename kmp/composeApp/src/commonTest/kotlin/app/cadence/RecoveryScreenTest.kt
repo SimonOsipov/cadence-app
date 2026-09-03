@@ -12,6 +12,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.auth.Recovery
 import app.cadence.shared.auth.SessionState
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -89,6 +90,36 @@ class RecoveryScreenTest {
             onNodeWithText(RecoveryCopy.BACK).performClick()
 
             assertTrue(back, "the recovery screen is a dead end")
+        }
+
+    // The driver's own guard, asked directly: on screen the disabled button holds it, so removing
+    // the guard leaves every test above green while a second tap spends the per-address gap — and
+    // the patient is then told to wait a minute for a letter their own second tap delayed.
+    @Test
+    fun theDriverRefusesASecondAskWhileTheFirstIsInFlight() =
+        runComposeUiTest {
+            val answer = CompletableDeferred<Recovery>()
+            var asked = 0
+            var prompt: RecoveryPrompt? = null
+
+            setContent {
+                prompt =
+                    rememberRecovery {
+                        asked += 1
+                        answer.await()
+                    }
+            }
+
+            waitForIdle()
+            requireNotNull(prompt).onRecover(AN_ADDRESS)
+            waitForIdle()
+            requireNotNull(prompt).onRecover(AN_ADDRESS)
+            waitForIdle()
+
+            assertEquals(1, asked, "the driver asked twice while the first ask was in flight")
+
+            answer.complete(Recovery.Sent)
+            waitForIdle()
         }
 
     // The way in, from the one screen a patient who cannot sign in is looking at. Without it the
