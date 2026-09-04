@@ -480,6 +480,68 @@ if [ "$apple_links" -eq 0 ] || [ "$apple_handover" -eq 0 ]; then
     exit 1
 fi
 
+# The three screens this block designed from tokens, and not composeApp at large: the screens
+# ported from the prototype already carry FontWeight and Color.Transparent, so a blanket rule
+# would fail on work this step did not do.
+echo "==> the sign-in block draws from the theme and speaks Russian"
+block_dir=composeApp/src/commonMain/kotlin/app/cadence
+block_screens=(
+    "$block_dir/SignInScreen.kt" "$block_dir/SignInPrompt.kt"
+    "$block_dir/AcceptanceScreen.kt"
+    "$block_dir/RecoveryScreen.kt" "$block_dir/RecoveryPrompt.kt"
+)
+block_copy=(
+    "$block_dir/SignInCopy.kt" "$block_dir/AcceptanceCopy.kt"
+    "$block_dir/RecoveryCopy.kt" "$block_dir/PasswordWords.kt"
+)
+for f in "${block_screens[@]}" "${block_copy[@]}"; do
+    [ -f "$f" ] || {
+        echo "$f is not there — this check greps for nothing" >&2
+        exit 1
+    }
+done
+
+own_paint=$(grep -nE 'Color\(|Color\.|ui\.graphics\.Color|FontFamily|FontWeight|FontStyle|ui\.text\.font' \
+    "${block_screens[@]}" "${block_copy[@]}" || true)
+if [ -n "$own_paint" ]; then
+    echo "the sign-in block brought a colour or a face of its own rather than a CadenceTheme token:" >&2
+    echo "$own_paint" >&2
+    exit 1
+fi
+
+# Every literal in the copy objects is something a patient reads, so the rule is «all of them»:
+# a sentence added later is covered without this list being edited.
+#
+# «Not pure ASCII» rather than a Cyrillic range, and deliberately: a bracket range over multibyte
+# letters depends on the locale the runner happens to have, and a rule that quietly matches
+# nothing under LC_ALL=C is the shape of a guard that cannot fail. The cost is that a literal of
+# punctuation alone — «»— — would pass; there is none, and the count below is what notices if the
+# objects ever go empty.
+latin_copy=$(grep -ohE '"[^"]*"' "${block_copy[@]}" | grep -v '[^ -~]' || true)
+if [ -n "$latin_copy" ]; then
+    echo "the block's copy says something that is not Russian:" >&2
+    echo "$latin_copy" >&2
+    exit 1
+fi
+
+russian_copy=$(counted "the block's Russian copy" \
+    "$(grep -ohE '"[^"]*"' "${block_copy[@]}" | grep -c '[^ -~]' || true)")
+if [ "$russian_copy" -eq 0 ]; then
+    echo "the block's copy objects hold no Russian at all — the refusal above measured nothing" >&2
+    exit 1
+fi
+
+# No Compose test reaches this: they compose the seam overload themselves, and the reporter is
+# collected by the platform-facing root, which only the app builds. The paren keeps the import
+# from answering for the call.
+root=$block_dir/CadenceRoot.kt
+zone_reported=$(counted "the zone report in $root" \
+    "$(grep -cF 'reportZoneWhileSignedIn(' "$root" || true)")
+if [ "$zone_reported" -eq 0 ]; then
+    echo "$root never reports the device's zone — a patient who flew keeps the schedule they left" >&2
+    exit 1
+fi
+
 echo
 echo "kmp gate: green — :shared and :debugTools. composeApp's Compose UI tests did NOT run;"
 echo "                 they need ios.sh and a macOS host with Xcode."

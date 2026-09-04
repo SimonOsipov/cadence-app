@@ -526,6 +526,39 @@ Consolidating the block's paths into a suite that grows with every ported screen
 from here on. The rule on tokens and Russian strings. The KMP gate green.
 todoist: "6h9MFxMVRgXxWHXH"
 
+> [!deviation] 2026-09-04
+> Spec said: the zone is reported on sign-in and on launch. Actually done: one collector on the
+> session states, because both are the same transition into `SignedIn` and `asSessionStates()`
+> already de-duplicates it. Why: two mechanisms for one criterion is the divergence this project
+> has paid for before, and a `RefreshFailure` — which maps to `SignedIn` — would have re-reported
+> on every network blip under the naive reading.
+
+> [!deviation] 2026-09-04
+> Spec said: nothing about a refused report. Actually done: the failure is swallowed and the next
+> entry into a session asks again. Why: a zone the server will not take and a server that is not
+> there are both answered by asking later, and neither is anything to show a patient signing in.
+> The status of the call goes unread for the same reason.
+
+> [!deviation] 2026-09-04
+> Spec said: the rule on tokens and Russian strings. Actually done: the rule covers the three
+> screens this block designed, not `composeApp` at large. Why: measured — the screens ported from
+> the prototype already carry `FontWeight` and `Color.Transparent`, so a blanket rule would have
+> failed the gate on work this step did not do. Each of the five refusals was checked against an
+> input that must fail it; the first version passed a planted `Color` import and was widened.
+
+> [!deviation] 2026-09-04
+> Spec said: the KMP gate green. Actually done: plus a grep in `scripts/gate/kmp.sh` that the
+> composition root still reports the zone. Why: no Compose test reaches that call — the tests
+> compose `CadenceRoot`'s seam overload themselves, and the platform-facing root is built only by
+> the app. The same shape as the link guards already in that file.
+
+> [!deviation] 2026-09-04
+> Spec said: nothing about the transport. Actually done: `cadenceHttpClient` gained an
+> engine-less overload and the two share one configuration. Why: the app needs the platform's own
+> engine and the tests need a `MockEngine`; the generated client is handed the result, so the
+> transport stays the token's one owner — measured through the real `IdentityApi`, whose own
+> bearer helper writes no header while it is unset.
+
 ### step-7: The acceptance interstitial in the dashboard
 
 Scope added on 2026-09-01, by decision: a patient without the app installed taps
