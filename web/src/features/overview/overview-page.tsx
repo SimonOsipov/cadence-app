@@ -55,12 +55,25 @@ export function OverviewPage({
     <div style={{ display: 'flex', minHeight: '100vh', background: tokens.cream }}>
       <SideMenu current="overview" unread={aggregates.unread} />
 
-      <main style={{ flex: 1, minWidth: 0, padding: '34px 40px 60px', maxWidth: 1320 }}>
+      <main style={{ flex: 1, minWidth: 0, padding: '34px 40px 60px' }}>
         {/* The prototype opens with a date, a greeting, a search field and a «Новый пациент» button.
             Three of the four are here. Search is not: the roster is a page the server chose, and a
             field that filters the eight rows in front of you is a search that lies about what it
             searched. */}
-        <header style={{ marginBottom: 28, position: 'relative' }}>
+        {/* A row, not absolute placement. Pinned to the header's top-right, «Выйти» was pushed
+            aside by a hardcoded translateX(-150px) that did not match the other button's real
+            width — and when the form opened and «Новый пациент» went away, the offset went with it
+            while the pin did not, landing «Выйти» on top of the form. */}
+        <header
+          style={{
+            marginBottom: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
           <h1
             style={{
               fontFamily: tokens.fontDisplay,
@@ -78,35 +91,31 @@ export function OverviewPage({
               </>
             )}
           </h1>
-          <div style={{ position: 'absolute', top: 34, right: 40, display: 'flex', gap: 10 }}>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {onSignOut !== undefined && (
+              <button
+                type="button"
+                onClick={onSignOut}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  border: `1px solid ${tokens.ink300}`,
+                  background: 'transparent',
+                  font: 'inherit',
+                  color: tokens.ink600,
+                  cursor: 'pointer',
+                }}
+              >
+                Выйти
+              </button>
+            )}
             {me !== null && !creating && (
               <button type="button" onClick={() => setCreating(true)} style={newPatientButton}>
                 Новый пациент
               </button>
             )}
           </div>
-
-          {onSignOut !== undefined && (
-            <button
-              type="button"
-              onClick={onSignOut}
-              style={{
-                position: 'absolute',
-                top: 34,
-                right: 40,
-                transform: me !== null && !creating ? 'translateX(-150px)' : 'none',
-                padding: '8px 14px',
-                borderRadius: 8,
-                border: `1px solid ${tokens.ink300}`,
-                background: 'transparent',
-                font: 'inherit',
-                color: tokens.ink600,
-                cursor: 'pointer',
-              }}
-            >
-              Выйти
-            </button>
-          )}
         </header>
 
         {creating && me !== null && (
