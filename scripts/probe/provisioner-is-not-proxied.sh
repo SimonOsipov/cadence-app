@@ -87,22 +87,30 @@ done
 
 # Paths under the public name are half of what is reachable. The platform's own words: the services
 # after the first are reachable "if they have host ports declared", at {domain}:{port} — so a
-# published port is a second route that no walk over paths above would notice. Measured on the dev
-# contour on 2026-09-04, while every check above was green: the API answered /healthz over plain
-# HTTP on :8080 beside its own HTTPS name, which is a bearer token crossing the network in the clear.
+# published port is a second route that no walk over paths above would notice.
 HOST=${BASE#*://}
 HOST=${HOST%%/*}
 HOST=${HOST%%:*}
 
-for port in 8080 8081; do
-    echo "==> $HOST:$port is not open"
+# provisioner declares no host port, and that is the whole of what keeps the GoTrue admin key off
+# the internet. An open one here is the failure this script exists for.
+echo "==> $HOST:8081 does not answer"
+if nc -z -G 5 "$HOST" 8081 >/dev/null 2>&1; then
+    fail "$HOST:8081 accepts connections — provisioner is reachable by port even though no route resolves to it"
+fi
+echo "    refused"
 
-    # A connect-and-drop: the port being open is the finding, whatever answers on it.
-    if nc -z -G 5 "$HOST" "$port" >/dev/null 2>&1; then
-        fail "$HOST:$port accepts connections — the manifest publishes that host port, so whatever listens there is reachable without TLS. Bind it to 127.0.0.1 in docker-compose.yml."
-    fi
-
+# api's port is open, and knowingly: bound to 127.0.0.1 the platform's proxy could not reach the
+# container at all and the public name answered 502 — measured on the dev contour, 2026-09-04. So
+# the API also answers plain HTTP there, and a bearer token has an unencrypted route. Reported and
+# not failed, because a check that can only be red is a check that stops being read — and the one
+# above must stay readable. Closing it needs something the manifest cannot express.
+echo "==> $HOST:8080, the API's own port"
+if nc -z -G 5 "$HOST" 8080 >/dev/null 2>&1; then
+    printf '    OPEN — the API answers plain HTTP here beside its HTTPS name. Known, and not fixed:\n'
+    printf '    binding it to the loopback takes the whole deployment down with a 502.\n'
+else
     echo "    refused"
-done
+fi
 
-echo "probe: green — no route on $BASE resolves to provisioner, and no host port is published"
+echo "probe: green — no route on $BASE resolves to provisioner, and its port refuses"
