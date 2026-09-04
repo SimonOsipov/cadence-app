@@ -85,4 +85,24 @@ for path in /invite /users/lookup /users/lookup-batch /users/delete /users/passw
     echo "    $status, and no provisioner answer in the body"
 done
 
-echo "probe: green — no route on $BASE resolves to provisioner"
+# Paths under the public name are half of what is reachable. The platform's own words: the services
+# after the first are reachable "if they have host ports declared", at {domain}:{port} — so a
+# published port is a second route that no walk over paths above would notice. Measured on the dev
+# contour on 2026-09-04, while every check above was green: the API answered /healthz over plain
+# HTTP on :8080 beside its own HTTPS name, which is a bearer token crossing the network in the clear.
+HOST=${BASE#*://}
+HOST=${HOST%%/*}
+HOST=${HOST%%:*}
+
+for port in 8080 8081; do
+    echo "==> $HOST:$port is not open"
+
+    # A connect-and-drop: the port being open is the finding, whatever answers on it.
+    if nc -z -G 5 "$HOST" "$port" >/dev/null 2>&1; then
+        fail "$HOST:$port accepts connections — the manifest publishes that host port, so whatever listens there is reachable without TLS. Bind it to 127.0.0.1 in docker-compose.yml."
+    fi
+
+    echo "    refused"
+done
+
+echo "probe: green — no route on $BASE resolves to provisioner, and no host port is published"
