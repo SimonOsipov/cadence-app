@@ -298,6 +298,120 @@ Tests: a cold start from the link lands on the acceptance screen; acceptance fro
 a fresh link only completes with a password; a repeat of the same link is explained
 rather than failing with a generic refusal; `user_banned` and an unnamed refusal each
 say something other than «already used».
+
+> [!deviation] 2026-09-02
+> Spec said: the platform roots read the incoming link and hand its token to `invitationToken`.
+> Actually done: each root hands a `Flow<String?>` of links to `CadenceRoot` in `commonMain`,
+> and the reading happens there. Why: written twice, in two roots, it would be measured in
+> neither — `composeApp` has no Android host-test builder and the Swift host is in no Kotlin
+> suite. In `commonMain` the link → token → screen path is measured by `CadenceRootTest` on the
+> iOS target, and what is left unmeasured is the two roots' own three lines.
+
+> [!deviation] 2026-09-02
+> Spec said: nothing about the screen being recreated under the invitation. Actually done: the
+> exchange's answer and «the password is set» survive a recreation (`rememberSaveable`), and
+> `MainActivity` keeps the link across one rather than re-reading the intent.
+> Why: found while wiring the roots. Android recreates the activity for a font-scale or locale
+> change — neither is in `configChanges` — and a patient can sit on the password form for
+> minutes; re-running the exchange there answers `otp_expired` **over the very session that link
+> created**, so a live invitation reads as used up. Decided with the user on 2026-09-02.
+>
+> Measured while writing it: `StateRestorationTester.emulateSaveAndRestore` throws
+> `NotImplementedError` on the iOS simulator target against Compose 1.11.1 — it reaches
+> `platformEncodeDecode`, a `TODO()` on the skiko targets — and that target is where composeApp's
+> tests run and the only place they do. So the save/restore is driven through
+> `LocalSaveableStateRegistry` directly — everything saveable written out, the composition thrown
+> away, and a fresh one handed it back **in the same place**. Two `setContent` calls do not work:
+> `rememberSaveable` keys its state by position and two roots do not agree on one. Naming the keys
+> explicitly was tried first and reverted — the `key` parameter is deprecated in this version, and
+> the deprecation says positional scoping is the supported behaviour.
+
+> [!deviation] 2026-09-02
+> Spec said: nothing about guarding the reading. Actually done: `scripts/gate/kmp.sh` holds that
+> both roots declare it — `intent?.dataString`, `onNewIntent`, `launchMode="singleTop"`,
+> `onOpenURL`, and the Kotlin entry point the Swift host hands to, read out of the Kotlin source
+> rather than spelled twice. Why: the scheme registration was already guarded and the reading was
+> not, so an invitation could open the app and stop there with everything green. Textual and named
+> as such in the script — it holds that the calls are there, not that a token travels through
+> them; that half is a by-hand pass on both platforms. Decided with the user on 2026-09-02.
+
+> [!deviation] 2026-09-02
+> **Review found one major and five minors, and the major was a cold start nobody had walked.** A
+> task the mail client starts keeps the `VIEW` intent as its base intent, and restarting that task
+> from Recents hands it over again with `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY` — after a reboot,
+> with the saved state gone, a spent token arrives looking fresh. The answer is `otp_expired` over
+> a session that same link created, on a screen with no control on it: a patient signed in and
+> unable to reach the app. The launch link is now read only from an intent the patient acted on.
+>
+> Four more, each a hole the tests could not have shown:
+> - `onNewIntent` overwrote the link with whatever arrived, `null` included, and a `null` drops
+>   the acceptance screen out from under a patient who has spent their token and not set a
+>   password. It writes only when there is a link, and a link that is **not** an invitation no
+>   longer replaces the one being answered — step 5 puts a second `cadence://` destination on the
+>   same activity, and that is when this would have started firing for real.
+> - The exchange could still be asked twice: the guard was «an answer exists», so a recreation
+>   inside the round trip started it again. It is now «an ask was made», and a recreation there
+>   answers unreachable — the one refusal whose screen offers another try, which puts the guess
+>   with the patient rather than in that line.
+> - The recreation harness accepted every value, so **the saver it was written to measure was not
+>   measured**: dropped, all four tests stayed green. It now refuses what the saver converts.
+> - The gate guard did not hold `onSaveInstanceState`, which is the half the recreation tests
+>   depend on and cannot see, and its `launchMode` grep read commented-out XML — the same hole the
+>   intent-filter check above had already paid to close.
+>
+> The seam overload now takes the `Flow` as well, so the roots' `collectAsState` is measured
+> rather than sitting unmeasured in `commonMain` behind deviation 1's justification.
+>
+> One line came back out on the evidence of a surviving mutant: with «an ask was made» in place,
+> saving `Unreachable` is a branch nothing can measure, because the flag answers that recreation
+> first. It is not saved, and the mutation that used to be killed by a test is now killed by being
+> deleted.
+
+> [!deviation] 2026-09-02
+> **The second round found the recreation work inert on the platform it was written for, and the
+> whole suite was green over it.** The link arrives through a flow, so the frame a recreated screen
+> comes back on has none — and the token is the reset input of everything the invitation saves. The
+> restore landed on that frame and was then thrown away when the token arrived and the input
+> changed: the exchange ran a second time and answered `otp_expired` over the session that same
+> token had created. (The first account of this said the state was consumed under the wrong key.
+> That was wrong — `rememberSaveable`'s key is positional and the inputs are only what resets it —
+> and a third review round caught it.) Every test on the page passed because every one of them handed
+> `rememberInvitation` a token from the first frame, which is a sequence no platform produces.
+>
+> Measured before it was believed: a test that composes `CadenceRoot` with the link in a flow and
+> recreates the screen failed on the commit under review, alone among 528. The token is now
+> `rememberSaveable` itself, and that test is what holds it.
+>
+> **Named gap, left deliberately:** `busy` and `problem` are not saved, so a recreation while the
+> password write is in flight re-enables the form with the invitation not finished — a patient can
+> submit a second write, and the first one's answer is never observed. The write is idempotent in
+> effect and the window is one round trip, so it is recorded rather than closed.
+>
+> The round also found five comments that asserted things which were not true — among them a
+> justification falsified by a fix in its own commit, and two counts of tests that had already
+> moved. Counts are out of the comments; the claims are rewritten to what was measured.
+
+> [!deviation] 2026-09-02
+> **Scope beyond the step, approved by the user:** `ktlint_standard_no-unused-imports` is switched
+> on in `kmp/.editorconfig`, and the nineteen unused imports it then found — across twelve files,
+> none of which this step touched, and the only one this feature wrote at all is step 1's
+> `CadenceDebugTest.kt` — are deleted. Why: the rule implements
+> `OnlyWhenEnabledInEditorconfig`, so it did nothing until a config turned it on, and five imports
+> left behind by moving one class into its own file passed every gate on this branch. Two reviewers
+> named it in the same round.
+>
+> Armed before it was trusted: appended to the end of the file the property lands inside the
+> generated-client section, where ktlint is disabled entirely and it measures nothing. Moved into
+> `[*.{kt,kts}]` and proved by planting an unused import — red with the line, green without. The
+> count settled at nineteen and not the three first reported only after looping to a fixed point:
+> ktlint runs one task per source set and stops at the first that fails.
+>
+> **What that arming cost:** the unused import was planted in a file whose own edits were not yet
+> committed, and `git checkout --` on it took those edits with it. Two comment corrections were
+> lost and a commit body claimed them as done — the third commit body to do that, and the eleventh
+> occurrence of a rule this project has already written down. The fifth review round caught the
+> record and the tree disagreeing; both corrections are back, in the commit that says so.
+
 todoist: "6h9MFx2QHfxwMPmH"
 
 ### step-4: The sign-in screen and signing out
@@ -306,6 +420,73 @@ Address and password, a refusal that does not distinguish the cause, signing out
 to the sign-in screen. Tests: a successful sign-in; the refusal is identical for
 an unknown address and a wrong password; after signing out the protected area is
 unreachable.
+
+> [!deviation] 2026-09-02
+> Spec said: nothing about where the sign-out control lives. Actually done: on the Profile route's
+> placeholder, through the existing `action` slot. Why: it has to be somewhere a patient can reach,
+> the prototype puts it on the profile, and porting that screen belongs to another block. It moves
+> with the screen when the screen is ported — `CadenceShellActions.onSignOut` is what it hangs on,
+> so the move is one line.
+
+> [!deviation] 2026-09-02
+> Spec said: `AppTest.kt`'s two placeholder assertions get rewritten by step 1. Actually done:
+> step 1 kept a `SIGN_IN_MARKER` for the pre-sign-in area, and it is **this** step that owed it a
+> screen — so five assertions in `AppSessionTest` and one in `CadenceRootTest` moved off the marker
+> onto the address field. Deliberately onto a field and not the title: the title is the same string
+> the marker was, so an assertion on it would pass over a screen with nothing to type into.
+
+> [!deviation] 2026-09-02
+> Spec said: the refusal does not distinguish «no such address» from «wrong password». Actually
+> done: `SignIn.Refused` carries no reason at all, and the test compares the two answers **to each
+> other** rather than each to a constant — a refusal that later grows a code fails there. The
+> retryable statuses are told apart from it by the same rule the invitation uses, because the
+> mistake in that direction is the expensive one: «check your address and password» over a server
+> that is simply down sends a patient to change a password that was right.
+>
+> `signOut` also clears the stored session when the server cannot be reached. The patient has
+> decided, and the harm the button exists to prevent — a device handed on while still signed in —
+> is entirely local; what the server loses is the chance to revoke the refresh token now rather
+> than at its expiry.
+
+> [!deviation] 2026-09-02
+> **Review found the password drawn in clear text, on both screens.** `CadenceTextField` wrapped
+> `BasicTextField` with no `visualTransformation` and no `KeyboardOptions`, so the acceptance
+> screen from step 3 had the same gap since it was written. (The first version of this paragraph
+> said nothing in `kmp/` set either, and a later round found that false: `debugTools`'
+> `DebugScreen.Field` has masked visually since `1dce223`. It sets no keyboard type — the same
+> second half — on a field holding a real access token, and that is **left deliberately**: the
+> module is absent from both release builds, which the gate greps for, so the cost is a
+> developer's.) The
+> component gained a `masked` parameter carrying both halves, and both password fields set it. The
+> second half is the one a screenshot does not show: without `KeyboardType.Password` the platform
+> treats the field as ordinary text and learns what is typed into it.
+>
+> Measured rather than assumed, because the first assertion was one that could not fail: masking
+> puts `Password` into the semantics and replaces `EditableText` with bullets, while `InputText`
+> still carries the typed value for the accessibility and autofill channels. Asserting on the
+> wrong one of those two would have passed for either setting — and the first version of the test
+> passed against a field that drew nothing at all, because the state it held was not remembered.
+> A control test beside it now asserts the unmasked field does draw what was typed.
+>
+> Also from the same review: `busy` moved into a `finally` on both drivers. The reason recorded
+> first was wrong and a later round measured it: an ordinary throw past the client's catches does
+> not leave a dead button, because `rememberCoroutineScope`'s job is a plain child of the
+> recomposer's and takes the whole tree with it. What the `finally` is for is the
+> cancellation-shaped escape — the client rethrows `CancellationException`, that finishes the
+> coroutine without touching the composition, and the form would stay busy for ever. A test feeds
+> exactly that now. And the unreachable copy stopped saying «проверьте подключение»: that answer
+> also covers a rate limit, and telling a patient on a working network to reconnect and retry
+> immediately is how the rate-limit window gets extended. `AcceptanceCopy` carried the same
+> wording for the same condition and now carries the same sentence — the two screens are days
+> apart for one patient, and step 5 is a third that would have inherited whichever was nearest.
+>
+> **Two named gaps, deliberately left.** Signing out has no in-flight state — the button is always
+> live, a slow call gives no feedback, and a second tap launches a second coroutine; the call is
+> idempotent, unlike the token exchange the same guard protects on the acceptance screen. And the
+> control is reachable only through the Today screen's profile icon, which is drawn only when
+> Today has data: with the mocked read it always is, and when a live read replaces it a failed
+> first read would strand a signed-in patient with no way out. Both belong to the port of the
+> profile screen, and are written here so that port does not inherit them silently.
 todoist: "6h9MFx9f7hGGQHxq"
 
 ### step-5: Password recovery
@@ -313,6 +494,29 @@ todoist: "6h9MFx9f7hGGQHxq"
 `POST /recover` without confirming that an address exists, an explanation of the
 rate limit, returning via the link to set a new password. Test: a known and an
 unknown address produce the same response.
+> [!deviation] 2026-09-04
+> **The form was an existence oracle after all, and the spec asked for both halves.** Its criterion
+> is «a known and an unknown address produce the same response»; its technical section says recovery
+> «explains the rate limit when it fires». Those are incompatible: `GOTRUE_SMTP_MAX_FREQUENCY` is
+> enforced against `users.recovery_sent_at`, a row a stranger's address does not have, so a sentence
+> of its own for the gap is a sentence only a real patient can provoke — two asks and sixty seconds.
+> Decided with the user on 2026-09-04: the gap folds into «отправлено», which is true of it, and the
+> hint carries the minute and the spam folder because it now answers that ask too. The technical
+> section's clause is what gave way, and this callout is the record of it.
+>
+> **Behaviour changed, deliberately: the link tapped last is the one answered.** Two slots for two
+> links meant the driver of the one not on screen still spent its single-use token — silently, with
+> nothing ever drawn for it — and after the invitation finished the patient was dropped onto the
+> recovery landing for a link followed minutes earlier. One slot now. The consequence is that a
+> recovery link arriving mid-acceptance takes the screen; it ends in the same place, a password, and
+> the token it displaces was already spent.
+>
+> `PasswordWords` grew from two sentences to five: a patient who tapped «Восстановить доступ» was
+> told «Проверяем приглашение» for the whole round trip, and an unnamed refusal said «Не удалось
+> принять приглашение». And after «письмо уже в пути» the form never came back, so a mistyped
+> address — the one case answered «sent» by design — was the one case a patient could not correct.
+> The address is trimmed for the same reason: a trailing space is a 422, and a 422 is «sent».
+
 todoist: "6h9MFxGpCR5xmVJq"
 
 ### step-6: Timezone and the Compose UI test suite
@@ -343,6 +547,57 @@ becomes unnecessary rather than broken.
 
 Tests: the page hands the fragment's token to the scheme and never puts it in a
 request; with no app answering, what is shown is Russian and names the next step.
+> [!deviation] 2026-09-03
+> **Done before step 5, by decision.** The recovery mail needs the same landing — a patient
+> recovering a password on a new phone taps `cadence://` and sees nothing, exactly as an invited one
+> does — so the page comes first and both mails will go through it. The page takes the kind as a
+> parameter and `/recover` is served already; the recovery template moves in step 5, where the app
+> gains the host that answers it. Shipping that template now would point a live mail at a scheme
+> nothing answers.
+
+> [!deviation] 2026-09-03
+> Spec said: the page carries the token in the fragment and hands it to `cadence://accept`.
+> Actually done: that, and `GOTRUE_SITE_URL` changed from `http://localhost:5173/accept-invite` to
+> the bare origin. The template builds its own path on `{{ .SiteURL }}`, and a SITE_URL carrying a
+> path would have put `/accept-invite` inside every link built on it. Why it matters beyond
+> tidiness, and carried in the compose file: a link asking for no redirect of its own now falls
+> back to the dashboard's door rather than to the staff acceptance route.
+
+> [!deviation] 2026-09-03
+> **Named gap, found here and deliberately not fixed** (decided with the user on 2026-09-03): the
+> invitation template is one file for two audiences. A staff invitation and a patient invitation
+> get the same mail, and it is the patient's — `web/src/features/auth/accept-invite-page.tsx`
+> expects a session from `ConfirmationURL`, which this template does not render, so that page is
+> unreachable from any mail GoTrue sends today. Separating them wants either a second template or a
+> `redirect_to` from the API, neither of which is this step. With SITE_URL now an origin, the staff
+> invitation owes itself that `redirect_to` rather than inheriting a landing route.
+
+> [!deviation] 2026-09-03
+> The guard was re-aimed rather than deleted, and it grew: the template no longer names the scheme
+> at all, so the chain has a link in the middle. Three checks now — the page hands the token to the
+> address `ACCEPT_LINK` declares, `app.tsx` serves the route the scheme's host names, and the
+> template sends patients to it. Two of the three files are outside `kmp/`, and that gate is the
+> only one that sees the whole line. Eight mutations, all killed.
+>
+> **Not measured:** `TestTheInvitationCarriesATokenTheAppCanSpend` is what proves the delivered
+> mail carries a token the app can spend, and it sits behind the `integration` tag, which
+> `scripts/gate/go.sh` does not run. It compiles under the tag; what it asserts about the mail is
+> unverified since the link shape changed, because Docker was not up on this machine.
+
+> [!deviation] 2026-09-04
+> Review found the path and the scheme paired by hand in a place two greps could not see swapped —
+> swapped, every invitation goes to `cadence://recover`, which `/verify` refuses, and the patient is
+> told a live link was already used. They are one exported table now, and a test holds each path
+> against the host its own scheme names.
+>
+> Three more the gates could not see: the interstitial's shipped defaults had never run (every test
+> injected the timer and the visibility check, so the fallback could have flashed under every patient
+> who does have the app); nothing asserted `GOTRUE_SITE_URL` is an origin, which is the load-bearing
+> half of this step; and the integration test matched the delivered link by its tail, so a path put
+> back on that variable would still have matched. The magic link, which this step's `SITE_URL` move
+> left landing on the dashboard's door, is caught by the same fragment check as the other two —
+> recorded here rather than elsewhere, because this step is what moved it.
+
 todoist: "6hQ6JjFQG7rrF9vq"
 
 ## Open questions

@@ -1,6 +1,7 @@
 package app.cadence.shared.net
 
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
@@ -53,22 +54,26 @@ interface SessionTokens {
 fun cadenceHttpClient(
     engine: HttpClientEngine,
     tokens: SessionTokens,
-): HttpClient =
-    HttpClient(engine) {
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    explicitNulls = false
-                },
-            )
-        }
-        install(Auth) {
-            bearer {
-                loadTokens { tokens.current()?.asBearer() }
-                refreshTokens { tokens.refreshed()?.asBearer() }
-            }
+): HttpClient = HttpClient(engine) { cadence(tokens) }
+
+/** The same client on whichever engine the platform ships — what the app builds; tests pass one. */
+fun cadenceHttpClient(tokens: SessionTokens): HttpClient = HttpClient { cadence(tokens) }
+
+private fun HttpClientConfig<*>.cadence(tokens: SessionTokens) {
+    install(ContentNegotiation) {
+        json(
+            Json {
+                ignoreUnknownKeys = true
+                explicitNulls = false
+            },
+        )
+    }
+    install(Auth) {
+        bearer {
+            loadTokens { tokens.current()?.asBearer() }
+            refreshTokens { tokens.refreshed()?.asBearer() }
         }
     }
+}
 
 private fun Session.asBearer() = BearerTokens(accessToken = access, refreshToken = refresh)

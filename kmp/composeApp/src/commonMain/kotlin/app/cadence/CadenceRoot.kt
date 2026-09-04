@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import app.cadence.shared.api.apis.IdentityApi
 import app.cadence.shared.auth.Acceptance
 import app.cadence.shared.auth.PasswordSet
 import app.cadence.shared.auth.Recovery
@@ -23,9 +24,14 @@ import app.cadence.shared.auth.invitationToken
 import app.cadence.shared.auth.recover
 import app.cadence.shared.auth.recoveryToken
 import app.cadence.shared.auth.sessionStates
+import app.cadence.shared.auth.sessionTokens
 import app.cadence.shared.auth.signIn
 import app.cadence.shared.auth.signOut
+import app.cadence.shared.net.API_BASE
 import app.cadence.shared.net.AUTH_BASE
+import app.cadence.shared.net.cadenceHttpClient
+import app.cadence.shared.session.reportZoneWhileSignedIn
+import app.cadence.shared.session.zoneReporter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
@@ -37,6 +43,14 @@ fun CadenceRoot(
 ) {
     val client = remember { cadenceAuthFor(AUTH_BASE) }
     val sessions = remember(client) { client.sessionStates() }
+    // Held for as long as the root is, which is the process — the same life and the same reason as
+    // the auth client this takes its session from.
+    val zone =
+        remember(client) {
+            IdentityApi(baseUrl = API_BASE, httpClient = cadenceHttpClient(client.sessionTokens())).zoneReporter()
+        }
+
+    LaunchedEffect(sessions, zone) { reportZoneWhileSignedIn(sessions, report = zone) }
 
     CadenceRoot(
         session = sessions.collectAsSessionState(),
