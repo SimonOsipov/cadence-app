@@ -17,14 +17,14 @@ services:
       context: .
       dockerfile: Dockerfile
     command: ["/app/api"]
-    # Bound to the loopback rather than to every interface, and 8080 rather than 80 because the
-    # platform reserves 80 and 443. Published on all interfaces the API answered plain HTTP on
-    # {domain}:8080 beside its own HTTPS name — measured on the dev contour, 2026-09-04 — so a
-    # doctor's bearer token had a route that crossed the network in the clear. The platform's own
-    # proxy reaches the container from the same host, which is what makes the narrower binding
-    # enough; scripts/probe/provisioner-is-not-proxied.sh checks the port after every deploy.
+    # Published on every interface, and not by preference: bound to 127.0.0.1 the platform's proxy
+    # could not reach the container at all and the public name answered 502 — measured on the dev
+    # contour, 2026-09-04. The cost is that the API also answers plain HTTP on {domain}:8080, so a
+    # bearer token has a route that crosses the network unencrypted. Closing it needs something the
+    # manifest cannot express; until then scripts/probe/provisioner-is-not-proxied.sh reports the
+    # open port rather than pretending it is shut. 8080 and not 80: the platform reserves 80 and 443.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     environment:
       DATABASE_URL: ${DATABASE_URL}
       DATABASE_SERVICE_URL: ${DATABASE_SERVICE_URL}
