@@ -33,14 +33,13 @@ private const val A_PASSWORD = "a-long-enough-password"
 
 private const val AN_ADDRESS = "patient@clinic.example"
 
-// A second address, so the sign-in leg cannot pass on text the recovery screen left behind:
-// performTextInput appends, and one address for both legs would read the same either way.
+// The sign-in leg types an address of its own, which separates «the form carried what was typed
+// into it» from «the form carried what recovery was given». One address passes both.
 private const val THE_ADDRESS_TYPED_AFTERWARDS = "patient.again@clinic.example"
 
 /**
- * The two longest sequences in the suite, and the only thing here that is new is the length: the
- * per-screen files already cross single boundaries — `RecoveryScreenTest` enters at the sign-in
- * form and walks to recovery and back, `SignOutTest` walks out of the signed-in area.
+ * The two longest sequences in the suite; the per-screen files already cross single boundaries, so
+ * length is the only thing new here.
  *
  * Measured rather than assumed: dropping `recovering = false` from `App`'s recovery `onBack` fails
  * `recoveryLeadsBackToTheSignInForm` and `comingBackToTheFormOffersTheFieldAgain` as well as the

@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -126,9 +127,8 @@ class CadenceHttpClientTest {
         assertTrue("refresh-token" !in printed, "the refresh token was printed: $printed")
     }
 
-    // The overload the app builds, which every other test here passes over: they all hand in an
-    // engine. Dropped to a bare `HttpClient()` the whole file stays green, and in production every
-    // request would go out with no Authorization header at all.
+    // The overload the app builds; every other test here hands in an engine. Dropped to a bare
+    // `HttpClient()`, production would send every request with no Authorization header at all.
     @Test
     fun theClientTheAppBuildsCarriesTheSameConfiguration() {
         val built = cadenceHttpClientFor(AN_ADDRESS, CountingSession())
@@ -137,13 +137,22 @@ class CadenceHttpClientTest {
         assertNotNull(built.pluginOrNull(ContentNegotiation), "the app's client has no JSON negotiation")
     }
 
-    // One address, one transport. A second would own a second engine that nothing closes, and two
-    // owners of one refresh token under rotation is a session revoked by the app itself.
+    // One address, one transport — see `theTransport`.
     @Test
     fun theTransportForOneAddressIsBuiltOnce() {
         assertSame(
             cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
             cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
+        )
+    }
+
+    // The url is the key and not decoration: collapsed to one field, the map hands the first
+    // caller's transport — with the first caller's session — to an address that is not theirs.
+    @Test
+    fun aSecondAddressGetsATransportOfItsOwn() {
+        assertNotSame(
+            cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
+            cadenceHttpClientFor("https://auth.cadence.example", CountingSession()),
         )
     }
 }

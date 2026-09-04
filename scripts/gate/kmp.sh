@@ -480,14 +480,16 @@ if [ "$apple_links" -eq 0 ] || [ "$apple_handover" -eq 0 ]; then
     exit 1
 fi
 
-# Kotlin source with its comments cut out, for the greps below. Checked against these files: none
-# of them carries `//` inside a string literal, so cutting from it is safe here and nowhere by
-# default. KDoc bodies go with the `*` line.
+# Kotlin source with its `//` comments cut and KDoc bodies dropped, for the greps below. Weaker than
+# `uncommented()` above, which cuts XML spans within a line as well: a one-line KDoc and a `/* */`
+# opening on its own line both survive this, so a call parked inside one would still be counted.
+# Checked against the eleven files it is applied to below — none carries `//` inside a string
+# literal, which is the other thing that would make cutting from it wrong.
 kotlin_code() {
     sed -e 's|//.*||' "$@" | grep -v '^[[:space:]]*\*'
 }
 
-# The product's name, and the one thing in the block a patient reads that is not Russian.
+# Not Russian, and the one thing in the block a patient reads that is not.
 THE_BRAND=Cadence
 
 # The three screens this block designed from tokens, and not composeApp at large: the screens
@@ -512,8 +514,8 @@ for f in "${block_screens[@]}" "${block_copy[@]}"; do
     }
 done
 
-own_paint=$(grep -nE 'Color\(|Color\.|ui\.graphics\.Color|FontFamily|FontWeight|FontStyle|ui\.text\.font' \
-    "${block_screens[@]}" "${block_copy[@]}" || true)
+own_paint=$(kotlin_code "${block_screens[@]}" "${block_copy[@]}" |
+    grep -nE 'Color\(|Color\.|ui\.graphics\.Color|FontFamily|FontWeight|FontStyle|ui\.text\.font' || true)
 if [ -n "$own_paint" ]; then
     echo "the sign-in block brought a colour or a face of its own rather than a CadenceTheme token:" >&2
     echo "$own_paint" >&2
@@ -545,16 +547,23 @@ if [ "$russian_copy" -eq 0 ]; then
     exit 1
 fi
 
-# No Compose test reaches this: they compose the seam overload themselves, and the reporter is
-# collected by the platform-facing root, which only the app builds. So this grep is the whole of
-# what stands behind the call, and it is read through `kotlin_code` — measured, the first version
-# passed the call commented out, which is the defect the manifest check above already pays for in
-# XML. The paren keeps the import from answering for the call.
+# No Compose test reaches the platform-facing root, so these two greps are the whole of what stands
+# behind it. The parens keep the imports from answering for the calls.
 root=$block_dir/CadenceRoot.kt
 zone_reported=$(counted "the zone report in $root" \
     "$(kotlin_code "$root" | grep -cF 'reportZoneWhileSignedIn(' || true)")
 if [ "$zone_reported" -eq 0 ]; then
     echo "$root never reports the device's zone — a patient who flew keeps the schedule they left" >&2
+    exit 1
+fi
+
+# The shared transport and not one per composition: built without an engine the client owns the
+# engine it makes and nothing closes it, so the plain constructor here leaks a pool on every
+# activity recreation.
+shared_transport=$(counted "the shared transport in $root" \
+    "$(kotlin_code "$root" | grep -cF 'cadenceHttpClientFor(' || true)")
+if [ "$shared_transport" -eq 0 ]; then
+    echo "$root builds its own API transport — an engine leaks on every activity recreation" >&2
     exit 1
 fi
 

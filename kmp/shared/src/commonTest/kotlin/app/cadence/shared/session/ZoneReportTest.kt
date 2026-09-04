@@ -4,7 +4,6 @@ import app.cadence.shared.auth.SessionState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
-import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -53,8 +52,7 @@ class ZoneReportTest {
             assertTrue(reported.isEmpty(), "reported $reported without a session")
         }
 
-    // The criterion's own sentence — «a timezone changed between launches gets through». It has no
-    // mutation of its own: each launch is a fresh call that reads the zone once either way.
+    // No mutation of its own: each launch is a fresh call that reads the zone once either way.
     @Test
     fun aZoneChangedBetweenLaunchesGetsThrough() =
         runTest {
@@ -86,8 +84,6 @@ class ZoneReportTest {
             assertEquals(listOf("Europe/Moscow", "Asia/Tbilisi"), reported)
         }
 
-    // A refusal raised by [zoneReporter] and a server that is not there arrive here alike, and
-    // neither ends the collection: the next entry into a session reports again.
     @Test
     fun aRefusedReportDoesNotStopTheNextOne() =
         runTest {
@@ -105,9 +101,8 @@ class ZoneReportTest {
             assertEquals(listOf("Europe/Moscow"), reported)
         }
 
-    // The one exception the swallow must not take. `kotlinx.coroutines.CancellationException` is an
-    // `IllegalStateException`, so deleting the rethrow leaves it caught by the clause below and the
-    // collector outliving its scope — which nothing else here would notice.
+    // The clause below the rethrow catches `Exception`, so deleting the rethrow swallows a
+    // cancellation and the collector outlives the scope that cancelled it.
     @Test
     fun cancellationIsNotSwallowedWithTheRest() =
         runTest {
@@ -117,11 +112,4 @@ class ZoneReportTest {
                 }
             }
         }
-
-    // The default every other test passes over and the app passes nothing else: an offset id like
-    // «+03:00» or an abbreviation is not in `pg_timezone_names`, and the server refuses it.
-    @Test
-    fun theDeviceZoneIsANameTheServerCouldKnow() {
-        assertTrue(deviceZone() in TimeZone.availableZoneIds, "deviceZone() answered ${deviceZone()}")
-    }
 }

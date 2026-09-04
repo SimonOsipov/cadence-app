@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 private const val ACCESS = "the-transport's-access-token"
 
@@ -28,9 +29,10 @@ private object OneSession : SessionTokens {
 }
 
 class ZoneReportTransportTest {
-    // The host is pinned because `API_BASE` is handed in as an argument: without it the test only
-    // restates what it just passed, and sending the zone to the identity server instead would read
-    // the same. The bearer helper `ApiClient` builds stays unset, so the header is the transport's.
+    // The address is pinned host **and port**, because `API_BASE` is handed in as an argument and
+    // the two bases differ only by port — measured: with the host alone, `baseUrl = AUTH_BASE` sent
+    // the zone to the identity server and every assertion here stayed green. The bearer helper
+    // `ApiClient` builds stays unset, so the header is the transport's.
     @Test
     fun theZoneGoesToTheEndpointUnderTheTransportsToken() =
         runTest {
@@ -47,22 +49,28 @@ class ZoneReportTransportTest {
             val request = checkNotNull(seen) { "the reporter sent nothing" }
             assertEquals(HttpMethod.Post, request.method)
             assertEquals(Url(API_BASE).host, request.url.host)
+            assertEquals(Url(API_BASE).port, request.url.port)
             assertEquals("/v1/me/session", request.url.encodedPath)
             assertEquals("""{"timezone":"Asia/Tbilisi"}""", (request.body as TextContent).text)
             assertEquals("Bearer $ACCESS", request.headers[HttpHeaders.Authorization])
         }
 
-    // A refusal answers as normally as a 200 — `expectSuccess` is not set and the generated `wrap()`
-    // never reads the status — so without the reporter's own check the whole refusal class is
-    // invisible. This is the test that fails against dropping it.
+    // A refusal answers as normally as a 200 — `expectSuccess` is unset and `wrap()` never fails on
+    // the status — so without the reporter's own check the whole refusal class is invisible.
+    //
+    // The status is asserted, not just the type: `check` and the collector's cancellation both
+    // arrive as `IllegalStateException`, and so does a plugin precondition or a decode failure.
     @Test
     fun aRefusedZoneIsRaisedRatherThanReturned() =
         runTest {
             val engine = MockEngine { respond("", HttpStatusCode.BadRequest) }
 
-            assertFailsWith<IllegalStateException> {
-                IdentityApi(baseUrl = API_BASE, httpClient = cadenceHttpClient(engine, OneSession))
-                    .zoneReporter()("Mars/Olympus")
-            }
+            val raised =
+                assertFailsWith<IllegalStateException> {
+                    IdentityApi(baseUrl = API_BASE, httpClient = cadenceHttpClient(engine, OneSession))
+                        .zoneReporter()("Mars/Olympus")
+                }
+
+            assertTrue("400" in raised.message.orEmpty(), "raised without the status: ${raised.message}")
         }
 }

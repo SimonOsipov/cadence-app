@@ -555,18 +555,32 @@ todoist: "6h9MFxMVRgXxWHXH"
 > engine it makes and nothing closes it, so holding it in the composition leaked a connection pool
 > on every Android activity recreation — a font-scale, density or locale change, none of which are
 > in `configChanges`, as step 2's deviation already measured. The first version claimed the
-> composition was the process; it is not.
+> composition was the process; it is not. Nor is the transport one per process — `:debugTools`
+> builds its own against the same address, the exception `theClient` already names — and the fix
+> has a grep of its own in the gate, because reverting one line restores the leak with every test
+> green.
+
+> [!deviation] 2026-09-04
+> **Second named gap.** `deviceZone()` can itself produce an id the server will never take: a device
+> set to a bare offset answers `GMT+03:00`, which is no zone name, and nothing normalizes it before
+> it is sent. Distinct from the 400 gap above — that one is «there is nowhere to put the refusal»,
+> this one is «the client made an id the refusal is certain for». Found by review measuring the
+> first pin, which asserted only that the answer was *some* name the server knows and so passed an
+> app that always reported UTC; the pin is now on an Android host where the device zone can be
+> substituted, and asserts the answer follows it.
 
 > [!deviation] 2026-09-04
 > Spec said: the rule on tokens and Russian strings. Actually done: the rule covers the three
 > screens this block designed, not `composeApp` at large. Why: measured — the screens ported from
 > the prototype already carry `FontWeight` and `Color.Transparent`, so a blanket rule would have
 > failed the gate on work this step did not do. Each refusal was checked against an input that must
-> fail it, and two survived their first version: a planted `Color` import, and — found by review —
-> the whole zone check with the call commented out. Both are now read through a comment stripper,
-> the same fix the manifest check in that file already carries for XML. The copy rule covers the
-> screens as well as the copy objects, because «the copy lives in the objects» was itself only a
-> convention; the brand is its one named exception.
+> fail it, and two survived their first version: a planted `Color` **import**, killed by widening
+> the pattern, and — found by review — the whole zone check with the call **commented out**, killed
+> by reading through a comment stripper. All three greps go through that stripper now, and it is
+> weaker than the XML one beside it: a one-line KDoc and a `/* */` block survive it, which is
+> written where it stands. The copy rule covers the screens as well as the copy objects, because
+> «the copy lives in the objects» was itself only a convention; the brand is its one named
+> exception.
 
 > [!deviation] 2026-09-04
 > Spec said: the KMP gate green. Actually done: plus a grep in `scripts/gate/kmp.sh` that the
