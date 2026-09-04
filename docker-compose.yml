@@ -6,6 +6,11 @@
 # the internet only by declaring a host port — `provisioner` declares none, and
 # that, rather than the ordering, is what keeps the holder of the GoTrue admin
 # key unreachable. `volumes` is forbidden, so nothing here holds state.
+#
+# The chain is applied by hand, before a deploy, and deliberately: a deployment
+# that migrates itself is a deployment that can rewrite a database of medical
+# records without anybody deciding to. It also keeps DATABASE_MIGRATION_URL —
+# the owner role's credentials — out of the deployment altogether.
 services:
   api:
     build:
@@ -32,9 +37,6 @@ services:
       STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE}
       STORAGE_BUCKET_VIALS: ${STORAGE_BUCKET_VIALS}
       STORAGE_BUCKET_INJECTIONS: ${STORAGE_BUCKET_INJECTIONS}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   # No `ports`, deliberately — see the header. Proven after a deploy by
@@ -51,15 +53,3 @@ services:
       PROVISIONER_GOTRUE_URL: ${AUTH_JWT_ISSUER}
       PROVISIONER_GOTRUE_ADMIN_JWK: ${PROVISIONER_GOTRUE_ADMIN_JWK}
     restart: unless-stopped
-
-  # Its own service rather than an entrypoint step, so that the owner role's
-  # credentials live in the one container that needs them and never on the
-  # request path.
-  migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: ["/app/migrate", "up"]
-    environment:
-      DATABASE_MIGRATION_URL: ${DATABASE_MIGRATION_URL}
-    restart: "no"
