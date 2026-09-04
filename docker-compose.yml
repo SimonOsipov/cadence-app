@@ -1,0 +1,65 @@
+# The deployment manifest for Timeweb App Platform. The development stack is
+# api/docker-compose.yml; this one assumes Postgres, GoTrue and S3 already exist.
+#
+# Two documented properties of the platform shape it. Only the first service is
+# proxied onto the application's domain, so `api` is first. And a service reaches
+# the internet only by declaring a host port — `provisioner` declares none, and
+# that, rather than the ordering, is what keeps the holder of the GoTrue admin
+# key unreachable. `volumes` is forbidden, so nothing here holds state.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/app/api"]
+    # Not 80: the platform reserves 80 and 443 and refuses a manifest claiming either.
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_SERVICE_URL: ${DATABASE_SERVICE_URL}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER}
+      AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE}
+      AUTH_JWT_SESSION_KIDS: ${AUTH_JWT_SESSION_KIDS}
+      AUTH_JWT_ADMIN_KID: ${AUTH_JWT_ADMIN_KID}
+      PROVISIONER_URL: http://provisioner:8081
+      PROVISIONER_SHARED_SECRET: ${PROVISIONER_SHARED_SECRET}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT}
+      STORAGE_REGION: ${STORAGE_REGION}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY}
+      STORAGE_PATH_STYLE: ${STORAGE_PATH_STYLE}
+      STORAGE_BUCKET_VIALS: ${STORAGE_BUCKET_VIALS}
+      STORAGE_BUCKET_INJECTIONS: ${STORAGE_BUCKET_INJECTIONS}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # No `ports`, deliberately — see the header. Proven after a deploy by
+  # scripts/probe/provisioner-is-not-proxied.sh.
+  provisioner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/app/provisioner"]
+    environment:
+      PROVISIONER_PORT: "8081"
+      PROVISIONER_SHARED_SECRET: ${PROVISIONER_SHARED_SECRET}
+      PROVISIONER_ENVIRONMENT: ${PROVISIONER_ENVIRONMENT}
+      PROVISIONER_GOTRUE_URL: ${AUTH_JWT_ISSUER}
+      PROVISIONER_GOTRUE_ADMIN_JWK: ${PROVISIONER_GOTRUE_ADMIN_JWK}
+    restart: unless-stopped
+
+  # Its own service rather than an entrypoint step, so that the owner role's
+  # credentials live in the one container that needs them and never on the
+  # request path.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["/app/migrate", "up"]
+    environment:
+      DATABASE_MIGRATION_URL: ${DATABASE_MIGRATION_URL}
+    restart: "no"
