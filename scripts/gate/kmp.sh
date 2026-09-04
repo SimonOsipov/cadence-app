@@ -480,6 +480,16 @@ if [ "$apple_links" -eq 0 ] || [ "$apple_handover" -eq 0 ]; then
     exit 1
 fi
 
+# Kotlin source with its comments cut out, for the greps below. Checked against these files: none
+# of them carries `//` inside a string literal, so cutting from it is safe here and nowhere by
+# default. KDoc bodies go with the `*` line.
+kotlin_code() {
+    sed -e 's|//.*||' "$@" | grep -v '^[[:space:]]*\*'
+}
+
+# The product's name, and the one thing in the block a patient reads that is not Russian.
+THE_BRAND=Cadence
+
 # The three screens this block designed from tokens, and not composeApp at large: the screens
 # ported from the prototype already carry FontWeight and Color.Transparent, so a blanket rule
 # would fail on work this step did not do.
@@ -489,10 +499,11 @@ block_screens=(
     "$block_dir/SignInScreen.kt" "$block_dir/SignInPrompt.kt"
     "$block_dir/AcceptanceScreen.kt"
     "$block_dir/RecoveryScreen.kt" "$block_dir/RecoveryPrompt.kt"
+    "$block_dir/CadenceSplash.kt" "$block_dir/PasswordWords.kt"
 )
 block_copy=(
     "$block_dir/SignInCopy.kt" "$block_dir/AcceptanceCopy.kt"
-    "$block_dir/RecoveryCopy.kt" "$block_dir/PasswordWords.kt"
+    "$block_dir/RecoveryCopy.kt"
 )
 for f in "${block_screens[@]}" "${block_copy[@]}"; do
     [ -f "$f" ] || {
@@ -509,15 +520,18 @@ if [ -n "$own_paint" ]; then
     exit 1
 fi
 
-# Every literal in the copy objects is something a patient reads, so the rule is «all of them»:
-# a sentence added later is covered without this list being edited.
+# The screens as well as the copy objects, because «the copy lives in the objects» was itself only
+# a convention: a literal written straight into a screen went past the first version of this rule.
+# Empty literals are excluded by `+` — `mutableStateOf("")` is a field's initial state, not copy —
+# and the comments are cut first, or a Go status name quoted inside one would answer for a screen.
 #
-# «Not pure ASCII» rather than a Cyrillic range, and deliberately: a bracket range over multibyte
-# letters depends on the locale the runner happens to have, and a rule that quietly matches
-# nothing under LC_ALL=C is the shape of a guard that cannot fail. The cost is that a literal of
-# punctuation alone — «»— — would pass; there is none, and the count below is what notices if the
-# objects ever go empty.
-latin_copy=$(grep -ohE '"[^"]*"' "${block_copy[@]}" | grep -v '[^ -~]' || true)
+# «Not pure ASCII» rather than a Cyrillic range, and measured rather than reasoned: under LC_ALL=C
+# a multibyte bracket range degrades to a byte range and *over*-matches — `[а-яА-Я]` matched a line
+# of «»— alone on BSD grep 2.6.0, while `[^ -~]` answered identically in C and in UTF-8. The cost
+# is that a literal of punctuation alone would pass; there is none, and the count below is what
+# notices if the objects ever go empty.
+latin_copy=$(kotlin_code "${block_copy[@]}" "${block_screens[@]}" |
+    grep -ohE '"[^"]+"' | grep -v '[^ -~]' | grep -vxF "\"$THE_BRAND\"" || true)
 if [ -n "$latin_copy" ]; then
     echo "the block's copy says something that is not Russian:" >&2
     echo "$latin_copy" >&2
@@ -525,18 +539,20 @@ if [ -n "$latin_copy" ]; then
 fi
 
 russian_copy=$(counted "the block's Russian copy" \
-    "$(grep -ohE '"[^"]*"' "${block_copy[@]}" | grep -c '[^ -~]' || true)")
+    "$(kotlin_code "${block_copy[@]}" | grep -ohE '"[^"]+"' | grep -c '[^ -~]' || true)")
 if [ "$russian_copy" -eq 0 ]; then
     echo "the block's copy objects hold no Russian at all — the refusal above measured nothing" >&2
     exit 1
 fi
 
 # No Compose test reaches this: they compose the seam overload themselves, and the reporter is
-# collected by the platform-facing root, which only the app builds. The paren keeps the import
-# from answering for the call.
+# collected by the platform-facing root, which only the app builds. So this grep is the whole of
+# what stands behind the call, and it is read through `kotlin_code` — measured, the first version
+# passed the call commented out, which is the defect the manifest check above already pays for in
+# XML. The paren keeps the import from answering for the call.
 root=$block_dir/CadenceRoot.kt
 zone_reported=$(counted "the zone report in $root" \
-    "$(grep -cF 'reportZoneWhileSignedIn(' "$root" || true)")
+    "$(kotlin_code "$root" | grep -cF 'reportZoneWhileSignedIn(' || true)")
 if [ "$zone_reported" -eq 0 ]; then
     echo "$root never reports the device's zone — a patient who flew keeps the schedule they left" >&2
     exit 1

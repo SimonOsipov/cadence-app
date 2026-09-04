@@ -29,7 +29,7 @@ import app.cadence.shared.auth.signIn
 import app.cadence.shared.auth.signOut
 import app.cadence.shared.net.API_BASE
 import app.cadence.shared.net.AUTH_BASE
-import app.cadence.shared.net.cadenceHttpClient
+import app.cadence.shared.net.cadenceHttpClientFor
 import app.cadence.shared.session.reportZoneWhileSignedIn
 import app.cadence.shared.session.zoneReporter
 import kotlinx.coroutines.flow.Flow
@@ -43,11 +43,12 @@ fun CadenceRoot(
 ) {
     val client = remember { cadenceAuthFor(AUTH_BASE) }
     val sessions = remember(client) { client.sessionStates() }
-    // Held for as long as the root is, which is the process — the same life and the same reason as
-    // the auth client this takes its session from.
     val zone =
         remember(client) {
-            IdentityApi(baseUrl = API_BASE, httpClient = cadenceHttpClient(client.sessionTokens())).zoneReporter()
+            IdentityApi(
+                baseUrl = API_BASE,
+                httpClient = cadenceHttpClientFor(API_BASE, client.sessionTokens()),
+            ).zoneReporter()
         }
 
     LaunchedEffect(sessions, zone) { reportZoneWhileSignedIn(sessions, report = zone) }

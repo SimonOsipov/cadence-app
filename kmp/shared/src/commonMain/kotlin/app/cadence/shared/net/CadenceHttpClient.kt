@@ -59,6 +59,22 @@ fun cadenceHttpClient(
 /** The same client on whichever engine the platform ships — what the app builds; tests pass one. */
 fun cadenceHttpClient(tokens: SessionTokens): HttpClient = HttpClient { cadence(tokens) }
 
+// The process's one API transport, and the reason is sharper than the auth client's: built without
+// an engine the client owns the engine it makes, and nothing here closes one. Held in a composition
+// instead, every Android activity recreation — a font-scale, density or locale change, none of them
+// in `configChanges` — would leak a connection pool.
+//
+// The same named gap as `theClient` in the auth module, and the same fix when either needs one:
+// `getOrPut` is not atomic, so two callers racing on different threads can both build one and the
+// discarded one takes its engine with it. Today both platform roots call this from the main thread.
+private val theTransport = mutableMapOf<String, HttpClient>()
+
+/** The API transport for [url], built once among the app's roots — see `theTransport` for why one. */
+fun cadenceHttpClientFor(
+    url: String,
+    tokens: SessionTokens,
+): HttpClient = theTransport.getOrPut(url) { cadenceHttpClient(tokens) }
+
 private fun HttpClientConfig<*>.cadence(tokens: SessionTokens) {
     install(ContentNegotiation) {
         json(

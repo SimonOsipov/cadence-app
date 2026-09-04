@@ -534,17 +534,39 @@ todoist: "6h9MFxMVRgXxWHXH"
 > on every network blip under the naive reading.
 
 > [!deviation] 2026-09-04
-> Spec said: nothing about a refused report. Actually done: the failure is swallowed and the next
-> entry into a session asks again. Why: a zone the server will not take and a server that is not
-> there are both answered by asking later, and neither is anything to show a patient signing in.
-> The status of the call goes unread for the same reason.
+> Spec said: nothing about a refused report. Actually done: the reporter reads the response status
+> and raises a refusal; the collector swallows it so one failure does not end the collection. Why:
+> the first version dropped the status, and review measured that this was not a choice but a blind
+> spot — `expectSuccess` is unset and the generated `wrap()` never reads the status, so a 400
+> answered as normally as a 200 and the `catch` that claimed to cover it saw transport failure
+> alone. Reading it puts every refusal on one path.
+
+> [!deviation] 2026-09-04
+> **Named gap, not closed by this step.** A 400 means the device's zone is not one
+> `pg_timezone_names` carries, and unlike a 503 it is not answered by asking again: the same zone
+> goes out on every launch, the patient's schedule stays in the zone they left, and nothing on the
+> device records it — the server logs the refusal without naming the account. Closing it needs a
+> place to put a failure the patient cannot act on, which this step does not build. Merging 400
+> with 503 was the first version's error and is recorded here rather than quietly kept.
+
+> [!deviation] 2026-09-04
+> Spec said: nothing about the reporter's lifetime. Actually done: the API transport is process-
+> wide, beside the auth client's own cache. Why: built without an engine the client owns the
+> engine it makes and nothing closes it, so holding it in the composition leaked a connection pool
+> on every Android activity recreation — a font-scale, density or locale change, none of which are
+> in `configChanges`, as step 2's deviation already measured. The first version claimed the
+> composition was the process; it is not.
 
 > [!deviation] 2026-09-04
 > Spec said: the rule on tokens and Russian strings. Actually done: the rule covers the three
 > screens this block designed, not `composeApp` at large. Why: measured — the screens ported from
 > the prototype already carry `FontWeight` and `Color.Transparent`, so a blanket rule would have
-> failed the gate on work this step did not do. Each of the five refusals was checked against an
-> input that must fail it; the first version passed a planted `Color` import and was widened.
+> failed the gate on work this step did not do. Each refusal was checked against an input that must
+> fail it, and two survived their first version: a planted `Color` import, and — found by review —
+> the whole zone check with the call commented out. Both are now read through a comment stripper,
+> the same fix the manifest check in that file already carries for XML. The copy rule covers the
+> screens as well as the copy objects, because «the copy lives in the objects» was itself only a
+> convention; the brand is its one named exception.
 
 > [!deviation] 2026-09-04
 > Spec said: the KMP gate green. Actually done: plus a grep in `scripts/gate/kmp.sh` that the
@@ -557,7 +579,9 @@ todoist: "6h9MFxMVRgXxWHXH"
 > engine-less overload and the two share one configuration. Why: the app needs the platform's own
 > engine and the tests need a `MockEngine`; the generated client is handed the result, so the
 > transport stays the token's one owner — measured through the real `IdentityApi`, whose own
-> bearer helper writes no header while it is unset.
+> bearer helper writes no header while it is unset. It could not overwrite the transport's in any
+> case: Ktor's `BearerAuthProvider` removes an existing `Authorization` before appending its own,
+> so the direction the first note gave was backwards.
 
 ### step-7: The acceptance interstitial in the dashboard
 

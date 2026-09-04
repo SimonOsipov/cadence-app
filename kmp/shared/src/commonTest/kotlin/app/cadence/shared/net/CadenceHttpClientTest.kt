@@ -2,6 +2,9 @@ package app.cadence.shared.net
 
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.pluginOrNull
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
@@ -13,10 +16,14 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 private const val STALE = "stale-access-token"
 private const val FRESH = "fresh-access-token"
+
+private const val AN_ADDRESS = "https://api.cadence.example"
 
 private var engineCalls = 0
 
@@ -117,6 +124,27 @@ class CadenceHttpClientTest {
 
         assertTrue(STALE !in printed, "the access token was printed: $printed")
         assertTrue("refresh-token" !in printed, "the refresh token was printed: $printed")
+    }
+
+    // The overload the app builds, which every other test here passes over: they all hand in an
+    // engine. Dropped to a bare `HttpClient()` the whole file stays green, and in production every
+    // request would go out with no Authorization header at all.
+    @Test
+    fun theClientTheAppBuildsCarriesTheSameConfiguration() {
+        val built = cadenceHttpClientFor(AN_ADDRESS, CountingSession())
+
+        assertNotNull(built.pluginOrNull(Auth), "the app's client has no bearer plugin")
+        assertNotNull(built.pluginOrNull(ContentNegotiation), "the app's client has no JSON negotiation")
+    }
+
+    // One address, one transport. A second would own a second engine that nothing closes, and two
+    // owners of one refresh token under rotation is a session revoked by the app itself.
+    @Test
+    fun theTransportForOneAddressIsBuiltOnce() {
+        assertSame(
+            cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
+            cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
+        )
     }
 }
 

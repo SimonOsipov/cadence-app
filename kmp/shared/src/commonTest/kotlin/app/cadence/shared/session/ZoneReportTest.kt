@@ -1,15 +1,21 @@
 package app.cadence.shared.session
 
 import app.cadence.shared.auth.SessionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 private val A_LAUNCH_WITH_A_SESSION = flowOf(SessionState.Deciding, SessionState.SignedIn)
 
 private val A_SIGN_IN = flowOf(SessionState.Deciding, SessionState.SignedOut, SessionState.SignedIn)
+
+private val TWO_ENTRIES_IN_ONE_PROCESS =
+    flowOf(SessionState.SignedIn, SessionState.SignedOut, SessionState.SignedIn)
 
 class ZoneReportTest {
     @Test
@@ -47,9 +53,8 @@ class ZoneReportTest {
             assertTrue(reported.isEmpty(), "reported $reported without a session")
         }
 
-    // The criterion's own sentence: two launches, a zone that changed between them, and both
-    // values arriving. A patient who flew keeps a schedule computed where they left until this
-    // holds.
+    // The criterion's own sentence — «a timezone changed between launches gets through». It has no
+    // mutation of its own: each launch is a fresh call that reads the zone once either way.
     @Test
     fun aZoneChangedBetweenLaunchesGetsThrough() =
         runTest {
@@ -63,39 +68,33 @@ class ZoneReportTest {
             assertEquals(listOf("Europe/Moscow", "Asia/Tbilisi"), reported)
         }
 
-    // The same property where a launch cannot carry it, and this is the one that fails against a
-    // zone read once: hoisted out of the collection both reports say Moscow, and the test above
-    // stays green because each of its launches reads once anyway.
+    // The mutation the read inside the collection is for: hoisted out, both entries report Moscow.
+    // The third answer is what makes dropping the SignedIn filter fail here as well — a fixture
+    // that ran out would throw into the collector's own swallow and leave this green.
     @Test
     fun theZoneIsAskedForAtEachReportRatherThanOnce() =
         runTest {
-            val zones = mutableListOf("Europe/Moscow", "Asia/Tbilisi")
+            val zones = listOf("Europe/Moscow", "Asia/Tbilisi")
+            var asked = 0
             val reported = mutableListOf<String>()
 
             reportZoneWhileSignedIn(
-                flowOf(
-                    SessionState.SignedIn,
-                    SessionState.SignedOut,
-                    SessionState.SignedIn,
-                ),
-                zone = { zones.removeAt(0) },
+                TWO_ENTRIES_IN_ONE_PROCESS,
+                zone = { zones.getOrElse(asked++) { "a-third-ask" } },
             ) { reported += it }
 
             assertEquals(listOf("Europe/Moscow", "Asia/Tbilisi"), reported)
         }
 
-    // A zone the server refuses, or a server that is not there, is not the patient's problem and
-    // not the end of the reporting: the next transition into a session asks again.
+    // A refusal raised by [zoneReporter] and a server that is not there arrive here alike, and
+    // neither ends the collection: the next entry into a session reports again.
     @Test
     fun aRefusedReportDoesNotStopTheNextOne() =
         runTest {
             val reported = mutableListOf<String>()
             var first = true
 
-            reportZoneWhileSignedIn(
-                flowOf(SessionState.SignedIn, SessionState.SignedOut, SessionState.SignedIn),
-                zone = { "Europe/Moscow" },
-            ) {
+            reportZoneWhileSignedIn(TWO_ENTRIES_IN_ONE_PROCESS, zone = { "Europe/Moscow" }) {
                 if (first) {
                     first = false
                     error("the server said no")
@@ -105,4 +104,24 @@ class ZoneReportTest {
 
             assertEquals(listOf("Europe/Moscow"), reported)
         }
+
+    // The one exception the swallow must not take. `kotlinx.coroutines.CancellationException` is an
+    // `IllegalStateException`, so deleting the rethrow leaves it caught by the clause below and the
+    // collector outliving its scope — which nothing else here would notice.
+    @Test
+    fun cancellationIsNotSwallowedWithTheRest() =
+        runTest {
+            assertFailsWith<CancellationException> {
+                reportZoneWhileSignedIn(A_LAUNCH_WITH_A_SESSION, zone = { "Europe/Moscow" }) {
+                    throw CancellationException("the collector was cancelled")
+                }
+            }
+        }
+
+    // The default every other test passes over and the app passes nothing else: an offset id like
+    // «+03:00» or an abbreviation is not in `pg_timezone_names`, and the server refuses it.
+    @Test
+    fun theDeviceZoneIsANameTheServerCouldKnow() {
+        assertTrue(deviceZone() in TimeZone.availableZoneIds, "deviceZone() answered ${deviceZone()}")
+    }
 }

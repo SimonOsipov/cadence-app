@@ -12,8 +12,9 @@ import kotlinx.datetime.TimeZone
  * Reports the device's zone for as long as [states] runs — signing in and launching with a session
  * are one transition into [SessionState.SignedIn], so a single collector serves both.
  *
- * [zone] is asked at every report and deliberately never kept: hoisting it out of the collection
- * is the change that silently stops a zone changed between launches from getting through.
+ * [zone] is read inside the collection, and the mutation that names is a second entry into a
+ * session within one process: hoisted out, it re-reports the first one's zone. Across launches the
+ * hoist is invisible — each launch is a fresh call that reads once either way.
  */
 @Suppress("TooGenericExceptionCaught", "SwallowedException")
 suspend fun reportZoneWhileSignedIn(
@@ -22,8 +23,7 @@ suspend fun reportZoneWhileSignedIn(
     report: suspend (String) -> Unit,
 ) {
     states.filter { it == SessionState.SignedIn }.collect {
-        // Swallowed: a zone the server refuses and a server that is not there are both answered by
-        // the next sign-in asking again, and neither is anything to show a patient.
+        // Swallowed so one failed report does not end the collection; [zoneReporter] says what throws.
         try {
             report(zone())
         } catch (cancelled: CancellationException) {
@@ -37,5 +37,23 @@ suspend fun reportZoneWhileSignedIn(
 /** The device zone's IANA name, as `pg_timezone_names` spells it — what the server validates against. */
 fun deviceZone(): String = TimeZone.currentSystemDefault().id
 
-/** The endpoint as the reporter's seam; the status goes unread, for the reason the swallow above gives. */
-fun IdentityApi.zoneReporter(): suspend (String) -> Unit = { recordSession(SessionBody(timezone = it)) }
+/**
+ * The endpoint as the reporter's seam, raising a refusal rather than returning it.
+ *
+ * The check is not defensive: dropping the status was a loss nothing could observe. `expectSuccess`
+ * is not set on this client and the generated `wrap()` never reads the status, so a 400 answers as
+ * normally as a 200 — measured, and it is why the collector's swallow above covered transport
+ * failure alone while its record claimed otherwise.
+ *
+ * **Named gap.** A 400 means the device's zone is not one `pg_timezone_names` carries, and unlike a
+ * 503 it is not answered by asking again: the same zone goes out on every launch, the patient's
+ * schedule stays in the zone they left, and nothing on the device records it. The server logs the
+ * refusal without naming the account. Closing this needs somewhere to put a failure a patient
+ * cannot act on, which this step does not build.
+ */
+fun IdentityApi.zoneReporter(): suspend (String) -> Unit =
+    {
+        val answered = recordSession(SessionBody(timezone = it))
+
+        check(answered.success) { "the zone report was refused with ${answered.status}" }
+    }

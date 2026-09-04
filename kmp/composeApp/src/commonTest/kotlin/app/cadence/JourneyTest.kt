@@ -33,18 +33,21 @@ private const val A_PASSWORD = "a-long-enough-password"
 
 private const val AN_ADDRESS = "patient@clinic.example"
 
+// A second address, so the sign-in leg cannot pass on text the recovery screen left behind:
+// performTextInput appends, and one address for both legs would read the same either way.
+private const val THE_ADDRESS_TYPED_AFTERWARDS = "patient.again@clinic.example"
+
 /**
- * The block walked end to end in one composition: the per-screen files each enter at their own
- * screen, and a journey is the only shape in which one screen's exit is the next one's entry.
+ * The two longest sequences in the suite, and the only thing here that is new is the length: the
+ * per-screen files already cross single boundaries — `RecoveryScreenTest` enters at the sign-in
+ * form and walks to recovery and back, `SignOutTest` walks out of the signed-in area.
  *
- * Individual legs do have files of their own — measured, not assumed: dropping the recovery
- * screen's return fails two `RecoveryScreenTest` tests as well as the journey below. What is new
- * here is the sequence, and this is the suite a ported screen extends with a leg.
+ * Measured rather than assumed: dropping `recovering = false` from `App`'s recovery `onBack` fails
+ * `recoveryLeadsBackToTheSignInForm` and `comingBackToTheFormOffersTheFieldAgain` as well as the
+ * second journey below. This is the suite a ported screen extends with a leg.
  */
 @OptIn(ExperimentalTestApi::class)
 class JourneyTest {
-    // Invitation to inside to out and back in again — the order is the point: an acceptance
-    // screen that releases the tree, and a form that still works once it has.
     @Test
     fun aPatientAcceptsAnInvitationSignsOutAndSignsBackIn() =
         runComposeUiTest {
@@ -91,15 +94,12 @@ class JourneyTest {
             onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 
-    // The way back for a patient who has lost the password: out to the recovery screen, and back
-    // to a form that still signs in. `RecoveryScreenTest` owns the return itself; what it enters
-    // directly, this reaches from the form, and it carries on into a sign-in the other file ends
-    // before.
     @Test
     fun aPatientAsksForRecoveryReturnsToTheFormAndSignsIn() =
         runComposeUiTest {
             var session by mutableStateOf<SessionState>(SessionState.SignedOut)
             var askedFor: String? = null
+            var signedInWith: Pair<String, String>? = null
 
             setContent {
                 CadenceRoot(
@@ -107,7 +107,8 @@ class JourneyTest {
                     links = emptyFlow(),
                     accept = { Acceptance.Unreachable },
                     choose = { PasswordSet.Done },
-                    signIn = { _, _ ->
+                    signIn = { address, password ->
+                        signedInWith = address to password
                         session = SessionState.SignedIn
                         SignIn.Accepted
                     },
@@ -132,11 +133,17 @@ class JourneyTest {
             onNodeWithText(RecoveryCopy.BACK).performClick()
             waitForIdle()
 
-            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD).performTextInput(AN_ADDRESS)
+            onNodeWithContentDescription(SignInCopy.ADDRESS_FIELD)
+                .performTextInput(THE_ADDRESS_TYPED_AFTERWARDS)
             onNodeWithContentDescription(SignInCopy.PASSWORD_FIELD).performTextInput(A_PASSWORD)
             onNodeWithText(SignInCopy.ENTER).performClick()
             waitForIdle()
 
+            assertEquals(
+                THE_ADDRESS_TYPED_AFTERWARDS to A_PASSWORD,
+                signedInWith,
+                "the form carried something other than what was typed into it",
+            )
             onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
 }
