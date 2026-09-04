@@ -537,7 +537,7 @@ todoist: "6h9MFxMVRgXxWHXH"
 > Spec said: nothing about a refused report. Actually done: the reporter reads the response status
 > and raises a refusal; the collector swallows it so one failure does not end the collection. Why:
 > the first version dropped the status, and review measured that this was not a choice but a blind
-> spot — `expectSuccess` is unset and the generated `wrap()` never reads the status, so a 400
+> spot — `expectSuccess` is unset and the generated `wrap()` never *fails* on the status, so a 400
 > answered as normally as a 200 and the `catch` that claimed to cover it saw transport failure
 > alone. Reading it puts every refusal on one path.
 
@@ -554,11 +554,15 @@ todoist: "6h9MFxMVRgXxWHXH"
 > wide, beside the auth client's own cache. Why: built without an engine the client owns the
 > engine it makes and nothing closes it, so holding it in the composition leaked a connection pool
 > on every Android activity recreation — a font-scale, density or locale change, none of which are
-> in `configChanges`, as step 2's deviation already measured. The first version claimed the
+> in `configChanges`, as step 1's deviation already measured. The first version claimed the
 > composition was the process; it is not. Nor is the transport one per process — `:debugTools`
 > builds its own against the same address, the exception `theClient` already names — and the fix
 > has a grep of its own in the gate, because reverting one line restores the leak with every test
-> green.
+> green. What the shared transport does **not** fix: `LaunchedEffect` restarts with the composition
+> and the session flow is rebuilt with it, so its `distinctUntilChanged` starts empty and each
+> recreation replays `SignedIn` and sends one more report. Harmless — the write is idempotent and
+> authenticated — but it is the same redundancy the collector's design argues against elsewhere,
+> so it is written down rather than left to be rediscovered.
 
 > [!deviation] 2026-09-04
 > **Second named gap.** `deviceZone()` can itself produce an id the server will never take: a device

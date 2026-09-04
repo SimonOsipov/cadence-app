@@ -514,8 +514,14 @@ for f in "${block_screens[@]}" "${block_copy[@]}"; do
     }
 done
 
-own_paint=$(kotlin_code "${block_screens[@]}" "${block_copy[@]}" |
-    grep -nE 'Color\(|Color\.|ui\.graphics\.Color|FontFamily|FontWeight|FontStyle|ui\.text\.font' || true)
+# File by file, because `kotlin_code` over the whole list would number lines into a concatenation
+# with the comments already deleted — a position that resolves to nothing a reader can open.
+own_paint=""
+for f in "${block_screens[@]}" "${block_copy[@]}"; do
+    own_paint+=$(kotlin_code "$f" |
+        grep -nE 'Color\(|Color\.|ui\.graphics\.Color|FontFamily|FontWeight|FontStyle|ui\.text\.font' |
+        sed "s|^|$f:|" || true)
+done
 if [ -n "$own_paint" ]; then
     echo "the sign-in block brought a colour or a face of its own rather than a CadenceTheme token:" >&2
     echo "$own_paint" >&2
