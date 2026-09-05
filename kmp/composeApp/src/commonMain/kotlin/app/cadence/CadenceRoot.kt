@@ -69,9 +69,13 @@ fun CadenceRoot(
 /**
  * The same with the client's calls as seams — the whole of what a test can reach here.
  *
- * A link that is not an invitation does not replace the one being answered: the roots hear every
+ * An address that is **neither** link does not replace the one being answered: the roots hear every
  * address the patient opened the app with, and dropping the screen for one of them strands someone
  * who has spent their token and not yet chosen a password.
+ *
+ * A recovery link does replace an invitation, and that is a named gap rather than a decision: the
+ * evicted invitation has spent its token and set no password, so its screen cannot be returned to.
+ * The one slot is why — see `landed`.
  */
 @Composable
 fun CadenceRoot(

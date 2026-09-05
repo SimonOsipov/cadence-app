@@ -69,20 +69,22 @@ fun AcceptanceScreen(
 
 // The provider's own floor, not ours, and the sentence says so: this arrives when the deployment
 // raised its minimum without the app being rebuilt, so repeating our number would be wrong.
-private fun problemText(problem: PasswordSet) =
-    when {
-        problem is PasswordSet.Refused && problem.code == AuthErrorCode.WeakPassword -> {
-            AcceptanceCopy.TOO_WEAK
-        }
-
-        problem is PasswordSet.Unreachable -> {
-            AcceptanceCopy.OFFLINE_HINT
-        }
-
-        else -> {
-            AcceptanceCopy.UNNAMED
-        }
+private fun problemText(
+    problem: PasswordSet,
+    words: PasswordWords,
+) = when {
+    problem is PasswordSet.Refused && problem.code == AuthErrorCode.WeakPassword -> {
+        AcceptanceCopy.TOO_WEAK
     }
+
+    problem is PasswordSet.Unreachable -> {
+        AcceptanceCopy.OFFLINE_HINT
+    }
+
+    else -> {
+        words.unnamed
+    }
+}
 
 private fun titleFor(
     code: AuthErrorCode?,
@@ -127,7 +129,7 @@ private fun PasswordForm(
     // on email every time the session is lost, which is the whole reason the spec was reversed.
     // Held to the length the server holds it to, so the refusal arrives before the typing rather
     // than after — measured, GoTrue answers 422 weak_password with reasons ["length"].
-    if (problem != null) CadenceBody(problemText(problem))
+    if (problem != null) CadenceBody(problemText(problem, words))
 
     CadenceButton(
         label = AcceptanceCopy.ENTER,

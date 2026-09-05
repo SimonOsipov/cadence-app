@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.design.CadenceTheme
 import app.cadence.shared.auth.Acceptance
+import app.cadence.shared.auth.PasswordSet
 import io.github.jan.supabase.auth.exception.AuthErrorCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,6 +23,32 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class AcceptanceScreenTest {
+    // The third function the words were threaded through — and the one review found missed. A
+    // patient recovering access who is refused for a reason we do not name reads «Не удалось
+    // принять приглашение», which is not what they are doing. `same_password` is the likely route:
+    // it is what typing the old password answers.
+    @Test
+    fun anUnnamedRefusalOnRecoverySaysRecovery() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        outcome = Acceptance.Accepted,
+                        onPasswordChosen = { },
+                        onRetry = { },
+                        problem = PasswordSet.Refused(null),
+                        words = PasswordWords.OfARecovery,
+                    )
+                }
+            }
+
+            onNodeWithText(RecoveryCopy.UNNAMED).assertIsDisplayed()
+            assertTrue(
+                onAllNodesWithText(AcceptanceCopy.UNNAMED).fetchSemanticsNodes().isEmpty(),
+                "the recovery screen said the invitation failed",
+            )
+        }
+
     // Each refusal gets its own sentence, and the pairs are what makes that measurable: asserting
     // only that something is shown passes on three identical screens, which is the state this
     // exists to prevent — «already used» to a banned patient sends them for an invitation that

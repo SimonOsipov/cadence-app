@@ -17,7 +17,8 @@ import { tokens } from './tokens/tokens'
  *
  * A path and a kind paired by hand is a pair that can be swapped — and swapped, every invitation
  * goes to `cadence://recover`, which `/verify` refuses, so a patient is told a live link was
- * already used. `theyAreServedWhereTheirSchemeSays` is what refuses that.
+ * already used. The pairing is held by «serves each landing at the path its own scheme names»;
+ * that these rows reach <Routes> at all, by «serves $path from the routes, not from the table».
  */
 export const PATIENT_LANDINGS: ReadonlyArray<{ path: string; kind: OpenInAppKind }> = [
   { path: '/accept', kind: 'accept' },

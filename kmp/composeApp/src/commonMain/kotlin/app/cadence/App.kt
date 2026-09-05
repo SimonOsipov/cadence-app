@@ -38,12 +38,13 @@ fun App(
     modifier: Modifier = Modifier,
 ) {
     CadenceTheme {
-        // An invitation outranks the session, and deliberately: a patient who followed a link is
-        // answering it, and dropping them into whichever area their session names would leave the
-        // link unexplained — including the case where it is the reason they have no session.
-        // A link outranks the session either way; between the two, the invitation goes first. Both
-        // at once is a patient who followed two links, and the one that creates the account is the
-        // one they cannot get back to by asking.
+        // A link outranks the session: a patient who followed one is answering it, and dropping
+        // them into whichever area their session names leaves the link unexplained — including the
+        // case where it is the reason they have no session.
+        //
+        // The elvis is not a priority rule. `CadenceRoot` keeps one slot for both links, so at most
+        // one of these is ever non-null in the app; only a caller composing this directly can fill
+        // both.
         val answering = invitation ?: recoveryReturn
 
         if (answering != null) {

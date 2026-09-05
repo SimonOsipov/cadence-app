@@ -212,6 +212,19 @@ describe("where a patient's mail lands", () => {
     expect(window.location.hash).toContain('type=magiclink')
   })
 
+  // Rendered, not tabulated: the two tests above read PATIENT_LANDINGS and so does the gate's grep,
+  // so deleting the .map() from <Routes> leaves all of them green while every landing falls to the
+  // catch-all and loses the fragment the token rides in. Which scheme each path hands to is the
+  // pairing test above and the page's own; what is only here is that a route answers at all.
+  it.each(PATIENT_LANDINGS)('serves $path from the routes, not from the table', async ({ path }) => {
+    window.history.pushState({}, '', `${path}#token_hash=a-token`)
+
+    render(<App />)
+
+    expect(await screen.findByText(/Открываем Cadence/)).toBeTruthy()
+    expect(window.location.pathname).toBe(path)
+  })
+
   it('serves one landing per destination and no more', () => {
     expect(PATIENT_LANDINGS.map(({ kind }) => kind).sort()).toEqual(Object.keys(DESTINATIONS).sort())
   })

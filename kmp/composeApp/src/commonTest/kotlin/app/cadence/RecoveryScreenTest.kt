@@ -59,13 +59,25 @@ class RecoveryScreenTest {
     // The gap has no sentence of its own, and that is the point: it is enforced against a row only
     // a real patient has, so «письмо уже отправляли» would be a sentence only a real address could
     // provoke. It arrives here as Sent, and the hint has to be true of that ask too — hence the
-    // minute and the spam folder.
+    // wait and the spam folder.
+    //
+    // The two words are written here rather than read from the constant. «SENT_HINT is displayed»
+    // is true of whatever SENT_HINT says, so on its own it survives the hint being reverted to a
+    // sentence that promises a letter which, inside the gap, was never sent.
     @Test
     fun theSentHintCoversTheAskThatWasTooSoon() =
         runComposeUiTest {
             setContent { CadenceTheme { RecoveryScreen(onRecover = {}, onBack = {}, outcome = Recovery.Sent) } }
 
             onNodeWithText(RecoveryCopy.SENT_HINT).assertIsDisplayed()
+            assertTrue(
+                "минут" in RecoveryCopy.SENT_HINT,
+                "the hint does not tell a patient to wait: ${RecoveryCopy.SENT_HINT}",
+            )
+            assertTrue(
+                "Спам" in RecoveryCopy.SENT_HINT,
+                "the hint does not send a patient to the spam folder: ${RecoveryCopy.SENT_HINT}",
+            )
         }
 
     // The other direction: the letter never left, so the form has to stay under the sentence.
