@@ -132,10 +132,15 @@ func providerSending(t *testing.T, sink *mailSink) (*testsupport.GoTrue, string)
 
 // serveTemplate answers body at an address the container can reach; v2.194.0 fetches templates
 // over HTTP and cannot read one off disk.
+//
+// 0.0.0.0 for the same reason the mail sink gives, and it was loopback here while the sink was
+// not: on Docker Desktop `host.docker.internal` reaches a server on the host's loopback, and on
+// Linux through `host-gateway` it does not. The fetch then fails silently and GoTrue renders its
+// own English template — the mail arrives, so only the assertion on what it carries notices.
 func serveTemplate(t *testing.T, body string) string {
 	t.Helper()
 
-	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	listener, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatalf("listening for the template: %v", err)
 	}
