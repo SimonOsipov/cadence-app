@@ -1,6 +1,7 @@
 package app.cadence.shared.net
 
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
@@ -53,22 +54,49 @@ interface SessionTokens {
 fun cadenceHttpClient(
     engine: HttpClientEngine,
     tokens: SessionTokens,
-): HttpClient =
-    HttpClient(engine) {
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    explicitNulls = false
-                },
-            )
-        }
-        install(Auth) {
-            bearer {
-                loadTokens { tokens.current()?.asBearer() }
-                refreshTokens { tokens.refreshed()?.asBearer() }
-            }
+): HttpClient = HttpClient(engine) { cadence(tokens) }
+
+/** The same client on whichever engine the platform ships — what the app builds; tests pass one. */
+fun cadenceHttpClient(tokens: SessionTokens): HttpClient = HttpClient { cadence(tokens) }
+
+// One transport per address among the app's roots, and the reason is sharper than the auth
+// client's: built without an engine the client owns the engine it makes, and nothing here closes
+// one. Held in a composition instead, every Android activity recreation — a font-scale, density or
+// locale change, none of them in `configChanges` — would leak a connection pool.
+//
+// Not «one per process», and the exception is the same one `theClient` names: `:debugTools` builds
+// its own client against this very address, so opening the debug screen beside the app does put two
+// bearer providers on one refresh token. It ships in neither release build.
+//
+// Same named gap as `theClient` too: `getOrPut` is not atomic.
+private val theTransport = mutableMapOf<String, HttpClient>()
+
+/**
+ * The API transport for [url] — see `theTransport` for why it is not built per caller.
+ *
+ * [tokens] is used only to build the first one for an address; a later caller's is discarded, which
+ * the types cannot say and which is invisible at the call site.
+ */
+fun cadenceHttpClientFor(
+    url: String,
+    tokens: SessionTokens,
+): HttpClient = theTransport.getOrPut(url) { cadenceHttpClient(tokens) }
+
+private fun HttpClientConfig<*>.cadence(tokens: SessionTokens) {
+    install(ContentNegotiation) {
+        json(
+            Json {
+                ignoreUnknownKeys = true
+                explicitNulls = false
+            },
+        )
+    }
+    install(Auth) {
+        bearer {
+            loadTokens { tokens.current()?.asBearer() }
+            refreshTokens { tokens.refreshed()?.asBearer() }
         }
     }
+}
 
 private fun Session.asBearer() = BearerTokens(accessToken = access, refreshToken = refresh)

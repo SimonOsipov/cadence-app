@@ -17,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import app.cadence.SignInCopy
 import app.cadence.design.CadenceDestination
 import app.cadence.design.CadenceSheet
 import app.cadence.format.formatDose
@@ -78,6 +79,7 @@ private const val PRIMARY_THREAD = "ksenia"
 fun CadenceApp(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier,
+    onSignOut: () -> Unit = { },
     // Wound to the seed's own day (MockSeed.DEMO_NOW), not the system clock: the fixture is
     // a course with an end date, and the real clock would empty every screen once it passes.
     mocks: CadenceMocks = remember { CadenceMocks(FixedCadenceClock.at(MockSeed.DEMO_NOW)) },
@@ -127,7 +129,10 @@ fun CadenceApp(
                         onOpenVial = { openVial = it },
                         onTrendWindow = { trendsState.window = it },
                     )
-                },
+                    // Copied in rather than passed to shellActions: a lambda from the caller is a
+                    // new object on every recomposition, and in the key it would rebuild the whole
+                    // bag each time.
+                }.copy(onSignOut = onSignOut),
         )
 
         Actions(summary, actionsOpen, navController, onDismiss = { actionsOpen = false })
@@ -207,6 +212,7 @@ data class CadenceShellActions(
     val searchIngredients: suspend (String) -> List<Ingredient> = { emptyList() },
     val loadRecipe: suspend (RecipeId) -> Recipe? = { null },
     val onRecipeSaved: suspend (RecipeDraft) -> RecipeSaveResult = { RecipeSaveResult.Rejected },
+    val onSignOut: () -> Unit = { },
 )
 
 /**
@@ -374,7 +380,12 @@ private fun NavGraphBuilder.pushedRoutes(
     }
     composable<CadenceRoute.Journal> { PlaceholderScreen("Дневник", onBack = back) }
     composable<CadenceRoute.Body> { PlaceholderScreen("Тело", onBack = back) }
-    composable<CadenceRoute.Profile> { PlaceholderScreen("Профиль", onBack = back) }
+    // The one control on this route that is not scaffolding. Signing out has to live somewhere a
+    // patient can reach, and the prototype puts it on the profile; it moves with that screen when
+    // the screen itself is ported.
+    composable<CadenceRoute.Profile> {
+        PlaceholderScreen("Профиль", onBack = back, action = SignInCopy.SIGN_OUT to actions.onSignOut)
+    }
     composable<CadenceRoute.ChatList> { PlaceholderScreen("Чаты", onBack = back) }
     composable<CadenceRoute.ChatThread> { entry ->
         PlaceholderScreen("Переписка · ${entry.toRoute<CadenceRoute.ChatThread>().threadId}", onBack = back)

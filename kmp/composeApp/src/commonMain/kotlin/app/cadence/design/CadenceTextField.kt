@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 
 /** The field's own hairline border, matching the private `HAIRLINE` on the two screens it replaces. */
@@ -56,6 +60,7 @@ fun CadenceTextField(
     fieldModifier: Modifier = Modifier,
     singleLine: Boolean = false,
     minLines: Int = 1,
+    masked: Boolean = false,
 ) {
     Box(
         modifier
@@ -72,6 +77,12 @@ fun CadenceTextField(
             textStyle = Cadence.typography.body.copy(color = Cadence.palette.ink),
             singleLine = singleLine,
             minLines = minLines,
+            // Both halves, and the second is the one a screenshot does not show: without the
+            // password keyboard type the platform treats the field as ordinary text and learns
+            // what is typed into it.
+            visualTransformation = if (masked) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions =
+                if (masked) KeyboardOptions(keyboardType = KeyboardType.Password) else KeyboardOptions.Default,
             modifier = Modifier.fillMaxWidth().then(fieldModifier),
         )
     }

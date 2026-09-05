@@ -11,13 +11,34 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
+        <!-- singleTop is what lets the running activity hear a repeated link: with the default
+             the system stacks a second copy of it and the live one is never told. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Where an invitation lands. BROWSABLE is what lets a mail client hand the
+                 link over; without it the message opens nothing. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cadence" android:host="accept" />
+            </intent-filter>
+
+            <!-- And where a recovery link lands, in a filter of its own so that each landing is
+                 legible by itself. The gate requires all five elements inside one filter. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="cadence" android:host="recover" />
             </intent-filter>
         </activity>
     </application>

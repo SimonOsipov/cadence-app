@@ -59,7 +59,12 @@ emit api "$(count '^(api/|scripts/gate/(go|all)\.sh|\.github/workflows/ci\.yml)'
 # skipped job satisfies a required check — so the drift gate would never run for the single
 # change class it exists to catch. Measured against real history: 4f3875b touched api/, docs/
 # and web/ and no kmp/ file at all.
-emit kmp "$(count '^(kmp/|api/openapi\.json|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
+# api/mail-templates/ is in here for the same shape one layer along: the KMP gate holds the
+# invitation's address in ACCEPT_LINK against the template that sends patients there, and a
+# template-only change answers kmp=false, skips both KMP jobs, and satisfies the required check
+# having run the one guard that change could break. Measured: this filter answered kmp=false for
+# `api/mail-templates/invite.html` before the path was added.
+emit kmp "$(count '^(kmp/|api/(openapi\.json|mail-templates/)|scripts/gate/(kmp|ios|all)\.sh|\.github/workflows/ci\.yml)')"
 
 # Four paths outside web/ are in here because the web gate reads them, and a gate
 # that is skipped for a change it would have failed on is worse than no gate: the

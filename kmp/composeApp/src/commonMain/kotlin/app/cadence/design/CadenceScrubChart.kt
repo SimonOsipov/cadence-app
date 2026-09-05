@@ -40,7 +40,6 @@ import app.cadence.shared.domain.ProtocolMark
 import app.cadence.shared.domain.TrendRange
 import app.cadence.shared.domain.TrendSeries
 import app.cadence.shared.domain.middleOf
-import kotlin.math.abs
 
 const val CADENCE_SCRUB_CHART_TAG = "cadence-scrub-chart"
 

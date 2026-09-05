@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { App } from './app'
+import { App, PATIENT_LANDINGS } from './app'
+import { DESTINATIONS } from './features/auth/open-in-app-page'
 import { readSession } from './auth/session'
 
 const API = 'https://api.example'
@@ -174,5 +175,57 @@ describe('a patient at the door', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('для сотрудников клиники')
     expect(readSession()).toBeNull()
+  })
+})
+
+describe("where a patient's mail lands", () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_URL', API)
+    vi.stubEnv('VITE_AUTH_URL', PROVIDER)
+    sessionStorage.clear()
+    window.history.pushState({}, '', '/')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  // The pairing is the whole of it: the gate greps the scheme in the page and the path in the
+  // route table as two facts, and neither notices them swapped.
+  it('serves each landing at the path its own scheme names', () => {
+    for (const { path, kind } of PATIENT_LANDINGS) {
+      expect(path).toBe(`/${new URL(DESTINATIONS[kind]).host}`)
+    }
+  })
+
+  // The magic link's own landing, and the reason it is here: SITE_URL moved to the origin in the
+  // same change, so a verified magic link now arrives at «/» rather than at the acceptance route,
+  // and the session in its fragment is dropped by the catch-all unless this line catches it.
+  it('carries a magic link to the screen that reads its fragment', async () => {
+    vi.stubGlobal('fetch', providerAnswering({ role: 'doctor' }))
+    window.history.pushState({}, '', '/#access_token=a&refresh_token=r&type=magiclink')
+
+    render(<App />)
+
+    await waitFor(() => expect(window.location.pathname).toBe('/accept-invite'))
+    expect(window.location.hash).toContain('type=magiclink')
+  })
+
+  // Rendered, not tabulated: the two tests above read PATIENT_LANDINGS and so does the gate's grep,
+  // so deleting the .map() from <Routes> leaves all of them green while every landing falls to the
+  // catch-all and loses the fragment the token rides in. Which scheme each path hands to is the
+  // pairing test above and the page's own; what is only here is that a route answers at all.
+  it.each(PATIENT_LANDINGS)('serves $path from the routes, not from the table', async ({ path }) => {
+    window.history.pushState({}, '', `${path}#token_hash=a-token`)
+
+    render(<App />)
+
+    expect(await screen.findByText(/Открываем Cadence/)).toBeTruthy()
+    expect(window.location.pathname).toBe(path)
+  })
+
+  it('serves one landing per destination and no more', () => {
+    expect(PATIENT_LANDINGS.map(({ kind }) => kind).sort()).toEqual(Object.keys(DESTINATIONS).sort())
   })
 })
