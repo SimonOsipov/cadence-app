@@ -405,6 +405,19 @@ if [ "$stated" -ne "$enforced" ]; then
     exit 1
 fi
 
+# The dashboard states one too, and it is the same provider behind both. Read here rather than in
+# web.sh because this is the file that already holds the deployment's number, and a third place to
+# keep in step is what the comparison exists to prevent. Found at eight against the provider's ten:
+# a member of staff was refused by the server after typing.
+asked=$(counted "PASSWORD_MIN_LENGTH in accept-invite-page.tsx" \
+    "$(sed -n 's/.*PASSWORD_MIN_LENGTH = \([0-9][0-9]*\).*/\1/p' \
+        ../web/src/features/auth/accept-invite-page.tsx || true)")
+if [ "$asked" -ne "$enforced" ]; then
+    echo "the dashboard states a $asked-character password and the deployment enforces" \
+        "$enforced — staff are refused by the server after typing" >&2
+    exit 1
+fi
+
 # Registration is not reading. The checks above say the system will hand the app a link; nothing
 # else says either root does anything with it, and no test can — composeApp has no Android
 # host-test builder and the Swift host is in no Kotlin suite. So the declarations are read where
