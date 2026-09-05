@@ -91,9 +91,9 @@ fun CadenceRoot(
 ) {
     val link by links.collectAsState(null)
     val scope = rememberCoroutineScope()
-    // One slot for both links rather than one each, and it cost a review round to see why: two
-    // slots are both filled once a patient has followed both, and the driver of the one the screen
-    // does not show still spends its token — silently, single-use, with nothing ever drawn for it.
+    // One slot for both links rather than one each: with two, a patient who followed both fills
+    // both, and the driver of the one the screen does not show still spends its token — silently,
+    // single-use, with nothing ever drawn for it.
     //
     // Saveable, and that is the whole of why the invitation's own saved state works: the link
     // arrives through a flow, so the frame a recreated screen comes back on has none, and the token
@@ -118,7 +118,8 @@ fun CadenceRoot(
 }
 
 // Which link the app is answering, kept as one string because that is what survives a recreation
-// without a saver of its own. The tokens are hex, so neither tag can appear inside one.
+// without a saver of its own. The tag is a prefix and is read as one, so nothing about the token's
+// alphabet is being relied on.
 private const val AN_INVITATION = "invite:"
 
 private const val A_RECOVERY = "recover:"

@@ -75,10 +75,10 @@ var mails = []struct {
 	// sign in.
 	says string
 
-	// carries is the link this mail delivers, and the invitation's is not the others'. It leads to
-	// a page on the dashboard rather than through GoTrue's redirect: the token rides in the
-	// fragment, which no browser sends to a server, and the page hands it to the app — see the
-	// proposal «Приём приглашения: PKCE недостижим».
+	// carries is the link this mail delivers. Two of the three lead to a page on the dashboard
+	// rather than through GoTrue's redirect — the token rides in the fragment and the page hands
+	// it to the app, see the proposal «Приём приглашения: PKCE недостижим»; the sign-in link is
+	// the one that still goes the provider's way.
 	carries string
 }{
 	{
@@ -103,9 +103,7 @@ var mails = []struct {
 		template: recoveryTemplateVariable,
 		file:     "recovery.html",
 		says:     "восстановление доступа",
-		// The same shape as the invitation's since the interstitial went in: a page on the
-		// dashboard, the token in the fragment, and the app reached from there.
-		carries: siteURL + "/recover#token_hash=" + tokenHash,
+		carries:  siteURL + "/recover#token_hash=" + tokenHash,
 	},
 }
 

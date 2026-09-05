@@ -194,9 +194,10 @@ services:
       GOTRUE_JWT_ISSUER: http://localhost:9999
       # The origin, not a route. The templates build their own paths on it — the patient's mail
       # lands on the dashboard page that hands the token to the app — and a SITE_URL carrying a
-      # path would put that path inside every one of them. Consequence to carry: a link asking for
-      # no redirect of its own now falls back to the dashboard's door rather than to the staff
-      # acceptance route, so the staff invitation owes itself a `redirect_to` when it is built.
+      # path would put that path inside every one of them. A link asking for no redirect of its own
+      # falls back here, to the dashboard's door, which forwards a `type=invite`, `type=recovery`
+      # or `type=magiclink` fragment on to `/accept-invite` itself — see `DashboardRoute` in
+      # `web/src/app.tsx`. So no invitation owes itself a `redirect_to` on that account.
       GOTRUE_SITE_URL: http://localhost:5173
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_EXP: "3600"
@@ -308,8 +309,11 @@ services:
       # TestTheAllowListDecidesWhereALinkLands.
       #
       # The dashboard's dev server, which is where an invitation now lands — on the page that
-      # reads the token out of the fragment and hands it to the app. Nothing this API sends asks
-      # for a redirect of its own, so what this list bounds is the fallback.
+      # reads the token out of the fragment and hands it to the app.
+      #
+      # What the list bounds is a `redirect_to` that is passed, not the fallback: an uncovered one
+      # is not refused, the provider substitutes SITE_URL silently and the link still signs the
+      # person in somewhere nobody can use. Measured in TestTheAllowListDecidesWhereALinkLands.
       GOTRUE_URI_ALLOW_LIST: http://localhost:5173/**
       # A bare `**` would open this to any host the caller names, and the
       # session rides in the landing address's fragment. Asserted in shape,

@@ -11,11 +11,10 @@ import kotlinx.coroutines.CancellationException
  * seen gets too.
  *
  * That is the point rather than a shortcut: told apart, the form answers «is this person a patient
- * here?» to anyone who types an address. The per-address gap is folded into [Sent] for that same
- * reason and it cost a review round to see why — `GOTRUE_SMTP_MAX_FREQUENCY` is enforced against
- * `users.recovery_sent_at`, a row a stranger's address does not have, so a sentence of its own for
- * the gap is a sentence only a real patient can provoke. Two asks and sixty seconds would have
- * been the oracle this whole answer exists to close.
+ * here?» to anyone who types an address. The rate limit is folded into [Sent] for that same reason:
+ * a sentence of its own would be one only a real patient could provoke, because the per-address gap
+ * is enforced against `users.recovery_sent_at` — a row a stranger's address does not have. Two asks
+ * and sixty seconds would have been the oracle this whole answer exists to close.
  */
 sealed interface Recovery {
     data object Sent : Recovery
@@ -43,7 +42,12 @@ suspend fun SupabaseClient.recover(email: String): Recovery =
         when {
             // Ahead of the retryable check, which counts 429 as «ask again». Here it is neither
             // that nor a sentence of its own: the last mail is already on its way, which is what
-            // Sent says, and only a real patient can reach this arm at all.
+            // Sent says.
+            //
+            // Not «only a real patient reaches this»: the instance's hourly quota answers 429 too,
+            // with the same `over_email_send_rate_limit` and a different message — pinned by
+            // `invitations_integration_test.go`. That the two are indistinguishable here is the
+            // reason to fold them, not an objection to it.
             refused.statusCode == TOO_MANY_REQUESTS -> Recovery.Sent
 
             refused.isWorthAnotherTry() -> Recovery.Unreachable

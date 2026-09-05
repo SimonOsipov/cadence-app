@@ -81,8 +81,7 @@ export function OpenInAppPage({
       if (stillHere()) setUnanswered(true)
     })
 
-    // A second mail opened in the same tab changes the fragment in place, and without this the
-    // first link's timer outlives it and can answer for the second.
+    // Unmount hygiene: nothing should be able to set state on a page the patient has left.
     return () => cancel(timer)
     // Once per token: re-running it would hand the same link over again on any render around it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

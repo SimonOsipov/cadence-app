@@ -32,8 +32,8 @@
                 <data android:scheme="cadence" android:host="accept" />
             </intent-filter>
 
-            <!-- And where a recovery link lands. Its own filter rather than a second host on the
-                 one above: the two are read as a set, and a filter is matched whole. -->
+            <!-- And where a recovery link lands, in a filter of its own so that each landing is
+                 legible by itself. The gate requires all five elements inside one filter. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
