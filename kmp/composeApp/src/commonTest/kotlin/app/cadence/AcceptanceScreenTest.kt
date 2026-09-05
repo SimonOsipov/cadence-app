@@ -1,0 +1,231 @@
+package app.cadence
+
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.v2.runComposeUiTest
+import app.cadence.design.CadenceTheme
+import app.cadence.shared.auth.Acceptance
+import app.cadence.shared.auth.PasswordSet
+import io.github.jan.supabase.auth.exception.AuthErrorCode
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+@OptIn(ExperimentalTestApi::class)
+class AcceptanceScreenTest {
+    // The third function the words were threaded through — and the one review found missed. A
+    // patient recovering access who is refused for a reason we do not name reads «Не удалось
+    // принять приглашение», which is not what they are doing. `same_password` is the likely route:
+    // it is what typing the old password answers.
+    @Test
+    fun anUnnamedRefusalOnRecoverySaysRecovery() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        outcome = Acceptance.Accepted,
+                        onPasswordChosen = { },
+                        onRetry = { },
+                        problem = PasswordSet.Refused(null),
+                        words = PasswordWords.OfARecovery,
+                    )
+                }
+            }
+
+            onNodeWithText(RecoveryCopy.UNNAMED).assertIsDisplayed()
+            assertTrue(
+                onAllNodesWithText(AcceptanceCopy.UNNAMED).fetchSemanticsNodes().isEmpty(),
+                "the recovery screen said the invitation failed",
+            )
+        }
+
+    // Each refusal gets its own sentence, and the pairs are what makes that measurable: asserting
+    // only that something is shown passes on three identical screens, which is the state this
+    // exists to prevent — «already used» to a banned patient sends them for an invitation that
+    // will refuse the same way.
+    @Test
+    fun eachRefusalSaysItsOwnThing() =
+        runComposeUiTest {
+            val sentences =
+                listOf(
+                    Acceptance.Refused(AuthErrorCode.OtpExpired) to AcceptanceCopy.SPENT,
+                    Acceptance.Refused(AuthErrorCode.UserBanned) to AcceptanceCopy.BANNED,
+                    Acceptance.Refused(null) to AcceptanceCopy.UNNAMED,
+                )
+
+            for ((outcome, said) in sentences) {
+                setContent {
+                    CadenceTheme { AcceptanceScreen(outcome, onPasswordChosen = {}, onRetry = {}) }
+                }
+
+                onNodeWithText(said).assertIsDisplayed()
+
+                for ((_, other) in sentences) {
+                    if (other == said) continue
+
+                    assertTrue(
+                        onAllNodesWithText(other).fetchSemanticsNodes().isEmpty(),
+                        "«$said» and «$other» were shown together, so the two are one screen",
+                    )
+                }
+            }
+        }
+
+    // Offered a retry, and only here: a refusal is not something to ask again for, and a button
+    // saying so would walk a banned patient into the rate limit.
+    @Test
+    fun onlyAnUnreachableServerIsOfferedAnotherTry() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(Acceptance.Unreachable, onPasswordChosen = {}, onRetry = {})
+                }
+            }
+
+            onNodeWithText(AcceptanceCopy.RETRY).assertIsDisplayed()
+        }
+
+    @Test
+    fun aRefusalIsNotOfferedAnotherTry() =
+        runComposeUiTest {
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        Acceptance.Refused(AuthErrorCode.OtpExpired),
+                        onPasswordChosen = {},
+                        onRetry = {},
+                    )
+                }
+            }
+
+            assertTrue(
+                onAllNodesWithText(AcceptanceCopy.RETRY).fetchSemanticsNodes().isEmpty(),
+                "a spent link offered a retry, which asks the patient to walk into a rate limit",
+            )
+        }
+
+    // Mandatory, and drawn as such rather than accepted and refused later: without a password a
+    // lost session means waiting for email, which is what the spec was rewritten to close.
+    // The bound the server keeps, kept here first: one character short is what a patient actually
+    // types, and letting it through spends a round trip to be told no.
+    @Test
+    fun aPasswordOneCharacterShortCannotBeSubmitted() =
+        runComposeUiTest {
+            var chosen: String? = null
+
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        Acceptance.Accepted,
+                        onPasswordChosen = { chosen = it },
+                        onRetry = {},
+                    )
+                }
+            }
+
+            val short = "a".repeat(AcceptanceCopy.PASSWORD_MIN_LENGTH - 1)
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput(short)
+            onNodeWithText(AcceptanceCopy.ENTER).assertIsNotEnabled()
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+
+            assertNull(chosen, "a password the server would refuse was submitted anyway")
+        }
+
+    // And exactly at the bound it goes: a screen one character stricter than the server locks a
+    // patient out of a password the provider would have taken.
+    @Test
+    fun aPasswordExactlyAtTheBoundIsAccepted() =
+        runComposeUiTest {
+            var chosen: String? = null
+
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        Acceptance.Accepted,
+                        onPasswordChosen = { chosen = it },
+                        onRetry = {},
+                    )
+                }
+            }
+
+            val exact = "a".repeat(AcceptanceCopy.PASSWORD_MIN_LENGTH)
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput(exact)
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+
+            assertEquals(exact, chosen)
+        }
+
+    @Test
+    fun anEmptyPasswordCannotBeSubmitted() =
+        runComposeUiTest {
+            var chosen: String? = null
+
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        Acceptance.Accepted,
+                        onPasswordChosen = { chosen = it },
+                        onRetry = {},
+                    )
+                }
+            }
+
+            onNodeWithText(AcceptanceCopy.ENTER).assertIsNotEnabled()
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+
+            assertNull(chosen, "acceptance completed without a password")
+        }
+
+    @Test
+    fun aPasswordTypedIsThePasswordHandedOver() =
+        runComposeUiTest {
+            var chosen: String? = null
+
+            setContent {
+                CadenceTheme {
+                    AcceptanceScreen(
+                        Acceptance.Accepted,
+                        onPasswordChosen = { chosen = it },
+                        onRetry = {},
+                    )
+                }
+            }
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD)
+                .performTextInput("a-chosen-password")
+            onNodeWithText(AcceptanceCopy.ENTER).performClick()
+
+            assertEquals("a-chosen-password", chosen)
+        }
+
+    // Step 3's field, masked in step 4 with the sign-in one: the same password, typed in the same
+    // room, and the two screens had the same gap.
+    @Test
+    fun thePasswordFieldIsMasked() =
+        runComposeUiTest {
+            setContent { CadenceTheme { AcceptanceScreen(Acceptance.Accepted, onPasswordChosen = {}, onRetry = {}) } }
+
+            onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).performTextInput("a-long-enough-password")
+            waitForIdle()
+
+            val field = onNodeWithContentDescription(AcceptanceCopy.PASSWORD_FIELD).fetchSemanticsNode()
+
+            assertNotEquals(
+                "a-long-enough-password",
+                field.config.getOrNull(SemanticsProperties.EditableText)?.text,
+                "the password was drawn in clear text",
+            )
+        }
+}

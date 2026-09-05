@@ -12,6 +12,10 @@ trim_trailing_whitespace = true
 max_line_length = 120
 # @Composable functions are PascalCase by the framework's own convention.
 ktlint_function_naming_ignore_when_annotated_with = Composable
+# Here and not at the end of this file: the last section disables ktlint for the generated client,
+# and a property appended there arms nothing. The rule implements OnlyWhenEnabledInEditorconfig, so
+# until this line existed nineteen unused imports passed every gate.
+ktlint_standard_no-unused-imports = enabled
 
 [*.gradle.kts]
 # Version-catalog access reads as one thought — `libs.versions.x.get().toInt()`

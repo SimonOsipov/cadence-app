@@ -1,6 +1,7 @@
 package identity_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -45,6 +46,25 @@ func TestTheDeploymentGivesLinksTheLifetimeThisContextDerivesFrom(t *testing.T) 
 		t.Errorf("the deployment gives links %s seconds and this context derives the pending "+
 			"state from %s — an invitation reads as pending after its link stopped working",
 			set, want)
+	}
+}
+
+// The templates build their own paths on SITE_URL — «{{ .SiteURL }}/accept#token_hash=…» — so a
+// path left on this variable renders «…/accept-invite/accept#…», which the dashboard's catch-all
+// redirects, dropping the fragment and the token with it. Every gate stays green through that:
+// scripts/gate/kmp.sh greps the template for the tail, and the tail still matches.
+func TestTheDeploymentGivesTheTemplatesAnOriginToBuildOn(t *testing.T) {
+	set := deploymentSetting(t, "GOTRUE_SITE_URL")
+
+	landing, err := url.Parse(set)
+	if err != nil {
+		t.Fatalf("GOTRUE_SITE_URL is %q, which is not a URL: %v", set, err)
+	}
+
+	if landing.Path != "" {
+		t.Errorf("GOTRUE_SITE_URL is %q and carries the path %q — every link a template builds on "+
+			"it goes through that path, and the one a patient is sent lands on the dashboard's "+
+			"catch-all, which drops the fragment", set, landing.Path)
 	}
 }
 
@@ -130,3 +150,28 @@ func moduleRoot(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// The provider's own default is six, measured against the pinned image on 2026-09-01: below the
+// bound `PUT /user` answers 422 `weak_password` with reasons ["length"], at it 200. Six characters
+// stand between a stranger and somebody's hormone protocol, so the number is the product's to
+// choose — and a deployment left on the default is a gap nothing else here can see.
+//
+// The bound itself is pinned against the running provider by
+// TestThePasswordBoundIsWhereTheDeploymentPutIt; this is only that the deployment names one.
+func TestTheDeploymentRaisesThePasswordFloor(t *testing.T) {
+	set := deploymentSetting(t, testsupport.PasswordMinLengthVariable)
+
+	floor, err := strconv.Atoi(set)
+	if err != nil {
+		t.Fatalf("%s is %q, which is not a length", testsupport.PasswordMinLengthVariable, set)
+	}
+
+	if floor <= providerPasswordFloor {
+		t.Errorf("%s is %d, which is not above the provider's own %d — the deployment is "+
+			"running on the default under another name",
+			testsupport.PasswordMinLengthVariable, floor, providerPasswordFloor)
+	}
+}
+
+// What GoTrue enforces when nobody says otherwise. Measured, not read from documentation.
+const providerPasswordFloor = 6

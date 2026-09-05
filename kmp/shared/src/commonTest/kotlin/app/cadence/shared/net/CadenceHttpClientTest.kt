@@ -2,6 +2,9 @@ package app.cadence.shared.net
 
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.pluginOrNull
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
@@ -13,10 +16,15 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 private const val STALE = "stale-access-token"
 private const val FRESH = "fresh-access-token"
+
+private const val AN_ADDRESS = "https://api.cadence.example"
 
 private var engineCalls = 0
 
@@ -117,6 +125,35 @@ class CadenceHttpClientTest {
 
         assertTrue(STALE !in printed, "the access token was printed: $printed")
         assertTrue("refresh-token" !in printed, "the refresh token was printed: $printed")
+    }
+
+    // The overload the app builds; every other test here hands in an engine. Dropped to a bare
+    // `HttpClient()`, production would send every request with no Authorization header at all.
+    @Test
+    fun theClientTheAppBuildsCarriesTheSameConfiguration() {
+        val built = cadenceHttpClientFor(AN_ADDRESS, CountingSession())
+
+        assertNotNull(built.pluginOrNull(Auth), "the app's client has no bearer plugin")
+        assertNotNull(built.pluginOrNull(ContentNegotiation), "the app's client has no JSON negotiation")
+    }
+
+    // One address, one transport — see `theTransport`.
+    @Test
+    fun theTransportForOneAddressIsBuiltOnce() {
+        assertSame(
+            cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
+            cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
+        )
+    }
+
+    // The url is the key and not decoration: collapsed to one field, the map hands the first
+    // caller's transport — with the first caller's session — to an address that is not theirs.
+    @Test
+    fun aSecondAddressGetsATransportOfItsOwn() {
+        assertNotSame(
+            cadenceHttpClientFor(AN_ADDRESS, CountingSession()),
+            cadenceHttpClientFor("https://auth.cadence.example", CountingSession()),
+        )
     }
 }
 

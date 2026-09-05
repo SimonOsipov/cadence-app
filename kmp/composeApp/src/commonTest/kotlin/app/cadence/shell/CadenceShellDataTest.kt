@@ -36,7 +36,6 @@ import app.cadence.shared.domain.ProtocolRow
 import app.cadence.shared.domain.TrendWindow
 import app.cadence.shared.mock.CadenceMocks
 import app.cadence.shared.mock.MockSeed
-import app.cadence.shared.repository.TodaySummary
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
