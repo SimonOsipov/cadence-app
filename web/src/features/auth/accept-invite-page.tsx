@@ -4,6 +4,13 @@ import { setPassword, storeSession, type Session } from '../../auth/session'
 import { tokens } from '../../tokens/tokens'
 
 /**
+ * The floor the provider enforces, kept here rather than inlined: refusing at a softer number is a
+ * refusal the person only meets after typing, and `GOTRUE_PASSWORD_MIN_LENGTH` is what decides.
+ * `scripts/gate/kmp.sh` compares the two.
+ */
+export const PASSWORD_MIN_LENGTH = 10
+
+/**
  * Where an invitation link lands.
  *
  * The provider verifies the link itself and redirects here with a session in the URL fragment — the
@@ -64,8 +71,8 @@ function ChooseAPassword({
 
       return
     }
-    if (password.length < 8) {
-      setRefusal('Пароль должен быть не короче восьми символов.')
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      setRefusal(`Пароль должен быть не короче ${PASSWORD_MIN_LENGTH} символов.`)
 
       return
     }

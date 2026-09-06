@@ -51,9 +51,15 @@ const (
 	templateSource     = "mail-templates"
 )
 
-// The link placeholder, measured out of the pinned image: the provider's own default templates
-// carry this exact string, and what a misspelling costs is unknown — no mail has ever been sent.
-const confirmationURL = "{{ .ConfirmationURL }}"
+// The two link placeholders, both measured against the pinned image by rendering one: a template
+// served to a GoTrue with an SMTP sink behind it fills TokenHash with the same value the
+// ConfirmationURL carries as its token (2026-09-01). A misspelling silently renders empty, which
+// is a mail with a dead link rather than a refusal anybody sees.
+const (
+	confirmationURL = "{{ .ConfirmationURL }}"
+	tokenHash       = "{{ .TokenHash }}"
+	siteURL         = "{{ .SiteURL }}"
+)
 
 // The three mails this block causes the provider to send. Confirmation and email-change are absent
 // on purpose: signup is disabled, and changing an address is out of scope, left at the English default.
@@ -68,6 +74,12 @@ var mails = []struct {
 	// recovery.html and magic-link.html passes while a patient who asked to recover is told how to
 	// sign in.
 	says string
+
+	// carries is the link this mail delivers. Two of the three lead to a page on the dashboard
+	// rather than through GoTrue's redirect — the token rides in the fragment and the page hands
+	// it to the app, see the proposal «Приём приглашения: PKCE недостижим»; the sign-in link is
+	// the one that still goes the provider's way.
+	carries string
 }{
 	{
 		name:     "the invitation",
@@ -75,6 +87,7 @@ var mails = []struct {
 		template: inviteTemplateVariable,
 		file:     "invite.html",
 		says:     "завела для вас личный кабинет",
+		carries:  siteURL + "/accept#token_hash=" + tokenHash,
 	},
 	{
 		name:     "the sign-in link",
@@ -82,6 +95,7 @@ var mails = []struct {
 		template: magicLinkTemplateVariable,
 		file:     "magic-link.html",
 		says:     "Ссылка одноразовая",
+		carries:  confirmationURL,
 	},
 	{
 		name:     "the recovery link",
@@ -89,6 +103,7 @@ var mails = []struct {
 		template: recoveryTemplateVariable,
 		file:     "recovery.html",
 		says:     "восстановление доступа",
+		carries:  siteURL + "/recover#token_hash=" + tokenHash,
 	},
 }
 
@@ -161,9 +176,9 @@ func TestEveryTemplateIsRussianAndCarriesTheLink(t *testing.T) {
 
 			requireRussian(t, body, mail.file)
 
-			if !strings.Contains(body, confirmationURL) {
+			if !strings.Contains(body, mail.carries) {
 				t.Errorf("%s carries no %s, so the mail arrives without the link it exists "+
-					"to deliver", mail.file, confirmationURL)
+					"to deliver", mail.file, mail.carries)
 			}
 
 			// A syntax check of the {{ }} dialect, not a claim about which engine renders these. With

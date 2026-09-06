@@ -1,16 +1,13 @@
 package app.cadence.design
 
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.cadence.format.leadingBlanks
 import app.cadence.shared.domain.MoodLevel
 import app.cadence.shared.domain.TrendRange
-import app.cadence.shared.domain.middleOf
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.daysUntil
 import kotlinx.datetime.plus
 
 /*

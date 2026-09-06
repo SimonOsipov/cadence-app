@@ -24,6 +24,12 @@ import kotlinx.coroutines.CancellationException
  * Both storage seams are substituted, which is the condition the library was taken on rather
  * than a refinement — see [secureSettings] for why they are two stores and not one.
  *
+ * The verifier cache is groundwork and has no consumer today: accepting an invitation was to be a
+ * PKCE flow until it was measured not to be one — GoTrue v2.194.0 accepts a `code_challenge` on
+ * the admin route and ignores it — and the invitation now leads into the app with a token the app
+ * exchanges itself. It stays because a provider sign-in would want it back, and an empty store
+ * costs nothing; the reasoning is in the proposal «Приём приглашения: PKCE недостижим».
+ *
  * [stores] is a parameter so the seam can be measured without a device; production passes
  * [secureSettings]. [engine] is one for the same reason and a sharper one: the module builds its
  * own client, so left to itself nothing outside this file can observe which address it talks to —
@@ -82,3 +88,27 @@ fun SupabaseClient.sessionTokens(): SessionTokens =
 
 private fun io.github.jan.supabase.auth.user.UserSession.asSession() =
     Session(access = accessToken, refresh = refreshToken)
+
+// The process's one client, and the reason it is one is the invariant the transport is built
+// around. Every SupabaseClient loads the stored session and starts its own auto-refresh on a
+// scope of its own, which nothing outside the client cancels — so two of them are two owners
+// rotating one refresh token, and under rotation the loser spends a token already spent. The
+// patient is then signed out by their own app having been recreated.
+//
+// A named gap, not a solved one: `getOrPut` is not atomic, so two callers racing on different
+// threads can both build a client and one is discarded — with its auto-refresh already
+// started, which is the very thing this exists to prevent. Reachable only if a second entry
+// point appears; today both platform roots call it from the main thread at launch. The same
+// gap is named on `secureSettings`, and it is the same fix when either needs one.
+private val theClient = mutableMapOf<String, SupabaseClient>()
+
+/**
+ * The auth client for [url], built once among the app's roots — see `theClient` for why one.
+ *
+ * Not «one per process», and the exception is named rather than closed: `:debugTools` builds its
+ * own client on the same URL and the same session store, so opening the debug screen beside the
+ * app does put two refresh owners in one process and can sign a developer out of the dev contour.
+ * It is absent from both release builds — `debugImplementation` on Android, a source directory
+ * added only under `-Pcadence.debugTools` on iOS — so the cost is the developer's, not a patient's.
+ */
+fun cadenceAuthFor(url: String): SupabaseClient = theClient.getOrPut(url) { cadenceAuth(url) }

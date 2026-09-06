@@ -6,9 +6,24 @@ import { AuthProvider, NOT_FOR_PATIENTS, NOT_IN_THE_CLINIC_YET, STAFF, useAuth, 
 import { endpoints } from './config'
 import { DataProvider, defaultClient } from './data/queries'
 import { AcceptInvitePage } from './features/auth/accept-invite-page'
+import { OpenInAppPage, type OpenInAppKind } from './features/auth/open-in-app-page'
 import { SignInPage } from './features/auth/sign-in-page'
 import { OverviewPage } from './features/overview/overview-page'
 import { tokens } from './tokens/tokens'
+
+/**
+ * Where a patient's mail lands. Not `/accept-invite`: that one is the dashboard's own door and
+ * expects a session, while these carry a token the app spends.
+ *
+ * A path and a kind paired by hand is a pair that can be swapped — and swapped, every invitation
+ * goes to `cadence://recover`, which `/verify` refuses, so a patient is told a live link was
+ * already used. The pairing is held by «serves each landing at the path its own scheme names»;
+ * that these rows reach <Routes> at all, by «serves $path from the routes, not from the table».
+ */
+export const PATIENT_LANDINGS: ReadonlyArray<{ path: string; kind: OpenInAppKind }> = [
+  { path: '/accept', kind: 'accept' },
+  { path: '/recover', kind: 'recover' },
+]
 
 export function App() {
   const { apiUrl, providerUrl } = endpoints()
@@ -24,6 +39,9 @@ export function App() {
           <Routes>
             <Route path="/sign-in" element={<SignInRoute />} />
             <Route path="/accept-invite" element={<AcceptInviteRoute providerUrl={providerUrl} />} />
+            {PATIENT_LANDINGS.map(({ path, kind }) => (
+              <Route key={path} path={path} element={<OpenInAppRoute kind={kind} />} />
+            ))}
             <Route path="/" element={<DashboardRoute />} />
             {/* Anything else is the dashboard's door rather than a page saying nothing. */}
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -41,6 +59,12 @@ function SignInRoute() {
   if (auth.session !== null) return <Navigate to="/" replace />
 
   return <SignInPage onSignedIn={() => void navigate('/', { replace: true })} />
+}
+
+function OpenInAppRoute({ kind }: { kind: OpenInAppKind }) {
+  const { hash } = useLocation()
+
+  return <OpenInAppPage kind={kind} fragment={hash} />
 }
 
 function AcceptInviteRoute({ providerUrl }: { providerUrl: string }) {
@@ -70,7 +94,7 @@ function DashboardRoute() {
   // An invitation link lands wherever the provider was configured to send it — SITE_URL when the
   // invitation asked for nothing else — and what marks it is the fragment, not the path. Carried
   // across rather than read here, so the acceptance screen stays the one place that reads it.
-  if (hash.includes('type=invite') || hash.includes('type=recovery')) {
+  if (hash.includes('type=invite') || hash.includes('type=recovery') || hash.includes('type=magiclink')) {
     return <Navigate to={{ pathname: '/accept-invite', hash }} replace />
   }
 

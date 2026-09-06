@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import app.cadence.screens.nutrition.LOG_MEAL_CHAT_FIELD_TAG
+import app.cadence.shared.auth.SessionState
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -17,12 +18,15 @@ import kotlin.test.assertTrue
 // `onNodeWithText` would find several nodes on the pinned, always-covered seeded day.
 private const val TODAY_TAB = "Сегодня"
 
+// Every case here is about the area after sign-in, so every case hands App a session. Before
+// the gate existed App had none to take; the state is the shell's input now, and a test that
+// left it out would be measuring the sign-in screen. AppSessionTest owns the gate itself.
 @OptIn(ExperimentalTestApi::class)
 class AppTest {
     @Test
     fun theAppOpensOnToday() =
         runComposeUiTest {
-            setContent { App() }
+            setContent { App(SessionState.SignedIn) }
 
             // The patient's name, assembled from a TodaySummary: reaching it proves :shared is
             // linked into the UI, not merely the module graph, and separates the ported screen
@@ -39,7 +43,7 @@ class AppTest {
             // date `cycleWeek` goes null and every screen blanks silently. Keyed on the strip
             // rather than a greeting because `ProtocolStrip` only renders its heading when the
             // protocol is in force; upper-case because `CadenceEyebrow` renders it that way.
-            setContent { App() }
+            setContent { App(SessionState.SignedIn) }
 
             onNodeWithText("ПРОТОКОЛ ЭТОЙ НЕДЕЛИ").assertIsDisplayed()
             assertTrue(
@@ -51,7 +55,7 @@ class AppTest {
     @Test
     fun theSheetCanBeDismissedWithoutChoosingAnything() =
         runComposeUiTest {
-            setContent { App() }
+            setContent { App(SessionState.SignedIn) }
 
             onNodeWithContentDescription("Записать").performClick()
             onNodeWithText("Отмена").performClick()
@@ -67,7 +71,7 @@ class AppTest {
     @Test
     fun theSheetSendsTheUserIntoTheMealWizard() =
         runComposeUiTest {
-            setContent { App() }
+            setContent { App(SessionState.SignedIn) }
 
             onNodeWithContentDescription("Записать").performClick()
             onNodeWithText("Записать приём пищи").performClick()
@@ -90,7 +94,7 @@ class AppTest {
         runComposeUiTest {
             // If App stopped providing CadenceTheme, every composable underneath would throw on
             // the typography local rather than fall back — so reaching any screen is the assertion.
-            setContent { App() }
+            setContent { App(SessionState.SignedIn) }
 
             onNodeWithContentDescription(TODAY_TAB).assertIsSelected()
         }
@@ -98,7 +102,7 @@ class AppTest {
     @Test
     fun thePlusOpensTheSheetRatherThanChangingDestination() =
         runComposeUiTest {
-            setContent { App() }
+            setContent { App(SessionState.SignedIn) }
 
             onNodeWithContentDescription("Записать").performClick()
 
@@ -110,7 +114,7 @@ class AppTest {
     @Test
     fun theSheetSendsTheUserIntoTheDoseWizard() =
         runComposeUiTest {
-            setContent { App() }
+            setContent { App(SessionState.SignedIn) }
 
             onNodeWithContentDescription("Записать").performClick()
             onNodeWithText("Записать дозу").performClick()

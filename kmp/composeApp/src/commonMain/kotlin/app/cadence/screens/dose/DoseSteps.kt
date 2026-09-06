@@ -48,7 +48,6 @@ import app.cadence.shared.domain.Dose
 import app.cadence.shared.domain.DoseDraft
 import app.cadence.shared.domain.InjectionSite
 import app.cadence.shared.domain.MoodLevel
-import app.cadence.shared.domain.ProtocolItemKind
 import app.cadence.shared.domain.SideEffect
 
 /** «Тошнота», «Усталость» … — the prototype's seven, in its order. */

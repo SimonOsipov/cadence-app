@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import app.cadence.design.Cadence
 import app.cadence.design.CadenceColors
 import app.cadence.design.CadenceEyebrow
-import app.cadence.design.CadenceIcon
 import app.cadence.design.CadenceIconButton
 import app.cadence.design.CadenceIcons
 import app.cadence.design.CadenceRadius

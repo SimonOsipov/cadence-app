@@ -16,6 +16,10 @@ const OTPExpiryVariable = "GOTRUE_MAILER_OTP_EXP"
 // seconds" — its one-minute default — and with this name it refused for the two seconds it was given.
 const MailerMaxFrequencyVariable = "GOTRUE_SMTP_MAX_FREQUENCY"
 
+// PasswordMinLengthVariable is the shortest password GoTrue will accept. Unset it enforces six —
+// measured against v2.194.0 on 2026-09-01 — and the product does not leave it unset.
+const PasswordMinLengthVariable = "GOTRUE_PASSWORD_MIN_LENGTH"
+
 // RedirectAllowListVariable is where a link may land — TestTheAllowListDecidesWhereALinkLands
 // measures what an uncovered address costs.
 const RedirectAllowListVariable = "GOTRUE_URI_ALLOW_LIST"

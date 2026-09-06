@@ -1,7 +1,5 @@
 package app.cadence.debug
 
-import app.cadence.shared.storage.PKCE_STORE
-import app.cadence.shared.storage.SESSION_STORE
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import io.ktor.client.engine.mock.MockEngine

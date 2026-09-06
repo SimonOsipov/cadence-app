@@ -6,13 +6,16 @@ import app.cadence.shared.storage.secureSettings
 import com.russhwolf.settings.MapSettings
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.user.UserSession
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 private const val GOTRUE = "http://localhost:9999"
@@ -60,6 +63,26 @@ class CadenceAuthAndroidTest {
             )
             assertNotNull(manager.loadSession())
         }
+
+    // Nothing is decided at construction, so the shell is told «not yet» rather than «signed
+    // out» — the launch of a signed-in app must not pass through the sign-in screen.
+    @Test
+    fun aFreshClientDoesNotClaimTheyAreSignedOut() =
+        runTest {
+            installSecureStorage(RuntimeEnvironment.getApplication())
+
+            val first = cadenceAuth(url = GOTRUE, stores = { MapSettings() }).sessionStates().first()
+
+            assertEquals(SessionState.Deciding, first)
+        }
+
+    // Two clients are two owners of one refresh token — see `theClient` for what that costs.
+    @Test
+    fun theProcessHasOneAuthClientAndNotOnePerCaller() {
+        installSecureStorage(RuntimeEnvironment.getApplication())
+
+        assertSame(cadenceAuthFor(GOTRUE), cadenceAuthFor(GOTRUE))
+    }
 
     // The contract the transport was written against, and the one the module does not keep:
     // refreshCurrentSession throws rather than answering. Left to propagate, the first request

@@ -155,3 +155,5 @@ dev-up: docker-up
 	@echo "  storage   localhost:9000  (console :9001, buckets cadence-vials and cadence-injections)"
 	@echo
 	@echo "the API needs AUTH_JWT_ISSUER, AUTH_JWT_SESSION_KIDS, AUTH_JWT_ADMIN_KID, PROVISIONER_URL, PROVISIONER_SHARED_SECRET and the seven STORAGE_ variables (ENDPOINT, REGION, ACCESS_KEY_ID, SECRET_ACCESS_KEY, PATH_STYLE, BUCKET_VIALS, BUCKET_INJECTIONS); config.Load refuses to start without them, and no provisioner service is in this compose file yet"
+	@echo "every local value is in this compose file: the two kids are the GOTRUE_JWT_KEYS entries (the signing one carries key_ops, the other is the admin key and PROVISIONER_GOTRUE_ADMIN_JWK), storage is the minio service, and PATH_STYLE is a bool"
+	@echo "an empty clinic refuses to seed: cmd/bootstrap-admin takes an account the provisioner invited, and cmd/seed needs an administrator before it writes anything"

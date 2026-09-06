@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/MicahParks/jwkset"
+	"github.com/moby/moby/api/types/container"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -233,6 +234,13 @@ func runGoTrueContainer(
 		testcontainers.WithEnv(env),
 		testcontainers.WithExposedPorts(gotruePort),
 		testcontainers.WithWaitStrategy(ready),
+		// Docker Desktop provides this name; plain Docker on Linux does not, and a test that puts
+		// a server on the host — the SMTP trap the invitation mail is measured through — then has
+		// GoTrue answer 500 «Error sending invite email» rather than fail to resolve a name. Added
+		// here so the difference between a developer's machine and CI is not one the tests carry.
+		testcontainers.WithHostConfigModifier(func(hostConfig *container.HostConfig) {
+			hostConfig.ExtraHosts = append(hostConfig.ExtraHosts, "host.docker.internal:host-gateway")
+		}),
 	)
 	if err != nil {
 		return container, fmt.Errorf("starting GoTrue: %w", err)

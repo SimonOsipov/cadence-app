@@ -31,7 +31,6 @@ import app.cadence.shared.domain.VialId
 import app.cadence.shared.domain.cycleWeek
 import app.cadence.shared.domain.dayTotals
 import app.cadence.shared.domain.doseBands
-import app.cadence.shared.domain.dosesPerWeek
 import app.cadence.shared.domain.filteredByTypeAndTag
 import app.cadence.shared.domain.inventorySummary
 import app.cadence.shared.domain.meta
@@ -76,7 +75,6 @@ import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
-import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus

@@ -16,5 +16,7 @@ struct ContentView: View {
     var body: some View {
         ComposeView()
             .ignoresSafeArea()
+            // Carries the launch link too, not only the ones that arrive while the app runs.
+            .onOpenURL { MainViewControllerKt.openedWith(link: $0.absoluteString) }
     }
 }

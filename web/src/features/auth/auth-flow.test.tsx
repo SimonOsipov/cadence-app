@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 import { AuthProvider, NOT_FOR_PATIENTS, useAuth } from '../../auth/auth-context'
 import { readSession } from '../../auth/session'
 import { defaultClient } from '../../data/queries'
-import { AcceptInvitePage, sessionFromFragment } from './accept-invite-page'
+import { AcceptInvitePage, PASSWORD_MIN_LENGTH, sessionFromFragment } from './accept-invite-page'
 import { SignInPage } from './sign-in-page'
 
 const API = 'https://api.example'
@@ -134,6 +134,22 @@ describe('accepting an invitation', () => {
   it('reads the session the provider left in the fragment', () => {
     expect(sessionFromFragment(landed)?.accessToken).toBe('a')
     expect(sessionFromFragment('#error=access_denied&error_code=otp_expired')).toBeNull()
+  })
+
+  // The floor the provider enforces, not a softer one of our own: refused here after the person
+  // has typed is the shape this exists to prevent, and GOTRUE_PASSWORD_MIN_LENGTH is 10.
+  it('refuses a password the provider would refuse, before asking it to', async () => {
+    const user = userEvent.setup()
+    const { fetcher, asked } = serving({ '/user': { status: 200, body: {} } })
+
+    render(<AcceptInvitePage providerUrl={PROVIDER} fragment={landed} fetcher={fetcher} onAccepted={() => {}} />)
+
+    await user.type(screen.getByLabelText('Пароль'), 'a'.repeat(PASSWORD_MIN_LENGTH - 1))
+    await user.type(screen.getByLabelText('Ещё раз'), 'a'.repeat(PASSWORD_MIN_LENGTH - 1))
+    await user.click(screen.getByRole('button', { name: 'Сохранить и войти' }))
+
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(asked).not.toContain(`PUT ${PROVIDER}/user`)
   })
 
   it('sets the password and keeps the session it arrived with', async () => {
